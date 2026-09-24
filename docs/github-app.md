@@ -23,7 +23,7 @@ No other events are subscribed. The manifest ([`packages/github-app/app.yml`](..
 
 ## Behaviour
 
-- One `ghostdeps` check run per analysed head SHA; duplicate deliveries collapse idempotently.
+- One `ghostdeps` check run per analysed head SHA; duplicate deliveries collapse idempotently. Jobs are keyed by (repository id, head SHA) only: if the same head is opened against, or retargeted to, a different base, the diff-context analysis from the first base stands until the head moves.
 - Conclusions: `success` when nothing notable is found (quiet summary: "No significant dependency issues found."), `neutral` when there are findings worth review. GhostDeps never concludes `failure` — it advises, it does not gate.
 - Annotations attach findings to the manifest or source lines they came from.
 - PR comments are exceptional, used only when a finding genuinely cannot be expressed as a check annotation.

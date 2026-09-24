@@ -68,4 +68,16 @@ describe("InProcessJobQueue", () => {
     assert.equal(queue.enqueue(job("a")), "queued");
     assert.equal(queue.enqueue(job("c")), "duplicate");
   });
+
+  it("rejects new jobs once maxPending are waiting", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const queue = new InProcessJobQueue({ concurrency: 1, maxPending: 1, worker: () => gate });
+    assert.equal(queue.enqueue(job("running")), "queued");
+    assert.equal(queue.enqueue(job("waiting")), "queued");
+    assert.equal(queue.enqueue(job("extra")), "overloaded");
+    release();
+    await queue.onIdle();
+    assert.equal(queue.enqueue(job("extra")), "queued");
+  });
 });

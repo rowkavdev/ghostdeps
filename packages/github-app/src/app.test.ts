@@ -85,6 +85,8 @@ describe("GhostDeps GitHub App", () => {
     const res = await fetch(`${baseUrl}${HEALTH_PATH}`);
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { status: "ok" });
+    const withQuery = await fetch(`${baseUrl}${HEALTH_PATH}?probe=1`);
+    assert.equal(withQuery.status, 200);
   });
 
   it("rejects a delivery signed with the wrong secret", async () => {

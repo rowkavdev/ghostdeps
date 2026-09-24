@@ -36,7 +36,8 @@ export function analysisJobKey(repositoryId: number, headSha: string): string {
   return `${repositoryId}:${headSha}`;
 }
 
-export type EnqueueResult = "queued" | "duplicate";
+/** "overloaded" means the queue is full and the job was dropped; callers should log it. */
+export type EnqueueResult = "queued" | "duplicate" | "overloaded";
 
 export interface JobQueue {
   /** Must return quickly: webhook deliveries time out after 10 seconds. */
@@ -49,8 +50,15 @@ export interface InProcessJobQueueOptions {
   readonly worker: JobWorker;
   /** Maximum jobs running at once. Default 2. */
   readonly concurrency?: number;
-  /** How many recent job keys to remember for duplicate collapse. Default 1000. */
+  /**
+   * How many recent job keys to remember for duplicate collapse. Default 1000.
+   * Count-based and evicted oldest-first, so a key can be re-queued if this
+   * many newer keys arrive while its job is still running. Acceptable for
+   * v0.1; a durable queue should dedupe on job state instead.
+   */
   readonly dedupeWindow?: number;
+  /** Maximum jobs waiting to run. Beyond this, enqueue returns "overloaded". Default 500. */
+  readonly maxPending?: number;
   readonly onError?: (job: AnalysisJob, error: unknown) => void;
 }
 
@@ -59,6 +67,7 @@ export class InProcessJobQueue implements JobQueue {
   readonly #worker: JobWorker;
   readonly #concurrency: number;
   readonly #dedupeWindow: number;
+  readonly #maxPending: number;
   readonly #onError: (job: AnalysisJob, error: unknown) => void;
   readonly #pending: AnalysisJob[] = [];
   readonly #seen = new Set<string>();
@@ -69,11 +78,13 @@ export class InProcessJobQueue implements JobQueue {
     this.#worker = options.worker;
     this.#concurrency = Math.max(1, options.concurrency ?? 2);
     this.#dedupeWindow = Math.max(1, options.dedupeWindow ?? 1000);
+    this.#maxPending = Math.max(1, options.maxPending ?? 500);
     this.#onError = options.onError ?? (() => {});
   }
 
   enqueue(job: AnalysisJob): EnqueueResult {
     if (this.#seen.has(job.key)) return "duplicate";
+    if (this.#pending.length >= this.#maxPending) return "overloaded";
     this.#seen.add(job.key);
     if (this.#seen.size > this.#dedupeWindow) {
       const oldest = this.#seen.values().next().value;
