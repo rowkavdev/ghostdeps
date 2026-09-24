@@ -12,13 +12,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "pnpm --filter @ghostdeps/core --filter @ghostdeps/javascript-typescript run build && tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
-    "typecheck": "pnpm --filter @ghostdeps/core --filter @ghostdeps/javascript-typescript run build && tsc -p tsconfig.json --noEmit",
+    "test": "pnpm --filter @ghostdeps/core --filter @ghostdeps/javascript-typescript --filter @ghostdeps/rust run build && tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
+    "typecheck": "pnpm --filter @ghostdeps/core --filter @ghostdeps/javascript-typescript --filter @ghostdeps/rust run build && tsc -p tsconfig.json --noEmit",
     "start": "probot run ./dist/index.js"
   },
   "dependencies": {
     "@ghostdeps/core": "workspace:*",
     "@ghostdeps/javascript-typescript": "workspace:*",
+    "@ghostdeps/rust": "workspace:*",
     "probot": "^14.3.2"
   },
   "devDependencies": {

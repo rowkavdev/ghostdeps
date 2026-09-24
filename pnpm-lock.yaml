@@ -253,6 +253,9 @@ importers:
       '@ghostdeps/javascript-typescript':
         specifier: workspace:*
         version: link:../adapters/javascript-typescript
+      '@ghostdeps/rust':
+        specifier: workspace:*
+        version: link:../adapters/rust
     devDependencies:
       typescript:
         specifier: ^5.7.0
@@ -272,6 +275,9 @@ importers:
       '@ghostdeps/javascript-typescript':
         specifier: workspace:*
         version: link:../adapters/javascript-typescript
+      '@ghostdeps/rust':
+        specifier: workspace:*
+        version: link:../adapters/rust
       probot:
         specifier: ^14.3.2
         version: 14.3.2
