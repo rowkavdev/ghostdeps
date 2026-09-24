@@ -14,14 +14,23 @@ import type {
 import { PYTHON_ECOSYSTEM, detectPython } from "./detect.js";
 import { buildDependencyGraph } from "./lockfile.js";
 import { parseManifests } from "./manifest.js";
+import { findPythonUsage } from "./usage/scan.js";
 
 export function createPythonAdapter(): EcosystemAdapter {
   return {
     ecosystem: PYTHON_ECOSYSTEM,
     apiVersion: adapterApiVersion,
-    capabilities: new Set<AdapterCapability>(["dependencyGraph", "lockfileParsing"]),
+    capabilities: new Set<AdapterCapability>([
+      "dependencyGraph",
+      "lockfileParsing",
+      // Usage evidence only. "referenceAnalysis" is deliberately absent in
+      // M2: no unused verdicts for Python (#261, same rule as Go/Rust).
+      "usageAnalysis",
+    ]),
     detect: detectPython,
     buildDependencyGraph,
+    findUsage: (context: AdapterContext, dependency: Dependency) =>
+      findPythonUsage(context, dependency),
     async listDirectDependencies(
       context: AdapterContext,
       projects: ProjectRef[],

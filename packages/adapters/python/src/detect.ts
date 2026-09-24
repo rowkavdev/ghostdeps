@@ -81,7 +81,7 @@ function isDocsRoot(root: string, fileSet: ReadonlySet<string>): boolean {
 }
 
 /** The deepest root containing the file wins, so monorepo members own their source. */
-function nearestRoot(file: string, rootSet: ReadonlySet<string>): string | undefined {
+export function nearestRoot(file: string, rootSet: ReadonlySet<string>): string | undefined {
   let dir = file;
   for (;;) {
     const slash = dir.lastIndexOf("/");
@@ -148,15 +148,20 @@ function detectPackageManagers(
   return { managers, evidence };
 }
 
-export async function detectPython(context: AdapterContext): Promise<DetectionResult> {
-  const { repository } = context;
-  const files = (await repository.listFiles()).filter((file) => !hasExcludedSegment(file));
-  const fileSet = new Set(files);
-  const roots = [
+/** Every directory holding a Python manifest, shortest first (excluded paths already dropped). */
+export function candidateRoots(files: readonly string[]): string[] {
+  return [
     ...new Set(
       files.filter((file) => isRootManifest(file) || isRequirementsDirFile(file)).map(manifestRoot),
     ),
   ].sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+export async function detectPython(context: AdapterContext): Promise<DetectionResult> {
+  const { repository } = context;
+  const files = (await repository.listFiles()).filter((file) => !hasExcludedSegment(file));
+  const fileSet = new Set(files);
+  const roots = candidateRoots(files);
 
   if (roots.length === 0) {
     return { confidence: 0, projects: [], evidence: [] };
