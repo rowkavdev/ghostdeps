@@ -335,3 +335,4 @@ export interface SurfaceEntry {
    */
   graphs?: GraphCompleteness;
 }
+export { findingGroup, type FindingGroup } from "./finding-group.js";

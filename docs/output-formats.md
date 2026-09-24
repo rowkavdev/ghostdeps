@@ -168,6 +168,10 @@ No significant dependency issues found.
   finding (today only `cross-ecosystem-capability-overlap`). Absent means not
   awareness: other info findings stay in Notes and keep their neutral
   meaning. Marking another rule awareness needs arbiter sign-off.
+- Presenters group findings with core's `findingGroup(f)`: `"awareness"`
+  only for an info finding with `awareness: true`, `"note"` for any other
+  info finding, `"verdict"` for everything else. The CLI and the app both
+  use it and own only the formatting.
 - Check conclusions: `success` when quiet, `neutral` with findings,
   never `failure`. GhostDeps advises, it does not gate.
 - PR comments only when a finding cannot be expressed as a check annotation.
