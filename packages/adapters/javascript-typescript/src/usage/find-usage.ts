@@ -46,6 +46,8 @@ export interface RepositoryScan {
   roots: Set<string>;
   /** tsconfig/jsconfig alias resolver for the repository (#29). */
   aliases: AliasResolver;
+  /** First stylesheet per preprocessor extension, per owning project (listed, never read). */
+  styles: Map<string, Map<string, string>>;
 }
 
 function dirname(path: string): string {
@@ -149,6 +151,27 @@ function scanEmbedded(file: string, text: string, limitations: Evidence[]): File
   return result;
 }
 
+/**
+ * Preprocessors that bundlers (vite, webpack loaders, parcel) load for a
+ * stylesheet by its extension, never by an import of the package (#172,
+ * vite: .sss -> sugarss).
+ */
+const PREPROCESSORS: Record<string, readonly string[]> = {
+  ".sss": ["sugarss"],
+  ".scss": ["sass", "sass-embedded", "node-sass"],
+  ".sass": ["sass", "sass-embedded", "node-sass"],
+  ".less": ["less"],
+  ".styl": ["stylus"],
+  ".stylus": ["stylus"],
+};
+
+function preprocessorExtension(file: string): string | undefined {
+  const dot = file.lastIndexOf(".");
+  if (dot < 0) return undefined;
+  const ext = file.slice(dot).toLowerCase();
+  return Object.hasOwn(PREPROCESSORS, ext) ? ext : undefined;
+}
+
 async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
   const all = (await repository.listFiles()).map((f) => f.replace(/^\.\//, ""));
   const roots = new Set<string>();
@@ -170,9 +193,20 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     shared: [],
     roots,
     aliases,
+    styles: new Map(),
   };
   let outside = 0;
   for (const file of all) {
+    const style = preprocessorExtension(file);
+    if (style && !isSkipped(file)) {
+      const owner = owningRoot(file, roots);
+      if (owner !== undefined) {
+        const byExt = scan.styles.get(owner) ?? new Map<string, string>();
+        if (!byExt.has(style)) byExt.set(style, file);
+        scan.styles.set(owner, byExt);
+      }
+      continue;
+    }
     const embedded = isEmbeddedScriptFile(file);
     if (isSkipped(file) || !(embedded || scriptKindFor(file))) continue;
     const root = owningRoot(file, roots);
@@ -395,6 +429,11 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
       // Only `import type` / `export type` / `typeof import()` - erased at runtime.
       // A types package is always type-only usage.
       if (ref.typeOnly || target !== dependency.name) usage.typeOnly = true;
+      // Named in string text (generated code, resolved paths), not imported.
+      if (ref.stringReference) {
+        usage.via = "convention";
+        usage.symbols = ["string-reference"];
+      }
       usages.push(usage);
     }
   }
@@ -519,4 +558,39 @@ export async function findRemovedUsages(
     usages.push(usage);
   }
   return usages.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
+}
+
+/**
+ * via="convention" usage for a stylesheet preprocessor when its project (or a
+ * nested project that falls through to it) has stylesheets with the matching
+ * extension. The files are only listed, never read.
+ */
+export async function findPreprocessorUsages(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<Usage[]> {
+  const extensions = Object.keys(PREPROCESSORS).filter((ext) =>
+    PREPROCESSORS[ext]!.includes(dependency.name),
+  );
+  if (extensions.length === 0) return [];
+  const scan = await scanForContext(context);
+  const project = normaliseProject(dependency.project.path);
+  const declared = await declaredFor(context, scan);
+  const usages: Usage[] = [];
+  for (const [owner, byExt] of scan.styles) {
+    if (!resolvesTo(owner, project, dependency.name, declared)) continue;
+    for (const ext of extensions) {
+      const file = byExt.get(ext);
+      if (file === undefined) continue;
+      usages.push({
+        dependency: dependency.name,
+        file,
+        line: 1,
+        form: "unknown",
+        via: "convention",
+        symbols: [`${ext} stylesheets`],
+      });
+    }
+  }
+  return usages.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
 }

@@ -52,6 +52,10 @@ describe("JS adapter through the engine and default policy (#138)", () => {
     ["refs-root-dep-from-member", "execa"],
     ["refs-create-require", "core-js"],
     ["refs-create-require", "@types/pnpapi"],
+    ["refs-string-specifier", "regenerator-runtime"],
+    ["refs-string-specifier", "systemjs"],
+    ["convention-css-preprocessor-ext", "sugarss"],
+    ["convention-css-preprocessor-ext", "sass"],
   ] as const) {
     it(`real-repo regression (${fixture}): ${dependency} is not reported unused`, async () => {
       assert.deepEqual(unused(await findings(fixture), dependency), []);

@@ -18,7 +18,12 @@ import { parseManifest } from "./manifest.js";
 import { findConfigUsages, unreadConfigs } from "./references/config.js";
 import { findScriptUsages, scriptGaps } from "./references/scripts.js";
 import { findWorkflowUsages } from "./references/workflows.js";
-import { findRemovedUsages, findUsage, usageLimitations } from "./usage/index.js";
+import {
+  findPreprocessorUsages,
+  findRemovedUsages,
+  findUsage,
+  usageLimitations,
+} from "./usage/index.js";
 
 export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
   return {
@@ -42,7 +47,7 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
      * policy reports "manual review" rather than "unused".
      */
     async findUsage(context: AdapterContext, dependency: Dependency): Promise<UsageAnalysisReport> {
-      const [imports, scripts, configs, importGaps, scriptProblems, unread, ci, removed] =
+      const [imports, scripts, configs, importGaps, scriptProblems, unread, ci, removed, styles] =
         await Promise.all([
           findUsage(context, dependency),
           findScriptUsages(context, dependency),
@@ -54,9 +59,11 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
           findWorkflowUsages(context, dependency),
           // PR mode (#101): imports on lines the PR removed, marked removedInPr.
           findRemovedUsages(context, dependency),
+          // Stylesheet preprocessors loaded by file extension (.scss -> sass).
+          findPreprocessorUsages(context, dependency),
         ]);
       return {
-        usages: [...imports, ...scripts, ...configs, ...ci, ...removed],
+        usages: [...imports, ...scripts, ...configs, ...ci, ...removed, ...styles],
         referenceAnalysisComplete:
           importGaps.length === 0 && scriptProblems.length === 0 && unread.length === 0,
       };

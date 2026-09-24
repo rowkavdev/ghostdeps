@@ -3,7 +3,11 @@ import { describe, it } from "node:test";
 import { scanSource } from "./scan.js";
 
 const byPkg = (file: string, text: string) =>
-  scanSource(file, text).references.filter((r) => r.packageName);
+  scanSource(file, text).references.filter((r) => r.packageName && !r.stringReference);
+const stringRefs = (file: string, text: string) =>
+  scanSource(file, text)
+    .references.filter((r) => r.stringReference)
+    .map((r) => [r.packageName, r.line]);
 
 describe("scanSource", () => {
   it("records static imports with symbols and 1-based lines", () => {
@@ -139,6 +143,31 @@ describe("scanSource", () => {
       ],
     );
     assert.deepEqual(refs[0]?.symbols, ["version"]);
+  });
+
+  it("records package references in string text as string references (vite plugin-legacy)", () => {
+    const text = [
+      `legacyPolyfills.add("regenerator-runtime/runtime.js");`,
+      "const p = i.includes('/') ? `core-js/${i}` : `core-js/modules/${i}.js`;",
+      'const code = `import "systemjs/dist/s.min.js";` + \'require("in-string")\';',
+      `if (source.startsWith("@babel/runtime/")) {}`,
+      `const words = ["debug", "url", "text/html"];`,
+      `import real from "real-dep/sub";`,
+      `const url = "https://cdn.example.com/x.js"; const rel = "./local/file.js";`,
+    ].join("\n");
+    assert.deepEqual(stringRefs("a.ts", text), [
+      ["regenerator-runtime", 1],
+      ["core-js", 2],
+      ["systemjs", 3],
+      ["in-string", 3],
+      ["@babel/runtime", 4],
+      ["text", 5],
+    ]);
+    // A real import's own specifier is not repeated as a string reference.
+    assert.deepEqual(
+      byPkg("a.ts", text).map((r) => r.packageName),
+      ["real-dep"],
+    );
   });
 
   it("flags syntax errors but still returns what it could read", () => {

@@ -1,0 +1,8 @@
+{
+  "description": "Regression from vite plugin-legacy: regenerator-runtime and systemjs are only named in strings (a subpath literal and an import inside generated code). They are used via=convention and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "regenerator-runtime" },
+    { "kind": "unused", "dependency": "systemjs" }
+  ]
+}
