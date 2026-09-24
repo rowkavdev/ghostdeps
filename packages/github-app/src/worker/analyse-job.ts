@@ -72,11 +72,11 @@ export interface AnalysisWorkerOptions {
 export type CheckoutScanOptions = NonNullable<Parameters<typeof FsRepositoryHandle.open>[1]>;
 
 /**
- * Scan the checkout and run core's isolated engine. A truncated scan or
- * skipped paths set AnalyseOptions.scanIncomplete, so policy never calls a
- * dependency "unused" on a partial checkout (#136). Interim, boolean only:
- * the completeness notes themselves follow when core takes
- * scanCompleteness (Arch Lead decision).
+ * Scan the checkout and run core's isolated engine. The scan-completeness
+ * notes go to core as AnalyseOptions.scanCompleteness (and scanIncomplete):
+ * core appends the notes and caps absence findings, so the app never calls
+ * a dependency "unused" on a partial checkout and never post-processes the
+ * result itself (ADR 0004, #136, #161).
  */
 export async function analyseCheckout(
   root: string,
@@ -86,11 +86,11 @@ export async function analyseCheckout(
   engine: typeof analyseRepositoryIsolated = analyseRepositoryIsolated,
 ): Promise<AnalysisResult> {
   const handle = await FsRepositoryHandle.open(root, scan);
-  const scanIncomplete = scanCompletenessFindings(handle.scan).length > 0;
+  const scanCompleteness = scanCompletenessFindings(handle.scan);
   return engine(handle, {
     adapters: adapterModules,
     ...(run.pullRequestChanges ? { pullRequestChanges: run.pullRequestChanges } : {}),
-    ...(scanIncomplete ? { scanIncomplete: true } : {}),
+    ...(scanCompleteness.length > 0 ? { scanIncomplete: true, scanCompleteness } : {}),
   });
 }
 
