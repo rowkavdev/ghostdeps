@@ -228,6 +228,12 @@ export async function runAdapter(
    * at most MAX_UNSNIFFED_NOTES notes in total.
    */
   unsniffed: Set<string> = new Set(),
+  /**
+   * Called with the outcome so far just before the notes stage (#205). The
+   * worker tier posts it, so a notes() that hangs or kills the worker
+   * loses only the notes, never the analysis before it.
+   */
+  onBeforeNotes?: (outcome: AdapterOutcome) => void,
 ): Promise<AdapterOutcome> {
   const outcome: AdapterOutcome = {
     ecosystem: adapter.ecosystem,
@@ -355,6 +361,7 @@ export async function runAdapter(
   await Promise.all([graphStage, usageStage]);
 
   if (adapter.notes && !controller.signal.aborted) {
+    onBeforeNotes?.(outcome);
     onStage?.("notes");
     try {
       outcome.adapterNotes = await withTimeout(
@@ -363,9 +370,10 @@ export async function runAdapter(
         "notes",
         controller,
       );
-    } catch {
-      // Notes never cap and never carry a verdict, so losing them costs
-      // nothing but the notes: no adapter-failure finding.
+    } catch (error) {
+      // Keep everything analysed so far; the lost notes are reported as an
+      // incomplete note (unmarked info, findingGroup "incomplete").
+      outcome.findings.push(adapterFailure(adapter, "notes", error));
     }
   }
   return outcome;

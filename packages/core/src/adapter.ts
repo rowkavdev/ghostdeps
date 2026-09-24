@@ -170,7 +170,7 @@ export interface EcosystemAdapter {
   /**
    * Notes for this run (#205), called after the graph and usage stages.
    * Optional and additive (no adapterApiVersion bump). A failure or timeout
-   * here only loses the notes: it is not an adapter failure.
+   * here keeps the rest of the analysis and adds one incomplete note.
    */
   notes?(context: AdapterContext, projects: ProjectRef[]): Promise<AdapterNote[]>;
 }

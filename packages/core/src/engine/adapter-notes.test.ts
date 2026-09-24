@@ -104,11 +104,29 @@ describe("adapter notes channel (#205)", () => {
     );
   });
 
-  it("drops notes on a throwing or garbage notes() without an adapter failure", async () => {
+  it("keeps the analysis when notes() throws or hangs, with one incomplete note", async () => {
     for (const notes of [
       async () => {
         throw new Error("boom");
       },
+      () => new Promise<never>(() => {}),
+    ] as EcosystemAdapter["notes"][]) {
+      const result = await analyseRepository(handle, {
+        adapters: [adapter(notes)],
+        adapterTimeoutMs: 200,
+      });
+      assert.deepEqual(result.dependencies.map((d) => d.name).sort(), ["left-pad", "vite-plugin"]);
+      const failures = result.findings.filter((f) =>
+        f.evidence.some((e) => e.kind === "adapter-error"),
+      );
+      assert.equal(failures.length, 1);
+      assert.match(failures[0]!.summary, /notes/);
+      assert.equal(findingGroup(failures[0]!), "incomplete");
+    }
+  });
+
+  it("drops garbage notes() output silently", async () => {
+    for (const notes of [
       async () => "nope" as never,
       async () => [null, 7, { statement: 5 }, { statement: "  " }] as never,
     ] as EcosystemAdapter["notes"][]) {

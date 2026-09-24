@@ -13,7 +13,7 @@ import { describe, it } from "node:test";
 import { analyseRepository, assembleAnalysisResult } from "./analyse.js";
 import { analyseRepositoryIsolated, capOutcome, OUTCOME_CAPS } from "./isolated.js";
 import type { AdapterOutcome } from "./run-adapter.js";
-import type { ProjectRef } from "../types/index.js";
+import { findingGroup, type ProjectRef } from "../types/index.js";
 import { FsRepositoryHandle } from "./scanner/handle.js";
 
 const fixture = (name: string): string =>
@@ -393,5 +393,53 @@ describe("capOutcome (#123 review)", () => {
       "capped findings plus the truncation finding",
     );
     assert.ok(capped.findings.some((f) => f.summary.includes("truncated to size ceilings")));
+  });
+
+  describe("notes stage failures keep the analysis (#205)", () => {
+    for (const [name, heap, timeout] of [
+      ["notes-hang.mjs", undefined, 500],
+      ["notes-busy.mjs", undefined, 500],
+      ["notes-hog.mjs", 64, 10_000],
+    ] as const) {
+      it(`${name}: dependencies survive, one incomplete notes finding`, async () => {
+        const { dir, handle } = await fixtureRepo();
+        try {
+          const result = await analyseRepositoryIsolated(handle, {
+            adapters: [fixture(name)],
+            adapterTimeoutMs: timeout,
+            ...(heap ? { adapterHeapMb: heap } : {}),
+          });
+          assert.deepEqual(
+            result.dependencies.map((d) => d.name),
+            ["left-pad"],
+            JSON.stringify(result.findings),
+          );
+          const failures = result.findings.filter((f) =>
+            f.evidence.some((e) => e.kind === "adapter-error"),
+          );
+          assert.equal(failures.length, 1, JSON.stringify(result.findings));
+          assert.match(failures[0]!.summary, /notes/);
+          assert.equal(findingGroup(failures[0]!), "incomplete");
+        } finally {
+          await rm(dir, { recursive: true, force: true });
+        }
+      });
+    }
+
+    it("notes-ok.mjs: notes cross the worker boundary", async () => {
+      const { dir, handle } = await fixtureRepo();
+      try {
+        const result = await analyseRepositoryIsolated(handle, {
+          adapters: [fixture("notes-ok.mjs")],
+        });
+        assert.deepEqual(result.findings.map((f) => [f.rule, findingGroup(f)]).sort(), [
+          ["adapter-capability", "awareness"],
+          ["adapter-note", "note"],
+        ]);
+        assert.equal(result.dependencies[0]?.name, "left-pad");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

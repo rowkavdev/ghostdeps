@@ -40,7 +40,7 @@ recommendation policy lives in core.
   engine-owned (scan completeness, #154). Output is untrusted: malformed
   notes and unknown dependencies are dropped, statements are cleaned and cut
   to 300 characters, duplicates are merged, and a run keeps at most 100
-  notes. If `notes` throws or times out, only the notes are lost. Additive,
+  notes. If `notes` throws, times out, or kills its worker, the analysis is kept and one incomplete note says the notes were lost. Additive,
   so there's no `adapterApiVersion` bump.
 - **Monorepo-native.** Results are per `ProjectRef`, not repo-wide guesses.
 

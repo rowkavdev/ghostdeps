@@ -13,6 +13,7 @@
  * Protocol (parentPort messages):
  *   { type: "loaded", ecosystem, apiVersion } - adapter resolved
  *   { type: "stage", stage }                  - stage boundary; resets the main-thread watchdog
+ *   { type: "partial", outcome }              - outcome before the notes stage (#205)
  *   { type: "outcome", outcome }              - final AdapterOutcome (plain data)
  *   { type: "run-error", message }            - catastrophic failure before an outcome existed
  */
@@ -75,6 +76,8 @@ async function main(): Promise<void> {
     data.usageConcurrency,
     (stage) => port.postMessage({ type: "stage", stage }),
     data.pullRequestSourceChanges,
+    undefined,
+    (partial) => port.postMessage({ type: "partial", outcome: partial }),
   );
   port.postMessage({ type: "outcome", outcome });
 }
