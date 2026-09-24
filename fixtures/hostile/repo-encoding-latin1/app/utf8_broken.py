@@ -1,3 +1,3 @@
 import requests
-# comment with invalid utf-8: ï¿½ï¿½
-requests.get('https://example.com')
+# comment with invalid utf-8 bytes: €ÿ
+requests.get("https://example.com")
