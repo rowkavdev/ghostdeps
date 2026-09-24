@@ -1,4 +1,4 @@
-import type { AnalysisResult, FindingKind } from "@ghostdeps/core";
+import type { AnalysisResult, Finding, FindingKind } from "@ghostdeps/core";
 import { escapeTerminal } from "./escape.js";
 
 /**
@@ -53,6 +53,52 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+/** Evidence lines shown per verdict before a "+N more" cap. */
+const MAX_EVIDENCE_LINES = 8;
+
+/**
+ * One verdict line plus its evidence. Dependency names, summaries and
+ * evidence statements are policy text built from repository facts, so
+ * everything goes through escapeTerminal (security-model rule 6).
+ */
+function renderVerdict(finding: Finding): string[] {
+  const name = finding.dependency ?? "(repository-wide)";
+  const rule = finding.rule === undefined ? "" : `, rule: ${finding.rule}`;
+  const lines = [
+    `    ${escapeTerminal(name)} - ${escapeTerminal(finding.summary)} (${finding.confidence} confidence${rule})`,
+  ];
+  const evidence = finding.evidence;
+  for (const item of evidence.slice(0, MAX_EVIDENCE_LINES)) {
+    lines.push(`      - ${escapeTerminal(item.statement)}`);
+  }
+  if (evidence.length > MAX_EVIDENCE_LINES) {
+    lines.push(`      - ... and ${evidence.length - MAX_EVIDENCE_LINES} more`);
+  }
+  return lines;
+}
+
+/**
+ * Verdicts are the non-info findings, grouped by kind in canonical order.
+ * Info findings (scan completeness, coverage gaps) stay in the Findings
+ * counts only - they are caveats about the analysis, not verdicts on
+ * dependencies. The section is omitted when there is nothing to say.
+ */
+function renderVerdicts(findings: readonly Finding[]): string[] {
+  const verdicts = findings.filter((finding) => finding.kind !== "info");
+  if (verdicts.length === 0) return [];
+  const lines = ["Verdicts:"];
+  for (const kind of findingOrder) {
+    if (kind === "info") continue;
+    const group = verdicts.filter((finding) => finding.kind === kind);
+    if (group.length === 0) continue;
+    lines.push(`  ${findingLabels[kind]}:`);
+    for (const finding of group) {
+      lines.push(...renderVerdict(finding));
+    }
+  }
+  return ["", ...lines];
+}
+
 /**
  * Render the repository summary for a full scan.
  *
@@ -102,5 +148,6 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     "",
     "Findings:",
     ...(findingLines.length > 0 ? findingLines : ["  none"]),
+    ...renderVerdicts(result.findings),
   ].join("\n");
 }

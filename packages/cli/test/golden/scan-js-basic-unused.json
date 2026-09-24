@@ -32,20 +32,31 @@
   ],
   "findings": [
     {
-      "affectedFiles": [],
+      "affectedFiles": [
+        "package.json"
+      ],
       "confidence": "high",
+      "dependency": "left-pad",
       "evidence": [
         {
-          "kind": "recommendation-policy-missing",
-          "statement": "this build of ghostdeps runs without a recommendation policy"
+          "file": "package.json",
+          "kind": "no-usage-found",
+          "statement": "no import, require or dynamic import of left-pad found"
+        },
+        {
+          "kind": "no-reference-found",
+          "statement": "no script, bin or config reference to left-pad found"
+        },
+        {
+          "kind": "not-allowlisted",
+          "statement": "left-pad is not on the dev-tooling allowlist"
         }
       ],
-      "kind": "info",
-      "limitations": [
-        "Unused, unnecessary and native-replacement findings are not produced yet."
-      ],
-      "recommendation": "Treat this result as facts only (detected ecosystems, dependencies, usages). It is not an all-clear.",
-      "summary": "No dependency recommendations were made: the recommendation policy is not implemented yet."
+      "kind": "unused",
+      "limitations": [],
+      "recommendation": "Remove left-pad from package.json.",
+      "rule": "unused",
+      "summary": "left-pad is declared but never used"
     }
   ],
   "projects": [
