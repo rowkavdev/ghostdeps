@@ -30,9 +30,13 @@ const graph = (
   p: ProjectRef = project("."),
 ): DependencyGraph => ({
   project: p,
-  nodes: Object.values(closure)
-    .flat()
-    .map((name) => ({ name, version: "1.0.0", dependencies: [], dev: false })),
+  // Like real lockfile graphs, direct dependencies are nodes too.
+  nodes: [...new Set([...Object.keys(closure), ...Object.values(closure).flat()])].map((name) => ({
+    name,
+    version: "1.0.0",
+    dependencies: [],
+    dev: false,
+  })),
   transitiveClosure: closure,
   incomplete,
 });
@@ -71,6 +75,18 @@ describe("computeImpact (#59)", () => {
     );
     assert.deepEqual([r.requests!.transitive, r.requests!.exclusive], [2, null]);
     assert.deepEqual([r.PyYAML!.transitive, r.PyYAML!.exclusive], [null, null]);
+  });
+
+  it("ignores direct dependencies that are not graph nodes (e.g. build backends)", () => {
+    // hatchling comes from [build-system] requires and is never locked.
+    const r = byName(
+      computeImpact(
+        [graph({ httpx: ["anyio", "idna"], anyio: ["idna"] })],
+        [dep("httpx"), dep("anyio"), dep("hatchling")],
+      ),
+    );
+    assert.deepEqual([r.httpx!.transitive, r.httpx!.exclusive], [2, 0]);
+    assert.deepEqual([r.hatchling!.transitive, r.hatchling!.exclusive], [null, null]);
   });
 
   it("emits one row per name per project", () => {

@@ -328,8 +328,8 @@ export interface DependencyImpact {
    * Closure packages no other direct dependency of the same project reaches
    * and that aren't themselves declared directly: roughly what removing it
    * would drop. Only when `graph` is "complete" and every direct dependency
-   * of the project has a closure entry; otherwise `null`, because missing
-   * closures can overstate exclusivity.
+   * that is a graph node has a closure entry; otherwise `null`, because
+   * missing closures can overstate exclusivity.
    */
   exclusive: number | null;
   /** True when the engine's impact work budget ran out before this project. */

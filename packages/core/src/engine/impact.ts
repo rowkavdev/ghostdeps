@@ -13,6 +13,10 @@ import type {
  */
 export const MAX_IMPACT_CLOSURE_ENTRIES = 2_000_000;
 
+/** Case and separator-insensitive name, only for the node-presence check. */
+const looseName = (name: string): string =>
+  typeof name === "string" ? name.toLowerCase().replace(/[-_.]+/g, "-") : "";
+
 const projectKey = (ecosystem: string, path: string): string => `${ecosystem}\0${path}`;
 
 /**
@@ -106,10 +110,17 @@ export function computeImpact(
       }
       closures.set(name, set);
     }
-    // Exclusivity needs every direct dependency's closure: one missing
-    // entry (e.g. a name the lockfile spells differently) would make shared
-    // packages look exclusive, so the whole project gets `exclusive: null`.
-    const allClosures = [...closures.values()].every((set) => set !== undefined);
+    // Exclusivity needs the closure of every direct dependency that is in
+    // the installed tree: one missing entry (e.g. PyYAML declared, pyyaml in
+    // the lockfile) would make shared packages look exclusive, so the whole
+    // project gets `exclusive: null`. A direct dependency that is not a
+    // graph node at all (e.g. a Python build backend, never locked) installs
+    // nothing here and doesn't block it. Nodes are matched by a loose name
+    // (case and runs of - _ . folded) so a spelling mismatch still counts.
+    const nodeNames = new Set(usable.flatMap((g) => g.nodes.map((n) => looseName(n.name))));
+    const allClosures = [...closures.entries()].every(
+      ([name, set]) => set !== undefined || !nodeNames.has(looseName(name)),
+    );
     const direct = new Set(names);
     const reach = new Map<string, number>();
     for (const set of closures.values()) {
