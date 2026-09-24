@@ -28,6 +28,7 @@ import type { AddedLines } from "../checks/diff.js";
 import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
 import type { AnalysisJob, JobWorker } from "../jobs.js";
 import { pullRequestContext, type PullRequestClient } from "../pull-request/changes.js";
+import { isCacheable, ResultCache, resultCacheKey } from "./result-cache.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
 /** Adapter modules run by default, as specifiers core's isolation tier can import. */
@@ -70,6 +71,12 @@ export interface AnalysisWorkerOptions {
    * default the CLI scan uses; see GhostDepsAppOptions.recommendations.
    */
   readonly recommend?: RecommendationPolicy;
+  /**
+   * Same-SHA re-run result cache (#174): holds the posted check output.
+   * Defaults to an in-process cache bounded by bytes (16 MiB) and per
+   * repository (4 entries); false turns it off.
+   */
+  readonly resultCache?: ResultCache | false;
   /** Checkout scan limits/exclusions. Defaults to core's. */
   readonly scan?: CheckoutScanOptions;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
@@ -174,6 +181,13 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
     ((root: string, modules: readonly string[], run: AnalyseRunOptions) =>
       analyseCheckout(root, modules, run, options.scan));
   const timeoutMs = options.downloadTimeoutMs ?? 5 * 60 * 1000;
+  const cache =
+    options.resultCache === false ? undefined : (options.resultCache ?? new ResultCache());
+  const cacheContext = {
+    adapterModules,
+    recommend: options.recommend !== undefined,
+    ...(options.scan !== undefined ? { scan: options.scan } : {}),
+  };
 
   return async (job) => {
     const client = await options.clientFor(job);
@@ -196,6 +210,22 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         return;
       }
       checkRunId = claim.checkRunId;
+    }
+
+    const cacheKey = resultCacheKey(job, cacheContext);
+    if (job.trigger.kind === "rerequested") {
+      const hit = cache?.get(job.repository.id, cacheKey);
+      if (hit) {
+        try {
+          await reporter.completeRendered(target, checkRunId, hit);
+          options.log?.info({ job: job.key }, "re-run served from the same-SHA result cache");
+          return;
+        } catch (error) {
+          options.log?.warn({ job: job.key, err: error }, "cached re-run could not be reported");
+          await reporter.fail(target, checkRunId, failureReason(error));
+          return;
+        }
+      }
     }
 
     const workDir = await mkdtemp(join(options.workRoot ?? tmpdir(), "ghostdeps-"));
@@ -256,7 +286,10 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         }
       }
       const result = await analyse(await checkoutRoot(destDir), adapterModules, run);
-      await reporter.complete(target, checkRunId, result, added, appNotes);
+      const posted = await reporter.complete(target, checkRunId, result, added, appNotes);
+      if (cache && isCacheable(result, appNotes)) {
+        cache.set(job.repository.id, cacheKey, posted);
+      }
       options.log?.info({ job: job.key, findings: result.findings.length }, "analysis complete");
     } catch (error) {
       options.log?.warn({ job: job.key, err: error }, "analysis failed");

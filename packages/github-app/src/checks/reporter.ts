@@ -174,15 +174,25 @@ export class CheckReporter {
     });
   }
 
-  /** Completes the run with a success/neutral conclusion in one request. */
+  /** Completes the run with a success/neutral conclusion in one request and returns what it posted. */
   async complete(
     target: CheckTarget,
     checkRunId: number,
     result: AnalysisResult,
     added: AddedLines,
     appNotes: readonly string[] = [],
+  ): Promise<CheckOutput> {
+    const rendered = renderCheck(result, added, appNotes);
+    await this.completeRendered(target, checkRunId, rendered);
+    return rendered;
+  }
+
+  /** Completes the run with output that was already rendered (a cached re-run, #174). */
+  async completeRendered(
+    target: CheckTarget,
+    checkRunId: number,
+    { conclusion, output }: CheckOutput,
   ): Promise<void> {
-    const { conclusion, output } = renderCheck(result, added, appNotes);
     await this.client.checks.update({
       owner: target.owner,
       repo: target.repo,
