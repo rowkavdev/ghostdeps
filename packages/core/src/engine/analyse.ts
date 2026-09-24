@@ -20,6 +20,7 @@ import { normaliseAnalysisResult } from "../report/json.js";
 import { UNUSED_CONFIDENCE_CAP, capConfidence, severityOf } from "../report/severity.js";
 import { buildProjectTree } from "./project-tree.js";
 import { buildUnifiedGraph } from "./unified-graph.js";
+import { crossEcosystemOverlaps } from "./capability-overlap.js";
 import { boundSourceChanges } from "./source-changes.js";
 import type {
   AnalysisResult,
@@ -379,6 +380,11 @@ export async function assembleAnalysisResult(
   // Unified graph (#55), built after the policy has seen the full graphs:
   // the emission cap trims the output only and never changes a verdict.
   const unified = buildUnifiedGraph(graphs, dependencies, surface, context.maxGraphNodes);
+
+  // Cross-ecosystem capability overlap (#55): info findings with a
+  // dependency, added after the policy so they never feed a verdict. In a
+  // PR, only packages the PR added are reported.
+  findings.push(...crossEcosystemOverlaps(dependencies, pullRequestChanges));
 
   // Severity is core's output (ADR-0004). Stamp it on every finding BEFORE
   // the confidence cap below, so the cap limits only the displayed
