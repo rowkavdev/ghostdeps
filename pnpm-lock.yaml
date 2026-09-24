@@ -211,6 +211,10 @@ importers:
         version: 22.20.4
 
   packages/adapters/python:
+    dependencies:
+      smol-toml:
+        specifier: 1.9.0
+        version: 1.9.0
     devDependencies:
       '@ghostdeps/core':
         specifier: workspace:*
