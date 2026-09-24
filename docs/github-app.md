@@ -59,7 +59,7 @@ Renamed files count under both their old and new names. When a file list was cap
 5. Run `analyseRepositoryIsolated` with the JS/TS adapter in a worker thread (#112).
 6. Complete the run. Any failure ends as a `neutral` run titled "GhostDeps could not run" with a plain reason, never a crash or a silent drop. The checkout directory is always removed.
 
-PR-scoped annotation lines and dependency-change context arrive with #115.
+For pull request jobs (and re-runs GitHub links to a same-repo PR), the worker also reads the PR's dependency changes (#115). It fetches the `base...head` compare diff (the same token, `contents: read` only), reads each changed `package.json` at both SHAs as raw text, parses it statically with the JS/TS adapter, and runs core `extractDependencyChanges`. The result goes to core as `AnalyseOptions.pullRequestChanges`, so the policy scopes findings to the dependencies the PR touched, and annotations go only on lines the PR adds. If any part of that can't be read (diff too large, malformed or unreadable manifest), the worker analyses the full repository instead: scoping to a partial list could hide a finding. Fork re-runs carry no PR link and get a full analysis.
 
 ## Development
 

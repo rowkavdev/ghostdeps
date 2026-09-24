@@ -3,6 +3,7 @@
  *
  *   job -> repo-scoped installation client -> codeload tarball
  *       -> core extractTarball (inert, hostile-input validated)
+ *       -> PR jobs: dependency changes from the base...head diff (#115)
  *       -> core analyseRepositoryIsolated (adapters in worker threads, #112)
  *       -> CheckReporter
  *
@@ -18,10 +19,12 @@ import {
   ExtractionError,
   FsRepositoryHandle,
   type AnalysisResult,
+  type DependencyChange,
 } from "@ghostdeps/core";
 import type { AddedLines } from "../checks/diff.js";
 import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
 import type { AnalysisJob, JobWorker } from "../jobs.js";
+import { pullRequestContext, type PullRequestClient } from "../pull-request/changes.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
 /** Adapter modules run by default, as specifiers core's isolation tier can import. */
@@ -30,7 +33,13 @@ export const DEFAULT_ADAPTER_MODULES: readonly string[] = [
 ];
 
 /** Everything the worker needs from GitHub, scoped to one repository. */
-export type RepositoryClient = ChecksClient & TarballClient;
+export type RepositoryClient = ChecksClient & TarballClient & PullRequestClient;
+
+/** Per-run engine options the worker derives from the job. */
+export interface AnalyseRunOptions {
+  /** Present only for PR jobs whose dependency changes were read in full. */
+  readonly pullRequestChanges?: readonly DependencyChange[];
+}
 
 export interface AnalysisWorkerOptions {
   /** Our GitHub App id, so the reporter only ever counts our own runs. */
@@ -45,16 +54,34 @@ export interface AnalysisWorkerOptions {
   readonly downloadTimeoutMs?: number;
   readonly fetch?: typeof fetch;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
-  readonly analyse?: (root: string, adapterModules: readonly string[]) => Promise<AnalysisResult>;
+  readonly analyse?: (
+    root: string,
+    adapterModules: readonly string[],
+    run: AnalyseRunOptions,
+  ) => Promise<AnalysisResult>;
   readonly log?: {
     info(obj: object, msg: string): void;
     warn(obj: object, msg: string): void;
   };
 }
 
-async function analyseIsolated(root: string, adapterModules: readonly string[]) {
+async function analyseIsolated(
+  root: string,
+  adapterModules: readonly string[],
+  run: AnalyseRunOptions,
+) {
   const handle = await FsRepositoryHandle.open(root);
-  return analyseRepositoryIsolated(handle, { adapters: adapterModules });
+  return analyseRepositoryIsolated(handle, {
+    adapters: adapterModules,
+    ...(run.pullRequestChanges ? { pullRequestChanges: run.pullRequestChanges } : {}),
+  });
+}
+
+/** The PR base for jobs that have one; fork re-runs and pushes have none. */
+function pullRequestBase(job: AnalysisJob): string | undefined {
+  if (job.trigger.kind === "pull_request") return job.trigger.baseSha;
+  if (job.trigger.kind === "rerequested") return job.trigger.pullRequest?.baseSha;
+  return undefined;
 }
 
 /** Codeload tarballs wrap everything in one `owner-repo-sha/` directory. */
@@ -124,9 +151,27 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         }),
         { destDir },
       );
-      const result = await analyse(await checkoutRoot(destDir), adapterModules);
-      // PR-scoped annotation lines arrive with #115; until then no annotations.
-      const added: AddedLines = new Map();
+      let added: AddedLines = new Map();
+      const run: { pullRequestChanges?: readonly DependencyChange[] } = {};
+      const baseSha = pullRequestBase(job);
+      if (baseSha !== undefined) {
+        const pr = await pullRequestContext(client, {
+          owner: target.owner,
+          repo: target.repo,
+          baseSha,
+          headSha: job.headSha,
+        });
+        added = pr.added;
+        if (pr.complete) run.pullRequestChanges = pr.dependencyChanges.changes;
+        else {
+          // Scoping to a partial change list could hide a finding: analyse in full.
+          options.log?.warn(
+            { job: job.key, limitations: pr.dependencyChanges.limitations },
+            "PR dependency changes incomplete; analysing the full repository",
+          );
+        }
+      }
+      const result = await analyse(await checkoutRoot(destDir), adapterModules, run);
       await reporter.complete(target, checkRunId, result, added);
       options.log?.info({ job: job.key, findings: result.findings.length }, "analysis complete");
     } catch (error) {
