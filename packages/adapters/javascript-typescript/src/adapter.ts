@@ -14,6 +14,7 @@ import type {
 import { JS_ECOSYSTEM, detectJavaScriptTypeScript } from "./detect.js";
 import { buildDependencyGraph } from "./lockfile/index.js";
 import { parseManifest } from "./manifest.js";
+import { findScriptUsages } from "./references/scripts.js";
 import { findUsage } from "./usage/index.js";
 
 export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
@@ -23,7 +24,14 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
     capabilities: new Set<AdapterCapability>(["dependencyGraph", "usageAnalysis"]),
     detect: detectJavaScriptTypeScript,
     buildDependencyGraph,
-    findUsage,
+    // Source imports plus package.json script references (via="script", #132).
+    async findUsage(context: AdapterContext, dependency: Dependency) {
+      const [imports, scripts] = await Promise.all([
+        findUsage(context, dependency),
+        findScriptUsages(context, dependency),
+      ]);
+      return [...imports, ...scripts];
+    },
     async listDirectDependencies(
       context: AdapterContext,
       projects: ProjectRef[],
