@@ -22,7 +22,10 @@ node fixtures/hostile/generate.mjs
 ```
 
 `packages/core/src/checkout/hostile-fixtures.test.ts` runs every
-`archive-*` fixture in CI. `archive-clean-control` is the control case: a
+`archive-*` fixture in CI, and
+`packages/core/src/hostile/archive-generator.test.ts` regenerates the
+archives in a temp dir and fails on any byte difference, so the committed
+binaries and the generator cannot drift. `archive-clean-control` is the control case: a
 valid archive that must always extract, guarding against a validator that
 rejects everything.
 
@@ -57,12 +60,12 @@ correct analysis must (or must not) report, using a small assertion
 vocabulary:
 
 - `parse.mustNotCrash` - malformed input degrades confidence, never crashes
-- `detection.excludes <ecosystem>` - adapter must stay below threshold
-- `dependencies.includes/excludes <name>` - dependency model facts
-- `unused.excludes <name>` - must never be reported unused
-- `projects.includes/excludes <path>` - monorepo project discovery
-- `limitations.includes "<text>"` - the analysis must say what it could not do
-- `confidence.atMost <level>` - verdict confidence ceiling
+- `detection.excludes` (`ecosystem`) - adapter must stay below threshold
+- `dependencies.includes` / `dependencies.excludes` (`dependency`) - dependency model facts
+- `unused.excludes` (`dependency`) - must never be reported unused
+- `projects.includes` / `projects.excludes` (`path`) - monorepo project discovery
+- `limitations.includes` (`contains`) - the analysis must say what it could not do
+- `confidence.atMost` (`value`) - verdict confidence ceiling
 
 A scenario may set `"posixOnly": true` when its tree relies on real
 symlinks or other POSIX filesystem semantics that do not survive a
