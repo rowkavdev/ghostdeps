@@ -185,6 +185,15 @@ importers:
         specifier: ^8.18.0
         version: 8.70.1(eslint@10.11.0)(typescript@5.9.3)
 
+  packages/adapters/go:
+    devDependencies:
+      '@ghostdeps/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.4
+
   packages/adapters/javascript-typescript:
     dependencies:
       typescript:
