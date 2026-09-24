@@ -65,6 +65,16 @@ Renamed files count under both their old and new names. When a file list was cap
 
 For pull request jobs (and re-runs GitHub links to a same-repo PR), the worker also reads the PR's dependency changes (#115). It fetches the `base...head` compare diff (the same token, `contents: read` only), reads each changed `package.json` at both SHAs as raw text, parses it statically with the JS/TS adapter, and runs core `extractDependencyChanges`. The result goes to core as `AnalyseOptions.pullRequestChanges`, so the policy scopes findings to the dependencies the PR touched, and annotations go only on lines the PR adds. If any part of that can't be read (diff too large, malformed or unreadable manifest), the worker analyses the full repository instead: scoping to a partial list could hide a finding. Fork re-runs carry no PR link and get a full analysis.
 
+## Install footprint metadata
+
+Core can add an approximate install footprint to each direct dependency's impact entry (#59 slice B), from sizes the caller supplies through a `PackageMetadataProvider`. The app's provider is `NpmMetadataService` in `worker/npm-metadata.ts` (#174). It is not wired into analysis yet: that lands after core's true-lower-bound fix for footprint bytes (#288), and it will be off by default.
+
+- npm only (`javascript-typescript`). Sizes are the registry's `dist.unpackedSize` for each exact name@version. PyPI, crates.io and Go get no footprint.
+- Names and versions from lockfiles are validated before they reach a URL: npm name syntax and exact semver only. Anything else stays unsized.
+- Sizes and known misses are cached per name@version in an LRU (50,000 entries). Whole answers are also cached under a hash of the resolved dependency set, so a source-only PR, whose lockfiles are unchanged, is answered without the registry. Any change to a resolved name@version misses.
+- Each run gets a budget of 300 registry requests, 8 at a time, with a 3 s per-request timeout and an 8 s deadline for the run (core stops waiting at 10 s). An answer cut short by the budget, deadline or a failed request is used but not cached as a whole, so the next run fills the gaps.
+- Any failure leaves the package unsized. The footprint is advisory: it never changes a conclusion, and a registry outage never shows as an error.
+
 ## API rate limits
 
 What the app costs per analysis against GitHub's rate limits, what already protects it, and the open gaps: [github-api-limits.md](github-api-limits.md) (#37).
