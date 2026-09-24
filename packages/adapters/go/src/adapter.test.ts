@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { runAdapterContractTests } from "@ghostdeps/core";
 import type { AdapterContext } from "@ghostdeps/core";
-import { createGoAdapter } from "./adapter.js";
+import { createGoAdapter, GRAPH_EDGES_NOTE } from "./adapter.js";
 import { FIXTURES_ROOT, fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
 
 interface Expected {
@@ -79,9 +79,21 @@ describe("Go adapter against fixtures/go", () => {
     });
   }
 
-  it("states the edgeless graph as evidence", async () => {
-    const detection = await adapter.detect(ctx("single-module"));
-    assert.ok(detection.evidence.some((e) => e.kind === "graph-edges-unavailable"));
+  it("states the edgeless graph as one run-level note, not as evidence (#205)", async () => {
+    const detection = await adapter.detect(ctx("multi-module"));
+    assert.ok(!detection.evidence.some((e) => e.kind === "graph-edges-unavailable"));
+    assert.deepEqual(await adapter.notes!(ctx("multi-module"), detection.projects), [
+      { statement: GRAPH_EDGES_NOTE },
+    ]);
+  });
+
+  it("adds no note when no Go project was detected", async () => {
+    const empty: AdapterContext = {
+      repository: memoryHandle({ "README.md": "x" }),
+      network: { mode: "offline" },
+    };
+    const detection = await adapter.detect(empty);
+    assert.deepEqual(await adapter.notes!(empty, detection.projects), []);
   });
 
   it("states malformed go.mod lines as evidence with file and line", async () => {
