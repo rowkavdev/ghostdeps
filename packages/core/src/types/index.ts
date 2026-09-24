@@ -349,7 +349,12 @@ export interface DependencyFootprint {
   approximate: true;
   /** Where the sizes come from, as the provider names it, e.g. "npm unpackedSize". */
   basis: string;
-  /** Summed bytes over the sized packages; a lower bound when coverage is partial. */
+  /**
+   * Summed bytes over the sized packages. Neither bound is guaranteed:
+   * partial coverage undercounts, and because closures are by name, every
+   * locked version of a member is counted, which overcounts when versions
+   * only other dependencies pull in are locked too (#288).
+   */
   bytes: number;
   /**
    * Sized packages out of all packages counted: the dependency itself plus
