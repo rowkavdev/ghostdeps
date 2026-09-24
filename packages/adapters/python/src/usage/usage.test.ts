@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import path from "node:path";
+import { analyseDirectory, createDefaultPolicy } from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
+import { FIXTURES_ROOT } from "../testing/fs-handle.js";
 import { createPythonAdapter } from "../adapter.js";
 import { memoryHandle } from "../testing/fs-handle.js";
 import { extractPythonImports } from "./imports.js";
 import { splitPythonStatements } from "./lexer.js";
-import { findPythonUsage } from "./scan.js";
+import { buildRequirementLine, findPythonUsage } from "./scan.js";
 
 const modules = (source: string) => extractPythonImports(source).imports.map((i) => i.module);
 
@@ -186,10 +189,60 @@ describe("findPythonUsage", () => {
     assert.equal(pandas[0]?.typeOnly, true);
   });
 
-  it("returns no usages (never a verdict) for unimported and build-system deps", async () => {
+  it("returns no usages (never a verdict) for an unimported dependency", async () => {
     assert.deepEqual(await findPythonUsage(ctx(), dep("unused-lib")), []);
-    assert.deepEqual(await findPythonUsage(ctx(), dep("hatchling", "build")), []);
   });
+
+  it("gives build-system requirements declaration-site usage (#268 ruling)", async () => {
+    assert.deepEqual(await findPythonUsage(ctx(), dep("hatchling", "build")), [
+      {
+        dependency: "hatchling",
+        file: "pyproject.toml",
+        line: 5,
+        form: "unknown",
+        via: "config",
+        symbols: [],
+      },
+    ]);
+  });
+});
+
+describe("buildRequirementLine", () => {
+  it("finds the requirement line inside [build-system], normalising names", () => {
+    const text =
+      '[project]\nname = "a"\ndependencies = ["poetry-core"]\n\n[build-system]\nrequires = [\n  "setuptools>=68",\n  "Poetry_Core>=1.9",\n]\n[tool.x]\ny = "poetry-core"\n';
+    assert.equal(buildRequirementLine(text, "poetry-core"), 8);
+    assert.equal(buildRequirementLine(text, "setuptools"), 7);
+    // Not listed: falls back to the requires line.
+    assert.equal(buildRequirementLine(text, "wheel"), 6);
+    assert.equal(buildRequirementLine("[project]\n", "x"), 1);
+  });
+});
+
+describe("no-imports notes never fire for build-system requirements (#268)", () => {
+  for (const scenario of ["poetry-basic", "poetry-lock-graph", "uv-lock-graph", "pep621-uv"]) {
+    it(`python/${scenario}`, async () => {
+      const result = await analyseDirectory(path.join(FIXTURES_ROOT, "python", scenario), {
+        adapters: [createPythonAdapter()],
+        network: { mode: "offline" },
+        recommend: createDefaultPolicy({}),
+      });
+      const build = new Set(
+        result.dependencies.filter((d) => d.kind === "build").map((d) => d.name),
+      );
+      assert.ok(build.size > 0, `${scenario}: fixture declares a build-system requirement`);
+      const bad = result.findings.filter(
+        (f) =>
+          f.dependency !== undefined &&
+          build.has(f.dependency) &&
+          f.rule !== undefined &&
+          /no-imports|unused/.test(f.rule),
+      );
+      assert.deepEqual(bad, [], `${scenario}: build requirement flagged`);
+      // And no unused verdicts for Python at all in M2.
+      assert.ok(!result.findings.some((f) => f.rule === "unused"));
+    });
+  }
 });
 
 describe("usage capability semantics (#261)", () => {

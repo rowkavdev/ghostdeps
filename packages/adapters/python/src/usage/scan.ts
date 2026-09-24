@@ -8,8 +8,14 @@
  * Semantics pinned for M2: this reports Usage evidence only. The adapter
  * does not declare "referenceAnalysis" and returns the plain-array form, so
  * "no usages" stays ambiguous and policy never reaches an "unused" verdict
- * for Python (same rule as Go and Rust). Build-system requirements are
- * never unused-eligible either way.
+ * for Python (same rule as Go and Rust).
+ *
+ * Build-system requirements ([build-system] requires, PEP 518) are used by
+ * declaration: the build frontend installs and runs them, and the project
+ * never imports them. Each one gets declaration-site usage evidence
+ * (via "config", anchored on its line in pyproject.toml, the same family
+ * as script/config references, #132), so no-imports notes never fire for
+ * them (lead ruling on #268).
  *
  * PR-mode removed-line evidence (removedInPr) is not produced yet; it waits
  * on the shared base-reconstruction helper (#259).
@@ -38,11 +44,16 @@ const isPythonSource = (path: string) => path.endsWith(".py") || path.endsWith("
 
 interface ProjectScan {
   files: { path: string; parsed: PythonFileImports }[];
+  /** Build-system requirement name -> its declaration site. */
+  buildDeclarations: Map<string, { file: string; line: number }>;
   /** Files not scanned: over MAX_PYTHON_SOURCE_BYTES or unreadable. */
   skipped: { path: string; reason: "too-large" | "unreadable" }[];
   resolver: ImportResolver;
 }
 
+// Keyed on the RepositoryHandle (the JS adapter keys on AdapterContext).
+// Handles are created per analysis run, so a cached scan never outlives the
+// repository snapshot it read.
 const cache = new WeakMap<RepositoryHandle, Map<string, Promise<ProjectScan>>>();
 
 async function scanProject(context: AdapterContext, project: ProjectRef): Promise<ProjectScan> {
@@ -73,6 +84,23 @@ async function doScan(context: AdapterContext, project: ProjectRef): Promise<Pro
     topLevel: await readTopLevelMetadata(repo, project.path, owned),
   });
 
+  const buildDeclarations = new Map<string, { file: string; line: number }>();
+  const texts = new Map<string, string | undefined>();
+  for (const { dependency } of manifests.requirements) {
+    if (dependency.kind !== "build") continue;
+    if (!texts.has(dependency.declaredIn)) {
+      texts.set(
+        dependency.declaredIn,
+        await repo.readFile(dependency.declaredIn).catch(() => undefined),
+      );
+    }
+    const text = texts.get(dependency.declaredIn);
+    buildDeclarations.set(dependency.name, {
+      file: dependency.declaredIn,
+      line: text === undefined ? 1 : buildRequirementLine(text, dependency.name),
+    });
+  }
+
   const files: ProjectScan["files"] = [];
   const skipped: ProjectScan["skipped"] = [];
   for (const file of owned) {
@@ -94,7 +122,29 @@ async function doScan(context: AdapterContext, project: ProjectRef): Promise<Pro
     }
     files.push({ path: file, parsed: extractPythonImports(text) });
   }
-  return { files, skipped, resolver };
+  return { files, buildDeclarations, skipped, resolver };
+}
+
+/**
+ * 1-based line of a requirement inside [build-system] of a pyproject.toml:
+ * the line whose string starts with the name, else the `requires` line,
+ * else the table header. Names compare PEP 503-normalised.
+ */
+export function buildRequirementLine(text: string, name: string): number {
+  const lines = text.split(/\r?\n/);
+  const want = normaliseName(name);
+  const header = lines.findIndex((l) => /^\s*\[\s*build-system\s*\]/.test(l));
+  if (header === -1) return 1;
+  let requires = -1;
+  for (let i = header + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (/^\s*\[/.test(line)) break;
+    if (requires === -1 && /^\s*requires\s*=/.test(line)) requires = i;
+    for (const m of line.matchAll(/["']\s*([A-Za-z0-9][A-Za-z0-9._-]*)/g)) {
+      if (normaliseName(m[1]!) === want) return i + 1;
+    }
+  }
+  return (requires === -1 ? header : requires) + 1;
 }
 
 export async function findPythonUsage(
@@ -104,6 +154,17 @@ export async function findPythonUsage(
   const scan = await scanProject(context, dependency.project);
   const target = normaliseName(dependency.name);
   const usages: Usage[] = [];
+  const build = dependency.kind === "build" ? scan.buildDeclarations.get(target) : undefined;
+  if (build !== undefined) {
+    usages.push({
+      dependency: dependency.name,
+      file: build.file,
+      line: build.line,
+      form: "unknown",
+      via: "config",
+      symbols: [],
+    });
+  }
   for (const { path, parsed } of scan.files) {
     for (const imp of parsed.imports) {
       const resolved = scan.resolver.resolve(imp.module);
