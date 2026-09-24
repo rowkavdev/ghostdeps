@@ -4,10 +4,13 @@ import { normaliseName } from "./pep508.js";
 import {
   ImportResolver,
   KNOWN_IMPORT_NAMES,
+  NAMESPACE_ROOTS,
   distributionFromMetadataPath,
   parseTopLevel,
+  readTopLevelMetadata,
   topLevelModule,
 } from "./import-map.js";
+import { memoryHandle } from "./testing/fs-handle.js";
 import { STDLIB_MODULES } from "./stdlib.js";
 
 describe("KNOWN_IMPORT_NAMES data", () => {
@@ -24,9 +27,11 @@ describe("KNOWN_IMPORT_NAMES data", () => {
     }
   });
 
-  it("keys are valid top-level identifiers", () => {
+  it("keys are identifiers, dotted only under a namespace root", () => {
     for (const module of Object.keys(KNOWN_IMPORT_NAMES)) {
-      assert.match(module, /^[A-Za-z_][A-Za-z0-9_]*$/);
+      assert.match(module, /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/);
+      if (module.includes(".")) assert.ok(NAMESPACE_ROOTS.has(module.split(".")[0]!), module);
+      else assert.ok(!NAMESPACE_ROOTS.has(module), `bare namespace root ${module}`);
     }
   });
 });
@@ -48,13 +53,13 @@ describe("ImportResolver", () => {
     assert.deepEqual(resolver.resolve("PIL.Image"), {
       kind: "dependency",
       module: "PIL",
-      distribution: "pillow",
+      distributions: ["pillow"],
       via: "table",
     });
     assert.equal(resolver.resolve("yaml").kind, "dependency");
-    assert.equal(
-      (resolver.resolve("sklearn.linear_model") as { distribution: string }).distribution,
-      "scikit-learn",
+    assert.deepEqual(
+      (resolver.resolve("sklearn.linear_model") as { distributions: string[] }).distributions,
+      ["scikit-learn"],
     );
   });
 
@@ -63,7 +68,7 @@ describe("ImportResolver", () => {
     assert.deepEqual(r, {
       kind: "dependency",
       module: "psycopg2",
-      distribution: "psycopg2-binary",
+      distributions: ["psycopg2-binary"],
       via: "table",
     });
   });
@@ -72,12 +77,12 @@ describe("ImportResolver", () => {
     assert.deepEqual(resolver.resolve("requests.adapters"), {
       kind: "dependency",
       module: "requests",
-      distribution: "requests",
+      distributions: ["requests"],
       via: "name",
     });
-    assert.equal(
-      (resolver.resolve("typing_extensions") as { distribution: string }).distribution,
-      "typing-extensions",
+    assert.deepEqual(
+      (resolver.resolve("typing_extensions") as { distributions: string[] }).distributions,
+      ["typing-extensions"],
     );
   });
 
@@ -115,11 +120,67 @@ describe("ImportResolver", () => {
     assert.deepEqual(withMeta.resolve("oddmodule.sub"), {
       kind: "dependency",
       module: "oddmodule",
-      distribution: "weird-dist",
+      distributions: ["weird-dist"],
       via: "metadata",
     });
     // Metadata for an undeclared dist does not shadow a declared table match.
     assert.equal((withMeta.resolve("yaml") as { via: string }).via, "table");
+  });
+
+  it("resolves namespace packages on the longest dotted table key", () => {
+    const ns = new ImportResolver({
+      declared: ["protobuf", "google-cloud-storage", "google-api-python-client"],
+    });
+    assert.deepEqual(ns.resolve("google.cloud.storage.blob"), {
+      kind: "dependency",
+      module: "google.cloud.storage",
+      distributions: ["google-cloud-storage"],
+      via: "table",
+    });
+    assert.deepEqual(
+      (ns.resolve("google.protobuf.message") as { distributions: string[] }).distributions,
+      ["protobuf"],
+    );
+    assert.deepEqual(
+      (ns.resolve("googleapiclient.discovery") as { distributions: string[] }).distributions,
+      ["google-api-python-client"],
+    );
+    // A bare namespace root, or an unknown child, is never credited.
+    assert.equal(ns.resolve("google").kind, "unresolved");
+    assert.equal(ns.resolve("google.cloud.unknownsvc").kind, "unresolved");
+  });
+
+  it("does not credit a namespace root through metadata or the name rule", () => {
+    const ns = new ImportResolver({
+      declared: ["google", "google-cloud-storage"],
+      topLevel: new Map([["google-cloud-storage", ["google"]]]),
+    });
+    assert.equal(ns.resolve("google.something").kind, "unresolved");
+    assert.deepEqual(
+      (ns.resolve("google.cloud.storage") as { distributions: string[] }).distributions,
+      ["google-cloud-storage"],
+    );
+  });
+
+  it("credits every declared alternative instead of picking one", () => {
+    const both = new ImportResolver({ declared: ["opencv-python", "opencv-python-headless"] });
+    assert.deepEqual(both.resolve("cv2"), {
+      kind: "dependency",
+      module: "cv2",
+      distributions: ["opencv-python", "opencv-python-headless"],
+      via: "table",
+    });
+    const meta = new ImportResolver({
+      declared: ["dist-a", "dist-b"],
+      topLevel: new Map([
+        ["dist-b", ["shared"]],
+        ["dist-a", ["shared"]],
+      ]),
+    });
+    assert.deepEqual((meta.resolve("shared") as { distributions: string[] }).distributions, [
+      "dist-a",
+      "dist-b",
+    ]);
   });
 
   it("lists the import names a distribution can appear under", () => {
@@ -150,5 +211,18 @@ describe("metadata helpers", () => {
       "zope-interface",
     );
     assert.equal(distributionFromMetadataPath("top_level.txt"), undefined);
+  });
+
+  it("readTopLevelMetadata skips excluded dirs and oversized files", async () => {
+    const meta = await readTopLevelMetadata(
+      memoryHandle({
+        "libs/Good-1.0.dist-info/top_level.txt": "good\n",
+        ".venv/lib/site-packages/Bad-1.0.dist-info/top_level.txt": "bad\n",
+        "vendor/Vend-1.0.dist-info/top_level.txt": "vend\n",
+        "libs/Huge-1.0.dist-info/top_level.txt": "x\n".repeat(40_000),
+      }),
+      ".",
+    );
+    assert.deepEqual([...meta.keys()], ["good"]);
   });
 });

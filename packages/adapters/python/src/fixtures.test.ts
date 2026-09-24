@@ -137,7 +137,7 @@ describe("python fixtures (issue #48)", () => {
           });
           for (const [importPath, want] of Object.entries(cases)) {
             const got = resolver.resolve(importPath);
-            const actual = got.kind === "dependency" ? got.distribution : got.kind;
+            const actual = got.kind === "dependency" ? got.distributions.join(",") : got.kind;
             assert.equal(actual, want, `${scenario}: ${root} import ${importPath}`);
           }
         }

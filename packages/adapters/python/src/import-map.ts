@@ -13,16 +13,24 @@
  *    normalised import name.
  *
  * Anything else is "unresolved" and reported as such, never guessed.
+ *
+ * Known limit: a declared stdlib backport (`typing`, `dataclasses`, `enum34`
+ * for `enum`) is shadowed by rule 1, so its imports resolve to "stdlib".
+ * A later unused check must not treat "declared but shadowed by stdlib" as
+ * high-confidence unused.
  */
-import type { RepositoryHandle } from "@ghostdeps/core";
+import { hasExcludedSegment, type RepositoryHandle } from "@ghostdeps/core";
 import { normaliseName } from "./pep508.js";
 import { STDLIB_MODULES } from "./stdlib.js";
 
 /**
  * Known import names whose distribution name differs. Keys are top-level
  * import names (case-sensitive, as imported); values are PEP 503 names.
- * Several distributions can provide one module (`jwt`, `magic`), so values
- * are lists and resolution prefers whichever one the project declares.
+ * Several distributions can provide one module (`cv2`, `psycopg2`), so values
+ * are lists; resolution credits every one the project declares.
+ *
+ * Keys may be dotted for namespace packages (`google.protobuf`): the
+ * longest matching dotted prefix of the import wins.
  */
 export const KNOWN_IMPORT_NAMES: Readonly<Record<string, readonly string[]>> = {
   attr: ["attrs"],
@@ -35,7 +43,14 @@ export const KNOWN_IMPORT_NAMES: Readonly<Record<string, readonly string[]>> = {
   dotenv: ["python-dotenv"],
   fitz: ["pymupdf"],
   git: ["gitpython"],
-  google: ["protobuf", "google-api-python-client", "google-cloud-storage", "google-auth"],
+  "google.auth": ["google-auth"],
+  "google.cloud.bigquery": ["google-cloud-bigquery"],
+  "google.cloud.pubsub": ["google-cloud-pubsub"],
+  "google.cloud.pubsub_v1": ["google-cloud-pubsub"],
+  "google.cloud.storage": ["google-cloud-storage"],
+  "google.oauth2": ["google-auth"],
+  "google.protobuf": ["protobuf"],
+  googleapiclient: ["google-api-python-client"],
   jose: ["python-jose"],
   jwt: ["pyjwt"],
   magic: ["python-magic"],
@@ -58,10 +73,36 @@ export const KNOWN_IMPORT_NAMES: Readonly<Record<string, readonly string[]>> = {
   zmq: ["pyzmq"],
 };
 
+/**
+ * Namespace package roots shared by unrelated distributions. An import under
+ * one of these resolves only through a dotted table key; the bare root is
+ * never credited through metadata or the name rule (`import google` alone
+ * says nothing about protobuf vs google-cloud-storage).
+ */
+export const NAMESPACE_ROOTS: ReadonlySet<string> = new Set([
+  "azure",
+  "backports",
+  "google",
+  "jaraco",
+  "sphinxcontrib",
+  "zope",
+]);
+
 export type ImportResolution =
   | { kind: "stdlib"; module: string }
   | { kind: "first-party"; module: string }
-  | { kind: "dependency"; module: string; distribution: string; via: "metadata" | "table" | "name" }
+  | {
+      kind: "dependency";
+      module: string;
+      /**
+       * Every declared distribution the import is credited to, sorted. More
+       * than one means the project declares alternatives that provide the
+       * same module (opencv-python and opencv-python-headless); each is
+       * credited, none is picked silently.
+       */
+      distributions: string[];
+      via: "metadata" | "table" | "name";
+    }
   | { kind: "unresolved"; module: string; candidates: string[] };
 
 export interface ImportResolverInput {
@@ -101,23 +142,42 @@ export class ImportResolver {
     const module = topLevelModule(importPath);
     if (STDLIB_MODULES.has(module)) return { kind: "stdlib", module };
     if (this.firstParty.has(module)) return { kind: "first-party", module };
+    const declaredOnly = (dists: readonly string[]) =>
+      [...new Set(dists.filter((d) => this.declared.has(d)))].sort();
 
-    const fromMetadata = (this.provides.get(module) ?? []).filter((d) => this.declared.has(d));
-    if (fromMetadata[0] !== undefined) {
-      return { kind: "dependency", module, distribution: fromMetadata[0], via: "metadata" };
+    // Longest dotted table key first: google.cloud.storage before google.
+    const segments = importPath.split(".");
+    let known: readonly string[] = [];
+    let knownKey = module;
+    for (let k = segments.length; k >= 1; k--) {
+      const key = segments.slice(0, k).join(".");
+      const hit = KNOWN_IMPORT_NAMES[key];
+      if (hit !== undefined) {
+        known = hit;
+        knownKey = key;
+        break;
+      }
     }
-    const known = KNOWN_IMPORT_NAMES[module] ?? [];
-    const fromTable = known.filter((d) => this.declared.has(d));
-    if (fromTable[0] !== undefined) {
-      return { kind: "dependency", module, distribution: fromTable[0], via: "table" };
+    const namespaced = NAMESPACE_ROOTS.has(module);
+    if (!namespaced) {
+      const fromMetadata = declaredOnly(this.provides.get(module) ?? []);
+      if (fromMetadata.length > 0) {
+        return { kind: "dependency", module, distributions: fromMetadata, via: "metadata" };
+      }
     }
-    const byName = normaliseName(module);
-    if (this.declared.has(byName)) {
-      return { kind: "dependency", module, distribution: byName, via: "name" };
+    const fromTable = declaredOnly(known);
+    if (fromTable.length > 0) {
+      return { kind: "dependency", module: knownKey, distributions: fromTable, via: "table" };
+    }
+    if (!namespaced) {
+      const byName = normaliseName(module);
+      if (this.declared.has(byName)) {
+        return { kind: "dependency", module, distributions: [byName], via: "name" };
+      }
     }
     // Candidates are reported for the reader; none is attributed.
     const candidates = [...new Set([...(this.provides.get(module) ?? []), ...known])];
-    return { kind: "unresolved", module, candidates };
+    return { kind: "unresolved", module: namespaced ? knownKey : module, candidates };
   }
 
   /** Every import name that would resolve to `distribution` (for usage search). */
@@ -159,7 +219,10 @@ const MAX_TOP_LEVEL_BYTES = 64 * 1024;
 
 /**
  * Collect committed top_level.txt metadata under a project root
- * (distribution -> modules). Unreadable or oversized files are skipped.
+ * (distribution -> modules). Excluded directories (virtualenvs,
+ * site-packages, vendor/ ...) are skipped, as in detection; unreadable or
+ * oversized files are skipped. Pass `files` (listed once) when resolving
+ * many projects, so the repository is not re-listed per project.
  */
 export async function readTopLevelMetadata(
   repository: RepositoryHandle,
@@ -169,16 +232,20 @@ export async function readTopLevelMetadata(
   const prefix = projectPath === "." ? "" : `${projectPath}/`;
   const out = new Map<string, string[]>();
   for (const file of files ?? (await repository.listFiles())) {
-    if (!file.startsWith(prefix)) continue;
+    if (!file.startsWith(prefix) || hasExcludedSegment(file)) continue;
     const dist = distributionFromMetadataPath(file);
     if (dist === undefined) continue;
-    let text: string;
+    let text: string | undefined;
     try {
-      text = await repository.readFile(file);
+      // Enforce the cap at read time when the handle supports it.
+      text =
+        repository.readFileHead !== undefined
+          ? await repository.readFileHead(file, MAX_TOP_LEVEL_BYTES + 1)
+          : await repository.readFile(file);
     } catch {
       continue;
     }
-    if (Buffer.byteLength(text, "utf8") > MAX_TOP_LEVEL_BYTES) continue;
+    if (text === undefined || Buffer.byteLength(text, "utf8") > MAX_TOP_LEVEL_BYTES) continue;
     out.set(dist, [...new Set([...(out.get(dist) ?? []), ...parseTopLevel(text)])]);
   }
   return out;

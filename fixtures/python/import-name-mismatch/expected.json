@@ -1,5 +1,5 @@
 {
-  "description": "Import name -> distribution mapping (#46). Table mismatches (PIL -> pillow, yaml -> pyyaml, sklearn -> scikit-learn), the declared psycopg2 alternative (psycopg2-binary), the default name rule (requests), committed top_level.txt metadata (oddmod -> weird-tool), stdlib (os, tomllib) and first-party (src/shopapp) imports. cv2 has a known mapping but opencv is not declared, and mystery_lib is unknown: both stay unresolved, never guessed.",
+  "description": "Import name -> distribution mapping (#46). Table mismatches (PIL -> pillow, yaml -> pyyaml, sklearn -> scikit-learn), the declared psycopg2 alternative (psycopg2-binary), the default name rule (requests), committed top_level.txt metadata under libs/ (oddmod -> weird-tool; vendor/ and virtualenvs are excluded, as in detection), stdlib (os, tomllib) and first-party (src/shopapp) imports. cv2 has a known mapping but opencv is not declared, and mystery_lib is unknown: both stay unresolved, never guessed.",
   "detection": { "minConfidence": 0.8, "projects": ["."] },
   "imports": {
     ".": {
