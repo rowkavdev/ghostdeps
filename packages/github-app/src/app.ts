@@ -1,7 +1,7 @@
 import type { ApplicationFunction, Probot } from "probot";
 import { BusyLimiter } from "./checks/busy-limiter.js";
 import { CheckReporter } from "./checks/reporter.js";
-import { appIdFromEnv } from "./config.js";
+import { appIdFromEnv, sourcePrTriggerFromEnv } from "./config.js";
 import { changedFiles } from "./events/changed-files.js";
 import { checkName } from "./checks/render.js";
 import { analysedEvents, decide, type ChangedFilesLookup } from "./events/filter.js";
@@ -23,6 +23,12 @@ export interface GhostDepsAppOptions {
    * no check runs are written.
    */
   readonly appId?: number;
+  /**
+   * Analyse PRs that change only source files (#101). Defaults to the
+   * GHOSTDEPS_SOURCE_PR_TRIGGER environment variable ("true" or "1"); off
+   * otherwise, until the "last import removed" finding lands.
+   */
+  readonly sourcePrTrigger?: boolean;
   /** Limits "busy" check runs when the queue is full. Defaults to one per repository per minute. */
   readonly busyLimiter?: BusyLimiter;
 }
@@ -30,6 +36,7 @@ export interface GhostDepsAppOptions {
 export function createGhostDepsApp(options: GhostDepsAppOptions = {}): ApplicationFunction {
   return (app: Probot, { addHandler }) => {
     const appId = options.appId ?? appIdFromEnv();
+    const sourcePrTrigger = options.sourcePrTrigger ?? sourcePrTriggerFromEnv();
     const busyLimiter = options.busyLimiter ?? new BusyLimiter();
     const worker: JobWorker =
       options.worker ??
@@ -86,7 +93,9 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             throw error;
           }
         };
-        const decision = await decide(context.name, context.payload, context.id, lookup);
+        const decision = await decide(context.name, context.payload, context.id, lookup, {
+          sourcePrTrigger,
+        });
         if (!decision.analyse) {
           context.log.debug({ delivery: context.id, reason: decision.reason }, "event skipped");
           return;

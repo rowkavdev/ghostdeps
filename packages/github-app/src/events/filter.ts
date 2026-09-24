@@ -143,17 +143,27 @@ export function preFilter(eventName: string, payload: unknown): PreFilterResult 
 /**
  * Stage 2: decide from the changed files. Uses the payload's list when it is
  * complete, otherwise the injected lookup. Quiet short-circuit when no
- * dependency manifest or lockfile changed and, for PRs, no analysable
- * source file changed either (#101).
+ * dependency manifest or lockfile changed and, for PRs with the source
+ * trigger on, no analysable source file changed either (#101).
  *
  * When the file list is incomplete or the lookup fails, it analyses anyway:
  * a skipped relevant change is worse than one extra job for an irrelevant one.
  */
+export interface DecideOptions {
+  /**
+   * Also analyse PRs that change only analysable source (#101). Off by
+   * default until the "last import removed" finding path lands; until
+   * then a source-only analysis can only post the quiet check.
+   */
+  readonly sourcePrTrigger?: boolean;
+}
+
 export async function decide(
   eventName: string,
   payload: unknown,
   deliveryId: string,
   lookup: ChangedFilesLookup,
+  options: DecideOptions = {},
 ): Promise<Decision> {
   const pre = preFilter(eventName, payload);
   if ("skip" in pre) return { analyse: false, reason: pre.skip };
@@ -172,12 +182,15 @@ export async function decide(
   const dependencyFiles = dependencyFilesIn(changed.files);
   // Source-only PRs are analysed too (#101): removing the last import of a
   // dependency is what makes it unused. Pushes stay manifest-only.
-  const sourceFiles = eventName === "pull_request" ? sourceFilesIn(changed.files) : [];
+  const sourceFiles =
+    eventName === "pull_request" && options.sourcePrTrigger === true
+      ? sourceFilesIn(changed.files)
+      : [];
   if (dependencyFiles.length === 0 && sourceFiles.length === 0 && changed.complete) {
     return {
       analyse: false,
       reason:
-        eventName === "pull_request"
+        eventName === "pull_request" && options.sourcePrTrigger === true
           ? "no dependency manifest, lockfile or analysable source changed"
           : "no dependency manifest or lockfile changed",
     };

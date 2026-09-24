@@ -187,8 +187,15 @@ describe("decide", () => {
     }
   });
 
-  it("analyses a source-only PR (#101)", async () => {
+  it("skips a source-only PR while the source trigger is off (the default)", async () => {
     const d = await decide("pull_request", pr("opened"), "g1", files(["src/a.ts", "README.md"]));
+    assert.deepEqual(d, { analyse: false, reason: "no dependency manifest or lockfile changed" });
+  });
+
+  it("analyses a source-only PR with the source trigger on (#101)", async () => {
+    const d = await decide("pull_request", pr("opened"), "g1", files(["src/a.ts", "README.md"]), {
+      sourcePrTrigger: true,
+    });
     assert.equal(d.analyse, true);
     if (d.analyse) {
       assert.deepEqual(d.dependencyFiles, []);
@@ -196,12 +203,13 @@ describe("decide", () => {
     }
   });
 
-  it("skips a PR that touches neither dependency files nor analysable source", async () => {
+  it("with the trigger on, skips a PR that touches neither dependency files nor analysable source", async () => {
     const d = await decide(
       "pull_request",
       pr("opened"),
       "g1",
       files(["README.md", "docs/x.md", "dist/index.js", "node_modules/a/index.js", "app.min.js"]),
+      { sourcePrTrigger: true },
     );
     assert.deepEqual(d, {
       analyse: false,
@@ -210,7 +218,7 @@ describe("decide", () => {
   });
 
   it("keeps pushes manifest-only: source-only pushes are skipped", async () => {
-    const d = await decide("push", push(), "g1", noLookup);
+    const d = await decide("push", push(), "g1", noLookup, { sourcePrTrigger: true });
     assert.deepEqual(d, { analyse: false, reason: "no dependency manifest or lockfile changed" });
   });
 
