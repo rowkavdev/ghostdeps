@@ -11,12 +11,27 @@
     {
       "kind": "info",
       "severity": "info",
+      "dependency": "lightningcss"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
       "dependency": "react-fake-client"
     },
     {
       "kind": "info",
       "severity": "info",
       "dependency": "react-fake-server"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "terser"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "url"
     },
     {
       "kind": "should-be-dev",

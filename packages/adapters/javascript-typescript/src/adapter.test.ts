@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { normaliseUsageResult, runAdapterContractTests } from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { createJavaScriptTypeScriptAdapter } from "./adapter.js";
-import { fixtureHandle } from "./testing/fs-handle.js";
+import { fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
 
 const ctx = (name: string): AdapterContext => ({
   repository: fixtureHandle("js", name),
@@ -201,4 +201,27 @@ describe("real-repo coverage regressions (validation pass after #164)", () => {
       assert.equal(r.referenceAnalysisComplete, true);
     });
   }
+});
+
+describe("config-string capability notes through the adapter (#205)", () => {
+  it("notes only dependencies that a config string alone credited", async () => {
+    const adapter = createJavaScriptTypeScriptAdapter();
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "package.json": JSON.stringify({
+          devDependencies: { "string-only": "1", imported: "1", unused: "1" },
+        }),
+        "vite.config.ts": `export default { include: ["string-only", "imported"] };`,
+        "src/index.ts": `import x from "imported";`,
+      }),
+      network: { mode: "offline" },
+    };
+    assert.deepEqual(await adapter.notes!(context, [root]), [
+      {
+        dependency: "string-only",
+        statement:
+          "credited by a string in vite.config.ts:1; JS/TS config files are read statically for package names, never run",
+      },
+    ]);
+  });
 });
