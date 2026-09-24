@@ -66,6 +66,12 @@ export interface Usage {
   line: number;
   /** Import form: static import, require, dynamic import, etc. */
   form: "static" | "require" | "dynamic" | "unknown";
+  /**
+   * True when the import is type-only (TS `import type`, `import()` in type
+   * positions). Orthogonal to form. A dependency used only in type positions
+   * is a devDependency candidate - this bit is what preserves that evidence.
+   */
+  typeOnly?: boolean;
   /** The API surface observed, e.g. ["get", "post"] for axios.get/axios.post. */
   symbols: string[];
 }
