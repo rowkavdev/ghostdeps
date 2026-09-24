@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AnalysisResult, Finding } from "@ghostdeps/core";
 import { addedLinesFromFiles, addedLinesFromPatch } from "./diff.js";
-import { maxAnnotations, md, quietSummary, renderCheck } from "./render.js";
+import { incompleteTitle, maxAnnotations, md, quietSummary, renderCheck } from "./render.js";
 import { CheckReporter, type ChecksClient } from "./reporter.js";
 
 function result(findings: Finding[]): AnalysisResult {
@@ -87,12 +87,30 @@ describe("renderCheck", () => {
     assert.match(s.slice(notesAt), /unused confidence capped/);
   });
 
-  it("is success with notes listed when only run-level notes remain", () => {
+  it("is neutral 'Analysis incomplete', never success, when only run-level notes remain", () => {
     const out = renderCheck(result([capNote]), added);
-    assert.equal(out.conclusion, "success");
-    assert.equal(out.output.title, quietSummary);
-    assert.match(out.output.summary, new RegExp(`^${quietSummary}\\n\\n### Notes`));
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, incompleteTitle);
+    assert.match(out.output.summary, /not a clean result/);
+    assert.match(out.output.summary, /### Notes\n\n- unused confidence capped/);
     assert.equal(out.output.annotations.length, 0);
+  });
+
+  it("an adapter failure alone on a clean repo is not a green quiet check", () => {
+    const failure: Finding = {
+      kind: "info",
+      summary: "javascript-typescript analysis incomplete: run failed: boom",
+      recommendation: "Manual review recommended for this ecosystem.",
+      evidence: [{ kind: "adapter-error", statement: "javascript-typescript adapter run stage" }],
+      confidence: "low",
+      limitations: ["Results for javascript-typescript may be missing or partial."],
+      affectedFiles: [],
+    };
+    const out = renderCheck(result([failure]), added);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, incompleteTitle);
+    assert.notEqual(out.output.summary, quietSummary);
+    assert.match(out.output.summary, /analysis incomplete: run failed: boom/);
   });
 
   it("still counts a dependency-level info finding as a finding", () => {
