@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AnalysisResult, Finding } from "@ghostdeps/core";
 import { addedLinesFromFiles, addedLinesFromPatch } from "./diff.js";
-import { maxAnnotations, md, quietSummary, renderCheck } from "./render.js";
+import { incompleteTitle, maxAnnotations, md, quietSummary, renderCheck } from "./render.js";
 import { CheckReporter, type ChecksClient } from "./reporter.js";
 
 function result(findings: Finding[]): AnalysisResult {
@@ -63,6 +63,59 @@ describe("renderCheck", () => {
     assert.equal(out.conclusion, "success");
     assert.equal(out.output.summary, quietSummary);
     assert.equal(out.output.annotations.length, 0);
+  });
+
+  const capNote: Finding = {
+    ...finding(),
+    kind: "info",
+    summary: "unused confidence capped pending corpus validation",
+    evidence: [{ kind: "unused-confidence-capped", statement: "capped" }],
+  };
+  delete (capNote as { dependency?: string }).dependency;
+
+  it("keeps run-level notes out of the title, count and headline (#195)", () => {
+    const unused = finding({ confidence: "medium" });
+    const out = renderCheck(result([capNote, unused]), added);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, "1 dependency finding to review");
+    const s = out.output.summary;
+    assert.match(s, /^GhostDeps found 1 finding worth review/);
+    assert.doesNotMatch(s, /### High confidence/);
+    assert.match(s, /1 lower-confidence finding/);
+    const notesAt = s.indexOf("### Notes");
+    assert.ok(notesAt > s.indexOf("left\\-pad"), "notes come after the findings");
+    assert.match(s.slice(notesAt), /unused confidence capped/);
+  });
+
+  it("is neutral 'Analysis incomplete', never success, when only run-level notes remain", () => {
+    const out = renderCheck(result([capNote]), added);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, incompleteTitle);
+    assert.match(out.output.summary, /not a clean result/);
+    assert.match(out.output.summary, /### Notes\n\n- unused confidence capped/);
+    assert.equal(out.output.annotations.length, 0);
+  });
+
+  it("an adapter failure alone on a clean repo is not a green quiet check", () => {
+    const failure: Finding = {
+      kind: "info",
+      summary: "javascript-typescript analysis incomplete: run failed: boom",
+      recommendation: "Manual review recommended for this ecosystem.",
+      evidence: [{ kind: "adapter-error", statement: "javascript-typescript adapter run stage" }],
+      confidence: "low",
+      limitations: ["Results for javascript-typescript may be missing or partial."],
+      affectedFiles: [],
+    };
+    const out = renderCheck(result([failure]), added);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, incompleteTitle);
+    assert.notEqual(out.output.summary, quietSummary);
+    assert.match(out.output.summary, /analysis incomplete: run failed: boom/);
+  });
+
+  it("still counts a dependency-level info finding as a finding", () => {
+    const out = renderCheck(result([finding({ kind: "info", confidence: "low" })]), added);
+    assert.equal(out.output.title, "1 dependency finding to review");
   });
 
   it("is neutral, never failure, when there are findings", () => {

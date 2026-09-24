@@ -2,8 +2,8 @@
   "status": "completed",
   "conclusion": "neutral",
   "output": {
-    "title": "2 dependency findings to review",
-    "summary": "GhostDeps found 2 findings worth review. This check is advisory and never blocks merging.\n\n### High confidence\n\n- unused confidence capped pending corpus validation _(high confidence)_\n\n<details><summary>1 lower-confidence finding (manual review)</summary>\n\n- **left\\-pad** - left\\-pad is declared but never used _(medium confidence)_\n\n</details>",
+    "title": "1 dependency finding to review",
+    "summary": "GhostDeps found 1 finding worth review. This check is advisory and never blocks merging.\n\n<details><summary>1 lower-confidence finding (manual review)</summary>\n\n- **left\\-pad** - left\\-pad is declared but never used _(medium confidence)_\n\n</details>\n\n### Notes\n\n- unused confidence capped pending corpus validation",
     "annotations": []
   }
 }

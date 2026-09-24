@@ -3,6 +3,11 @@
  *
  * Rules (research #34, docs/github-app.md):
  * - success + quiet summary when there are no findings; neutral otherwise; never failure.
+ * - Run-level notes (info findings about the whole run, e.g. the unused
+ *   confidence cap or an incomplete scan) never count as findings: they go
+ *   in a Notes section, not the title, count or confidence groups (#195).
+ *   A run with notes but no findings is neutral ("Analysis incomplete"),
+ *   never the quiet success: a note can mean an adapter failed.
  * - Annotate only high-confidence findings whose evidence points at a line the PR added.
  * - At most 50 annotations (one API request); everything else goes in the summary.
  * - Repository-derived text is data: annotation text is plain, summary text is Markdown-escaped.
@@ -12,6 +17,7 @@ import type { AddedLines } from "./diff.js";
 
 export const checkName = "ghostdeps";
 export const quietSummary = "No significant dependency issues found.";
+export const incompleteTitle = "Analysis incomplete - see notes";
 export const maxAnnotations = 50;
 export const busySummary =
   "GhostDeps was too busy to analyse this commit, so no dependency analysis ran. Push a new commit to re-run.";
@@ -94,6 +100,19 @@ function annotationFor(f: Finding, e: Evidence & { file: string; line: number })
   };
 }
 
+/** An info finding about the whole run rather than a dependency (#178, #154). */
+export function isRunNote(f: Finding): boolean {
+  return f.kind === "info" && f.dependency === undefined;
+}
+
+function noteLine(f: Finding): string {
+  return `- ${md(f.summary)}`;
+}
+
+function notesSection(notes: readonly Finding[]): string[] {
+  return notes.length > 0 ? ["", "### Notes", "", ...notes.map(noteLine)] : [];
+}
+
 function summaryLine(f: Finding): string {
   const dep = f.dependency ? `**${md(f.dependency)}** - ` : "";
   return `- ${dep}${md(f.summary)} _(${f.confidence} confidence)_`;
@@ -104,11 +123,24 @@ function summaryLine(f: Finding): string {
  * @param added lines the PR added, by path. Pass an empty map for pushes: no annotations then.
  */
 export function renderCheck(result: AnalysisResult, added: AddedLines): CheckOutput {
-  const findings = result.findings;
-  if (findings.length === 0) {
+  const notes = result.findings.filter(isRunNote);
+  const findings = result.findings.filter((f) => !isRunNote(f));
+  if (findings.length === 0 && notes.length === 0) {
     return {
       conclusion: "success",
       output: { title: quietSummary, summary: quietSummary, annotations: [] },
+    };
+  }
+  if (findings.length === 0) {
+    const intro =
+      "GhostDeps found no dependency findings, but the analysis was incomplete, so this is not a clean result. This check is advisory and never blocks merging.";
+    return {
+      conclusion: "neutral",
+      output: {
+        title: incompleteTitle,
+        summary: truncateSummary([intro, ...notesSection(notes)].join("\n")),
+        annotations: [],
+      },
     };
   }
 
@@ -152,6 +184,7 @@ export function renderCheck(result: AnalysisResult, added: AddedLines): CheckOut
       "</details>",
     );
   }
+  parts.push(...notesSection(notes));
 
   const summary = truncateSummary(parts.join("\n"));
 
