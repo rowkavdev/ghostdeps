@@ -1,7 +1,7 @@
 /**
  * The Go EcosystemAdapter (ADR 0002). Facts only; core owns policy.
- * Usage analysis lands with #53, so the adapter declares only
- * "dependencyGraph" for now.
+ * Usage analysis (#53) covers source imports and go.mod tool directives.
+ * No "referenceAnalysis": generate directives and scripts are not read.
  */
 import {
   adapterApiVersion,
@@ -15,12 +15,14 @@ import {
 } from "@ghostdeps/core";
 import { detectGo, GO_ECOSYSTEM, joinPath } from "./detect.js";
 import { directDependencies, moduleGraph, readGoMod } from "./manifest.js";
+import { findGoUsage } from "./usage/scan.js";
 
 const goProjects = (projects: ProjectRef[]) => projects.filter((p) => p.ecosystem === GO_ECOSYSTEM);
 
 export function createGoAdapter(): EcosystemAdapter {
   const capabilities: ReadonlySet<AdapterCapability> = new Set<AdapterCapability>([
     "dependencyGraph",
+    "usageAnalysis",
   ]);
   return {
     ecosystem: GO_ECOSYSTEM,
@@ -84,5 +86,7 @@ export function createGoAdapter(): EcosystemAdapter {
       }
       return out;
     },
+
+    findUsage: (context, dependency) => findGoUsage(context, dependency),
   };
 }
