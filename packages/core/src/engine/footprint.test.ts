@@ -12,7 +12,7 @@ import type {
   RepositoryHandle,
 } from "../types/index.js";
 import { analyseRepository } from "./analyse.js";
-import { addFootprints, MAX_FOOTPRINT_PACKAGES } from "./footprint.js";
+import { addFootprints, MAX_FOOTPRINT_PACKAGES, normaliseRegistryOrigin } from "./footprint.js";
 
 const project = (path: string, ecosystem = "npm"): ProjectRef => ({
   path,
@@ -242,5 +242,71 @@ describe("footprint in the analysis result (#59 slice B)", () => {
     );
     assert.deepEqual(withSizes.findings, without.findings);
     assert.ok(without.impact?.every((i) => i.footprint === undefined));
+  });
+});
+
+describe("registry origin pass-through (#174 step 3)", () => {
+  const withOrigin = (name: string, version: string, registryOrigin?: string) => ({
+    ...node(name, version),
+    ...(registryOrigin === undefined ? {} : { registryOrigin }),
+  });
+  const ask = async (graphs: DependencyGraph[], entries: DependencyImpact[]) => {
+    const provider = sizes({});
+    await addFootprints(entries, graphs, provider);
+    return provider.calls[0]!.packages;
+  };
+
+  it("passes a validated origin and omits it when absent", async () => {
+    const g1 = graph(
+      [withOrigin("a", "1.0.0", "https://registry.npmjs.org"), withOrigin("x", "1.0.0")],
+      { a: ["a", "x"] },
+    );
+    assert.deepEqual(await ask([g1], [entry("a", 1)]), [
+      { name: "a", version: "1.0.0", origin: "https://registry.npmjs.org" },
+      { name: "x", version: "1.0.0" },
+    ]);
+  });
+
+  it("omits the origin when locked nodes disagree or one has none", async () => {
+    const p2 = project("web");
+    const g1 = graph([withOrigin("a", "1.0.0", "https://registry.npmjs.org")], { a: ["a"] });
+    const g2 = graph([withOrigin("a", "1.0.0", "https://npm.acme.example")], { a: ["a"] }, p2);
+    const g3 = graph([withOrigin("a", "1.0.0")], { a: ["a"] }, project("api"));
+    assert.deepEqual(await ask([g1, g2], [entry("a", 0), entry("a", 0, p2)]), [
+      { name: "a", version: "1.0.0" },
+    ]);
+    assert.deepEqual(await ask([g1, g3], [entry("a", 0)]), [{ name: "a", version: "1.0.0" }]);
+  });
+
+  it("accepts only a plain http(s) origin", () => {
+    assert.equal(
+      normaliseRegistryOrigin("https://registry.npmjs.org"),
+      "https://registry.npmjs.org",
+    );
+    assert.equal(
+      normaliseRegistryOrigin("https://registry.npmjs.org/"),
+      "https://registry.npmjs.org",
+    );
+    assert.equal(normaliseRegistryOrigin("http://localhost:4873"), "http://localhost:4873");
+    // Scheme and host are case-insensitive; core lowercases them.
+    assert.equal(
+      normaliseRegistryOrigin("HTTPS://Registry.npmjs.org"),
+      "https://registry.npmjs.org",
+    );
+    for (const bad of [
+      undefined,
+      "",
+      42,
+      "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+      "https://user:pw@registry.npmjs.org",
+      "https://registry.npmjs.org?x=1",
+      "https://registry.npmjs.org#x",
+      "git+ssh://git@github.com",
+      "file:///tmp",
+      "registry.npmjs.org",
+      `https://${"a".repeat(300)}.example`,
+    ]) {
+      assert.equal(normaliseRegistryOrigin(bad), undefined, String(bad));
+    }
   });
 });
