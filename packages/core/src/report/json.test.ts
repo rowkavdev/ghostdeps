@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { jsonSchemaVersion, renderJsonReport } from "./json.js";
+import { jsonSchemaVersion, normaliseAnalysisResult, renderJsonReport } from "./json.js";
 import type { AnalysisResult, ProjectRef } from "../types/index.js";
 
 /** Golden files live in packages/core/test/golden (tests run from dist/report). */
@@ -203,5 +203,17 @@ describe("renderJsonReport", () => {
     });
     assert.match(out, /left\\u00adpad\\u061c\\u180e/);
     assert.equal((JSON.parse(out) as AnalysisResult).findings[0]!.dependency, name);
+  });
+
+  it("normalises tied findings with a non-plain value without throwing", () => {
+    const odd = {
+      ...basicUnused.findings[0]!,
+      evidence: [{ kind: "x", statement: "odd", extra: new Map([["k", 1]]) }],
+    } as unknown as AnalysisResult["findings"][number];
+    const plain = { ...basicUnused.findings[0]!, evidence: [{ kind: "x", statement: "odd" }] };
+    const result = { ...basicUnused, findings: [odd, plain] };
+    const normalised = normaliseAnalysisResult(result);
+    assert.equal(normalised.findings.length, 2);
+    assert.throws(() => renderJsonReport(result), /cannot serialise Map/);
   });
 });
