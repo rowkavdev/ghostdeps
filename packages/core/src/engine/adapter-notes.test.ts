@@ -121,6 +121,7 @@ describe("adapter notes channel (#205)", () => {
       );
       assert.equal(failures.length, 1);
       assert.match(failures[0]!.summary, /notes/);
+      assert.doesNotMatch(failures[0]!.summary, /notes timed out during notes/);
       assert.equal(findingGroup(failures[0]!), "incomplete");
     }
   });
