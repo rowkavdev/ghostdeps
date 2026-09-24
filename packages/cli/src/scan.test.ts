@@ -38,6 +38,12 @@ describe("ghostdeps scan --json", () => {
       parsed.detected.map((d) => d.ecosystem),
       ["javascript-typescript"],
     );
+    const findings = (JSON.parse(text) as { findings: { evidence: { kind: string }[] }[] })
+      .findings;
+    assert.ok(
+      findings.some((f) => f.evidence[0]?.kind === "recommendation-policy-missing"),
+      "a scan with no policy must say so, never print an empty all-clear",
+    );
     assertGolden("scan-js-basic-unused.json", text);
   });
 

@@ -18,7 +18,24 @@
       ]
     }
   ],
-  "findings": [],
+  "findings": [
+    {
+      "affectedFiles": [],
+      "confidence": "high",
+      "evidence": [
+        {
+          "kind": "recommendation-policy-missing",
+          "statement": "this build of ghostdeps runs without a recommendation policy"
+        }
+      ],
+      "kind": "info",
+      "limitations": [
+        "Unused, unnecessary and native-replacement findings are not produced yet."
+      ],
+      "recommendation": "Treat this result as facts only (detected ecosystems, dependencies, usages). It is not an all-clear.",
+      "summary": "No dependency recommendations were made: the recommendation policy is not implemented yet."
+    }
+  ],
   "projects": [
     {
       "ecosystem": "javascript-typescript",
