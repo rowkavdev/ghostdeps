@@ -76,6 +76,35 @@ describe("buildLockfileGraph", () => {
     assert.deepEqual(res.graph.transitiveClosure, { a: [] });
   });
 
+  it("fixture js/lockfile-bun: trailing commas and nested copies under scoped packages", async () => {
+    const res = await checkFixture("lockfile-bun");
+    const ms = res.graph.nodes.filter((n) => n.name === "ms").map((n) => n.version);
+    assert.deepEqual(ms.sort(), ["2.0.0", "2.1.2"]);
+  });
+
+  it("bun.lockb alone is reported as unsupported, not parsed", async () => {
+    const res = await buildLockfileGraph(
+      ctx(memoryHandle({ "package.json": "{}", "bun.lockb": "\u0000binary" })),
+      project(),
+    );
+    assert.equal(res.graph.incomplete, true);
+    assert.ok(res.evidence.some((e) => e.kind === "lockfile-unsupported"));
+  });
+
+  it("a workspace member under a root bun.lockb reports it as unsupported", async () => {
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "bun.lockb": "\u0000binary",
+          "packages/a/package.json": "{}",
+        }),
+      ),
+      project("packages/a"),
+    );
+    assert.equal(res.lockfile, "bun.lockb");
+    assert.ok(res.evidence.some((e) => e.kind === "lockfile-unsupported"));
+  });
+
   it("fixture js/basic-unused: no lockfile gives an incomplete graph, never resolution", async () => {
     const res = await buildLockfileGraph(ctx(fixtureHandle("js", "basic-unused")), project());
     assert.equal(res.graph.incomplete, true);

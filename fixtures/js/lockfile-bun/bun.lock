@@ -1,0 +1,30 @@
+{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "fixture-lockfile-bun",
+      "dependencies": {
+        "@scope/tool": "^1.0.0",
+        "express-lite": "^1.0.0",
+      },
+      "devDependencies": {
+        "tester": "^2.0.0",
+      },
+    },
+  },
+  "packages": {
+    "@scope/tool": ["@scope/tool@1.0.0", "", { "dependencies": { "debug": "^2.0.0" } }, "sha512-x"],
+
+    "@scope/tool/debug": ["debug@2.6.9", "", { "dependencies": { "ms": "2.0.0" } }, "sha512-x"],
+
+    "@scope/tool/ms": ["ms@2.0.0", "", {}, "sha512-x"],
+
+    "debug": ["debug@4.3.4", "", { "dependencies": { "ms": "2.1.2" } }, "sha512-x"],
+
+    "express-lite": ["express-lite@1.2.0", "", { "dependencies": { "debug": "^4.0.0" } }, "sha512-x"],
+
+    "ms": ["ms@2.1.2", "", {}, "sha512-x"],
+
+    "tester": ["tester@2.1.0", "", { "dependencies": { "ms": "^2.1.0" } }, "sha512-x"],
+  }
+}

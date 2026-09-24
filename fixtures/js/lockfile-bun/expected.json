@@ -1,0 +1,14 @@
+{
+  "description": "Bun text lockfile (trailing commas) with a nested copy under a scoped package: @scope/tool uses its own debug@2.6.9 -> ms@2.0.0, express-lite uses hoisted debug@4.3.4 -> ms@2.1.2. tester (dev) shares hoisted ms with a prod path, so no dev-only nodes except tester.",
+  "graph": {
+    "transitive": {
+      "@scope/tool": ["debug", "ms"],
+      "express-lite": ["debug", "ms"],
+      "tester": ["ms"]
+    },
+    "nodes": 7,
+    "devNodes": 1
+  },
+  "findings": [],
+  "mustNotFind": []
+}
