@@ -37,6 +37,7 @@ export function crossEcosystemOverlaps(
     : undefined;
   const findings: Finding[] = [];
   for (const cluster of catalogue.clusters) {
+    if (cluster.crossEcosystem === false) continue;
     const members = new Set(
       cluster.members.map((mem) => `${mem.ecosystem}\0${catalogueName(mem.ecosystem, mem.name)}`),
     );

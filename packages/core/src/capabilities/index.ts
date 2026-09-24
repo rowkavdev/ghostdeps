@@ -7,11 +7,13 @@
  * duplicate detection on the same data.
  *
  * The shape is versioned: bump CAPABILITY_CATALOGUE_VERSION when a field
- * changes meaning or is removed. Adding clusters or members is not a
+ * is added, removed or changes meaning. Adding clusters or members is not a
  * shape change.
+ *
+ * Version 2 (#211): clusters gain `crossEcosystem`.
  */
 
-export const CAPABILITY_CATALOGUE_VERSION = 1;
+export const CAPABILITY_CATALOGUE_VERSION = 2;
 
 /** One package in a cluster. Names are as declared in the manifest. */
 export interface CapabilityMember {
@@ -26,6 +28,13 @@ export interface CapabilityCluster {
   /** Plain-language label, e.g. "HTTP client". */
   label: string;
   members: CapabilityMember[];
+  /**
+   * Whether the cross-ecosystem overlap view (#55) reports this cluster.
+   * Omitted means true. False for capabilities every polyglot repo has in
+   * each ecosystem (test runners), where the note can't be acted on. The
+   * cluster still counts for same-ecosystem duplicates (#58).
+   */
+  crossEcosystem?: boolean;
 }
 
 export interface CapabilityCatalogue {
@@ -91,6 +100,8 @@ export const CAPABILITY_CATALOGUE: CapabilityCatalogue = {
     {
       id: "test-runner",
       label: "test runner",
+      // pytest next to vitest/jest is normal in a JS + Python repo (#211).
+      crossEcosystem: false,
       members: [...m(JS, ["jest", "mocha", "vitest", "ava", "tap"]), ...m(PY, ["pytest", "nose2"])],
     },
   ],
