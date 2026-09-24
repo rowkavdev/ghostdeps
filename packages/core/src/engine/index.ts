@@ -8,3 +8,9 @@ export {
   type RecommendationInput,
   type RecommendationPolicy,
 } from "./analyse.js";
+export {
+  analyseRepositoryIsolated,
+  runAdapterIsolated,
+  DEFAULT_ADAPTER_HEAP_MB,
+  type IsolatedAnalyseOptions,
+} from "./isolated.js";

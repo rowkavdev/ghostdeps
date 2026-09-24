@@ -41,8 +41,9 @@ export interface AdapterContext {
   network: NetworkPolicy;
   /**
    * Aborted when the engine gives up on this adapter (stage timeout).
-   * Cooperative adapters should check it between files and stop early;
-   * the engine cannot preempt synchronous work (see #90).
+   * Cooperative adapters should check it between files and stop early.
+   * In-process the engine cannot preempt synchronous work; the
+   * worker-thread tier (engine/isolated.ts, #90) terminates it.
    */
   signal?: AbortSignal;
 }
