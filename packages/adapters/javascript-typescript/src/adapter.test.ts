@@ -225,3 +225,37 @@ describe("config-string capability notes through the adapter (#205)", () => {
     ]);
   });
 });
+
+describe("findUsage is computed once per dependency per run (#267 review)", () => {
+  it("a repeat call does no new reads and returns an independent copy", async () => {
+    const adapter = createJavaScriptTypeScriptAdapter();
+    let reads = 0;
+    const base = memoryHandle({
+      "package.json": JSON.stringify({ dependencies: { imported: "1" } }),
+      "src/index.ts": `import x from "imported";`,
+    });
+    const context: AdapterContext = {
+      repository: {
+        ...base,
+        readFile: (path: string) => {
+          reads += 1;
+          return base.readFile(path);
+        },
+      },
+      network: { mode: "offline" },
+    };
+    const d: Dependency = {
+      name: "imported",
+      constraint: "1",
+      kind: "runtime",
+      project: root,
+      declaredIn: "package.json",
+    };
+    const first = normaliseUsageResult(await adapter.findUsage!(context, d));
+    const after = reads;
+    const second = normaliseUsageResult(await adapter.findUsage!(context, { ...d }));
+    assert.equal(reads, after);
+    assert.deepEqual(second, first);
+    assert.notEqual(second.usages, first.usages);
+  });
+});

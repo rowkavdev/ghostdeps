@@ -550,6 +550,9 @@ export function readExecutableConfig(
   let importsPackage = false;
   let strings = 0;
   let visited = 0;
+  // Literal specifiers of import/require in the config: real loads, not
+  // bare strings, so their refs are not marked configString.
+  const specifiers = new Set<ts.Node>();
 
   const moduleSpecifier = (spec: ts.Expression | undefined): void => {
     if (spec === undefined) return;
@@ -557,6 +560,7 @@ export function readExecutableConfig(
       problem ??= "computed specifier";
       return;
     }
+    specifiers.add(spec);
     const s = spec.text;
     if (packageOf(s) !== undefined && !isBuiltin(s)) importsPackage = true;
     if (s.startsWith(".") || s.startsWith("/")) {
@@ -592,14 +596,19 @@ export function readExecutableConfig(
       strings += 1;
       const packages = expand(node.text);
       if (packages.length) {
-        refs.push({
-          packages,
-          file,
-          line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
-          via: "config",
-          source: `${tool} string`,
-          configString: true,
-        });
+        const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+        if (specifiers.has(node)) {
+          refs.push({ packages, file, line, via: "config", source: `${tool} import` });
+        } else {
+          refs.push({
+            packages,
+            file,
+            line,
+            via: "config",
+            source: `${tool} string`,
+            configString: true,
+          });
+        }
       }
     }
     ts.forEachChild(node, visit);
@@ -834,7 +843,9 @@ export const MAX_CONFIG_STRING_NOTES = 50;
  * only a string in an executable JS/TS config credited, naming the first
  * such string. That is the case the note explains: without the config read,
  * the dependency would look unused. A dependency with any other usage
- * (`hasOtherUsage`) gets no note, so imported packages don't flood the run.
+ * in its project (`hasOtherUsage`) gets no note, so imported packages don't
+ * flood the run. A name declared in several projects gets one note, citing
+ * only the strings from projects where they are the sole evidence.
  * The config was read statically, never run. Every note carries its
  * dependency (lead ruling on #205); unread configs are coverage gaps and stay
  * in unreadConfigs, never here. Deterministic: dependencies by name, strings
@@ -846,18 +857,13 @@ export async function configStringNotes(
   hasOtherUsage: (dependency: Dependency, strings: ReadonlySet<string>) => Promise<boolean>,
 ): Promise<{ statement: string; dependency: string }[]> {
   const byName = new Map<string, ConfigReference[]>();
-  const used = new Set<string>();
   for (const dependency of dependencies) {
-    if (used.has(dependency.name)) continue;
     const { refs } = await scanFor(context, dependency);
     const own = refs.filter((r) => r.configString && r.packages.includes(dependency.name));
     if (own.length === 0) continue;
-    if (await hasOtherUsage(dependency, new Set(own.map((r) => `${r.file}:${r.line}`)))) {
-      // Used some other way in any project: the note would explain nothing.
-      used.add(dependency.name);
-      byName.delete(dependency.name);
-      continue;
-    }
+    // Used some other way in this project: the note would explain nothing.
+    // Judged per declaring project, like the verdict it explains.
+    if (await hasOtherUsage(dependency, new Set(own.map((r) => `${r.file}:${r.line}`)))) continue;
     const list = byName.get(dependency.name) ?? [];
     for (const r of own)
       if (!list.some((x) => x.file === r.file && x.line === r.line)) list.push(r);
