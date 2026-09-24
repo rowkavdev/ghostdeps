@@ -195,5 +195,15 @@ export async function decide(
           : "no dependency manifest or lockfile changed",
     };
   }
-  return { analyse: true, job, dependencyFiles, sourceFiles };
+  const sourceOnly =
+    job.trigger.kind === "pull_request" &&
+    changed.complete &&
+    dependencyFiles.length === 0 &&
+    sourceFiles.length > 0;
+  return {
+    analyse: true,
+    job: sourceOnly ? { ...job, trigger: { ...job.trigger, sourceOnly: true } } : job,
+    dependencyFiles,
+    sourceFiles,
+  };
 }

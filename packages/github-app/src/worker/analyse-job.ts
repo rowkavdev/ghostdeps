@@ -212,6 +212,15 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         if (pr.complete) {
           run.pullRequestChanges = pr.dependencyChanges.changes;
           run.pullRequestSourceChanges = pr.dependencyChanges.sourceLineChanges;
+        } else if (job.trigger.kind === "pull_request" && job.trigger.sourceOnly === true) {
+          // A source-only PR changed no dependencies, so a full analysis would
+          // post repository-wide verdicts it didn't cause. Stay PR-scoped and
+          // quiet; without the full diff there is no removed-last-usage (#101).
+          run.pullRequestChanges = [];
+          options.log?.warn(
+            { job: job.key, limitations: pr.dependencyChanges.limitations },
+            "PR diff incomplete on a source-only PR; staying PR-scoped",
+          );
         } else {
           // Scoping to a partial change list could hide a finding: analyse in full.
           options.log?.warn(

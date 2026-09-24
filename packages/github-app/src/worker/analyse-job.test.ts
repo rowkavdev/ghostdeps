@@ -372,6 +372,32 @@ index 3333333..4444444 100644
     assert.deepEqual(source[0]?.addedLines, []);
   });
 
+  it("keeps a source-only PR PR-scoped when its diff can't be read in full (#101)", async () => {
+    const { client, rec } = fakeClient({ diff: { status: 406 } });
+    let seen: AnalyseRunOptions | undefined;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(
+      job({
+        kind: "pull_request",
+        number: payload.number,
+        action: "opened",
+        baseSha: BASE,
+        sourceOnly: true,
+      }),
+    );
+    assert.deepEqual(seen, { pullRequestChanges: [] });
+    assert.equal(rec.updated[0]?.conclusion, "success");
+  });
+
   it("analyses the full repository when the changes cannot be read in full", async () => {
     const { client, rec } = fakeClient({ diff: { status: 406 } });
     let seen: AnalyseRunOptions | undefined;

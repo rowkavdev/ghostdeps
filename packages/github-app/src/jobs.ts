@@ -17,6 +17,12 @@ export type AnalysisTrigger =
       readonly number: number;
       readonly action: "opened" | "synchronize" | "reopened";
       readonly baseSha: string;
+      /**
+       * Set when the complete changed-file list had analysable source but no
+       * manifest or lockfile (#101). If the diff can't then be read in full,
+       * the worker stays PR-scoped instead of analysing the whole repository.
+       */
+      readonly sourceOnly?: true;
     }
   | { readonly kind: "push"; readonly ref: string; readonly beforeSha: string }
   | { readonly kind: "full_scan"; readonly reason: "installation" | "explicit" }
