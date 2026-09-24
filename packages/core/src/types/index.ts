@@ -36,6 +36,13 @@ export interface Dependency {
   project: ProjectRef;
   /** Manifest file it came from, relative to the repository root. */
   declaredIn: string;
+  /**
+   * 1-based line in `declaredIn` where the dependency is declared (#198).
+   * Optional and additive (no adapterApiVersion bump). The engine keeps it
+   * only if that line of the manifest contains the dependency name; any
+   * other value is dropped, never guessed.
+   */
+  declaredLine?: number;
   /** Non-registry specifiers (git, file, link, workspace) recorded, never executed. */
   specifier?: { type: "registry" | "git" | "file" | "link" | "workspace"; detail?: string };
 }

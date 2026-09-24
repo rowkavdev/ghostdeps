@@ -86,11 +86,33 @@ function hasNoUsageEvidence(d: Dependency, context: PolicyContext): boolean {
   return true;
 }
 
+/**
+ * Rules whose findings are anchored on the manifest declaration (#198):
+ * their evidence carries `file: declaredIn` plus `line` when known.
+ */
+export const DECLARATION_ANCHORED_RULES: ReadonlySet<string> = new Set([
+  "unused",
+  "removed-last-usage",
+  "unverified-no-imports",
+  "should-be-dev",
+]);
+
+/** Evidence kinds that point at the declaration (file + line when known). */
+export const DECLARATION_EVIDENCE_KINDS: ReadonlySet<string> = new Set([
+  "no-usage-found",
+  "declared-in",
+]);
+
+const atDeclaration = (d: Dependency): { file: string; line?: number } =>
+  d.declaredLine === undefined
+    ? { file: d.declaredIn }
+    : { file: d.declaredIn, line: d.declaredLine };
+
 function noImportsEvidence(d: Dependency) {
   return {
     kind: "no-usage-found",
     statement: `no import, require or dynamic import of ${d.name} found`,
-    file: d.declaredIn,
+    ...atDeclaration(d),
   };
 }
 
@@ -240,12 +262,19 @@ const shouldBeDevRule: PolicyRule = {
       dependency: d.name,
       summary: `${d.name} is only imported from tests, build or config code`,
       recommendation: `Move ${d.name} to development dependencies.`,
-      evidence: sample.map((u) => ({
-        kind: "non-shipped-import",
-        statement: `imported from non-shipped file ${u.file}`,
-        file: u.file,
-        line: u.line,
-      })),
+      evidence: [
+        {
+          kind: "declared-in",
+          statement: `declared as a runtime dependency in ${d.declaredIn}`,
+          ...atDeclaration(d),
+        },
+        ...sample.map((u) => ({
+          kind: "non-shipped-import",
+          statement: `imported from non-shipped file ${u.file}`,
+          file: u.file,
+          line: u.line,
+        })),
+      ],
       confidence: "medium",
       limitations: [
         "Shipped vs non-shipped code is inferred from paths; a build that ships these files would need it at runtime.",

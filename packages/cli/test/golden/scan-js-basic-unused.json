@@ -36,6 +36,22 @@
       "confidence": "high",
       "evidence": [
         {
+          "kind": "declaration-line-unavailable",
+          "statement": "1 declaration-anchored finding(s) carry a file but no line"
+        }
+      ],
+      "kind": "info",
+      "limitations": [],
+      "recommendation": "The adapter for this ecosystem did not report a verifiable declaration line. Look for the dependency in the named manifest.",
+      "rule": "declaration-line-unavailable",
+      "severity": "info",
+      "summary": "declaration line unavailable for 1 finding(s); they point at the manifest file only"
+    },
+    {
+      "affectedFiles": [],
+      "confidence": "high",
+      "evidence": [
+        {
           "kind": "unused-confidence-capped",
           "statement": "1 unused finding(s) capped at medium confidence"
         }
