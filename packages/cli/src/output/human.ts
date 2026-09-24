@@ -1,5 +1,11 @@
 import { findingGroup } from "@ghostdeps/core";
-import type { AnalysisResult, Finding, FindingKind, SurfaceEntry } from "@ghostdeps/core";
+import type {
+  AnalysisResult,
+  DependencyImpact,
+  Finding,
+  FindingKind,
+  SurfaceEntry,
+} from "@ghostdeps/core";
 import { escapeTerminal } from "./escape.js";
 
 /**
@@ -57,12 +63,88 @@ function unique(values: string[]): string[] {
 /** Evidence lines shown per verdict before a "+N more" cap. */
 const MAX_EVIDENCE_LINES = 8;
 
+/** Verdict kinds whose claim is about removing the dependency, so impact applies (#59 C). */
+const IMPACT_KINDS: ReadonlySet<FindingKind> = new Set([
+  "unused",
+  "potentially-unnecessary",
+  "duplicate-capability",
+]);
+
+/** 1_400_000 -> "1.4 MB" (decimal units, like registries report). */
+function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`;
+  const units = ["kB", "MB", "GB", "TB"];
+  let value = bytes / 1000;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit++;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+/** Directory of a repository-relative file, "." for the root. */
+function dirOf(file: string): string {
+  const i = file.lastIndexOf("/");
+  return i <= 0 ? "." : file.slice(0, i);
+}
+
+/**
+ * The one impact entry a verdict is about (#59 C): same name, and the
+ * declaring project when the finding names its manifest. Ambiguous or
+ * missing means none - better no line than another project's numbers.
+ */
+function impactFor(
+  finding: Finding,
+  impact: readonly DependencyImpact[] | undefined,
+): DependencyImpact | undefined {
+  if (!impact || finding.dependency === undefined || !IMPACT_KINDS.has(finding.kind)) {
+    return undefined;
+  }
+  let matches = impact.filter((entry) => entry.name === finding.dependency);
+  if (matches.length > 1 && finding.affectedFiles.length > 0) {
+    const projects = new Set(finding.affectedFiles.map(dirOf));
+    matches = matches.filter((entry) => projects.has(entry.project));
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/**
+ * The impact line under a verdict (#59 C), or undefined when nothing is
+ * known. Facts only, never a verdict: "at least" on a partial graph, no
+ * removal count unless core computed one, and footprint always as a lower
+ * bound with its coverage. Unknown counts print nothing rather than 0.
+ */
+export function impactLine(entry: DependencyImpact): string | undefined {
+  if (entry.transitive === null || entry.limited === true) return undefined;
+  const n = groupThousands(entry.transitive);
+  const plural = entry.transitive === 1 ? "package" : "packages";
+  const parts = [
+    entry.graph === "complete" ? `${n} transitive ${plural}` : `at least ${n} transitive ${plural}`,
+  ];
+  if (entry.exclusive !== null) {
+    parts.push(
+      entry.exclusive === 0
+        ? "removing it drops no other packages"
+        : `removing it drops ${groupThousands(entry.exclusive)} of them`,
+    );
+  }
+  const footprint = entry.footprint;
+  if (footprint && Number.isFinite(footprint.bytes) && footprint.bytes >= 0) {
+    const { sized, total } = footprint.coverage;
+    parts.push(
+      `at least ${formatBytes(footprint.bytes)} installed (${sized} of ${total} packages sized, ${escapeTerminal(footprint.basis)})`,
+    );
+  }
+  return `      - impact: ${parts.join("; ")}`;
+}
+
 /**
  * One verdict line plus its evidence. Dependency names, summaries and
  * evidence statements are policy text built from repository facts, so
  * everything goes through escapeTerminal (security-model rule 6).
  */
-function renderVerdict(finding: Finding): string[] {
+function renderVerdict(finding: Finding, impact?: readonly DependencyImpact[]): string[] {
   const name = finding.dependency ?? "(repository-wide)";
   const rule = finding.rule === undefined ? "" : `, rule: ${finding.rule}`;
   const lines = [
@@ -75,6 +157,9 @@ function renderVerdict(finding: Finding): string[] {
   if (evidence.length > MAX_EVIDENCE_LINES) {
     lines.push(`      - ... and ${evidence.length - MAX_EVIDENCE_LINES} more`);
   }
+  const entry = impactFor(finding, impact);
+  const line = entry ? impactLine(entry) : undefined;
+  if (line) lines.push(line);
   return lines;
 }
 
@@ -86,7 +171,10 @@ function renderVerdict(finding: Finding): string[] {
  * render as Notes and Awareness notes below. The section is omitted when
  * there is nothing to say.
  */
-function renderVerdicts(findings: readonly Finding[]): string[] {
+function renderVerdicts(
+  findings: readonly Finding[],
+  impact?: readonly DependencyImpact[],
+): string[] {
   const verdicts = findings.filter((finding) => findingGroup(finding) === "verdict");
   if (verdicts.length === 0) return [];
   const lines = ["Verdicts:"];
@@ -96,7 +184,7 @@ function renderVerdicts(findings: readonly Finding[]): string[] {
     if (group.length === 0) continue;
     lines.push(`  ${findingLabels[kind]}:`);
     for (const finding of group) {
-      lines.push(...renderVerdict(finding));
+      lines.push(...renderVerdict(finding, impact));
     }
   }
   return ["", ...lines];
@@ -190,7 +278,7 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     "",
     "Findings:",
     ...(findingLines.length > 0 ? findingLines : ["  none"]),
-    ...renderVerdicts(result.findings),
+    ...renderVerdicts(result.findings, result.impact),
     ...renderNotes(result.findings),
     ...renderAwarenessNotes(result.findings),
   ].join("\n");
