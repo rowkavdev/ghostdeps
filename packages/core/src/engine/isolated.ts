@@ -33,6 +33,22 @@ import type { FsRepositoryHandle } from "./scanner/handle.js";
 /** Default per-worker old-generation heap ceiling. */
 export const DEFAULT_ADAPTER_HEAP_MB = 512;
 
+/**
+ * Main-side caps on what a worker may post back (#123). An adapter can stay
+ * under its own heap ceiling and still structured-clone a huge outcome into
+ * the main heap, so counts are capped here and overflow becomes a
+ * limitation on the outcome - the same "oversize surfaces as evidence"
+ * rule as the byte ceilings in limits.ts.
+ */
+export const OUTCOME_CAPS = Object.freeze({
+  maxDependencies: 10_000,
+  maxUsages: 50_000,
+  /** Total graph nodes across all of one adapter's graphs. */
+  maxGraphNodes: 100_000,
+  /** Evidence entries kept per finding. */
+  maxEvidencePerFinding: 100,
+});
+
 export interface IsolatedAnalyseOptions {
   /** Module specifiers; each module's default or "adapter" export is the adapter. */
   adapters: readonly string[];
@@ -52,6 +68,76 @@ export interface IsolatedAnalyseOptions {
   adapterHeapMb?: number;
   /** Omit to emit facts only (no recommendation findings). */
   recommend?: RecommendationPolicy;
+}
+
+/** Truncate a worker-posted outcome to OUTCOME_CAPS, recording overflow as limitations. */
+export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
+  const limitations: string[] = [];
+  let dependencies = outcome.dependencies;
+  if (dependencies.length > OUTCOME_CAPS.maxDependencies) {
+    limitations.push(
+      `Adapter posted ${dependencies.length} dependencies; capped at ${OUTCOME_CAPS.maxDependencies}.`,
+    );
+    dependencies = dependencies.slice(0, OUTCOME_CAPS.maxDependencies);
+  }
+  let usages = outcome.usages;
+  if (usages.length > OUTCOME_CAPS.maxUsages) {
+    limitations.push(
+      `Adapter posted ${usages.length} usages; capped at ${OUTCOME_CAPS.maxUsages}.`,
+    );
+    usages = usages.slice(0, OUTCOME_CAPS.maxUsages);
+  }
+  let graphs = outcome.graphs;
+  const totalNodes = graphs.reduce((sum, graph) => sum + graph.nodes.length, 0);
+  if (totalNodes > OUTCOME_CAPS.maxGraphNodes) {
+    limitations.push(
+      `Adapter posted ${totalNodes} graph nodes; capped at ${OUTCOME_CAPS.maxGraphNodes}.`,
+    );
+    const kept: typeof graphs = [];
+    let budget: number = OUTCOME_CAPS.maxGraphNodes;
+    for (const graph of graphs) {
+      if (budget <= 0) break;
+      if (graph.nodes.length <= budget) {
+        kept.push(graph);
+        budget -= graph.nodes.length;
+      } else {
+        kept.push({ ...graph, nodes: graph.nodes.slice(0, budget) });
+        budget = 0;
+      }
+    }
+    graphs = kept;
+  }
+  let findings = outcome.findings;
+  let evidenceTrimmed = false;
+  findings = findings.map((finding) => {
+    if (finding.evidence.length <= OUTCOME_CAPS.maxEvidencePerFinding) return finding;
+    evidenceTrimmed = true;
+    return { ...finding, evidence: finding.evidence.slice(0, OUTCOME_CAPS.maxEvidencePerFinding) };
+  });
+  if (evidenceTrimmed)
+    limitations.push(
+      `Finding evidence capped at ${OUTCOME_CAPS.maxEvidencePerFinding} entries each.`,
+    );
+  if (limitations.length === 0) return outcome;
+  return {
+    ...outcome,
+    dependencies,
+    usages,
+    graphs,
+    findings: [
+      ...findings,
+      {
+        kind: "info",
+        summary: `${outcome.ecosystem} adapter result truncated to size ceilings`,
+        recommendation:
+          "Manual review recommended; the adapter returned more data than the engine keeps.",
+        evidence: [{ kind: "outcome-capped", statement: limitations.join(" ") }],
+        confidence: "low",
+        limitations,
+        affectedFiles: [],
+      },
+    ],
+  };
 }
 
 interface WorkerMessage {
@@ -171,7 +257,7 @@ export function runAdapterIsolated(
         stage = message.stage;
         armWatchdog();
       } else if (message.type === "outcome" && message.outcome !== undefined) {
-        completed = message.outcome;
+        completed = capOutcome(message.outcome);
       } else if (message.type === "run-error") {
         finish(
           emptyOutcome(

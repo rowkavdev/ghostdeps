@@ -130,6 +130,28 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("caps an oversized worker-posted outcome and reports the truncation", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("over-poster.mjs")],
+        adapterTimeoutMs: 30_000,
+      });
+      // 12,000 posted, capped at 10,000 main-side (#123).
+      assert.equal(result.dependencies.length, 10_000);
+      const finding = result.findings.find(
+        (f) => f.kind === "info" && f.summary.includes("truncated to size ceilings"),
+      );
+      assert.ok(
+        finding,
+        `expected a truncation finding, got ${JSON.stringify(result.findings.map((f) => f.summary))}`,
+      );
+      assert.ok(finding.limitations.some((l) => l.includes("12") && l.includes("dependencies")));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("a module without an adapter export becomes an info finding, not a crash", async () => {
     const { dir, handle } = await fixtureRepo();
     try {
