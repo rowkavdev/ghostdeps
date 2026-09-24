@@ -4,6 +4,7 @@ export { scanSource, scriptKindFor, SCANNABLE_EXTENSIONS } from "./scan.js";
 export type { FileScanResult, ImportReference } from "./scan.js";
 export {
   findUsage,
+  findRemovedUsages,
   scanForContext,
   scanRepository,
   usageLimitations,

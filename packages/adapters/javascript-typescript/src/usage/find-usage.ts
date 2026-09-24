@@ -9,6 +9,7 @@ import type {
   Dependency,
   Evidence,
   RepositoryHandle,
+  SourceLineChanges,
   Usage,
 } from "@ghostdeps/core";
 import { AliasResolver } from "./aliases.js";
@@ -43,6 +44,8 @@ export interface RepositoryScan {
   shared: Evidence[];
   /** Every project root ("." or a workspace dir) found by package.json. */
   roots: Set<string>;
+  /** tsconfig/jsconfig alias resolver for the repository (#29). */
+  aliases: AliasResolver;
 }
 
 function dirname(path: string): string {
@@ -154,6 +157,11 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     if (f === "package.json") roots.add(".");
     else if (f.endsWith("/package.json")) roots.add(dirname(f));
   }
+
+  const aliases = new AliasResolver(
+    repository,
+    all.filter((f) => !isSkipped(f)),
+  );
   const scan: RepositoryScan = {
     files: new Map(),
     owner: new Map(),
@@ -161,11 +169,8 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     byProject: new Map(),
     shared: [],
     roots,
+    aliases,
   };
-  const aliases = new AliasResolver(
-    repository,
-    all.filter((f) => !isSkipped(f)),
-  );
   let outside = 0;
   for (const file of all) {
     const embedded = isEmbeddedScriptFile(file);
@@ -424,4 +429,94 @@ export async function usageLimitations(
     }
   }
   return [...out, ...scan.shared];
+}
+
+/** Forms that name a package statically: `import`/`export ... from` and literal `require()`. */
+const STATIC_FORMS = new Set<Usage["form"]>(["static", "require"]);
+
+/** Removed-line references by package, parsed once per analysis context. */
+const removedCaches = new WeakMap<AdapterContext, Promise<Map<string, IndexEntry[]>>>();
+
+/**
+ * Parse the lines a pull request removed from JS/TS files (#101, #168).
+ * Consecutive removed lines are parsed together so a removed multi-line
+ * import is still recognised. The diff text is data only: it is parsed,
+ * never evaluated, and core has already capped it.
+ */
+function removedReferences(
+  context: AdapterContext,
+  changes: readonly SourceLineChanges[],
+  scan: RepositoryScan,
+): Promise<Map<string, IndexEntry[]>> {
+  let pending = removedCaches.get(context);
+  if (!pending) {
+    pending = (async () => {
+      const index = new Map<string, IndexEntry[]>();
+      for (const change of changes) {
+        const file = change.path.replace(/^\.\//, "");
+        if (isSkipped(file) || !scriptKindFor(file)) continue;
+        const lines = [...change.removedLines].sort((a, b) => a.line - b.line);
+        let start = 0;
+        while (start < lines.length) {
+          let end = start + 1;
+          while (end < lines.length && lines[end]!.line === lines[end - 1]!.line + 1) end++;
+          const first = lines[start]!.line;
+          const text = lines
+            .slice(start, end)
+            .map((l) => l.text)
+            .join("\n");
+          start = end;
+          const result = scanSource(file, text);
+          await applyAliases(scan.aliases, file, result);
+          for (const ref of result.references) {
+            if (ref.packageName === undefined || ref.specifier === undefined) continue;
+            if (!STATIC_FORMS.has(ref.form)) continue;
+            ref.line += first - 1;
+            const list = index.get(ref.packageName);
+            if (list) list.push({ file, ref });
+            else index.set(ref.packageName, [{ file, ref }]);
+          }
+        }
+      }
+      return index;
+    })();
+    removedCaches.set(context, pending);
+  }
+  return pending;
+}
+
+/**
+ * PR mode only: usages of `dependency` on lines the pull request removed,
+ * each marked `removedInPr: true`. Ownership follows the same rules as
+ * findUsage (nearest declaring project, falling through to ancestors), using
+ * the file's path, which may no longer exist at head.
+ */
+export async function findRemovedUsages(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<Usage[]> {
+  const changes = context.pullRequestSourceChanges;
+  if (!changes || changes.length === 0) return [];
+  const scan = await scanForContext(context);
+  const index = await removedReferences(context, changes, scan);
+  const entries = index.get(dependency.name);
+  if (!entries) return [];
+  const project = normaliseProject(dependency.project.path);
+  const declared = await declaredFor(context, scan);
+  const usages: Usage[] = [];
+  for (const { file, ref } of entries) {
+    const owner = owningRoot(file, scan.roots);
+    if (owner === undefined || !resolvesTo(owner, project, dependency.name, declared)) continue;
+    const usage: Usage = {
+      dependency: dependency.name,
+      file,
+      line: ref.line,
+      form: ref.form,
+      symbols: [...new Set(ref.symbols)],
+      removedInPr: true,
+    };
+    if (ref.typeOnly) usage.typeOnly = true;
+    usages.push(usage);
+  }
+  return usages.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
 }

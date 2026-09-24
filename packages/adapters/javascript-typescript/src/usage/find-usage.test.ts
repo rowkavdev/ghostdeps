@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { MAX_FILE_READ_BYTES } from "@ghostdeps/core";
-import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
+import type { AdapterContext, Dependency, ProjectRef, SourceLineChanges } from "@ghostdeps/core";
 import { fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
 import { MAX_SCRIPT_BLOCKS_PER_FILE } from "./embedded.js";
 import {
   MAX_SOURCE_BYTES,
   MAX_OUTSIDE_PROJECT_RECORDS,
   MAX_UNRESOLVED_PER_FILE,
+  findRemovedUsages,
   findUsage,
   usageLimitations,
 } from "./find-usage.js";
@@ -418,5 +419,120 @@ describe("findUsage", () => {
     assert.equal((await findUsage(context, dep("utils"))).length, 1);
     const limits = await usageLimitations(context, ".");
     assert.ok(limits.some((e) => e.kind === "tsconfig-malformed" && e.file === "tsconfig.json"));
+  });
+});
+
+describe("findRemovedUsages (#168, PR mode)", () => {
+  const prCtx = (
+    files: Record<string, string>,
+    changes: SourceLineChanges[] | undefined,
+  ): AdapterContext => ({
+    repository: memoryHandle(files),
+    network: { mode: "offline" },
+    ...(changes ? { pullRequestSourceChanges: changes } : {}),
+  });
+  const removed = (path: string, lines: [number, string][]): SourceLineChanges => ({
+    path,
+    removedLines: lines.map(([line, text]) => ({ line, text })),
+    addedLines: [],
+  });
+  const at = (u: { file: string; line: number; removedInPr?: boolean; form: string }[]) =>
+    u.map((x) => `${x.file}:${x.line}:${x.form}:${x.removedInPr}`);
+
+  it("is empty on full scans (no source changes)", async () => {
+    const context = prCtx({ "package.json": "{}", "a.ts": `import "x";` }, undefined);
+    assert.deepEqual(await findRemovedUsages(context, dep("x")), []);
+  });
+
+  it("marks static imports, re-exports and literal requires on removed lines", async () => {
+    const context = prCtx({ "package.json": "{}", "src/a.ts": "" }, [
+      removed("src/a.ts", [
+        [3, `import d from "dropped";`],
+        [7, `export { x } from "dropped/sub";`],
+        [9, `const r = require("dropped");`],
+        [10, `import k from "kept";`],
+      ]),
+    ]);
+    assert.deepEqual(at(await findRemovedUsages(context, dep("dropped"))), [
+      "src/a.ts:3:static:true",
+      "src/a.ts:7:static:true",
+      "src/a.ts:9:require:true",
+    ]);
+    assert.deepEqual(at(await findRemovedUsages(context, dep("kept"))), [
+      "src/a.ts:10:static:true",
+    ]);
+  });
+
+  it("recognises a multi-line import removed as consecutive lines", async () => {
+    const context = prCtx({ "package.json": "{}" }, [
+      removed("src/gone.ts", [
+        [20, "import {"],
+        [21, "  a,"],
+        [22, "  b,"],
+        [23, `} from "multi";`],
+      ]),
+    ]);
+    const u = await findRemovedUsages(context, dep("multi"));
+    assert.deepEqual(at(u), ["src/gone.ts:20:static:true"]);
+    assert.deepEqual(u[0]?.symbols, ["a", "b"]);
+  });
+
+  it("never matches dynamic imports, strings, comments or non-source files", async () => {
+    const context = prCtx({ "package.json": "{}" }, [
+      removed("src/a.ts", [
+        [1, `const m = await import("dyn");`],
+        [2, `// import x from "commented";`],
+        [3, `const s = "import y from 'stringy'";`],
+        [4, `import(name);`],
+      ]),
+      removed("README.md", [[1, `import z from "docs";`]]),
+    ]);
+    for (const name of ["dyn", "commented", "stringy", "docs"]) {
+      assert.deepEqual(await findRemovedUsages(context, dep(name)), [], name);
+    }
+  });
+
+  it("ignores specifiers a tsconfig alias resolves to repository files (#29)", async () => {
+    const context = prCtx(
+      {
+        "package.json": "{}",
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: { baseUrl: ".", paths: { "@app/*": ["src/*"] } },
+        }),
+        "src/db.ts": "export {};",
+      },
+      [removed("src/a.ts", [[1, `import db from "@app/db";`]])],
+    );
+    assert.deepEqual(await findRemovedUsages(context, dep("@app/db")), []);
+  });
+
+  it("follows project ownership: nearest declaring project, falling through to ancestors", async () => {
+    const files = {
+      "package.json": JSON.stringify({ devDependencies: { execa: "1", shared: "1" } }),
+      "packages/a/package.json": JSON.stringify({ dependencies: { shared: "1" } }),
+    };
+    const context = prCtx(files, [
+      removed("packages/a/t.ts", [
+        [1, `import { execa } from "execa";`],
+        [2, `import "shared";`],
+      ]),
+    ]);
+    assert.deepEqual(at(await findRemovedUsages(context, dep("execa"))), [
+      "packages/a/t.ts:1:static:true",
+    ]);
+    assert.deepEqual(await findRemovedUsages(context, dep("shared")), []);
+    assert.deepEqual(at(await findRemovedUsages(context, dep("shared", "packages/a"))), [
+      "packages/a/t.ts:2:static:true",
+    ]);
+  });
+
+  it("hostile diff text is parsed, never executed", async () => {
+    const context = prCtx({ "package.json": "{}" }, [
+      removed("src/evil.js", [
+        [1, `process.exit(1); require("child_process").execSync("touch /tmp/pwned");`],
+      ]),
+    ]);
+    const u = await findRemovedUsages(context, dep("child_process"));
+    assert.deepEqual(u, []);
   });
 });
