@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AdapterContext, EcosystemAdapter } from "../adapter.js";
+import { normaliseUsageResult, type AdapterContext, type EcosystemAdapter } from "../adapter.js";
 
 /** Invariants every adapter must honour, whatever the ecosystem. */
 export function runAdapterContractTests(adapter: EcosystemAdapter, context: AdapterContext): void {
@@ -38,7 +38,16 @@ export function runAdapterContractTests(adapter: EcosystemAdapter, context: Adap
       const detection = await adapter.detect(context);
       const deps = await adapter.listDirectDependencies(context, detection.projects);
       for (const dep of deps.slice(0, 5)) {
-        for (const usage of await adapter.findUsage(context, dep)) {
+        const result = await adapter.findUsage(context, dep);
+        if (!Array.isArray(result)) {
+          assert.ok(Array.isArray(result.usages), "the object form needs a usages array");
+          assert.ok(
+            result.referenceAnalysisComplete === undefined ||
+              typeof result.referenceAnalysisComplete === "boolean",
+            "referenceAnalysisComplete must be a boolean when present",
+          );
+        }
+        for (const usage of normaliseUsageResult(result).usages) {
           assert.ok(usage.file.length > 0, "usage without a file is not evidence");
           assert.ok(usage.line > 0, "usage without a line is not evidence");
         }

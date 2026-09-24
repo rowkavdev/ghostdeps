@@ -52,6 +52,41 @@ export interface AdapterContext {
  * An ecosystem adapter. Implement only what the ecosystem supports and
  * declare exactly that in `capabilities`.
  */
+/**
+ * What findUsage returns for one dependency. Both forms are read
+ * conservatively:
+ *
+ * - `Usage[]`: the usages found. Script, bin and config references are
+ *   treated as NOT fully checked.
+ * - `{ usages, referenceAnalysisComplete }`: `referenceAnalysisComplete`
+ *   is `true` only when the adapter checked every script, bin and config
+ *   reference for this dependency. Omitted or `false` means incomplete.
+ *
+ * Only an explicit `true` for every dependency (plus the
+ * "referenceAnalysis" capability) lets the policy reach an "unused"
+ * verdict (#121). Any incomplete dependency clears it for that ecosystem
+ * for the run. Additive: arrays stay valid, so adapterApiVersion is unchanged.
+ */
+export type UsageAnalysisResult = Usage[] | UsageAnalysisReport;
+
+export interface UsageAnalysisReport {
+  usages: Usage[];
+  /** True only when script/bin/config references were fully checked. Omitted means false. */
+  referenceAnalysisComplete?: boolean;
+}
+
+/** Normalise either findUsage form. Arrays and an omitted flag both read as incomplete. */
+export function normaliseUsageResult(result: UsageAnalysisResult): {
+  usages: Usage[];
+  referenceAnalysisComplete: boolean;
+} {
+  if (Array.isArray(result)) return { usages: result, referenceAnalysisComplete: false };
+  return {
+    usages: result.usages,
+    referenceAnalysisComplete: result.referenceAnalysisComplete === true,
+  };
+}
+
 export interface EcosystemAdapter {
   /** e.g. "javascript-typescript", "python", "rust", "go". */
   readonly ecosystem: string;
@@ -70,8 +105,11 @@ export interface EcosystemAdapter {
     projects: ProjectRef[],
   ): Promise<DependencyGraph[]>;
 
-  /** Find where and how a dependency is used. Requires "usageAnalysis". */
-  findUsage?(context: AdapterContext, dependency: Dependency): Promise<Usage[]>;
+  /**
+   * Find where and how a dependency is used. Requires "usageAnalysis".
+   * Return either form of UsageAnalysisResult; see there for how each is read.
+   */
+  findUsage?(context: AdapterContext, dependency: Dependency): Promise<UsageAnalysisResult>;
 
   /** Propose native alternatives for observed usage. Requires "nativeAlternatives". */
   findNativeAlternatives?(
