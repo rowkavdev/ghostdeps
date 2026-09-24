@@ -5,7 +5,12 @@ import path from "node:path";
 import type { AdapterContext, ProjectRef } from "@ghostdeps/core";
 import { FIXTURES_ROOT, fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
 import { MAX_LOCKFILE_BYTES as CORE_MAX_LOCKFILE_BYTES } from "@ghostdeps/core";
-import { MAX_LOCKFILE_BYTES, MAX_MISMATCH_EVIDENCE, buildLockfileGraph } from "./build.js";
+import {
+  MAX_LOCKFILE_BYTES,
+  MAX_MISMATCH_EVIDENCE,
+  buildDependencyGraph,
+  buildLockfileGraph,
+} from "./build.js";
 
 const project = (p = ".", pm: string[] = []): ProjectRef => ({
   path: p,
@@ -409,5 +414,107 @@ describe("lockfile hardening (#91)", () => {
     const summary = res.evidence.filter((e) => e.kind === "lockfile-manifest-mismatch-summary");
     assert.equal(summary.length, 1);
     assert.match(summary[0]!.statement, new RegExp(`^${extra} more`));
+  });
+});
+
+describe("shared workspace lockfile is parsed once per run (#170)", () => {
+  /** A pnpm v9 monorepo: `members` workspace packages, one root lockfile shared by all. */
+  function monorepo(members: number): Record<string, string> {
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ name: "root", private: true }),
+    };
+    const lock = ["lockfileVersion: '9.0'", "importers:", "  .: {}"];
+    for (let i = 0; i < members; i++) {
+      lock.push(
+        `  packages/p${i}:`,
+        "    dependencies:",
+        "      dep-a:",
+        "        specifier: ^1.0.0",
+        "        version: 1.0.0",
+      );
+      files[`packages/p${i}/package.json`] = JSON.stringify({
+        name: `p${i}`,
+        dependencies: { "dep-a": "^1.0.0" },
+      });
+    }
+    lock.push(
+      "packages:",
+      "  dep-a@1.0.0:",
+      "    resolution: {integrity: sha512-a}",
+      "  dep-b@1.0.0:",
+      "    resolution: {integrity: sha512-b}",
+      "snapshots:",
+      "  dep-a@1.0.0:",
+      "    dependencies:",
+      "      dep-b: 1.0.0",
+      "  dep-b@1.0.0: {}",
+    );
+    files["pnpm-lock.yaml"] = lock.join("\n");
+    return files;
+  }
+
+  it("300 members sharing pnpm-lock.yaml read and parse it exactly once", async () => {
+    const files = monorepo(300);
+    const base = memoryHandle(files);
+    const reads = new Map<string, number>();
+    const context = ctx({
+      ...base,
+      readFile: (p: string) => {
+        reads.set(p, (reads.get(p) ?? 0) + 1);
+        return base.readFile(p);
+      },
+    });
+    const projects = Array.from({ length: 300 }, (_, i) => project(`packages/p${i}`, ["pnpm"]));
+    const started = Date.now();
+    const graphs = await buildDependencyGraph(context, projects);
+    const elapsed = Date.now() - started;
+    assert.equal(reads.get("pnpm-lock.yaml"), 1);
+    assert.equal(graphs.length, 300);
+    for (const g of graphs) {
+      assert.equal(g.incomplete, false);
+      assert.deepEqual(g.transitiveClosure, { "dep-a": ["dep-b"] });
+    }
+    // Loose bound: a per-project re-parse of a lockfile this size is what #170 caught.
+    assert.ok(elapsed < 10_000, `took ${elapsed}ms`);
+  });
+
+  it("per-importer results stay independent when the parsed lockfile is shared", async () => {
+    const files = monorepo(2);
+    files["packages/p1/package.json"] = JSON.stringify({
+      name: "p1",
+      dependencies: { "dep-a": "^1.0.0", missing: "^1.0.0" },
+    });
+    const context = ctx(memoryHandle(files));
+    const a = await buildLockfileGraph(context, project("packages/p0", ["pnpm"]));
+    const b = await buildLockfileGraph(context, project("packages/p1", ["pnpm"]));
+    const again = await buildLockfileGraph(context, project("packages/p0", ["pnpm"]));
+    const mismatches = (r: typeof a) =>
+      r.evidence.filter((e) => e.kind === "lockfile-manifest-mismatch").length;
+    assert.equal(mismatches(a), 0);
+    assert.ok(mismatches(b) >= 1);
+    assert.equal(mismatches(again), 0);
+    assert.deepEqual(again.graph, a.graph);
+  });
+
+  it("a malformed shared lockfile is reported for every member without re-parsing", async () => {
+    const files = monorepo(3);
+    files["pnpm-lock.yaml"] = "lockfileVersion: '9.0'\nimporters: [unclosed";
+    const base = memoryHandle(files);
+    let reads = 0;
+    const context = ctx({
+      ...base,
+      readFile: (p: string) => {
+        if (p === "pnpm-lock.yaml") reads++;
+        return base.readFile(p);
+      },
+    });
+    for (let i = 0; i < 3; i++) {
+      const res = await buildLockfileGraph(context, project(`packages/p${i}`, ["pnpm"]));
+      assert.ok(
+        res.evidence.some((e) => e.kind === "lockfile-malformed" && e.file === "pnpm-lock.yaml"),
+      );
+      assert.equal(res.graph.incomplete, true);
+    }
+    assert.equal(reads, 1);
   });
 });

@@ -4,11 +4,11 @@
  */
 import type { AdapterContext, DependencyGraph, Evidence, ProjectRef } from "@ghostdeps/core";
 import { assembleGraph, emptyGraph } from "./model.js";
-import type { LockfileGraphResult, ParsedLockfile } from "./model.js";
-import { parseNpmLockfile } from "./npm.js";
-import { parsePnpmLockfile } from "./pnpm.js";
-import { parseYarnLockfile } from "./yarn.js";
-import { parseBunLockfile } from "./bun.js";
+import type { LoadedLockfile, LockfileGraphResult, ParsedLockfile } from "./model.js";
+import { loadNpmLockfile, parseNpmLockfile } from "./npm.js";
+import { loadPnpmLockfile, parsePnpmLockfile } from "./pnpm.js";
+import { loadYarnLockfile, parseYarnLockfile } from "./yarn.js";
+import { loadBunLockfile, parseBunLockfile } from "./bun.js";
 
 /**
  * Lockfiles above this size are not parsed; the oversize lockfile is
@@ -141,6 +141,89 @@ async function findLockfile(
   return undefined;
 }
 
+type TextFormat = Exclude<Format, "bun-binary">;
+
+/** A lockfile read and parsed once per run, or the reason it could not be. */
+type LoadResult =
+  | { lockfile: LoadedLockfile; failure?: undefined }
+  | { lockfile?: undefined; failure: { kind: string; statement: string } };
+
+const LOADERS: Record<TextFormat, (text: string) => LoadedLockfile> = {
+  npm: loadNpmLockfile,
+  pnpm: loadPnpmLockfile,
+  yarn: loadYarnLockfile,
+  bun: loadBunLockfile,
+};
+
+function malformed(path: string, err: unknown): Evidence {
+  return {
+    kind: "lockfile-malformed",
+    statement: `${path} could not be parsed (${err instanceof Error ? err.message.split("\n")[0] : "unknown error"})`,
+    file: path,
+  };
+}
+
+/** Recursively freeze parsed lockfile data so shared per-importer extraction cannot mutate it. */
+function deepFreeze(value: unknown, seen = new Set<object>()): void {
+  if (typeof value !== "object" || value === null || seen.has(value)) return;
+  seen.add(value);
+  if (value instanceof Map) {
+    for (const v of value.values()) deepFreeze(v, seen);
+  } else {
+    for (const v of Object.values(value)) deepFreeze(v, seen);
+  }
+  Object.freeze(value);
+}
+
+/**
+ * Lockfiles parsed per analysis run, keyed by path (#170). A workspace root
+ * lockfile is shared by every member project; re-parsing it per project made
+ * large monorepos (vite: 273 projects, 510 KB pnpm-lock.yaml) spend ~35s in
+ * YAML parsing and hit the adapter timeout.
+ */
+const loadCaches = new WeakMap<AdapterContext, Map<string, Promise<LoadResult>>>();
+
+function loadLockfile(
+  context: AdapterContext,
+  path: string,
+  format: TextFormat,
+): Promise<LoadResult> {
+  let cache = loadCaches.get(context);
+  if (!cache) {
+    cache = new Map();
+    loadCaches.set(context, cache);
+  }
+  let pending = cache.get(path);
+  if (!pending) {
+    pending = (async (): Promise<LoadResult> => {
+      let text: string;
+      try {
+        text = await context.repository.readFile(path);
+      } catch {
+        return { failure: { kind: "lockfile-unreadable", statement: `could not read ${path}` } };
+      }
+      if (Buffer.byteLength(text, "utf8") > MAX_LOCKFILE_BYTES) {
+        return {
+          failure: {
+            kind: "lockfile-too-large",
+            statement: `${path} exceeds ${MAX_LOCKFILE_BYTES} bytes and was not parsed`,
+          },
+        };
+      }
+      try {
+        const lockfile = LOADERS[format](text);
+        deepFreeze(lockfile);
+        return { lockfile };
+      } catch (err) {
+        const { kind, statement } = malformed(path, err);
+        return { failure: { kind, statement } };
+      }
+    })();
+    cache.set(path, pending);
+  }
+  return pending;
+}
+
 /** Build the lockfile graph for one project, with evidence. Never throws on bad input. */
 export async function buildLockfileGraph(
   context: AdapterContext,
@@ -165,42 +248,25 @@ export async function buildLockfileGraph(
     });
     return { graph: emptyGraph(project), evidence };
   }
-  let text: string;
-  try {
-    text = await context.repository.readFile(lock.path);
-  } catch {
-    evidence.push({
-      kind: "lockfile-unreadable",
-      statement: `could not read ${lock.path}`,
-      file: lock.path,
-    });
-    return { graph: emptyGraph(project), evidence, lockfile: lock.path };
-  }
-  if (Buffer.byteLength(text, "utf8") > MAX_LOCKFILE_BYTES) {
-    evidence.push({
-      kind: "lockfile-too-large",
-      statement: `${lock.path} exceeds ${MAX_LOCKFILE_BYTES} bytes and was not parsed`,
-      file: lock.path,
-    });
+  const loaded = await loadLockfile(context, lock.path, lock.format);
+  if (loaded.failure) {
+    evidence.push({ ...loaded.failure, file: lock.path });
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
   const rel = relative(lock.dir, projectDir);
   let parsed: ParsedLockfile;
   try {
+    const source = loaded.lockfile;
     parsed =
       lock.format === "npm"
-        ? parseNpmLockfile(text, lock.path, rel === "." ? "" : rel, declared)
+        ? parseNpmLockfile(source, lock.path, rel === "." ? "" : rel, declared)
         : lock.format === "pnpm"
-          ? parsePnpmLockfile(text, lock.path, rel, declared)
+          ? parsePnpmLockfile(source, lock.path, rel, declared)
           : lock.format === "yarn"
-            ? parseYarnLockfile(text, lock.path, rel, declared)
-            : parseBunLockfile(text, lock.path, rel, declared);
+            ? parseYarnLockfile(source, lock.path, rel, declared)
+            : parseBunLockfile(source, lock.path, rel, declared);
   } catch (err) {
-    evidence.push({
-      kind: "lockfile-malformed",
-      statement: `${lock.path} could not be parsed (${err instanceof Error ? err.message.split("\n")[0] : "unknown error"})`,
-      file: lock.path,
-    });
+    evidence.push(malformed(lock.path, err));
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
   evidence.push(...capMismatchEvidence(parsed.evidence, lock.path));

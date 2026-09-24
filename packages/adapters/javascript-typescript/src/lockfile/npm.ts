@@ -5,7 +5,7 @@
  */
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
-import type { ParsedLockfile, ResolvedPackage } from "./model.js";
+import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
 
 interface NpmEntry {
   version?: string;
@@ -47,14 +47,19 @@ function parentDir(path: string): string | undefined {
  * `declared` is the manifest's direct dependency set used to report
  * lockfile/manifest mismatches.
  */
+/** Parse package-lock.json / npm-shrinkwrap.json text once; shared read-only across importers. */
+export function loadNpmLockfile(text: string): LoadedLockfile {
+  return { doc: JSON.parse(text) as unknown };
+}
+
 export function parseNpmLockfile(
-  text: string,
+  source: string | LoadedLockfile,
   lockfile: string,
   projectDir: string,
   declared: { name: string; dev: boolean }[],
 ): ParsedLockfile {
   const evidence: Evidence[] = [];
-  const doc: unknown = JSON.parse(text);
+  const { doc } = typeof source === "string" ? loadNpmLockfile(source) : source;
   if (!isObject(doc)) throw new Error("lockfile root is not an object");
   const version = doc.lockfileVersion;
   const packages = new Map<string, ResolvedPackage>();

@@ -5,7 +5,7 @@
  */
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
-import type { ParsedLockfile, ResolvedPackage } from "./model.js";
+import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
 const isObject = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -54,14 +54,19 @@ function splitIdent(ident: string): { name: string; version: string } {
     : { name: ident.slice(0, at), version: ident.slice(at + 1) };
 }
 
+/** Parse bun.lock text once; shared read-only across importers. */
+export function loadBunLockfile(text: string): LoadedLockfile {
+  return { doc: JSON.parse(stripTrailingCommas(text)) as unknown };
+}
+
 export function parseBunLockfile(
-  text: string,
+  source: string | LoadedLockfile,
   lockfile: string,
   importerPath: string,
   declared: { name: string; dev: boolean }[],
 ): ParsedLockfile {
   const evidence: Evidence[] = [];
-  const doc: unknown = JSON.parse(stripTrailingCommas(text));
+  const { doc } = typeof source === "string" ? loadBunLockfile(source) : source;
   if (!isObject(doc)) throw new Error("lockfile root is not an object");
   const table = isObject(doc.packages) ? doc.packages : {};
   const packages = new Map<string, ResolvedPackage>();
