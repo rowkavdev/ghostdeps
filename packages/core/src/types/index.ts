@@ -382,8 +382,9 @@ export interface PackageVersionRef {
    * The locked package's GraphNode.registryOrigin, validated and
    * normalised by core. Absent when no node had one, it was malformed, or
    * locked nodes for this name and version disagree. Providers decide
-   * which origins they may query (the GitHub App: npm's public registry
-   * only) and skip the rest.
+   * which origins they may query (the GitHub App: exactly
+   * PUBLIC_NPM_REGISTRY_ORIGINS, via isPublicNpmRegistryOrigin) and skip
+   * the rest.
    */
   origin?: string;
 }
