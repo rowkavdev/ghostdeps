@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AnalysisResult } from "@ghostdeps/core";
 import type { AnalysisJob } from "../jobs.js";
-import { createAnalysisWorker, type RepositoryClient } from "./analyse-job.js";
+import {
+  createAnalysisWorker,
+  type AnalyseRunOptions,
+  type RepositoryClient,
+} from "./analyse-job.js";
 import { tarGz, type TarEntry } from "./test-tar.js";
 
 const SHA = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
@@ -33,13 +37,23 @@ interface Recorded {
   created: Record<string, unknown>[];
   updated: Record<string, unknown>[];
   tarballRequests: number;
+  compares: string[];
 }
 
-function fakeClient(options: { existingRunId?: number; location?: string } = {}): {
+function fakeClient(
+  options: {
+    existingRunId?: number;
+    location?: string;
+    /** base...head diff; an object throws with that status. */
+    diff?: string | { status: number };
+    /** `${ref}:${path}` -> raw file text */
+    files?: Record<string, string>;
+  } = {},
+): {
   client: RepositoryClient;
   rec: Recorded;
 } {
-  const rec: Recorded = { created: [], updated: [], tarballRequests: 0 };
+  const rec: Recorded = { created: [], updated: [], tarballRequests: 0, compares: [] };
   const client: RepositoryClient = {
     checks: {
       async listForRef() {
@@ -61,7 +75,20 @@ function fakeClient(options: { existingRunId?: number; location?: string } = {})
         return { data: { id: params.check_run_id } };
       },
     },
-    async request() {
+    request: (async (route: string, params: Record<string, unknown>) => {
+      if (route === "GET /repos/{owner}/{repo}/compare/{basehead}") {
+        rec.compares.push(String(params.basehead));
+        const diff = options.diff;
+        if (diff === undefined || typeof diff !== "string") {
+          throw Object.assign(new Error("http"), diff ?? { status: 404 });
+        }
+        return { data: diff };
+      }
+      if (route === "GET /repos/{owner}/{repo}/contents/{path}") {
+        const file = options.files?.[`${String(params.ref)}:${String(params.path)}`];
+        if (file === undefined) throw Object.assign(new Error("not found"), { status: 404 });
+        return { data: file };
+      }
       rec.tarballRequests++;
       return {
         status: 302,
@@ -71,7 +98,7 @@ function fakeClient(options: { existingRunId?: number; location?: string } = {})
             `https://codeload.github.com/octo-org/example-app/legacy.tar.gz/${SHA}`,
         },
       };
-    },
+    }) as RepositoryClient["request"],
   };
   return { client, rec };
 }
@@ -219,5 +246,133 @@ describe("analysis worker", () => {
     });
     await worker(job());
     assert.match((rec.updated[0]?.output as { summary: string }).summary, /larger than/);
+  });
+});
+
+describe("analysis worker: pull request context (#115)", async () => {
+  const payload = JSON.parse(
+    await readFile(
+      new URL("../../test/fixtures/pull_request.opened.json", import.meta.url),
+      "utf8",
+    ),
+  ) as { number: number; pull_request: { base: { sha: string }; head: { sha: string } } };
+  const BASE = payload.pull_request.base.sha;
+  const HEAD = payload.pull_request.head.sha;
+  const prJob = job({
+    kind: "pull_request",
+    number: payload.number,
+    action: "opened",
+    baseSha: BASE,
+  });
+
+  const DIFF = `diff --git a/package.json b/package.json
+index 1111111..2222222 100644
+--- a/package.json
++++ b/package.json
+@@ -1 +1 @@
+-{"name":"example","dependencies":{"left-pad":"^1.3.0"}}
++{"name":"example","dependencies":{"left-pad":"^1.3.0","axios":"^1.7.0"}}
+diff --git a/src/index.js b/src/index.js
+index 3333333..4444444 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,2 +1,3 @@
+ import leftPad from "left-pad";
+ console.log(leftPad("x", 3));
++console.log("hi");
+`;
+  const files = {
+    [`${BASE}:package.json`]: JSON.stringify({
+      name: "example",
+      dependencies: { "left-pad": "^1.3.0" },
+    }),
+    [`${HEAD}:package.json`]: JSON.stringify({
+      name: "example",
+      dependencies: { "left-pad": "^1.3.0", axios: "^1.7.0" },
+    }),
+  };
+  const prRepo: TarEntry[] = [
+    ...repo.filter((e) => !e.name.endsWith("package.json")),
+    { name: `${ROOT}package.json`, body: files[`${HEAD}:package.json`] ?? "" },
+  ];
+
+  it("passes the PR's dependency changes to the engine (recorded payload)", async () => {
+    const { client, rec } = fakeClient({ diff: DIFF, files });
+    let seen: AnalyseRunOptions | undefined;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(prJob);
+    assert.deepEqual(rec.compares, [`${BASE}...${HEAD}`]);
+    assert.deepEqual(
+      seen?.pullRequestChanges?.map((c) => [c.change, c.name, c.usageCheck]),
+      [["added", "axios", "pending"]],
+    );
+    assert.equal(rec.updated[0]?.conclusion, "success");
+  });
+
+  it("analyses the full repository when the changes cannot be read in full", async () => {
+    const { client, rec } = fakeClient({ diff: { status: 406 } });
+    let seen: AnalyseRunOptions | undefined;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(prJob);
+    assert.deepEqual(seen, {});
+    assert.equal(rec.updated.length, 1);
+    assert.notEqual(
+      (rec.updated[0]?.output as { title?: string }).title,
+      "GhostDeps could not run",
+    );
+  });
+
+  it("does not fetch a diff for push jobs or fork re-runs", async () => {
+    for (const trigger of [undefined, { kind: "rerequested", checkRunId: 5 } as const]) {
+      const { client, rec } = fakeClient({ diff: DIFF, files });
+      let seen: AnalyseRunOptions | undefined;
+      const worker = createAnalysisWorker({
+        appId: APP_ID,
+        clientFor: async () => client,
+        workRoot: await workRoot(),
+        fetch: fetchServing(tarGz(prRepo)),
+        analyse: async (_dir, _mods, run) => {
+          seen = run;
+          return emptyResult;
+        },
+      });
+      await worker(job(trigger));
+      assert.deepEqual(rec.compares, []);
+      assert.deepEqual(seen, {});
+    }
+  });
+
+  it("runs the real isolated engine in pull-request mode end to end", async () => {
+    const { client, rec } = fakeClient({ diff: DIFF, files });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+    });
+    await worker(prJob);
+    assert.equal(rec.updated.length, 1);
+    assert.notEqual(
+      (rec.updated[0]?.output as { title?: string }).title,
+      "GhostDeps could not run",
+    );
   });
 });
