@@ -2,12 +2,11 @@
  * Convenience entry point for local checkouts: scan a directory with the
  * repository scanner (#7), analyse it (#69), and turn scan limits that
  * could hide real source into info findings, so an incomplete scan is
- * never presented as a complete analysis. When the scan is incomplete,
- * "unused" and "potentially-unnecessary" findings are capped at medium
- * confidence and carry a limitation saying why.
+ * never presented as a complete analysis. analyseRepository caps
+ * "unused" and "potentially-unnecessary" findings at medium when the scan
+ * is incomplete and appends these notes (AnalyseOptions.scanCompleteness).
  */
 import type { AnalysisResult, Finding } from "../types/index.js";
-import { normaliseAnalysisResult } from "../report/json.js";
 import { analyseRepository, type AnalyseOptions } from "./analyse.js";
 import { FsRepositoryHandle } from "./scanner/handle.js";
 import type { ScanOptions, ScanResult, SkipReason } from "./scanner/scanner.js";
@@ -37,12 +36,6 @@ const REASON_TEXT: Partial<Record<SkipReason, (count: number) => string>> = {
   "file-too-large": (n) => `${n} file${n === 1 ? "" : "s"} over the size ceiling`,
   unreadable: (n) => `${n} unreadable path${n === 1 ? "" : "s"}`,
 };
-
-/** Finding kinds whose claim ("not needed") can be wrong when files were not scanned. */
-const ABSENCE_KINDS: ReadonlySet<Finding["kind"]> = new Set(["unused", "potentially-unnecessary"]);
-
-const INCOMPLETE_SCAN_LIMITATION =
-  "The repository scan was incomplete; this dependency may be used in files that were not analysed.";
 
 /** Info findings describing where the scan was incomplete. */
 export function scanCompletenessFindings(scan: ScanResult): Finding[] {
@@ -91,22 +84,9 @@ export async function analyseDirectory(
 ): Promise<AnalysisResult> {
   const { scan: scanOptions, ...analyseOptions } = options;
   const handle = await FsRepositoryHandle.open(rootDir, scanOptions ?? {});
-  const notes = scanCompletenessFindings(handle.scan);
-  const result = await analyseRepository(handle, {
+  // Core caps absence findings and appends these notes (#154).
+  return analyseRepository(handle, {
     ...analyseOptions,
-    scanIncomplete: analyseOptions.scanIncomplete === true || notes.length > 0,
+    scanCompleteness: scanCompletenessFindings(handle.scan),
   });
-  if (notes.length === 0) return result;
-  // An incomplete scan must never yield a confident "not needed" claim:
-  // cap those findings at medium and say why on each one.
-  const findings = result.findings.map((finding) =>
-    ABSENCE_KINDS.has(finding.kind)
-      ? {
-          ...finding,
-          confidence: finding.confidence === "high" ? ("medium" as const) : finding.confidence,
-          limitations: [...finding.limitations, INCOMPLETE_SCAN_LIMITATION],
-        }
-      : finding,
-  );
-  return normaliseAnalysisResult({ ...result, findings: [...findings, ...notes] });
 }
