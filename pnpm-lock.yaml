@@ -185,6 +185,16 @@ importers:
         specifier: ^8.18.0
         version: 8.70.1(eslint@10.11.0)(typescript@5.9.3)
 
+  packages/cli:
+    dependencies:
+      '@ghostdeps/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/core:
     devDependencies:
       typescript:
