@@ -350,16 +350,15 @@ export interface DependencyFootprint {
   /** Where the sizes come from, as the provider names it, e.g. "npm unpackedSize". */
   basis: string;
   /**
-   * Summed bytes over the sized packages. Neither bound is guaranteed:
-   * partial coverage undercounts, and because closures are by name, every
-   * locked version of a member is counted, which overcounts when versions
-   * only other dependencies pull in are locked too (#288).
+   * A lower bound on install bytes (#288): summed over the sized package
+   * names, each at its smallest locked version. Closures are by name, so
+   * which locked version a dependency installs isn't known; a name with any
+   * unsized locked version is left out.
    */
   bytes: number;
   /**
-   * Sized packages out of all packages counted: the dependency itself plus
-   * every locked version of each closure member, deduplicated by name and
-   * version.
+   * Sized package names out of all counted: the dependency itself plus each
+   * closure member that has a locked version.
    */
   coverage: { sized: number; total: number };
 }

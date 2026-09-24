@@ -38,8 +38,8 @@ export async function addFootprints(
     else graphsByProject.set(key, [graph]);
   }
 
-  // Per entry, the package versions it installs: itself plus every locked
-  // version of each closure member (closures are by name).
+  // Per entry, the package versions locked for itself and each closure
+  // member (closures are by name, so every locked version of a name).
   const members = new Map<DependencyImpact, Map<string, PackageVersionRef>>();
   const wanted = new Map<string, Map<string, PackageVersionRef>>();
   for (const entry of impact) {
@@ -79,10 +79,25 @@ export async function addFootprints(
     const set = members.get(entry);
     const answer = answers.get(entry.ecosystem);
     if (!set || !answer) return entry;
+    // A lower bound (#288): each name installs at least one of its locked
+    // versions, but which one isn't known from name-keyed closures. So a
+    // name counts only when every locked version of it is sized, and at
+    // its smallest.
+    const byName = new Map<string, number | undefined>();
+    for (const [key, ref] of set) {
+      const size = answer.sizes.get(key);
+      if (!byName.has(ref.name)) byName.set(ref.name, size);
+      else {
+        const prev = byName.get(ref.name);
+        byName.set(
+          ref.name,
+          prev === undefined || size === undefined ? undefined : Math.min(prev, size),
+        );
+      }
+    }
     let sized = 0;
     let bytes = 0;
-    for (const key of set.keys()) {
-      const size = answer.sizes.get(key);
+    for (const size of byName.values()) {
       if (size === undefined) continue;
       sized++;
       bytes += size;
@@ -92,7 +107,7 @@ export async function addFootprints(
       approximate: true,
       basis: answer.basis,
       bytes,
-      coverage: { sized, total: set.size },
+      coverage: { sized, total: byName.size },
     };
     return { ...entry, footprint };
   });
