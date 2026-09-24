@@ -78,7 +78,7 @@
       "evidence": [
         {
           "kind": "capability-cluster",
-          "statement": "axios and requests (python) are listed under \"http-client\" in the capability catalogue (version 1)"
+          "statement": "axios and requests (python) are listed under \"http-client\" in the capability catalogue (version 2)"
         }
       ],
       "kind": "info",
@@ -100,7 +100,7 @@
       "evidence": [
         {
           "kind": "capability-cluster",
-          "statement": "requests and axios (javascript-typescript) are listed under \"http-client\" in the capability catalogue (version 1)"
+          "statement": "requests and axios (javascript-typescript) are listed under \"http-client\" in the capability catalogue (version 2)"
         }
       ],
       "kind": "info",
