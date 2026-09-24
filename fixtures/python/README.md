@@ -9,7 +9,7 @@ Each scenario's `expected.json` is checked by `packages/adapters/python/src/fixt
 - `imports`: import path -> resolved distribution, per project root.
 - `usage`: dependency -> the exact `file:line` usages findUsage reports.
 - `graph`: lockfile graph shape, per project root.
-- `findings`: the exact findings from analyseDirectory with the default policy. Each entry matches on `kind`, plus `rule`, `dependency` and a `minConfidence` floor when given. `[]` means no findings at all.
+- `findings`: the exact findings from analyseDirectory with the default policy. Each entry matches on `kind`, plus `rule`, `dependency`, a `minConfidence` floor and an `evidence` kind when given (run notes such as scan-incomplete have no rule). `[]` means no findings at all.
 - `mustNotFind`: findings that must never appear, matched the same way.
 - `policy`: `noFindingsFor` dependencies and `noRules` rules.
 

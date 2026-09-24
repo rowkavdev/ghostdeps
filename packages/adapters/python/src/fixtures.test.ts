@@ -45,6 +45,8 @@ interface ExpectedFinding {
   rule?: string;
   dependency?: string;
   minConfidence?: "low" | "medium" | "high";
+  /** An evidence kind the finding must carry (for run notes that have no rule). */
+  evidence?: string;
 }
 
 const CONFIDENCE_ORDER = ["low", "medium", "high"];
@@ -53,6 +55,9 @@ function matches(finding: Finding, want: ExpectedFinding): boolean {
   if (finding.kind !== want.kind) return false;
   if (want.rule !== undefined && finding.rule !== want.rule) return false;
   if (want.dependency !== undefined && finding.dependency !== want.dependency) return false;
+  if (want.evidence !== undefined && !finding.evidence.some((e) => e.kind === want.evidence)) {
+    return false;
+  }
   if (
     want.minConfidence !== undefined &&
     CONFIDENCE_ORDER.indexOf(finding.confidence) < CONFIDENCE_ORDER.indexOf(want.minConfidence)
