@@ -242,4 +242,50 @@ describe("findUsage", () => {
   it("parse cap never exceeds core's read cap", () => {
     assert.ok(MAX_SOURCE_BYTES <= MAX_FILE_READ_BYTES);
   });
+
+  it("fixture js/usage-path-aliases: aliases resolve to repo files, workspace deps keep usage", async () => {
+    const context: AdapterContext = {
+      repository: fixtureHandle("js", "usage-path-aliases"),
+      network: { mode: "offline" },
+    };
+    // "utils/log" is a tsconfig alias to src/utils/log.ts, not the npm "utils" package.
+    assert.deepEqual(await findUsage(context, dep("utils")), []);
+    assert.deepEqual(
+      (await findUsage(context, dep("zod"))).map((u) => u.file),
+      ["src/index.ts"],
+    );
+    // The "*" -> node_modules fallback never hides real package usage.
+    assert.equal((await findUsage(context, dep("zod"))).length, 1);
+    // Workspace-internal package: imports stay usage of the declared workspace dep.
+    assert.deepEqual(
+      (await findUsage(context, dep("@acme/ui", "apps/web"))).map((u) => u.file),
+      ["apps/web/src/page.tsx"],
+    );
+    // An alias in a package that extends the root base still resolves (no "@lib" package usage).
+    assert.deepEqual(await findUsage(context, dep("@lib/db", "apps/web")), []);
+  });
+
+  it("aliases only hide specifiers that resolve to repository files", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "tsconfig.json": `{"compilerOptions":{"baseUrl":".","paths":{"lodash/*":["src/lodash/*"]}}}`,
+      "src/lodash/local.ts": "",
+      "a.ts": `import "lodash/local";\nimport "lodash/get";`,
+    });
+    assert.deepEqual(
+      (await findUsage(context, dep("lodash"))).map((u) => u.line),
+      [2],
+    );
+  });
+
+  it("a malformed tsconfig is a limitation for its project and aliases are simply not applied", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "tsconfig.json": `{"compilerOptions": `,
+      "a.ts": `import "utils/x";`,
+    });
+    assert.equal((await findUsage(context, dep("utils"))).length, 1);
+    const limits = await usageLimitations(context, ".");
+    assert.ok(limits.some((e) => e.kind === "tsconfig-malformed" && e.file === "tsconfig.json"));
+  });
 });

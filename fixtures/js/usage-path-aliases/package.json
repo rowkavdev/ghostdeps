@@ -1,0 +1,9 @@
+{
+  "name": "usage-path-aliases",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "dependencies": {
+    "utils": "^0.3.1",
+    "zod": "^3.23.0"
+  }
+}

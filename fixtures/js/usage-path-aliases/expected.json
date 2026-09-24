@@ -1,0 +1,8 @@
+{
+  "description": "tsconfig path aliases: \"@lib/db\" and \"utils/log\" resolve to repository files through paths in tsconfig.base.json (extended by the root and apps/web), so they are not package usage. The npm \"utils\" dependency is genuinely unused. zod is used, and the \"*\" -> node_modules fallback must not hide that. @acme/ui is a workspace package that apps/web declares and imports, so it is used.",
+  "findings": [{ "kind": "unused", "dependency": "utils" }],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "zod" },
+    { "kind": "unused", "dependency": "@acme/ui" }
+  ]
+}
