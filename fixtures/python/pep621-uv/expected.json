@@ -1,0 +1,49 @@
+{
+  "description": "PEP 621 project managed by uv: runtime, optional-extra, dependency-group and build-system requirements all parse with their kinds (#43). build-system requires (hatchling) is never imported and must never be reported unused.",
+  "detection": {
+    "minConfidence": 0.9,
+    "projects": [
+      "."
+    ],
+    "packageManagers": {
+      ".": [
+        "uv"
+      ]
+    }
+  },
+  "dependencies": [
+    {
+      "name": "httpx",
+      "kind": "runtime",
+      "constraint": ">=0.27",
+      "declaredIn": "pyproject.toml"
+    },
+    {
+      "name": "pyyaml",
+      "kind": "runtime",
+      "constraint": ">=6"
+    },
+    {
+      "name": "typer",
+      "kind": "optional",
+      "constraint": ">=0.12"
+    },
+    {
+      "name": "pytest",
+      "kind": "dev",
+      "constraint": ">=8"
+    },
+    {
+      "name": "hatchling",
+      "kind": "build",
+      "constraint": "*"
+    }
+  ],
+  "findings": [],
+  "mustNotFind": [
+    {
+      "kind": "unused",
+      "dependency": "hatchling"
+    }
+  ]
+}

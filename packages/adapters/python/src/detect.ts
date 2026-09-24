@@ -13,6 +13,7 @@ import {
   type PackageManager,
   type ProjectRef,
 } from "@ghostdeps/core";
+import { parse as parseToml } from "smol-toml";
 import { baseName, dirName, displayRoot, joinPath } from "./paths.js";
 
 export const PYTHON_ECOSYSTEM = "python";
@@ -38,6 +39,12 @@ const LOCKFILES: readonly (readonly [string, string])[] = [
   ["Pipfile.lock", "pipenv"],
   ["pdm.lock", "pdm"],
 ];
+
+/**
+ * pyproject.toml files above this are not parsed. Real ones are a few KiB;
+ * the cap bounds TOML parse cost on hostile input.
+ */
+export const MAX_PYPROJECT_BYTES = 1024 * 1024;
 
 const SOURCE_EXTENSIONS = [".py", ".pyw"] as const;
 
@@ -95,12 +102,12 @@ function manifestsIn(root: string, files: readonly string[]): string[] {
 }
 
 /** Package managers signalled by files in one root. Lockfiles first, then manifests. */
-async function detectPackageManagers(
-  context: AdapterContext,
+function detectPackageManagers(
   root: string,
   fileSet: ReadonlySet<string>,
   manifests: readonly string[],
-): Promise<{ managers: PackageManager[]; evidence: Evidence[] }> {
+  pyprojectText: string | undefined,
+): { managers: PackageManager[]; evidence: Evidence[] } {
   const managers: PackageManager[] = [];
   const evidence: Evidence[] = [];
   const add = (name: string, lockfile?: string): void => {
@@ -118,16 +125,10 @@ async function detectPackageManagers(
     });
   }
   const pyproject = joinPath(root, "pyproject.toml");
-  if (fileSet.has(pyproject) && !managers.some((m) => m.name === "poetry")) {
-    // A plain text check: TOML parsing is #43's job, and a table header is
-    // unambiguous enough to name the manager without evaluating anything.
-    let text = "";
-    try {
-      text = await context.repository.readFile(pyproject);
-    } catch {
-      // Unreadable manifests surface in the detection evidence below.
-    }
-    if (/^\s*\[tool\.poetry[\].]/m.test(text)) {
+  if (pyprojectText !== undefined && !managers.some((m) => m.name === "poetry")) {
+    // A table header is unambiguous enough to name the manager, and it
+    // still works when the rest of the file is malformed.
+    if (/^\s*\[tool\.poetry[\].]/m.test(pyprojectText)) {
       add("poetry");
       evidence.push({
         kind: "package-manager-found",
@@ -154,7 +155,7 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
     ...new Set(
       files.filter((file) => isRootManifest(file) || isRequirementsDirFile(file)).map(manifestRoot),
     ),
-  ].sort((a, b) => a.length - b.length || a.localeCompare(b));
+  ].sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0));
 
   if (roots.length === 0) {
     return { confidence: 0, projects: [], evidence: [] };
@@ -188,7 +189,21 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
     }
 
     const sourceCount = sourceCountByRoot.get(root) ?? 0;
-    const pm = await detectPackageManagers(context, root, fileSet, manifests);
+    const pyprojectPath = joinPath(root, "pyproject.toml");
+    let pyprojectText: string | undefined;
+    let pyprojectValid = true;
+    if (fileSet.has(pyprojectPath)) {
+      try {
+        pyprojectText = await repository.readFile(pyprojectPath);
+        if (Buffer.byteLength(pyprojectText, "utf8") > MAX_PYPROJECT_BYTES) {
+          throw new Error("pyproject.toml over the size cap");
+        }
+        parseToml(pyprojectText);
+      } catch {
+        pyprojectValid = false;
+      }
+    }
+    const pm = detectPackageManagers(root, fileSet, manifests, pyprojectText);
     let confidence: number;
 
     const docsOnly =
@@ -203,6 +218,16 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
         kind: "docs-build",
         statement: `${displayRoot(root)} is a documentation build; its requirements are not a Python project`,
       });
+    } else if (!pyprojectValid) {
+      // The ecosystem may still be present, but the manifest is untrusted
+      // input the parser cannot use (#43): degrade, never crash.
+      confidence = sourceCount > 0 ? DETECTION_CONFIDENCE_THRESHOLD : 0.2;
+      evidence.push({
+        kind: "manifest-malformed",
+        statement: `${pyprojectPath} could not be parsed (invalid TOML or over the size cap); degrading confidence instead of failing`,
+        file: pyprojectPath,
+      });
+      if (confidence >= DETECTION_CONFIDENCE_THRESHOLD) evidence.push(...pm.evidence);
     } else if (sourceCount === 0) {
       confidence = 0.3;
       evidence.push({

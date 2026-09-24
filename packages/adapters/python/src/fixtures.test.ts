@@ -9,10 +9,19 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it } from "node:test";
 import type { AdapterContext } from "@ghostdeps/core";
+import { createPythonAdapter } from "./adapter.js";
 import { detectPython } from "./detect.js";
 import { FIXTURES_ROOT, fixtureHandle } from "./testing/fs-handle.js";
 
+interface ExpectedDependency {
+  name: string;
+  kind?: string;
+  constraint?: string;
+  declaredIn?: string;
+}
+
 interface ExpectedFixture {
+  dependencies?: ExpectedDependency[];
   description?: string;
   detection?: {
     minConfidence?: number;
@@ -74,6 +83,25 @@ describe("python fixtures (issue #48)", () => {
             managers,
             `${scenario}: package managers at ${root}`,
           );
+        }
+      }
+
+      if (expected.dependencies !== undefined) {
+        const adapter = createPythonAdapter();
+        const detection = await adapter.detect(context);
+        const actual = await adapter.listDirectDependencies(context, detection.projects);
+        for (const want of expected.dependencies) {
+          const found = actual.find((dep) => dep.name === want.name);
+          assert.ok(found, `${scenario}: dependency ${want.name} not parsed`);
+          if (want.kind !== undefined)
+            assert.equal(found.kind, want.kind, `${scenario}: ${want.name} kind`);
+          if (want.constraint !== undefined)
+            assert.equal(found.constraint, want.constraint, `${scenario}: ${want.name} constraint`);
+          if (want.declaredIn !== undefined)
+            assert.equal(found.declaredIn, want.declaredIn, `${scenario}: ${want.name} declaredIn`);
+        }
+        if (expected.dependencies.length === 0) {
+          assert.deepEqual(actual, [], `${scenario}: expected no parsed dependencies`);
         }
       }
     });

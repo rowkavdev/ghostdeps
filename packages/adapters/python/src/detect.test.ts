@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext } from "@ghostdeps/core";
-import { DETECTION_CONFIDENCE_THRESHOLD, detectPython, isRequirementsFile } from "./detect.js";
+import {
+  DETECTION_CONFIDENCE_THRESHOLD,
+  MAX_PYPROJECT_BYTES,
+  detectPython,
+  isRequirementsFile,
+} from "./detect.js";
 import { memoryHandle } from "./testing/fs-handle.js";
 
 const ctx = (files: Record<string, string>): AdapterContext => ({
@@ -108,6 +113,13 @@ describe("detectPython (issue #42)", () => {
       result.projects.map((p) => p.path),
       ["docs"],
     );
+  });
+
+  it("does not parse an oversized pyproject.toml", async () => {
+    const huge = `[project]\nname = "x"\n# ${"x".repeat(MAX_PYPROJECT_BYTES)}\n`;
+    const result = await detectPython(ctx({ "pyproject.toml": huge, "a.py": "" }));
+    assert.equal(result.confidence, DETECTION_CONFIDENCE_THRESHOLD);
+    assert.ok(result.evidence.some((e) => e.kind === "manifest-malformed"));
   });
 
   it("tolerates an unreadable pyproject.toml", async () => {
