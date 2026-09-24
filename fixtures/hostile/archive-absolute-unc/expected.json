@@ -1,0 +1,8 @@
+{
+  "description": "UNC path '//server/share/payload'. Windows treats it as a network absolute path.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "ABSOLUTE_PATH"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "description": "Absolute POSIX path '/etc/passwd'. Extractors that honour it overwrite system files.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "ABSOLUTE_PATH"
+  }
+}

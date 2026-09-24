@@ -1,0 +1,8 @@
+{
+  "description": "Block/character device entries (typeflags 3/4). Extracting device nodes as root is a classic container-escape primitive.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "UNSUPPORTED_ENTRY"
+  }
+}

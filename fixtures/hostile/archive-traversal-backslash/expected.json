@@ -1,0 +1,8 @@
+{
+  "description": "Backslash separators: '..\\evil.txt'. Legal filename on Linux, traversal on Windows consumers of the tree. Validators must treat both separators as path boundaries.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "PATH_TRAVERSAL"
+  }
+}

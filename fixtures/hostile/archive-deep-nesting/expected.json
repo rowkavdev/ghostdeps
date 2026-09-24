@@ -1,0 +1,11 @@
+{
+  "description": "Path nested far past reasonable depth (run with a low maxDepth). Depth ceilings bound recursion in downstream consumers.",
+  "archive": "archive.tar.gz",
+  "limits": {
+    "maxDepth": 20
+  },
+  "expect": {
+    "result": "reject",
+    "code": "TOO_DEEP"
+  }
+}

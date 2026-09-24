@@ -1,0 +1,8 @@
+{
+  "description": "One file declaring a 5 GiB body in its header. Must be rejected from the header alone, before any body bytes are read.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "FILE_TOO_LARGE"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "description": "Entry name with lone 0xFF bytes (invalid UTF-8). Lenient decoders smuggle names past validators via replacement characters.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "INVALID_ENCODING"
+  }
+}

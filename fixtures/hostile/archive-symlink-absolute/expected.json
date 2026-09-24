@@ -1,0 +1,8 @@
+{
+  "description": "Symlink entry pointing at an absolute target ('/etc'). A following consumer that reads through the link escapes the checkout.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "ABSOLUTE_PATH"
+  }
+}

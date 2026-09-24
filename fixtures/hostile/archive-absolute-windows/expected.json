@@ -1,0 +1,8 @@
+{
+  "description": "Windows absolute and drive-relative paths: 'C:\\Windows\\System32\\drivers\\etc\\hosts'. A validator that only checks '/' misses these.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "ABSOLUTE_PATH"
+  }
+}

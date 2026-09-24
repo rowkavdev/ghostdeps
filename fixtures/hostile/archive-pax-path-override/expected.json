@@ -1,0 +1,8 @@
+{
+  "description": "Innocent ustar name, hostile pax 'path' override ('../evil.txt'). Extractors that validate the ustar name but write the pax name get slipped.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "PATH_TRAVERSAL"
+  }
+}

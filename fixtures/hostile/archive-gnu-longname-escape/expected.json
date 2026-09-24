@@ -1,0 +1,8 @@
+{
+  "description": "GNU '@LongLink' name extension carrying a traversal path. Validators must validate the *effective* name, not the truncated ustar one.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "PATH_TRAVERSAL"
+  }
+}
