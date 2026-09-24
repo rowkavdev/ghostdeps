@@ -135,7 +135,7 @@ describe("crossEcosystemOverlaps (#55)", () => {
     );
   });
 
-  it("only core's overlap rule can mark awareness; adapters and policies can't (#234)", async () => {
+  it("only core can mark awareness or adapterNote; adapters and policies can't (#234, #239)", async () => {
     const outcome: AdapterOutcome = {
       ecosystem: JS,
       dependencies: [dep(web, "axios")],
@@ -156,6 +156,7 @@ describe("crossEcosystemOverlaps (#55)", () => {
           limitations: [],
           affectedFiles: [],
           awareness: true,
+          adapterNote: true,
         },
       ],
       detected: { confidence: "high", projects: [web], evidence: [] },
@@ -172,11 +173,13 @@ describe("crossEcosystemOverlaps (#55)", () => {
         limitations: [],
         affectedFiles: [],
         awareness: true,
+        adapterNote: true,
       },
     ]);
     assert.ok(result.findings.length >= 2);
     for (const f of result.findings) {
       assert.equal(f.awareness, undefined, `${f.summary} must not keep awareness`);
+      assert.equal(f.adapterNote, undefined, `${f.summary} must not keep adapterNote`);
     }
   });
 });

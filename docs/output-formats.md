@@ -168,10 +168,20 @@ No significant dependency issues found.
   finding (today only `cross-ecosystem-capability-overlap`). Absent means not
   awareness: other info findings stay in Notes and keep their neutral
   meaning. Marking another rule awareness needs arbiter sign-off.
-- Presenters group findings with core's `findingGroup(f)`: `"awareness"`
-  only for an info finding with `awareness: true`, `"note"` for any other
-  info finding, `"verdict"` for everything else. The CLI and the app both
-  use it and own only the formatting.
+- Presenters group findings with core's `findingGroup(f)` (#239) and own
+  only the formatting:
+  - `"verdict"`: every non-info finding; drives the conclusion and exit code
+    per severity.
+  - `"incomplete"`: engine cap and incompleteness notes, and any other info
+    finding without a marker. Listed in Notes; a run whose only notes are
+    these is neutral "Analysis incomplete".
+  - `"note"`: non-capping run-level adapter notes (`adapterNote: true`, set
+    by the engine, #205). Listed in Notes; the check stays success.
+  - `"awareness"`: `awareness: true`. Awareness section, never affects
+    anything.
+    Only an explicit `true` marker moves an info finding out of
+    `"incomplete"` (fail-closed), and the engine strips both markers from
+    adapter and policy output.
 - Check conclusions: `success` when quiet, `neutral` with findings,
   never `failure`. GhostDeps advises, it does not gate.
 - PR comments only when a finding cannot be expressed as a check annotation.

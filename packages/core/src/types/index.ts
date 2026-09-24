@@ -171,6 +171,13 @@ export interface Finding {
    * adapter and policy findings.
    */
   awareness?: true;
+  /**
+   * A non-capping run-level adapter note (#239, #205): the engine sets it
+   * when it maps an adapter's note into the result, and strips it from all
+   * other adapter and policy output. findingGroup() reads it as "note";
+   * unmarked info findings are "incomplete" (fail-closed).
+   */
+  adapterNote?: true;
   /** Why this finding might be wrong; empty only when evidence is complete. */
   limitations: string[];
   /** Files likely affected by acting on the recommendation. */
