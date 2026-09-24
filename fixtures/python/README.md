@@ -5,7 +5,7 @@ Python adapter scenarios. See fixtures/README.md for conventions.
 Each scenario's `expected.json` is checked by `packages/adapters/python/src/fixtures.test.ts`:
 
 - `detection`: confidence bounds, project roots and package managers.
-- `dependencies`: direct dependencies (name, kind, and optionally constraint and declaredIn).
+- `dependencies`: direct dependencies (name, kind, and optionally constraint, declaredIn and declaredLine; `null` means no line is offered).
 - `imports`: import path -> resolved distribution, per project root.
 - `usage`: dependency -> the exact `file:line` usages findUsage reports.
 - `graph`: lockfile graph shape, per project root.

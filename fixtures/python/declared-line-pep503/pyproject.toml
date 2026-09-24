@@ -1,0 +1,11 @@
+[project]
+name = "declared-line-pep503"
+version = "0.1.0"
+dependencies = [
+  "PyYAML>=6",
+  "typing_extensions>=4.12",
+  "pyyaml-include>=2",
+]
+
+[project.optional-dependencies]
+docs = ["Sphinx>=7"]

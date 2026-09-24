@@ -10,6 +10,7 @@ import {
 } from "@ghostdeps/core";
 import { createPythonAdapter } from "../adapter.js";
 import { findPythonUsage } from "./scan.js";
+import { findRemovedPythonUsages } from "./removed.js";
 import { memoryHandle } from "../testing/fs-handle.js";
 
 const root: ProjectRef = { path: ".", ecosystem: "python", packageManagers: [] };
@@ -143,6 +144,22 @@ describe("python removedInPr usages (#287)", () => {
       attrs.map((u) => [u.line, u.typeOnly]),
       [[4, true]],
     );
+  });
+
+  it("lists the repository for project roots once per run, not per dependency", async () => {
+    const ctx = context({ "requirements.txt": REQS, "a.py": "" }, [
+      { path: "a.py", removedLines: lines("import requests", "import yaml"), addedLines: [] },
+    ]);
+    const listFiles = ctx.repository.listFiles.bind(ctx.repository);
+    let listings = 0;
+    ctx.repository.listFiles = () => {
+      listings += 1;
+      return listFiles();
+    };
+    for (const name of ["requests", "pyyaml", "attrs"]) {
+      await findRemovedPythonUsages(ctx, dep(name), () => true);
+    }
+    assert.equal(listings, 1);
   });
 
   it("no pull request, no removed usages", async () => {
