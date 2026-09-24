@@ -19,16 +19,6 @@
       "dependency": "react-fake-server"
     },
     {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "unrun"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "unrun"
-    },
-    {
       "kind": "should-be-dev",
       "severity": "low",
       "dependency": "@tailwindcss/vite"
