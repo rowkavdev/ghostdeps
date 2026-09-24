@@ -56,8 +56,11 @@ export interface CheckTarget {
   headSha: string;
   /** Idempotency key (the job key), stored as external_id. */
   externalId: string;
-  /** Our GitHub App id, so another app's run with the same name is never touched. */
-  appId?: number;
+  /**
+   * Our GitHub App id. Required: without it, a same-named run from another
+   * app or a workflow's GITHUB_TOKEN would count as ours and suppress analysis.
+   */
+  appId: number;
 }
 
 export class CheckReporter {
@@ -75,13 +78,11 @@ export class CheckReporter {
       check_name: checkName,
       filter: "latest",
       per_page: 10,
+      app_id: target.appId,
     };
-    if (target.appId !== undefined) params.app_id = target.appId;
     const { data } = await this.client.checks.listForRef(params);
     const run = data.check_runs.find(
-      (r) =>
-        (target.appId === undefined || r.app?.id === target.appId) &&
-        !(r.external_id ?? "").startsWith(BUSY_PREFIX),
+      (r) => r.app?.id === target.appId && !(r.external_id ?? "").startsWith(BUSY_PREFIX),
     );
     return run?.id;
   }

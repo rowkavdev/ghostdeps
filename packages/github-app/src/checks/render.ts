@@ -44,11 +44,30 @@ export function plain(text: string, limit: number): string {
   return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
 }
 
-/** Escape Markdown/HTML so repository text renders literally inside the summary. */
+/**
+ * Escape Markdown/HTML so repository text renders literally inside the
+ * summary. `@` becomes an entity so names like `@some-team` never mention anyone.
+ */
 export function md(text: string): string {
   return plain(text, 1_000)
     .replace(/\r?\n/g, " ")
-    .replace(/[\\`*_{}[\]()#+\-.!|>~<&]/g, (c) => `\\${c}`);
+    .replace(/[\\`*_{}[\]()#+\-.!|>~<&]/g, (c) => `\\${c}`)
+    .replace(/@/g, "&#64;");
+}
+
+/**
+ * Cut the summary on a line boundary under GitHub's limit, closing an open
+ * `<details>` so the rest of the check page still renders.
+ */
+export function truncateSummary(summary: string, limit = summaryLimit): string {
+  if (summary.length <= limit) return summary;
+  const note = "\n\n_Summary truncated._";
+  const closing = "\n</details>";
+  let cut = summary.slice(0, limit - note.length - closing.length);
+  const lastNewline = cut.lastIndexOf("\n");
+  if (lastNewline > 0) cut = cut.slice(0, lastNewline);
+  const open = cut.lastIndexOf("<details>") > cut.lastIndexOf("</details>");
+  return `${cut}${open ? closing : ""}${note}`;
 }
 
 function locatedOnAddedLine(
@@ -134,9 +153,7 @@ export function renderCheck(result: AnalysisResult, added: AddedLines): CheckOut
     );
   }
 
-  let summary = parts.join("\n");
-  if (summary.length > summaryLimit)
-    summary = `${summary.slice(0, summaryLimit)}\n\n_Summary truncated._`;
+  const summary = truncateSummary(parts.join("\n"));
 
   return {
     conclusion: "neutral",

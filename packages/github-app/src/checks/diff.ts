@@ -1,38 +1,32 @@
 /**
- * Unified-diff helpers. GitHub's PR files API returns a `patch` per file;
- * annotations only go on lines the PR added or changed.
+ * Added lines per file, for annotation gating. GitHub's PR files API returns
+ * a bare hunk `patch` per file; each one goes through core's hardened
+ * unified-diff parser so there is a single parser to harden (#76).
  */
-
-/** Line numbers (in the new file) that a unified diff patch adds. */
-export function addedLinesFromPatch(patch: string | undefined): Set<number> {
-  const added = new Set<number>();
-  if (!patch) return added;
-  let newLine = 0;
-  let inHunk = false;
-  for (const raw of patch.split("\n")) {
-    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
-    if (hunk) {
-      newLine = Number(hunk[1]);
-      inHunk = true;
-      continue;
-    }
-    if (!inHunk) continue;
-    if (raw.startsWith("+")) {
-      added.add(newLine);
-      newLine++;
-    } else if (raw.startsWith("-")) {
-      // removed line: new-file counter does not move
-    } else if (raw.startsWith("\\")) {
-      // "\ No newline at end of file"
-    } else {
-      newLine++;
-    }
-  }
-  return added;
-}
+import { addedLines, parseUnifiedDiff } from "@ghostdeps/core";
 
 /** path -> added line numbers, for every file in a PR. */
 export type AddedLines = ReadonlyMap<string, ReadonlySet<number>>;
+
+/**
+ * Line numbers (in the new file) that one file's patch adds. A fixed,
+ * well-formed header is prepended so attacker-controlled file names never
+ * reach the header parser; the caller keys results by the API's filename.
+ */
+export function addedLinesFromPatch(patch: string | undefined): Set<number> {
+  if (!patch) return new Set();
+  const parsed = parseUnifiedDiff(`diff --git a/f b/f\n--- a/f\n+++ b/f\n${patch}`, {
+    maxFiles: 1,
+  });
+  const file = parsed.files[0];
+  return new Set(
+    file
+      ? addedLines(file)
+          .map((l) => l.line)
+          .filter((n) => n > 0)
+      : [],
+  );
+}
 
 export function addedLinesFromFiles(
   files: readonly { filename: string; patch?: string }[],

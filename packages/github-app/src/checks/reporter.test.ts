@@ -120,6 +120,29 @@ describe("renderCheck", () => {
     assert.doesNotMatch(out.output.summary, /\u202e/);
     assert.equal(md("a*b"), "a\\*b");
   });
+
+  it("never renders a live @mention", () => {
+    const out = renderCheck(
+      result([
+        finding({ dependency: "@some-team/pkg", summary: "ping @octocat", confidence: "low" }),
+      ]),
+      added,
+    );
+    assert.doesNotMatch(out.output.summary, /@/);
+    assert.match(out.output.summary, /&#64;some/);
+  });
+
+  it("truncates a huge summary on a line boundary and closes <details>", () => {
+    const long = "x".repeat(900);
+    const many = Array.from({ length: 200 }, (_, i) =>
+      finding({ dependency: `dep${i}`, summary: long, confidence: "low" }),
+    );
+    const s = renderCheck(result(many), added).output.summary;
+    assert.ok(s.length <= 65_000, `length ${s.length}`);
+    assert.match(s, /<\/details>\n\n_Summary truncated\._$/);
+    const body = s.slice(0, s.indexOf("\n</details>"));
+    assert.match(body.slice(body.lastIndexOf("\n") + 1), /_\(low confidence\)_$/);
+  });
 });
 
 function fakeClient(existing: { id: number; app?: { id: number }; external_id?: string }[] = []) {
@@ -175,6 +198,21 @@ describe("CheckReporter", () => {
     assert.deepEqual(res, { checkRunId: 5, created: false });
     assert.equal(
       calls.some((c) => c.op === "create"),
+      false,
+    );
+  });
+
+  it("never falls back to a same-named run it does not own", async () => {
+    // e.g. a workflow's GITHUB_TOKEN run (no app match) and another installed app
+    const { client, calls } = fakeClient([{ id: 5, app: { id: 777 } }, { id: 6 }] as {
+      id: number;
+      app?: { id: number };
+    }[]);
+    const res = await new CheckReporter(client).start(target);
+    assert.deepEqual(res, { checkRunId: 99, created: true });
+    assert.equal(calls[0]!.params.app_id, 1);
+    assert.equal(
+      calls.some((c) => c.op === "update"),
       false,
     );
   });
