@@ -64,7 +64,12 @@ export const OUTCOME_CAPS = Object.freeze({
 });
 
 export interface IsolatedAnalyseOptions {
-  /** Module specifiers; each module's default or "adapter" export is the adapter. */
+  /**
+   * Module specifiers; each module's default or "adapter" export is the
+   * adapter. TRUSTED CONFIGURATION ONLY: every specifier goes to import()
+   * inside the worker, so specifiers must come from CLI flags or project
+   * config, never from repository content (manifests, lockfiles, source).
+   */
   adapters: readonly string[];
   /**
    * Drain for adapter stdout/stderr lines. Worker output is NEVER inherited
