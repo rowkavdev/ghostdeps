@@ -4,6 +4,7 @@
  * bun.lockb format is not parsed (reported as unsupported by the builder).
  */
 import type { Evidence } from "@ghostdeps/core";
+import { own } from "./model.js";
 import type { ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
@@ -11,25 +12,27 @@ const isObject = (v: unknown): v is Rec => typeof v === "object" && v !== null &
 
 /** Remove trailing commas before } or ] outside strings. */
 export function stripTrailingCommas(text: string): string {
-  let out = "";
+  const out: string[] = [];
+  let start = 0;
   let inString = false;
   for (let i = 0; i < text.length; i++) {
-    const c = text[i]!;
+    const c = text.charCodeAt(i);
     if (inString) {
-      out += c;
-      if (c === "\\") out += text[++i] ?? "";
-      else if (c === '"') inString = false;
-      continue;
-    }
-    if (c === '"') inString = true;
-    else if (c === ",") {
+      if (c === 92 /* \\ */) i++;
+      else if (c === 34 /* " */) inString = false;
+    } else if (c === 34) {
+      inString = true;
+    } else if (c === 44 /* , */) {
       let j = i + 1;
       while (j < text.length && /\s/.test(text[j]!)) j++;
-      if (text[j] === "}" || text[j] === "]") continue;
+      if (text[j] === "}" || text[j] === "]") {
+        out.push(text.slice(start, i));
+        start = i + 1;
+      }
     }
-    out += c;
   }
-  return out;
+  out.push(text.slice(start));
+  return out.join("");
 }
 
 /** Split a bun package key ("a/@s/b/c") into package-name units. */
@@ -68,7 +71,8 @@ export function parseBunLockfile(
     const path = from ? units(from) : [];
     for (let n = path.length; n >= 0; n--) {
       const key = [...path.slice(0, n), dep].join("/");
-      if (Array.isArray(table[key])) return key;
+      const value = own(table, key);
+      if (Array.isArray(value) && typeof value[0] === "string") return key;
     }
     return undefined;
   };
@@ -80,7 +84,7 @@ export function parseBunLockfile(
     const deps: string[] = [];
     if (!version.startsWith("workspace:") && meta) {
       for (const field of ["dependencies", "optionalDependencies", "peerDependencies"]) {
-        const map = meta[field];
+        const map = own(meta, field);
         if (!isObject(map)) continue;
         for (const d of Object.keys(map)) {
           const id = lookup(key, d);
@@ -93,7 +97,7 @@ export function parseBunLockfile(
 
   const direct: ParsedLockfile["direct"] = declared.map((d) => ({ ...d, id: undefined }));
   const workspaces = isObject(doc.workspaces) ? doc.workspaces : {};
-  const ws = workspaces[importerPath === "." ? "" : importerPath];
+  const ws = own(workspaces, importerPath === "." ? "" : importerPath);
   if (!isObject(ws)) {
     evidence.push({
       kind: "lockfile-manifest-mismatch",
@@ -104,11 +108,12 @@ export function parseBunLockfile(
   }
   const locked = new Set<string>();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies"]) {
-    const map = ws[field];
+    const map = own(ws, field);
     if (isObject(map)) for (const n of Object.keys(map)) locked.add(n);
   }
   // Workspace members may have nested copies under "<workspace name>/<dep>".
-  const wsName = typeof ws.name === "string" ? ws.name : undefined;
+  const wsNameRaw = own(ws, "name");
+  const wsName = typeof wsNameRaw === "string" ? wsNameRaw : undefined;
   for (const d of direct) {
     if (!locked.has(d.name)) {
       evidence.push({

@@ -17,7 +17,7 @@ import { parseBunLockfile } from "./bun.js";
  */
 export const MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
 
-type Format = "npm" | "pnpm" | "yarn" | "bun";
+type Format = "npm" | "pnpm" | "yarn" | "bun" | "bun-binary";
 const LOCKFILES: [string, Format][] = [
   ["npm-shrinkwrap.json", "npm"],
   ["package-lock.json", "npm"],
@@ -94,7 +94,13 @@ async function findLockfile(
       const path = join(dir, file);
       if (await context.repository.exists(path)) found.push({ path, dir, format });
     }
-    if (found.length === 0) continue;
+    if (found.length === 0) {
+      // bun.lockb is found by the same walk so members under a root bun.lockb report it.
+      const binary = join(dir, "bun.lockb");
+      if (await context.repository.exists(binary))
+        return { path: binary, dir, format: "bun-binary" };
+      continue;
+    }
     // npm-shrinkwrap.json wins over package-lock.json, as in npm itself.
     const unique = found.filter((f, i) => found.findIndex((g) => g.format === f.format) === i);
     if (unique.length > 1) {
@@ -118,16 +124,15 @@ export async function buildLockfileGraph(
   const projectDir = normalise(project.path);
   const declared = await readDeclared(context, projectDir, evidence);
   const lock = await findLockfile(context, project, evidence);
+  if (lock?.format === "bun-binary") {
+    evidence.push({
+      kind: "lockfile-unsupported",
+      statement: `${lock.path} is Bun's binary lockfile, which is not parsed (the text bun.lock format is)`,
+      file: lock.path,
+    });
+    return { graph: emptyGraph(project), evidence, lockfile: lock.path };
+  }
   if (!lock) {
-    const binary = join(projectDir, "bun.lockb");
-    if (await context.repository.exists(binary)) {
-      evidence.push({
-        kind: "lockfile-unsupported",
-        statement: `${binary} is Bun's binary lockfile, which is not parsed (the text bun.lock format is)`,
-        file: binary,
-      });
-      return { graph: emptyGraph(project), evidence, lockfile: binary };
-    }
     evidence.push({
       kind: "lockfile-missing",
       statement: `no npm, pnpm, Yarn or Bun lockfile found for ${projectDir}; transitive graph unknown`,
