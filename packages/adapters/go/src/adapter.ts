@@ -7,6 +7,7 @@ import {
   adapterApiVersion,
   type AdapterCapability,
   type AdapterContext,
+  type AdapterNote,
   type Dependency,
   type DependencyGraph,
   type DetectionResult,
@@ -16,6 +17,9 @@ import {
 import { detectGo, GO_ECOSYSTEM, joinPath } from "./detect.js";
 import { directDependencies, moduleGraph, readGoMod } from "./manifest.js";
 import { findGoUsage } from "./usage/scan.js";
+
+export const GRAPH_EDGES_NOTE =
+  "Go module graph edges need `go mod graph`, which GhostDeps never runs; the Go graph lists required modules only";
 
 const goProjects = (projects: ProjectRef[]) => projects.filter((p) => p.ecosystem === GO_ECOSYSTEM);
 
@@ -31,8 +35,8 @@ export function createGoAdapter(): EcosystemAdapter {
 
     async detect(context: AdapterContext): Promise<DetectionResult> {
       const result = await detectGo(context.repository);
-      // Parse problems and the edgeless graph are stated as evidence, so an
-      // incomplete picture is never a silent one.
+      // Parse problems are stated as evidence, so an incomplete picture is
+      // never a silent one. The edgeless graph is a run note (notes()).
       for (const project of result.projects) {
         const mod = await readGoMod(context.repository, project);
         const file = joinPath(project.path, "go.mod");
@@ -52,13 +56,6 @@ export function createGoAdapter(): EcosystemAdapter {
             line: e.line,
           });
         }
-      }
-      if (result.projects.length > 0) {
-        result.evidence.push({
-          kind: "graph-edges-unavailable",
-          statement:
-            "Go module graph edges need `go mod graph`, which GhostDeps never runs; graphs list modules only",
-        });
       }
       return result;
     },
@@ -88,5 +85,12 @@ export function createGoAdapter(): EcosystemAdapter {
     },
 
     findUsage: (context, dependency) => findGoUsage(context, dependency),
+
+    // Run-level note (#205): the graph is modules only, never edges. Non-
+    // capping; the engine already reports graph completeness "partial".
+    async notes(_context, projects): Promise<AdapterNote[]> {
+      if (goProjects(projects).length === 0) return [];
+      return [{ statement: GRAPH_EDGES_NOTE }];
+    },
   };
 }
