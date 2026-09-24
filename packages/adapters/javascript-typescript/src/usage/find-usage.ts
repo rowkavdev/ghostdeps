@@ -446,8 +446,10 @@ export const MAX_NAMED_GAP_PROJECTS = 10;
 /**
  * Limitations relevant to one project: its own (unresolved dynamic imports,
  * skipped or broken files), the bounded shared set for files outside every
- * project, and one summary for nested projects with import gaps (their
- * unresolved requires can fall through to this project's declarations).
+ * project, and one summary for nested projects with usage gaps (unresolved
+ * imports and unscanned, unreadable or unparsed files, whose requires can
+ * fall through to this project's declarations). The summary counts each
+ * limitation by kind, so it never calls a skipped file an import gap.
  *
  * Propagation is never capped (#185): any gap in any nested project keeps
  * this project incomplete. Only the reporting is bounded - one summary per
@@ -462,6 +464,7 @@ export async function usageLimitations(
   const project = normaliseProject(projectPath);
   const out: Evidence[] = [];
   const nested: { root: string; gaps: number }[] = [];
+  const byKind = new Map<string, number>();
   for (const [root, list] of scan.byProject) {
     if (list.length === 0) continue;
     if (root === project) {
@@ -469,6 +472,7 @@ export async function usageLimitations(
     } else if (scan.roots.has(project) && isWithin(root, project)) {
       // Upward only: a nested project's gaps reach its ancestors, never siblings or descendants.
       nested.push({ root, gaps: list.length });
+      for (const item of list) byKind.set(item.kind, (byKind.get(item.kind) ?? 0) + 1);
     }
   }
   if (nested.length > 0) {
@@ -477,11 +481,16 @@ export async function usageLimitations(
     const named = nested.slice(0, MAX_NAMED_GAP_PROJECTS).map((n) => `${n.root} (${n.gaps})`);
     const more = nested.length - named.length;
     const gaps = nested.reduce((sum, n) => sum + n.gaps, 0);
+    const kinds = [...byKind]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([kind, n]) => `${n} ${kind}`)
+      .join(", ");
     out.push({
       kind: "nested-project-import-gaps",
       statement:
-        `import gaps in ${nested.length} nested project${nested.length === 1 ? "" : "s"} ` +
-        `(${named.join(", ")}${more > 0 ? `, + ${more} more` : ""}; ${gaps} in total) ` +
+        `usage gaps in ${nested.length} nested project${nested.length === 1 ? "" : "s"} ` +
+        `(${named.join(", ")}${more > 0 ? `, + ${more} more` : ""}; ` +
+        `${gaps} limitation${gaps === 1 ? "" : "s"} in total: ${kinds}) ` +
         `can fall through to ${to}`,
       file: `${nested[0]!.root}/package.json`,
     });

@@ -133,7 +133,7 @@ describe("findUsage", () => {
     const [propagated] = await usageLimitations(context, ".");
     assert.equal(
       propagated!.statement,
-      "import gaps in 1 nested project (packages/a (1); 1 in total) can fall through to the root project",
+      "usage gaps in 1 nested project (packages/a (1); 1 limitation in total: 1 dynamic-import-unresolved) can fall through to the root project",
     );
     const [own] = await usageLimitations(context, "packages/a");
     assert.doesNotMatch(own!.statement, /nested project/);
@@ -154,7 +154,7 @@ describe("findUsage", () => {
     assert.equal(root[0]!.kind, "nested-project-import-gaps");
     assert.match(
       root[0]!.statement,
-      /^import gaps in 26 nested projects \(packages\/p00 \(2\), packages\/p00\/nested \(1\), packages\/p01 \(2\),.*, \+ 16 more; 51 in total\) can fall through to the root project$/,
+      /^usage gaps in 26 nested projects \(packages\/p00 \(2\), packages\/p00\/nested \(1\), packages\/p01 \(2\),.*, \+ 16 more; 51 limitations in total: 51 dynamic-import-unresolved\) can fall through to the root project$/,
     );
     assert.equal((root[0]!.statement.match(/packages\//g) ?? []).length, 10);
     // An intermediate ancestor gets its own summary for its own nested projects.
@@ -164,6 +164,23 @@ describe("findUsage", () => {
       ["dynamic-import-unresolved", "dynamic-import-unresolved", "nested-project-import-gaps"],
     );
     assert.match(p00[2]!.statement, /1 nested project \(packages\/p00\/nested \(1\)/);
+  });
+
+  it("counts nested limitations by kind, so skipped files are not called import gaps", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "packages/a/package.json": "{}",
+      "packages/a/x.js": `require(name);`,
+      "packages/b/package.json": "{}",
+      "packages/b/broken.js": `const = ;`,
+    });
+    const [summary] = await usageLimitations(context, ".");
+    assert.equal(summary!.kind, "nested-project-import-gaps");
+    assert.equal(
+      summary!.statement,
+      "usage gaps in 2 nested projects (packages/a (1), packages/b (1); 2 limitations in total: " +
+        "1 dynamic-import-unresolved, 1 parse-error) can fall through to the root project",
+    );
   });
 
   it("a gap in a project never reaches its nested projects (no downward propagation)", async () => {
