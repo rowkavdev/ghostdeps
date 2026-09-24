@@ -11,7 +11,10 @@ export {
 export {
   analyseRepositoryIsolated,
   runAdapterIsolated,
+  capOutcome,
   DEFAULT_ADAPTER_HEAP_MB,
+  DEFAULT_MAX_PARALLEL_ADAPTERS,
+  OUTCOME_CAPS,
   type IsolatedAnalyseOptions,
 } from "./isolated.js";
 export {

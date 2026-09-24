@@ -34,6 +34,13 @@ import type { FsRepositoryHandle } from "./scanner/handle.js";
 export const DEFAULT_ADAPTER_HEAP_MB = 512;
 
 /**
+ * Default cap on concurrently running adapter workers (#125): bounds total
+ * adapter heap at 4 x adapterHeapMb (2 GiB with defaults) regardless of
+ * adapter count.
+ */
+export const DEFAULT_MAX_PARALLEL_ADAPTERS = 4;
+
+/**
  * Main-side caps on what a worker may post back (#123). An adapter can stay
  * under its own heap ceiling and still structured-clone a huge outcome; the
  * clone has already landed in the main heap by the time these caps run, so
@@ -73,6 +80,12 @@ export interface IsolatedAnalyseOptions {
   usageConcurrency?: number;
   /** Per-worker heap ceiling in MiB (old generation). */
   adapterHeapMb?: number;
+  /**
+   * Maximum adapter workers running at once (#125). Workers start in waves
+   * of this size, so the worst-case adapter heap is
+   * maxParallelAdapters x adapterHeapMb, not N x adapterHeapMb.
+   */
+  maxParallelAdapters?: number;
   /** Omit to emit facts only (no recommendation findings). */
   recommend?: RecommendationPolicy;
 }
@@ -346,11 +359,21 @@ export async function analyseRepositoryIsolated(
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
   const heapMb = options.adapterHeapMb ?? DEFAULT_ADAPTER_HEAP_MB;
+  // Guard non-numeric input: Math.max(1, Math.floor(NaN)) is NaN, which
+  // would start zero lanes and leave every outcome silently undefined.
+  const requestedParallel = options.maxParallelAdapters ?? DEFAULT_MAX_PARALLEL_ADAPTERS;
+  const maxParallel = Number.isFinite(requestedParallel)
+    ? Math.max(1, Math.floor(requestedParallel))
+    : DEFAULT_MAX_PARALLEL_ADAPTERS;
 
-  const outcomes = await Promise.all(
-    options.adapters.map((specifier) =>
-      runAdapterIsolated(
-        specifier,
+  // Wave-pooled so total adapter heap stays at maxParallel x heapMb (#125).
+  const outcomes: AdapterOutcome[] = new Array<AdapterOutcome>(options.adapters.length);
+  let next = 0;
+  const lane = async (): Promise<void> => {
+    while (next < options.adapters.length) {
+      const index = next++;
+      outcomes[index] = await runAdapterIsolated(
+        options.adapters[index]!,
         repository,
         network,
         threshold,
@@ -358,8 +381,11 @@ export async function analyseRepositoryIsolated(
         usageConcurrency,
         heapMb,
         options.debugLog,
-      ),
-    ),
+      );
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(maxParallel, options.adapters.length) }, () => lane()),
   );
 
   return assembleAnalysisResult(outcomes, options.recommend);
