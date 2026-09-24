@@ -402,12 +402,22 @@ describe("analyseCheckout: scan completeness (#136)", () => {
     const { seen, engine } = capture();
     await analyseCheckout(await checkout(), ["m"], {}, { limits: { maxFiles: 1 } }, engine);
     assert.equal(seen.options?.scanIncomplete, true);
+    const notes = seen.options?.scanCompleteness as { kind: string; summary: string }[];
+    assert.ok(notes.length > 0);
+    assert.ok(notes.every((n) => n.kind === "info"));
+    assert.match(notes[0]?.summary ?? "", /stopped early/);
+  });
+
+  it("surfaces the notes through the real engine", async () => {
+    const result = await analyseCheckout(await checkout(), [], {}, { limits: { maxFiles: 1 } });
+    assert.ok(result.findings.some((f) => f.kind === "info" && /stopped early/.test(f.summary)));
   });
 
   it("leaves scanIncomplete unset for a complete scan", async () => {
     const { seen, engine } = capture();
     await analyseCheckout(await checkout(), ["m"], {}, {}, engine);
     assert.equal(seen.options?.scanIncomplete, undefined);
+    assert.equal(seen.options?.scanCompleteness, undefined);
     assert.deepEqual(seen.options?.adapters, ["m"]);
   });
 
