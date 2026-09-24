@@ -567,6 +567,13 @@ describe("head reads inside the engine (#113)", () => {
     assert.ok(result.findings.some((f) => f.summary.startsWith("all verdicts in this result")));
   });
 
+  it("notes each unsniffed file once per run, across adapters", async () => {
+    const result = await analyseRepository(bare, {
+      adapters: [sniffer(["yarn.lock"], []), { ...sniffer(["yarn.lock"], []), ecosystem: "py" }],
+    });
+    assert.equal(result.findings.filter((f) => f.rule === "file-not-sniffed").length, 1);
+  });
+
   it("passes a handle that has readFileHead straight through, with no notes", async () => {
     const heads: (string | undefined)[] = [];
     const withHead: RepositoryHandle = { ...bare, readFileHead: async () => "own" };

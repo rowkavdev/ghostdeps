@@ -150,7 +150,7 @@ export interface AdapterOutcome {
  */
 export type StageObserver = (stage: string) => void;
 
-/** Most unsniffed-file notes one adapter run records. */
+/** Most unsniffed-file notes one analysis run records, across all adapters. */
 const MAX_UNSNIFFED_NOTES = 100;
 
 const isTooLarge = (error: unknown): boolean =>
@@ -166,9 +166,12 @@ const isTooLarge = (error: unknown): boolean =>
  * ceiling, the file was never sniffed: record a scan-completeness note, so
  * the result is incomplete but never silently incomplete.
  */
-function withHeadReads(repository: RepositoryHandle, outcome: AdapterOutcome): RepositoryHandle {
+function withHeadReads(
+  repository: RepositoryHandle,
+  outcome: AdapterOutcome,
+  noted: Set<string>,
+): RepositoryHandle {
   if (typeof repository.readFileHead === "function") return repository;
-  const noted = new Set<string>();
   return {
     listFiles: () => repository.listFiles(),
     readFile: (path) => repository.readFile(path),
@@ -188,7 +191,7 @@ function withHeadReads(repository: RepositoryHandle, outcome: AdapterOutcome): R
             evidence: [
               {
                 kind: "file-not-sniffed",
-                statement: `${outcome.ecosystem} adapter could not read the head of ${path}`,
+                statement: `${outcome.ecosystem} adapter (first to ask) could not read the head of ${path}`,
                 file: path,
               },
             ],
@@ -213,6 +216,12 @@ export async function runAdapter(
   onStage?: StageObserver,
   /** PR mode (#101): already bounded by the engine. */
   pullRequestSourceChanges?: readonly SourceLineChanges[],
+  /**
+   * Files already noted as not sniffed in this analysis run. Share one set
+   * across a run's adapters so each file is noted once and the run records
+   * at most MAX_UNSNIFFED_NOTES notes in total.
+   */
+  unsniffed: Set<string> = new Set(),
 ): Promise<AdapterOutcome> {
   const outcome: AdapterOutcome = {
     ecosystem: adapter.ecosystem,
@@ -224,7 +233,7 @@ export async function runAdapter(
   };
   const controller = new AbortController();
   const context: AdapterContext = {
-    repository: withHeadReads(repository, outcome),
+    repository: withHeadReads(repository, outcome, unsniffed),
     network,
     signal: controller.signal,
   };

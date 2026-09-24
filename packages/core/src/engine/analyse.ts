@@ -425,6 +425,8 @@ export async function analyseRepository(
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
   const sourceChanges = boundPullRequestSourceChanges(options);
 
+  // One set per run: each unsniffed file is noted once, capped run-wide.
+  const unsniffed = new Set<string>();
   const outcomes = await Promise.all(
     options.adapters.map((adapter) =>
       runAdapter(
@@ -436,6 +438,7 @@ export async function analyseRepository(
         usageConcurrency,
         undefined,
         sourceChanges.changes,
+        unsniffed,
       ).catch((error: unknown): AdapterOutcome => ({
         ecosystem: adapter.ecosystem,
         dependencies: [],

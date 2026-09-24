@@ -11,7 +11,10 @@
  *   is the decoded prefix with any trailing partial UTF-8 sequence dropped:
  *   no replacement character, no torn multibyte character.
  * - Without readFileHead, core falls back to readFile and slices by encoded
- *   length the same way, so both paths return the same prefix.
+ *   length the same way, so both paths return the same prefix for valid
+ *   UTF-8. For invalid (not just truncated) UTF-8, readFile's decode turns
+ *   bad bytes into U+FFFD, which re-encodes as 3 bytes, so the two paths
+ *   can cut at different offsets. That is harmless for sniffing.
  * - Consumers must not assume the prefix ends on a line boundary.
  * - `undefined` means exactly readFile's not-found. The helper normalises a
  *   throwing handle (either path) to undefined.

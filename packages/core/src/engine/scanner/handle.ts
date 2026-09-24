@@ -11,6 +11,7 @@ import { constants } from "node:fs";
 import { lstat, open, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { utf8Head } from "../../repository-head.js";
+import { MAX_HEAD_READ_BYTES } from "../../limits.js";
 import type { RepositoryHandle } from "../../types/index.js";
 import { scanRepository, type ScanOptions, type ScanResult, type ScannedFile } from "./scanner.js";
 
@@ -98,12 +99,14 @@ export class FsRepositoryHandle implements RepositoryHandle {
    * of a listed file, decoded with any torn trailing UTF-8 character dropped.
    * The same path and symlink checks as readFile apply. The size ceiling
    * does not, because sniffing the start of a large lockfile is the point;
-   * reading stays bounded by maxBytes. The binary sniff reads the same
+   * reading stays bounded by maxBytes, clamped to MAX_HEAD_READ_BYTES. The binary sniff reads the same
    * window readFile would inspect, so a binary file is undefined here too.
    * Unreadable (not listed, changed, binary) resolves undefined.
    */
   async readFileHead(requested: string, maxBytes: number): Promise<string | undefined> {
-    const limit = Number.isFinite(maxBytes) ? Math.max(0, Math.floor(maxBytes)) : 0;
+    const limit = Number.isFinite(maxBytes)
+      ? Math.min(MAX_HEAD_READ_BYTES, Math.max(0, Math.floor(maxBytes)))
+      : 0;
     let opened: Awaited<ReturnType<FsRepositoryHandle["openListed"]>>;
     try {
       opened = await this.openListed(requested);

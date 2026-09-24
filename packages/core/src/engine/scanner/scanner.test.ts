@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { MAX_HEAD_READ_BYTES } from "../../limits.js";
 import { readRepositoryFileHead } from "../../repository-head.js";
 import type { RepositoryHandle } from "../../types/index.js";
 import { FsRepositoryHandle, RepositoryReadError } from "./handle.js";
@@ -324,7 +325,7 @@ describe("FsRepositoryHandle.readFileHead (#113)", () => {
     await rm(outside, { recursive: true, force: true });
   });
 
-  it("matches the readFile fallback byte for byte, across multibyte boundaries", async () => {
+  it("matches the readFile fallback byte for byte on valid UTF-8, across multibyte boundaries", async () => {
     const repo = await FsRepositoryHandle.open(root);
     const fallback: RepositoryHandle = {
       listFiles: () => repo.listFiles(),
@@ -344,6 +345,18 @@ describe("FsRepositoryHandle.readFileHead (#113)", () => {
     await writeFile(path.join(root, "yarn.lock"), `__metadata:\n${"y".repeat(4096)}`);
     await assert.rejects(repo.readFile("yarn.lock"));
     assert.equal(await repo.readFileHead("yarn.lock", 11), "__metadata:");
+  });
+
+  it("clamps a huge maxBytes to MAX_HEAD_READ_BYTES on a file past its ceiling", async () => {
+    // Write after the scan: the scanner does not list files already past the ceiling.
+    await writeFile(path.join(root, "yarn.lock"), "__metadata:\n");
+    const repo = await FsRepositoryHandle.open(root, { limits: { maxLockfileBytes: 1024 } });
+    await writeFile(path.join(root, "yarn.lock"), "z".repeat(MAX_HEAD_READ_BYTES * 3));
+    await assert.rejects(repo.readFile("yarn.lock"));
+    for (const maxBytes of [MAX_HEAD_READ_BYTES + 1, 10 * 1024 * 1024, Number.MAX_SAFE_INTEGER]) {
+      const head = await repo.readFileHead("yarn.lock", maxBytes);
+      assert.equal(head?.length, MAX_HEAD_READ_BYTES, `maxBytes ${maxBytes}`);
+    }
   });
 
   it("resolves undefined for unlisted, escaping, binary and swapped files", async () => {
