@@ -136,6 +136,16 @@ describe("scriptGaps", () => {
     ]);
   });
 
+  it("yarn/pnpm calls to the manifest's own scripts are not unmatched commands", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        scripts: { lint: "eslint .", "test:unit": "vitest", ci: "yarn lint && pnpm test:unit" },
+        devDependencies: { eslint: "9", vitest: "2" },
+      }),
+    });
+    assert.deepEqual(await scriptGaps(context, dep("eslint")), []);
+  });
+
   it("with lockfile bin data for every dependency, unmatched commands are global tools", async () => {
     const context = ctx({
       "package.json": JSON.stringify({
