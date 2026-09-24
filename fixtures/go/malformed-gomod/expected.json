@@ -1,0 +1,9 @@
+{
+  "description": "go.mod with two malformed require lines. The valid require is still listed; the bad lines must surface as scan incompleteness, and nothing may be called unused for this project because the declared set is not fully known.",
+  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "dependencies": [
+    { "name": "github.com/google/uuid", "kind": "runtime", "constraint": "v1.6.0", "declaredIn": "go.mod" }
+  ],
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused" }]
+}
