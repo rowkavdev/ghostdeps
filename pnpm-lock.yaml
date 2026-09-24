@@ -201,6 +201,19 @@ importers:
         specifier: ^22.10.0
         version: 22.20.4
 
+  packages/adapters/rust:
+    dependencies:
+      smol-toml:
+        specifier: 1.9.0
+        version: 1.9.0
+    devDependencies:
+      '@ghostdeps/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.4
+
   packages/cli:
     dependencies:
       '@ghostdeps/core':
@@ -909,6 +922,10 @@ packages:
   shebang-regex@3.0.0:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
+
+  smol-toml@1.9.0:
+    resolution: {integrity: sha512-hpd+HLON7HdZXqYchMM/+LaTTbdK0AU3NngIJ4KVyWbY9bfQqdL9cD+4yf6dUoU2Ap4VsU0JkQi6FxAI1B2mXQ==}
+    engines: {node: '>= 18'}
 
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
@@ -1719,6 +1736,8 @@ snapshots:
       shebang-regex: 3.0.0
 
   shebang-regex@3.0.0: {}
+
+  smol-toml@1.9.0: {}
 
   sonic-boom@4.2.1:
     dependencies:

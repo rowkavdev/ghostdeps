@@ -1,0 +1,19 @@
+{
+  "description": "Optional dependencies enabled through dep:, feature/subfeature and the implicit feature; a weak (?/) forward that enables nothing; a target-specific dependency.",
+  "detection": { "minConfidence": 0.8, "projects": ["."] },
+  "dependencies": [
+    { "name": "serde_json", "kind": "optional", "constraint": "1.0", "declaredIn": "Cargo.toml" },
+    { "name": "simd-json", "kind": "optional", "constraint": "0.13", "declaredIn": "Cargo.toml" },
+    { "name": "log", "kind": "optional", "constraint": "0.4", "declaredIn": "Cargo.toml" },
+    { "name": "flate2", "kind": "optional", "constraint": "1.0", "declaredIn": "Cargo.toml" },
+    { "name": "winapi", "kind": "runtime", "constraint": "0.3", "declaredIn": "Cargo.toml" }
+  ],
+  "conditions": [
+    { "kind": "feature-gated-dependency", "statement": "serde_json is optional; enabled by feature: json" },
+    { "kind": "feature-gated-dependency", "statement": "simd-json is optional; enabled by features: fast, simd-json" },
+    { "kind": "feature-gated-dependency", "statement": "log is optional; enabled by feature: log" },
+    { "kind": "feature-gated-dependency", "statement": "flate2 is optional; enabled by feature: flate2" },
+    { "kind": "target-conditional-dependency", "statement": "winapi is only used for target cfg(windows)" }
+  ],
+  "mustNotFind": [{ "kind": "unused", "dependency": "winapi" }]
+}

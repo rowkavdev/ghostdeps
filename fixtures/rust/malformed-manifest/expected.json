@@ -1,0 +1,6 @@
+{
+  "description": "Cargo.toml with an unterminated string. Detection degrades to the threshold (source exists) and reports manifest-malformed; no dependencies, no crash.",
+  "detection": { "minConfidence": 0.5, "maxConfidence": 0.5, "projects": [] },
+  "dependencies": [],
+  "detectionEvidence": ["manifest-malformed"]
+}

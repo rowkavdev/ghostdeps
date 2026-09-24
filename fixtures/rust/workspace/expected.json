@@ -1,0 +1,14 @@
+{
+  "description": "Virtual workspace root with glob members, [workspace.dependencies] inheritance (table and dotted forms) and a path dependency between members.",
+  "detection": { "minConfidence": 0.9, "projects": ["crates/cli", "crates/core"] },
+  "dependencies": [
+    { "name": "serde", "kind": "runtime", "constraint": "1.0", "declaredIn": "crates/core/Cargo.toml" },
+    { "name": "tokio", "kind": "runtime", "constraint": "1.38", "declaredIn": "crates/core/Cargo.toml" },
+    { "name": "ws-core", "kind": "runtime", "constraint": "*", "declaredIn": "crates/cli/Cargo.toml" },
+    { "name": "clap", "kind": "runtime", "constraint": "4.5", "declaredIn": "crates/cli/Cargo.toml" }
+  ],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "serde" },
+    { "kind": "unused", "dependency": "ws-core" }
+  ]
+}

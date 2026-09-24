@@ -1,0 +1,17 @@
+{
+  "description": "One crate with runtime, dev and build dependencies, a renamed dependency (json -> serde_json) and one declared-but-unused dependency (regex).",
+  "detection": { "minConfidence": 0.9, "projects": ["."] },
+  "dependencies": [
+    { "name": "serde", "kind": "runtime", "constraint": "1.0", "declaredIn": "Cargo.toml" },
+    { "name": "anyhow", "kind": "runtime", "constraint": "1.0.86", "declaredIn": "Cargo.toml" },
+    { "name": "serde_json", "kind": "runtime", "constraint": "1.0", "declaredIn": "Cargo.toml" },
+    { "name": "regex", "kind": "runtime", "constraint": "1", "declaredIn": "Cargo.toml" },
+    { "name": "tempfile", "kind": "dev", "constraint": "3", "declaredIn": "Cargo.toml" },
+    { "name": "cc", "kind": "build", "constraint": "1.0", "declaredIn": "Cargo.toml" }
+  ],
+  "findings": [{ "kind": "unused", "dependency": "regex" }],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "serde_json" },
+    { "kind": "unused", "dependency": "cc" }
+  ]
+}
