@@ -253,11 +253,11 @@
     },
     {
       "ecosystem": "python",
-      "exclusive": null,
+      "exclusive": 4,
       "graph": "complete",
       "name": "requests",
       "project": "services/api",
-      "transitive": null
+      "transitive": 4
     }
   ],
   "projectTree": [
