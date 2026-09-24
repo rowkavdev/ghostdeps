@@ -8,7 +8,8 @@
  * - Top-level collections are sorted by their identifying fields, so the
  *   order adapters happen to run in never shows up as a diff.
  * - Order inside a finding (evidence, limitations) is preserved: it is
- *   meaningful and set by the recommendation engine.
+ *   meaningful and set by the recommendation engine, which must emit it in
+ *   a stable order.
  * - `undefined` fields are omitted; two-space indent; trailing newline.
  * - Invisible and direction-changing characters from repository content are
  *   escaped so output can't hide or reorder text (security-model rule 6).
@@ -59,8 +60,12 @@ const findingOrder = by<Finding>(
   (f) => f.dependency ?? "",
   (f) => f.kind,
   (f) => f.summary,
+  (f) => f.evidence[0]?.file ?? "",
+  (f) => f.evidence[0]?.line ?? 0,
+  // Last resort: the whole finding, so equal-looking findings from
+  // concurrently running adapters still land in one fixed order.
+  (f) => JSON.stringify(canonical(f)),
 );
-
 /** Sort keys recursively, dropping undefined. schemaVersion stays first at the top. */
 function canonical(value: unknown, top = false): Json {
   if (value === null || typeof value === "boolean" || typeof value === "string") return value;
@@ -71,6 +76,13 @@ function canonical(value: unknown, top = false): Json {
   if (Array.isArray(value)) return value.map((item) => canonical(item));
   if (value instanceof Set) return canonical([...value]);
   if (typeof value === "object") {
+    // Map, Date and class instances would silently serialise as {} and lose data.
+    const proto: unknown = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      throw new TypeError(
+        `cannot serialise ${(value as object).constructor?.name ?? "non-plain object"}; use plain objects, arrays or Sets`,
+      );
+    }
     const source = value as Record<string, unknown>;
     const keys = Object.keys(source)
       .filter((key) => source[key] !== undefined)
@@ -87,10 +99,12 @@ function canonical(value: unknown, top = false): Json {
 }
 
 /**
- * Characters escaped beyond what JSON.stringify does: line/paragraph
- * separators, bidi controls (Trojan Source), zero-width characters and BOM.
+ * Characters escaped beyond what JSON.stringify does: soft hyphen, Arabic
+ * letter mark, Mongolian vowel separator, line/paragraph separators, bidi
+ * controls (Trojan Source), zero-width characters and BOM. All of them can
+ * hide in a lookalike package name.
  */
-const INVISIBLE = /[\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
+const INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
 
 function escapeInvisible(text: string): string {
   return text.replace(INVISIBLE, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`);

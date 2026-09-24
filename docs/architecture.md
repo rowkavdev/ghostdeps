@@ -48,9 +48,9 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 `renderJsonReport()` in `packages/core/src/report/json.ts` is the one serialiser for `AnalysisResult`. The CLI's `--json` and any later integration use it, so the output is a public, versioned schema.
 
 - **`schemaVersion`** is the first key. It is `1` today. Any breaking change (a removed or renamed field, a changed meaning) bumps it; adding an optional field does not.
-- **Stable bytes.** The same result always gives the same output: object keys are sorted, and `projects`, `dependencies`, `usages`, `findings`, `detected` and `surface` are sorted by their identifying fields, so adapter run order never shows up as a diff. Order inside a finding (`evidence`, `limitations`) is kept as the recommendation engine set it.
+- **Stable bytes.** The same result always gives the same output: object keys are sorted, and `projects`, `dependencies`, `usages`, `findings`, `detected` and `surface` are sorted by their identifying fields, so adapter run order never shows up as a diff. Findings that look alike are ordered by first evidence location, then by full content. Order inside a finding (`evidence`, `limitations`) is kept as the recommendation engine set it, so producers must emit it in a stable order. Maps, Dates and class instances are rejected rather than silently written as `{}`.
 - **Missing fields are omitted**, never written as `null`.
-- **Repository content is escaped.** Line separators, bidi controls and zero-width characters are written as `\uXXXX` escapes so a hostile name or path can't hide or reorder text (security model rule 6).
+- **Repository content is escaped.** Soft hyphens, line separators, bidi controls, zero-width and other invisible characters are written as `\uXXXX` escapes so a hostile name or path can't hide or reorder text (security model rule 6).
 - **Golden files** in `packages/core/test/golden/` pin the exact output. After an intended schema change, regenerate them with `UPDATE_GOLDEN=1 pnpm --filter @ghostdeps/core test` and review the diff.
 
 ## Key concepts
