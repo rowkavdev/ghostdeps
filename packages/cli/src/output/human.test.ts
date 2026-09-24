@@ -69,6 +69,30 @@ describe("renderRepositorySummary", () => {
         ...makeFindings("unused", 5),
         ...makeFindings("potentially-unnecessary", 8),
         ...makeFindings("duplicate-capability", 2),
+        {
+          kind: "info",
+          rule: "unverified-no-imports",
+          dependency: "eslint",
+          summary: "no imports of eslint found; scripts and config were not checked",
+          recommendation: "review",
+          evidence: [{ kind: "no-usage-found", statement: "no import of eslint found" }],
+          confidence: "low",
+          limitations: [],
+          affectedFiles: [],
+        },
+        ...makeFindings("info", 1),
+        {
+          kind: "info",
+          rule: "cross-ecosystem-capability-overlap",
+          dependency: "left-pad",
+          summary: "left-pad provides the same capability as left_pad (pip)",
+          recommendation: "No action suggested.",
+          evidence: [{ kind: "capability-overlap", statement: "same capability in npm and pip" }],
+          confidence: "high",
+          awareness: true,
+          limitations: [],
+          affectedFiles: [],
+        },
       ],
       detected: [
         { ecosystem: "javascript-typescript", confidence: "high", evidence: [] },
@@ -105,6 +129,7 @@ describe("renderRepositorySummary", () => {
       "  5 unused",
       "  8 potentially unnecessary",
       "  2 duplicate capabilities",
+      "  2 info",
       "",
       "Verdicts:",
       "  unused:",
@@ -140,6 +165,16 @@ describe("renderRepositorySummary", () => {
       "      - test evidence",
       "    (repository-wide) - duplicate-capability finding 1 (high confidence)",
       "      - test evidence",
+      "",
+      "Notes:",
+      "    eslint - no imports of eslint found; scripts and config were not checked (low confidence, rule: unverified-no-imports)",
+      "      - no import of eslint found",
+      "    (repository-wide) - info finding 0 (high confidence)",
+      "      - test evidence",
+      "",
+      "Awareness notes:",
+      "    left-pad - left-pad provides the same capability as left_pad (pip) (high confidence, rule: cross-ecosystem-capability-overlap)",
+      "      - same capability in npm and pip",
     ].join("\n");
 
     assert.equal(renderRepositorySummary(result), expected);
@@ -289,7 +324,7 @@ describe("renderRepositorySummary", () => {
     assert.ok(text.includes("Evi\uFFFDl"), text);
   });
 
-  it("renders verdicts grouped by kind with evidence, info stays in counts", () => {
+  it("renders verdicts grouped by kind, unflagged info findings as notes", () => {
     const result: AnalysisResult = {
       ...emptyResult(),
       findings: [
@@ -334,13 +369,93 @@ describe("renderRepositorySummary", () => {
       ),
       text,
     );
-    // Info findings never get verdict lines.
-    assert.ok(!text.includes("info finding 0 -"), text);
+    // Info findings without the awareness flag render as notes, never as
+    // verdict lines.
+    const verdictsEnd = text.indexOf("Notes:");
+    assert.ok(verdictsEnd > 0, text);
+    assert.ok(!text.slice(0, verdictsEnd).includes("info finding 0 -"), text);
+    assert.ok(
+      text.includes(
+        [
+          "Notes:",
+          "    (repository-wide) - info finding 0 (high confidence)",
+          "      - test evidence",
+          "    (repository-wide) - info finding 1 (high confidence)",
+          "      - test evidence",
+        ].join("\n"),
+      ),
+      text,
+    );
+  });
+
+  it("splits info findings into notes and awareness notes on the core flag (#234)", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      findings: [
+        ...makeFindings("info", 1),
+        {
+          kind: "info",
+          rule: "cross-ecosystem-capability-overlap",
+          dependency: "left-pad",
+          summary: "same capability in another ecosystem",
+          recommendation: "No action suggested.",
+          evidence: [{ kind: "capability-overlap", statement: "overlap in npm and pip" }],
+          confidence: "high",
+          awareness: true,
+          limitations: [],
+          affectedFiles: [],
+        },
+      ],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(!text.includes("Verdicts:"), text);
+    const notesAt = text.indexOf("Notes:");
+    const awarenessAt = text.indexOf("Awareness notes:");
+    assert.ok(notesAt > 0, text);
+    assert.ok(awarenessAt > notesAt, text);
+    assert.ok(
+      text.includes(
+        "Awareness notes:\n    left-pad - same capability in another ecosystem (high confidence, rule: cross-ecosystem-capability-overlap)",
+      ),
+      text,
+    );
+    assert.ok(!text.slice(0, awarenessAt).includes("cross-ecosystem-capability-overlap"), text);
+  });
+
+  it("prints Findings: none for an awareness-only result, keeping the section (#234)", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      findings: [
+        {
+          kind: "info",
+          rule: "cross-ecosystem-capability-overlap",
+          dependency: "axios",
+          summary: "axios overlaps requests",
+          recommendation: "No action suggested.",
+          evidence: [{ kind: "capability-overlap", statement: "same capability in npm and pip" }],
+          confidence: "high",
+          awareness: true,
+          limitations: [],
+          affectedFiles: [],
+        },
+      ],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(text.includes("Findings:\n  none"), text);
+    assert.ok(!text.includes("1 info"), text);
+    assert.ok(
+      text.includes(
+        "Awareness notes:\n    axios - axios overlaps requests (high confidence, rule: cross-ecosystem-capability-overlap)",
+      ),
+      text,
+    );
   });
 
   it("omits the Verdicts section when every finding is info", () => {
     const result: AnalysisResult = { ...emptyResult(), findings: makeFindings("info", 2) };
-    assert.ok(!renderRepositorySummary(result).includes("Verdicts:"));
+    const text = renderRepositorySummary(result);
+    assert.ok(!text.includes("Verdicts:"));
+    assert.ok(text.includes("Notes:"));
   });
 
   it("caps long evidence lists with a +N more line and escapes verdict text", () => {
