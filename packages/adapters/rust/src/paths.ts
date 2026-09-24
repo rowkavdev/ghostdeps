@@ -37,3 +37,8 @@ export function relativePath(from: string, to: string): string {
   while (i < a.length && i < b.length - 1 && a[i] === b[i]) i++;
   return [...a.slice(i).map(() => ".."), ...b.slice(i)].join("/");
 }
+
+/** Locale-independent string order (UTF-16 code units), for deterministic output. */
+export function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}

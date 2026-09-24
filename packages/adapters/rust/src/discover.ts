@@ -12,7 +12,7 @@ import {
   readManifest,
   type CargoManifest,
 } from "./cargo-toml.js";
-import { joinPath, relativePath } from "./paths.js";
+import { compareStrings, joinPath, relativePath } from "./paths.js";
 
 export interface Crate {
   manifest: CargoManifest;
@@ -38,7 +38,7 @@ export async function discoverCrates(context: AdapterContext): Promise<Discovery
   const manifests: CargoManifest[] = [];
   for (const path of files
     .filter(isManifestPath)
-    .sort((a, b) => a.length - b.length || a.localeCompare(b))) {
+    .sort((a, b) => a.length - b.length || compareStrings(a, b))) {
     context.signal?.throwIfAborted();
     manifests.push(await readManifest(context.repository, path));
   }
