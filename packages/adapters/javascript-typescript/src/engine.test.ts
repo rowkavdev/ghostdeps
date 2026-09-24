@@ -10,7 +10,7 @@ import { describe, it } from "node:test";
 import { analyseRepository, defaultPolicy } from "@ghostdeps/core";
 import type { Finding } from "@ghostdeps/core";
 import { createJavaScriptTypeScriptAdapter } from "./adapter.js";
-import { fixtureHandle } from "./testing/fs-handle.js";
+import { fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
 
 async function findings(fixture: string): Promise<Finding[]> {
   const result = await analyseRepository(fixtureHandle("js", fixture), {
@@ -67,4 +67,43 @@ describe("JS adapter through the engine and default policy (#138)", () => {
       assert.deepEqual(unused(await findings(fixture), dependency), []);
     });
   }
+});
+
+describe("PR mode: removed-last-usage through the real adapter (#168)", () => {
+  it("reports the dependency whose last import the PR removed, and only that one", async () => {
+    const repo = memoryHandle({
+      "package.json": JSON.stringify({
+        name: "pr-fixture",
+        version: "0.0.0",
+        dependencies: { dropped: "^1.0.0", kept: "^1.0.0" },
+      }),
+      "src/a.ts": `import k from "kept";\nexport const v = k;\n`,
+    });
+    const result = await analyseRepository(repo, {
+      adapters: [createJavaScriptTypeScriptAdapter()],
+      recommend: defaultPolicy,
+      pullRequestChanges: [],
+      pullRequestSourceChanges: [
+        {
+          path: "src/a.ts",
+          removedLines: [
+            { line: 1, text: `import d from "dropped";` },
+            { line: 2, text: `import k from "kept";` },
+          ],
+          addedLines: [{ line: 1, text: `import k from "kept";` }],
+        },
+      ],
+    });
+    const verdicts = result.findings.filter((f) => f.kind === "unused");
+    assert.deepEqual(
+      verdicts.map((f) => [f.rule, f.dependency]),
+      [["removed-last-usage", "dropped"]],
+    );
+    assert.ok(
+      verdicts[0]!.evidence.some(
+        (e) => e.kind === "usage-removed-in-pr" && e.file === "src/a.ts" && e.line === 1,
+      ),
+    );
+    assert.ok(!result.findings.some((f) => f.kind === "unused" && f.dependency === "kept"));
+  });
 });
