@@ -75,8 +75,13 @@ export interface ScanResult {
   files: ScannedFile[];
   /** Candidate project roots, sorted by path. */
   candidateProjectRoots: CandidateProjectRoot[];
-  /** Skipped entries, sorted by path. Excluded-directory skips are listed once, at the directory. */
+  /**
+   * Skipped entries, sorted by path. Excluded-directory skips are listed once,
+   * at the directory. Capped at limits.maxSkippedRecords; see skippedCounts.
+   */
   skipped: SkippedEntry[];
+  /** Complete per-reason skip counts, including entries past the record cap. */
+  skippedCounts: Partial<Record<SkipReason, number>>;
   /** Set when a walk ceiling stopped the scan early; the file list is incomplete. */
   truncated?: TruncationReason;
   totalBytes: number;
@@ -131,7 +136,14 @@ export async function scanRepository(
   const root = await realpath(rootDir);
 
   const files: ScannedFile[] = [];
-  const skipped: SkippedEntry[] = [];
+  const recorded: SkippedEntry[] = [];
+  const skippedCounts: Partial<Record<SkipReason, number>> = {};
+  const skipped = {
+    push(entry: SkippedEntry): void {
+      skippedCounts[entry.reason] = (skippedCounts[entry.reason] ?? 0) + 1;
+      if (recorded.length < limits.maxSkippedRecords) recorded.push(entry);
+    },
+  };
   const manifestsByDir = new Map<string, string[]>();
   let totalBytes = 0;
   let directories = 0;
@@ -158,6 +170,9 @@ export async function scanRepository(
           isFile: d.isFile(),
           isLink: d.isSymbolicLink(),
         }));
+        // readdir order is filesystem-dependent; sort by raw name bytes so which
+        // entries survive a mid-directory truncation is the same everywhere.
+        entries.sort((a, b) => Buffer.compare(a.name, b.name));
       } catch {
         skipped.push({ path: rel === "" ? "." : rel, reason: "unreadable" });
         continue;
@@ -260,7 +275,8 @@ export async function scanRepository(
     root,
     files: files.sort(byPath),
     candidateProjectRoots,
-    skipped: skipped.sort(byPath),
+    skipped: recorded.sort(byPath),
+    skippedCounts,
     totalBytes,
     limits,
   };
