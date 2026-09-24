@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { runRecommendationPolicyContractTests } from "../contract-tests/policy.js";
 import type { RecommendationInput } from "../engine/analyse.js";
 import type { Dependency, DependencyGraph, Finding, ProjectRef, Usage } from "../types/index.js";
 import { isNonShippedPath } from "./paths.js";
@@ -27,6 +28,7 @@ function input(parts: Partial<RecommendationInput> = {}): RecommendationInput {
     graphs: [],
     usageAnalysedEcosystems: new Set([TS]),
     referenceAnalysedEcosystems: new Set([TS]),
+    mode: "full",
     ...parts,
   };
 }
@@ -243,6 +245,30 @@ describe("default recommendation policy", () => {
     assert.equal(summary.byConfidence.high, 1);
   });
 });
+
+describe("pull-request mode", () => {
+  it("only gives findings for dependencies the PR added or changed", async () => {
+    const findings = await run({
+      dependencies: [dep("left-pad"), dep("new-pad"), dep("bumped-pad"), dep("gone-pad")],
+      mode: "pull-request",
+      pullRequestChanges: [
+        { change: "added", name: "new-pad", ecosystem: TS, manifest: "package.json" },
+        { change: "changed", name: "bumped-pad", ecosystem: TS, manifest: "package.json" },
+        { change: "removed", name: "gone-pad", ecosystem: TS, manifest: "package.json" },
+      ],
+    });
+    assert.deepEqual(findings.map((f) => f.dependency).sort(), ["bumped-pad", "new-pad"]);
+  });
+
+  it("gives no findings for a source-only PR", async () => {
+    assert.deepEqual(
+      await run({ dependencies: [dep("left-pad")], mode: "pull-request", pullRequestChanges: [] }),
+      [],
+    );
+  });
+});
+
+runRecommendationPolicyContractTests("defaultPolicy", defaultPolicy);
 
 describe("isNonShippedPath", () => {
   it("classifies test, build and config paths", () => {

@@ -97,6 +97,21 @@ export function runRecommendationPolicyContractTests(
       });
     }
 
+    it("absence findings stay at most medium when reference analysis is incomplete", async () => {
+      for (const input of Object.values(fixtures)) {
+        const incomplete = { ...input, referenceAnalysedEcosystems: new Set<string>() };
+        for (const finding of await policy(incomplete)) {
+          if (finding.kind === "unused" || finding.kind === "potentially-unnecessary") {
+            assert.notEqual(
+              finding.confidence,
+              "high",
+              `${finding.dependency}: a confident absence claim needs complete evidence`,
+            );
+          }
+        }
+      }
+    });
+
     it("pull-request mode: findings only concern dependencies the PR touched", async () => {
       const input = fixtures.pullRequest;
       assert.equal(input.mode, "pull-request");

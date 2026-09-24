@@ -37,6 +37,14 @@ Before `unused` is possible, all of these must be empty:
 
 Otherwise "no usages" could mean "never looked", so the policy emits `unverified-no-imports` instead.
 
+## Pull-request mode
+
+When `RecommendationInput.mode` is `"pull-request"`, only dependencies the PR
+added or changed (from `pullRequestChanges`) get findings. Removed
+dependencies and untouched ones get none, and a source-only PR (empty
+changes) gets none. The policy passes `runRecommendationPolicyContractTests`
+in both modes.
+
 ## Config
 
 ```ts

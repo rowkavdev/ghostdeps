@@ -296,8 +296,19 @@ export function createDefaultPolicy(
   const active = rules.filter((rule) => !disabled.has(rule.id));
   return (input) => {
     const context = buildContext(input, config);
+    // PR scan (#128): only dependencies the PR added or changed get findings.
+    // Removed dependencies are no longer declared, so they get none here.
+    const touched =
+      input.mode === "pull-request"
+        ? new Set(
+            (input.pullRequestChanges ?? [])
+              .filter((change) => change.change !== "removed")
+              .map((change) => `${change.ecosystem}\0${change.name}`),
+          )
+        : undefined;
     const findings: Finding[] = [];
     for (const dependency of input.dependencies) {
+      if (touched && !touched.has(key(dependency))) continue;
       for (const rule of active) {
         const finding = rule.evaluate(dependency, context);
         if (finding) {
