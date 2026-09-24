@@ -54,9 +54,10 @@ export function dependencyFilesIn(paths: Iterable<string>): string[] {
 }
 
 /**
- * Source files an adapter can scan for imports (#101). JS/TS only today,
- * matching the JS/TS adapter's scanner (including `.d.ts`). Add an
- * ecosystem's extensions here when its adapter gains usage analysis.
+ * Source files an adapter can scan for imports (#101, #297): JS/TS
+ * (including `.d.ts`), Python (`.py`, `.pyw`; not `.pyi` stubs), Go and
+ * Rust, matching each adapter's usage scanner. Add an ecosystem's
+ * extensions here when its adapter gains usage analysis.
  * Keep in sync with docs/github-app.md ("Triggers for analysis").
  */
 export const ANALYSABLE_SOURCE_EXTENSIONS: readonly string[] = [
@@ -68,6 +69,10 @@ export const ANALYSABLE_SOURCE_EXTENSIONS: readonly string[] = [
   ".mjs",
   ".cjs",
   ".jsx",
+  ".py",
+  ".pyw",
+  ".go",
+  ".rs",
 ];
 
 /**
