@@ -301,6 +301,16 @@
         "default",
         "get"
       ]
+    },
+    {
+      "dependency": "requests",
+      "file": "services/api/app/main.py",
+      "form": "static",
+      "line": 1,
+      "symbols": [
+        "get"
+      ],
+      "via": "import"
     }
   ]
 }

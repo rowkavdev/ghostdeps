@@ -74,6 +74,14 @@ dependencies = ['tomli>=2; python_version < "3.11"', "lib @ git+https://example.
     assert.deepEqual(result.requirements, []);
     assert.equal(result.evidence[0]?.kind, "manifest-malformed");
   });
+
+  it("states the TOML error line in manifest-malformed evidence (#269)", () => {
+    const result = parse(`[project]\nname = "x"\ndependencies = [\n`);
+    const e = result.evidence[0];
+    assert.equal(e?.kind, "manifest-malformed");
+    assert.equal(typeof e?.line, "number");
+    assert.match(e?.statement ?? "", new RegExp(`:${e?.line}: invalid TOML`));
+  });
 });
 
 describe("parsePyprojectText: one entry per name and kind (#235 review)", () => {

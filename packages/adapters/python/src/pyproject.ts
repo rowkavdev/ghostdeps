@@ -276,7 +276,9 @@ export function parsePyprojectText(
   let doc: unknown;
   try {
     doc = parseToml(text);
-  } catch {
+  } catch (error) {
+    const line = (error as { line?: unknown } | null)?.line;
+    const at = typeof line === "number" && Number.isInteger(line) && line > 0 ? line : undefined;
     return {
       requirements: [],
       extras: {},
@@ -284,8 +286,9 @@ export function parsePyprojectText(
       evidence: [
         {
           kind: "manifest-malformed",
-          statement: `${declaredIn} is not valid TOML; no dependencies read from it`,
+          statement: `${at !== undefined ? `${declaredIn}:${at}` : declaredIn}: invalid TOML; no dependencies read from it, so declared dependencies are incomplete`,
           file: declaredIn,
+          ...(at !== undefined ? { line: at } : {}),
         },
       ],
     };
