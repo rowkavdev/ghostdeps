@@ -61,7 +61,7 @@ describe("worker-thread adapter isolation (#90)", () => {
         (f) =>
           f.kind === "info" &&
           f.summary.includes("busy-loop") &&
-          f.summary.includes("timed out during detection"),
+          f.summary.includes("detection timed out"),
       );
       assert.ok(
         finding,

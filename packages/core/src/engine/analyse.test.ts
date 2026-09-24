@@ -390,7 +390,7 @@ describe("analyseRepository", () => {
       adapters: [mockAdapter({ ecosystem: "slow", hangDetect: true })],
       adapterTimeoutMs: 20,
     });
-    assert.ok(result.findings.some((f) => f.summary.includes("timed out during detection")));
+    assert.ok(result.findings.some((f) => f.summary.includes("detection timed out")));
   });
 
   it("does not preempt synchronous adapter work (pins current behaviour, see #90)", async () => {
@@ -428,7 +428,7 @@ describe("analyseRepository", () => {
     };
     const result = await analyseRepository(repo, { adapters: [cooperative], adapterTimeoutMs: 10 });
     assert.equal(observed?.aborted, true);
-    assert.ok(result.findings.some((f) => f.summary.includes("timed out during detection")));
+    assert.ok(result.findings.some((f) => f.summary.includes("detection timed out")));
   });
 
   it("bounds concurrent usage analysis", async () => {

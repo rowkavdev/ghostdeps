@@ -106,9 +106,15 @@ export function adapterFailure(
   stage: string,
   error: unknown,
 ): Finding {
+  // A timeout of this same stage reads "<stage> timed out", not
+  // "<stage> timed out during <stage>".
+  const what =
+    error instanceof StageTimeout && error.stage === stage
+      ? `${stage} timed out`
+      : `${stage} ${describeError(error)}`;
   return {
     kind: "info",
-    summary: `${adapter.ecosystem} analysis incomplete: ${stage} ${describeError(error)}`,
+    summary: `${adapter.ecosystem} analysis incomplete: ${what}`,
     recommendation: "Manual review recommended for this ecosystem.",
     evidence: [{ kind: "adapter-error", statement: `${adapter.ecosystem} adapter ${stage} stage` }],
     confidence: "low",
