@@ -22,6 +22,8 @@ const findingLabels: Record<FindingKind, string> = {
   "duplicate-capability": "duplicate capabilities",
   "maintenance-risk": "maintenance risks",
   footprint: "footprint",
+  "should-be-dev": "should be dev dependencies",
+  "type-only": "type-only dependencies",
   info: "info",
 };
 
@@ -32,6 +34,8 @@ const findingOrder: readonly FindingKind[] = [
   "duplicate-capability",
   "maintenance-risk",
   "footprint",
+  "should-be-dev",
+  "type-only",
   "info",
 ];
 

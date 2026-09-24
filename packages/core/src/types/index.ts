@@ -72,6 +72,14 @@ export interface Usage {
    * is a devDependency candidate - this bit is what preserves that evidence.
    */
   typeOnly?: boolean;
+  /**
+   * How the dependency was referenced. Absent means "import" (source
+   * import/require). "script": package.json script or bin invocation;
+   * "config": a config file reference (tsconfig types, eslint/babel/jest
+   * plugin lists); "convention": a framework plugin convention the adapter
+   * knows. Every value counts as usage before an "unused" verdict (#121).
+   */
+  via?: "import" | "script" | "config" | "convention";
   /** The API surface observed, e.g. ["get", "post"] for axios.get/axios.post. */
   symbols: string[];
 }
@@ -92,11 +100,21 @@ export type FindingKind =
   | "duplicate-capability"
   | "maintenance-risk"
   | "footprint"
+  /** Imported only from non-shipped code (tests, build, config) but declared as a runtime dependency. */
+  | "should-be-dev"
+  /** Every usage is type-only and the ecosystem strips types at build time. */
+  | "type-only"
   | "info";
 
 /** A finding. If confidence cannot be established, GhostDeps says so. */
 export interface Finding {
   kind: FindingKind;
+  /**
+   * Id of the policy rule that produced this finding (e.g. "unused",
+   * "should-be-dev"), so config can disable or downgrade rules. Reporters
+   * derive severity from kind + confidence, not from the rule.
+   */
+  rule?: string;
   dependency?: string;
   summary: string;
   recommendation: string;
