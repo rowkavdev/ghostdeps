@@ -1,0 +1,11 @@
+{
+  // Shared aliases for the whole repo.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@lib/*": ["src/lib/*"],
+      "utils/*": ["src/utils/*"],
+      "*": ["types/*", "node_modules/*"]
+    }
+  }
+}

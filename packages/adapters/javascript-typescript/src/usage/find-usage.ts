@@ -11,6 +11,7 @@ import type {
   RepositoryHandle,
   Usage,
 } from "@ghostdeps/core";
+import { AliasResolver } from "./aliases.js";
 import { scanSource, scriptKindFor } from "./scan.js";
 import type { FileScanResult } from "./scan.js";
 
@@ -54,6 +55,31 @@ function dirname(path: string): string {
 function isSkipped(path: string): boolean {
   if (EXCLUDED_FILE_SUFFIXES.some((suffix) => path.endsWith(suffix))) return true;
   return hasExcludedSegment(path);
+}
+
+/**
+ * Clear packageName on references a tsconfig/jsconfig alias resolves to a
+ * repository file (#29), so "@app/db" or "utils/log" never counts as usage
+ * of an npm package with that name. Only package-shaped specifiers are
+ * checked: relative and invalid ones already carry no package.
+ */
+async function applyAliases(
+  aliases: AliasResolver,
+  file: string,
+  result: FileScanResult,
+): Promise<void> {
+  if (!result.references.some((r) => r.packageName !== undefined)) return;
+  const configFile = aliases.nearestConfig(dirname(file));
+  if (configFile === undefined) return;
+  const config = await aliases.configFor(configFile);
+  if (config === undefined) return;
+  for (const ref of result.references) {
+    if (ref.packageName === undefined || ref.specifier === undefined) continue;
+    if (aliases.isInternal(ref.specifier, config)) {
+      delete ref.packageName;
+      ref.aliased = true;
+    }
+  }
 }
 
 /** Deepest directory containing a package.json that is an ancestor of `file`. */
@@ -106,6 +132,10 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     byProject: new Map(),
     shared: [],
   };
+  const aliases = new AliasResolver(
+    repository,
+    all.filter((f) => !isSkipped(f)),
+  );
   let outside = 0;
   for (const file of all) {
     if (isSkipped(file) || !scriptKindFor(file)) continue;
@@ -142,6 +172,7 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
       continue;
     }
     const result = scanSource(file, text);
+    await applyAliases(aliases, file, result);
     scan.files.set(file, result);
     scan.owner.set(file, root);
     if (result.parseErrors) {
@@ -171,6 +202,16 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
         statement: `${unresolved - MAX_UNRESOLVED_PER_FILE} more unresolvable import/require targets in ${file} were not listed individually`,
         file,
       });
+    }
+  }
+  // Config problems (unreadable, malformed, cyclic extends) go to the project owning the config.
+  for (const e of aliases.limitations) {
+    const root = e.file === undefined ? undefined : owningRoot(e.file, roots);
+    if (root === undefined) scan.shared.push(e);
+    else {
+      const list = scan.byProject.get(root) ?? [];
+      list.push(e);
+      scan.byProject.set(root, list);
     }
   }
   if (outside > MAX_OUTSIDE_PROJECT_RECORDS) {

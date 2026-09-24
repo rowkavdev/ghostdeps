@@ -24,6 +24,8 @@ export interface ImportReference {
   typeOnly: boolean;
   /** True for `export ... from "x"` re-exports. */
   reExport: boolean;
+  /** Set when a tsconfig/jsconfig alias resolved the specifier to a repository file (#29); packageName is then cleared. */
+  aliased?: true;
 }
 
 export interface FileScanResult {
