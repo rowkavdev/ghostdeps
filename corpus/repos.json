@@ -1,0 +1,11 @@
+{
+  "$comment": "Pinned real-repo corpus (#172). Each repo is pinned by full commit SHA - never a branch - so the nightly check is hermetic and a golden diff is actionable. Add repos in small PRs; golden updates ride normal review.",
+  "repos": [
+    {
+      "name": "vite",
+      "url": "https://github.com/vitejs/vite.git",
+      "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e",
+      "covers": "pnpm monorepo (273 workspace projects), HTML/SFC references, nested-member usage; the 18-name watchlist from #172 - no 'unused' finding for any of those names at this pin"
+    }
+  ]
+}

@@ -3,13 +3,19 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "fixtures/**"],
+    ignores: [
+      ".corpus-cache/",
+      "**/dist/**",
+      "**/coverage/**",
+      "**/node_modules/**",
+      "fixtures/**",
+    ],
   },
   js.configs.recommended,
   {
-    // Hostile/fixture adapter modules run in worker threads, not the browser;
-    // give them the node globals they intentionally exercise.
-    files: ["**/test/isolated-adapters/**/*.mjs"],
+    // Repo scripts (corpus harness) and hostile/fixture adapter modules run
+    // under Node, not the browser; give them the globals they use.
+    files: ["scripts/**/*.mjs", "**/test/isolated-adapters/**/*.mjs"],
     languageOptions: {
       globals: { console: "readonly", process: "readonly", URL: "readonly" },
     },
