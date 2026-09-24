@@ -23,6 +23,10 @@ Assume the author of an analysed repository is malicious and controls: all file 
 6. **Findings are data.** Report rendering never injects repository content into executable contexts (annotation text is plain; CLI output is escaped).
 7. **Hostile fixtures are first-class tests.** Traversal archives, symlink loops, giant lockfiles, malformed manifests and Unicode tricks live in `fixtures/` and run in CI.
 
+## Outbound network from the GitHub App
+
+Besides GitHub, the app's worker makes one kind of outbound request: read-only `GET`s to the public npm registry (`registry.npmjs.org`) for the install sizes of exact package versions (#174, footprint metadata). They carry no credentials, never a GitHub token, and don't follow redirects. Package names and versions come from untrusted lockfiles, so they are validated against npm name syntax and exact semver before they reach a URL, and anything else is never requested. Requests are bounded: an LRU cache, a per-run request budget, per-request and per-run timeouts, and a response size cap. A registry answer is only a number. It can make a footprint wrong or missing, but footprints are advisory and never change a check conclusion. Every failure leaves the footprint unavailable. Adapters still have no network (rule 4).
+
 ## What we deliberately do not do
 
 - Resolve dependency graphs when no lockfile exists (we say so instead).
