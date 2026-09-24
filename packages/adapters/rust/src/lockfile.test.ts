@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext, ProjectRef } from "@ghostdeps/core";
 import { detectRust } from "./detect.js";
-import { buildDependencyGraph, crateGraph, parseCargoLock } from "./lockfile.js";
+import { analyseCargoLocks, buildDependencyGraph, crateGraph, parseCargoLock } from "./lockfile.js";
 import { fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
 
 const fixture = (name: string): AdapterContext => ({
@@ -115,5 +115,65 @@ version = "0.7.3"
     );
     assert.equal(graph.incomplete, true);
     assert.equal(evidence[0]?.kind, "lockfile-missing-root");
+  });
+
+  it("marks a stale lockfile incomplete and says what it misses (#225)", async () => {
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "Cargo.toml": `[package]\nname = "a"\nversion = "0.1.0"\n[dependencies]\nlog = "0.4"\nregex = "1"\n`,
+        "Cargo.lock": `version = 4\n[[package]]\nname = "a"\nversion = "0.1.0"\ndependencies = ["log"]\n[[package]]\nname = "log"\nversion = "0.4.22"\n`,
+        "src/lib.rs": "",
+      }),
+      network: { mode: "offline" },
+    };
+    const { graphs, evidence } = await analyseCargoLocks(context, [project]);
+    assert.equal(graphs[0]!.incomplete, true);
+    assert.deepEqual(Object.keys(graphs[0]!.transitiveClosure), ["log"]);
+    assert.equal(evidence[0]?.kind, "lockfile-stale");
+    assert.match(evidence[0]!.statement, /does not lock regex declared by a/);
+    const detection = await detectRust(context);
+    assert.ok(
+      detection.evidence.some((e) => e.kind === "lockfile-stale"),
+      "surfaced in detection",
+    );
+  });
+
+  it("keeps fixture lockfiles complete", async () => {
+    for (const name of ["single-crate", "workspace"]) {
+      const context = fixture(name);
+      const { projects } = await detectRust(context);
+      const { graphs, evidence } = await analyseCargoLocks(context, projects);
+      assert.ok(
+        graphs.every((g) => !g.incomplete),
+        `${name}: ${JSON.stringify(evidence)}`,
+      );
+    }
+  });
+
+  it("surfaces a missing lockfile as detection evidence", async () => {
+    const detection = await detectRust(fixture("feature-conditional"));
+    assert.ok(detection.evidence.some((e) => e.kind === "lockfile-missing"));
+  });
+
+  it("sorts nodes by code point, not locale", () => {
+    const lock = parseCargoLock(`[[package]]
+name = "app"
+version = "0.1.0"
+dependencies = ["a-lib", "Zed", "_u"]
+[[package]]
+name = "a-lib"
+version = "1.0.0"
+[[package]]
+name = "Zed"
+version = "1.0.0"
+[[package]]
+name = "_u"
+version = "1.0.0"
+`);
+    const { graph } = crateGraph(project, "app", lock, new Set(), "Cargo.lock");
+    assert.deepEqual(
+      graph.nodes.map((n) => n.name),
+      ["Zed", "_u", "a-lib"],
+    );
   });
 });

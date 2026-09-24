@@ -21,6 +21,7 @@ import { isTable, stringArray } from "./cargo-toml.js";
 import type { Crate } from "./discover.js";
 import { discoverCrates } from "./discover.js";
 import { parseCargoManifest } from "./manifest.js";
+import { compareStrings } from "./paths.js";
 
 export interface LockedPackage {
   name: string;
@@ -88,6 +89,7 @@ export function crateGraph(
   lock: ParsedCargoLock,
   devOnlyDirect: ReadonlySet<string>,
   lockPath: string,
+  declared: ReadonlySet<string> = new Set(),
 ): CrateGraphResult {
   const evidence: Evidence[] = [];
   const byName = new Map<string, LockedPackage[]>();
@@ -144,7 +146,7 @@ export function crateGraph(
     const closure = closureOf(dep);
     transitiveClosure[dep.name] = [...new Set([...closure.values()].map((p) => p.name))]
       .filter((n) => n !== dep.name)
-      .sort();
+      .sort(compareStrings);
     for (const [k, p] of closure) {
       all.set(k, p);
       if (!devOnlyDirect.has(dep.name)) nonDev.add(k);
@@ -154,10 +156,21 @@ export function crateGraph(
     .map(([k, p]) => ({
       name: p.name,
       version: p.version,
-      dependencies: [...new Set(edgesOf(p).map((d) => d.name))].sort(),
+      dependencies: [...new Set(edgesOf(p).map((d) => d.name))].sort(compareStrings),
       dev: !nonDev.has(k),
     }))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+    .sort((a, b) => compareStrings(a.name, b.name) || compareStrings(a.version, b.version));
+  // A lockfile behind Cargo.toml can silently miss a declared dependency:
+  // every declared (package) name must be a direct edge of the crate.
+  const locked = new Set(direct.map((d) => d.name));
+  const missing = [...declared].filter((name) => !locked.has(name)).sort(compareStrings);
+  if (missing.length > 0) {
+    evidence.push({
+      kind: "lockfile-stale",
+      statement: `${lockPath} does not lock ${missing.join(", ")} declared by ${crateName}; graph is incomplete`,
+      file: lockPath,
+    });
+  }
   if (unresolved > 0) {
     evidence.push({
       kind: "lockfile-unresolved-reference",
@@ -165,13 +178,21 @@ export function crateGraph(
       file: lockPath,
     });
   }
-  return { graph: { project, nodes, transitiveClosure, incomplete: unresolved > 0 }, evidence };
+  return {
+    graph: { project, nodes, transitiveClosure, incomplete: unresolved > 0 || missing.length > 0 },
+    evidence,
+  };
 }
 
-function devOnly(crate: Crate): Set<string> {
+function declaredNames(crate: Crate): { devOnly: Set<string>; all: Set<string> } {
   const deps = parseCargoManifest(crate.manifest, crate.project, crate.workspaceRoot).dependencies;
   const nonDev = new Set(deps.filter((d) => d.kind !== "dev").map((d) => d.name));
-  return new Set(deps.filter((d) => d.kind === "dev" && !nonDev.has(d.name)).map((d) => d.name));
+  return {
+    devOnly: new Set(
+      deps.filter((d) => d.kind === "dev" && !nonDev.has(d.name)).map((d) => d.name),
+    ),
+    all: new Set(deps.map((d) => d.name)),
+  };
 }
 
 function crateName(crate: Crate): string | undefined {
@@ -179,14 +200,29 @@ function crateName(crate: Crate): string | undefined {
   return isTable(pkg) && typeof pkg.name === "string" ? pkg.name : undefined;
 }
 
-/** EcosystemAdapter.buildDependencyGraph: one graph per requested project. */
-export async function buildDependencyGraph(
+export interface LockAnalysis {
+  graphs: DependencyGraph[];
+  /** Why graphs are incomplete: missing, oversized, malformed, stale or ambiguous lockfiles. */
+  evidence: Evidence[];
+}
+
+/** Graphs plus the evidence behind every incomplete one. */
+export async function analyseCargoLocks(
   context: AdapterContext,
   projects: ProjectRef[],
-): Promise<DependencyGraph[]> {
+): Promise<LockAnalysis> {
   const { crates } = await discoverCrates(context);
-  const locks = new Map<string, ParsedCargoLock | undefined>();
+  const locks = new Map<string, ParsedCargoLock | Evidence>();
   const graphs: DependencyGraph[] = [];
+  const evidence: Evidence[] = [];
+  const reported = new Set<string>();
+  const once = (e: Evidence) => {
+    const k = `${e.kind}\0${e.statement}`;
+    if (!reported.has(k)) {
+      reported.add(k);
+      evidence.push(e);
+    }
+  };
   for (const project of projects) {
     context.signal?.throwIfAborted();
     const crate = crates.find((c) => c.project.path === project.path);
@@ -197,26 +233,59 @@ export async function buildDependencyGraph(
       transitiveClosure: {},
       incomplete: true,
     };
-    if (crate?.lockfile === undefined || name === undefined) {
+    if (crate === undefined || name === undefined) {
       graphs.push(incomplete);
       continue;
     }
-    if (!locks.has(crate.lockfile)) {
-      let parsed: ParsedCargoLock | undefined;
+    if (crate.lockfile === undefined) {
+      once({
+        kind: "lockfile-missing",
+        statement: `no Cargo.lock governs ${crate.manifest.path}; graph is incomplete`,
+        file: crate.manifest.path,
+      });
+      graphs.push(incomplete);
+      continue;
+    }
+    const lockPath = crate.lockfile;
+    if (!locks.has(lockPath)) {
+      let result: ParsedCargoLock | Evidence;
       try {
-        const text = await context.repository.readFile(crate.lockfile);
-        if (Buffer.byteLength(text, "utf8") <= MAX_LOCKFILE_BYTES) parsed = parseCargoLock(text);
+        const text = await context.repository.readFile(lockPath);
+        result =
+          Buffer.byteLength(text, "utf8") > MAX_LOCKFILE_BYTES
+            ? {
+                kind: "lockfile-oversized",
+                statement: `${lockPath} exceeds ${MAX_LOCKFILE_BYTES} bytes and was not parsed`,
+                file: lockPath,
+              }
+            : parseCargoLock(text);
       } catch {
-        parsed = undefined;
+        result = {
+          kind: "lockfile-malformed",
+          statement: `${lockPath} could not be read as TOML; graph is incomplete`,
+          file: lockPath,
+        };
       }
-      locks.set(crate.lockfile, parsed);
+      locks.set(lockPath, result);
     }
-    const lock = locks.get(crate.lockfile);
-    if (lock === undefined) {
+    const lock = locks.get(lockPath)!;
+    if (!("packages" in lock)) {
+      once(lock);
       graphs.push(incomplete);
       continue;
     }
-    graphs.push(crateGraph(project, name, lock, devOnly(crate), crate.lockfile).graph);
+    const names = declaredNames(crate);
+    const result = crateGraph(project, name, lock, names.devOnly, lockPath, names.all);
+    result.evidence.forEach(once);
+    graphs.push(result.graph);
   }
-  return graphs;
+  return { graphs, evidence };
+}
+
+/** EcosystemAdapter.buildDependencyGraph: one graph per requested project. */
+export async function buildDependencyGraph(
+  context: AdapterContext,
+  projects: ProjectRef[],
+): Promise<DependencyGraph[]> {
+  return (await analyseCargoLocks(context, projects)).graphs;
 }

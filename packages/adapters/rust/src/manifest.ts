@@ -17,6 +17,7 @@
  */
 import type { Dependency, DependencyKind, Evidence, ProjectRef } from "@ghostdeps/core";
 import { isTable, stringArray, type CargoManifest, type TomlTable } from "./cargo-toml.js";
+import { compareStrings } from "./paths.js";
 
 export interface ManifestParseResult {
   dependencies: Dependency[];
@@ -154,7 +155,7 @@ export function featureGates(
     [...gates].map(([key, set]) => [
       key,
       [...set].sort(
-        (a, b) => Number(defaults.has(b)) - Number(defaults.has(a)) || a.localeCompare(b),
+        (a, b) => Number(defaults.has(b)) - Number(defaults.has(a)) || compareStrings(a, b),
       ),
     ]),
   );

@@ -7,6 +7,7 @@
 import type { AdapterContext, DetectionResult, Evidence, ProjectRef } from "@ghostdeps/core";
 import { hasPackage, workspaceTable } from "./cargo-toml.js";
 import { discoverCrates } from "./discover.js";
+import { analyseCargoLocks } from "./lockfile.js";
 import { displayRoot } from "./paths.js";
 
 export const DETECTION_CONFIDENCE_THRESHOLD = 0.5;
@@ -94,5 +95,9 @@ export async function detectRust(context: AdapterContext): Promise<DetectionResu
     if (crate !== undefined) projects.push(crate.project);
     best = Math.max(best, confidence);
   }
+  // Lockfile problems (missing, malformed, stale, ambiguous) are the audit
+  // trail behind incomplete graphs; DependencyGraph has no evidence field,
+  // so detection evidence carries them (#225).
+  if (projects.length > 0) evidence.push(...(await analyseCargoLocks(context, projects)).evidence);
   return { confidence: best, projects, evidence };
 }
