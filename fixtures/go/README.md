@@ -19,3 +19,11 @@ Go-specific blocks in `expected.json`, consumed by the Go adapter's own suite:
   never run).
 - `usages`: per module, the expected import sites (`file`, `line`, `symbols`,
   optional `via`). An empty list means the module must have no usages.
+
+## Verdicts
+
+Go never reports `unused` in M2 (arch lead ruling, 24 Sept 2026). `tools.go`
+and blank imports, build tags and the edgeless module graph cannot tell
+"not imported" from "not seen", so the adapter does not declare
+`referenceAnalysis`. Every fixture states this in `verdictNote` and lists
+`{ "kind": "unused" }` in `mustNotFind`.

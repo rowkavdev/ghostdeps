@@ -1,18 +1,46 @@
 {
   "description": "Vendored module. vendor/modules.txt lists both modules; only color is explicit. Files under vendor/ are third-party code: imports there (go-isatty from color) must never count as this project's usage, and vendor/ holds no projects.",
-  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "verdictNote": "Go never reports unused in M2 (arch lead ruling, 2026-09-24): tools.go and blank imports, build tags and the edgeless module graph cannot tell not-imported from not-seen. The Go adapter does not declare referenceAnalysis, so no dependency here may get an unused verdict.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
   "dependencies": [
-    { "name": "github.com/fatih/color", "kind": "runtime", "constraint": "v1.16.0", "declaredIn": "go.mod" }
+    {
+      "name": "github.com/fatih/color",
+      "kind": "runtime",
+      "constraint": "v1.16.0",
+      "declaredIn": "go.mod"
+    }
   ],
   "graph": {
     "incomplete": true,
-    "nodes": ["github.com/fatih/color", "github.com/mattn/go-isatty"],
-    "indirect": ["github.com/mattn/go-isatty"]
+    "nodes": [
+      "github.com/fatih/color",
+      "github.com/mattn/go-isatty"
+    ],
+    "indirect": [
+      "github.com/mattn/go-isatty"
+    ]
   },
   "usages": {
-    "github.com/fatih/color": [{ "file": "main.go", "line": 3, "symbols": ["Red"] }],
+    "github.com/fatih/color": [
+      {
+        "file": "main.go",
+        "line": 3,
+        "symbols": [
+          "Red"
+        ]
+      }
+    ],
     "github.com/mattn/go-isatty": []
   },
   "findings": [],
-  "mustNotFind": []
+  "mustNotFind": [
+    {
+      "kind": "unused"
+    }
+  ]
 }

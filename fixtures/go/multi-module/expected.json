@@ -1,19 +1,69 @@
 {
   "description": "go.work workspace with two modules. Each go.mod is its own project. worker requires api through a local replace (specifier file ../api) and never imports it. chi is imported through two packages (root and middleware) of one module /v5.",
-  "detection": { "minConfidence": 0.5, "projects": ["api", "worker"] },
+  "verdictNote": "Go never reports unused in M2 (arch lead ruling, 2026-09-24): tools.go and blank imports, build tags and the edgeless module graph cannot tell not-imported from not-seen. The Go adapter does not declare referenceAnalysis, so no dependency here may get an unused verdict.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "api",
+      "worker"
+    ]
+  },
   "dependencies": [
-    { "name": "github.com/go-chi/chi/v5", "kind": "runtime", "constraint": "v5.0.12", "declaredIn": "api/go.mod" },
-    { "name": "example.com/multi/api", "kind": "runtime", "constraint": "v0.0.0", "declaredIn": "worker/go.mod", "specifier": { "type": "file", "detail": "../api" } },
-    { "name": "github.com/robfig/cron/v3", "kind": "runtime", "constraint": "v3.0.1", "declaredIn": "worker/go.mod" }
+    {
+      "name": "github.com/go-chi/chi/v5",
+      "kind": "runtime",
+      "constraint": "v5.0.12",
+      "declaredIn": "api/go.mod"
+    },
+    {
+      "name": "example.com/multi/api",
+      "kind": "runtime",
+      "constraint": "v0.0.0",
+      "declaredIn": "worker/go.mod",
+      "specifier": {
+        "type": "file",
+        "detail": "../api"
+      }
+    },
+    {
+      "name": "github.com/robfig/cron/v3",
+      "kind": "runtime",
+      "constraint": "v3.0.1",
+      "declaredIn": "worker/go.mod"
+    }
   ],
   "usages": {
     "github.com/go-chi/chi/v5": [
-      { "file": "api/main.go", "line": 6, "symbols": ["NewRouter"] },
-      { "file": "api/main.go", "line": 7, "symbols": ["Logger"] }
+      {
+        "file": "api/main.go",
+        "line": 6,
+        "symbols": [
+          "NewRouter"
+        ]
+      },
+      {
+        "file": "api/main.go",
+        "line": 7,
+        "symbols": [
+          "Logger"
+        ]
+      }
     ],
-    "github.com/robfig/cron/v3": [{ "file": "worker/main.go", "line": 3, "symbols": ["New"] }],
+    "github.com/robfig/cron/v3": [
+      {
+        "file": "worker/main.go",
+        "line": 3,
+        "symbols": [
+          "New"
+        ]
+      }
+    ],
     "example.com/multi/api": []
   },
   "findings": [],
-  "mustNotFind": []
+  "mustNotFind": [
+    {
+      "kind": "unused"
+    }
+  ]
 }

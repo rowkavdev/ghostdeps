@@ -1,23 +1,84 @@
 {
   "description": "Import forms: blank (_) and dot (.) imports, imports only in _test.go, a tool directive (go 1.24), imports inside comments and raw strings (must be ignored), and nested modules where the longest module path wins (github.com/nested/mod/sub/pkg belongs to github.com/nested/mod/sub, not github.com/nested/mod).",
-  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "verdictNote": "Go never reports unused in M2 (arch lead ruling, 2026-09-24): tools.go and blank imports, build tags and the edgeless module graph cannot tell not-imported from not-seen. The Go adapter does not declare referenceAnalysis, so no dependency here may get an unused verdict.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
   "dependencies": [
-    { "name": "github.com/lib/pq", "kind": "runtime", "constraint": "v1.10.9", "declaredIn": "go.mod" },
-    { "name": "github.com/stretchr/testify", "kind": "runtime", "constraint": "v1.9.0", "declaredIn": "go.mod" },
-    { "name": "golang.org/x/tools", "kind": "runtime", "constraint": "v0.21.0", "declaredIn": "go.mod" },
-    { "name": "github.com/nested/mod", "kind": "runtime", "constraint": "v1.0.0", "declaredIn": "go.mod" },
-    { "name": "github.com/nested/mod/sub", "kind": "runtime", "constraint": "v1.0.0", "declaredIn": "go.mod" }
+    {
+      "name": "github.com/lib/pq",
+      "kind": "runtime",
+      "constraint": "v1.10.9",
+      "declaredIn": "go.mod"
+    },
+    {
+      "name": "github.com/stretchr/testify",
+      "kind": "runtime",
+      "constraint": "v1.9.0",
+      "declaredIn": "go.mod"
+    },
+    {
+      "name": "golang.org/x/tools",
+      "kind": "runtime",
+      "constraint": "v0.21.0",
+      "declaredIn": "go.mod"
+    },
+    {
+      "name": "github.com/nested/mod",
+      "kind": "runtime",
+      "constraint": "v1.0.0",
+      "declaredIn": "go.mod"
+    },
+    {
+      "name": "github.com/nested/mod/sub",
+      "kind": "runtime",
+      "constraint": "v1.0.0",
+      "declaredIn": "go.mod"
+    }
   ],
   "usages": {
-    "github.com/lib/pq": [{ "file": "db.go", "line": 6, "symbols": [] }],
-    "github.com/stretchr/testify": [{ "file": "forms_test.go", "line": 6, "symbols": ["True"] }],
-    "golang.org/x/tools": [{ "file": "go.mod", "line": 13, "via": "convention", "symbols": ["stringer"] }],
-    "github.com/nested/mod/sub": [{ "file": "sub.go", "line": 3, "symbols": [] }],
+    "github.com/lib/pq": [
+      {
+        "file": "db.go",
+        "line": 6,
+        "symbols": []
+      }
+    ],
+    "github.com/stretchr/testify": [
+      {
+        "file": "forms_test.go",
+        "line": 6,
+        "symbols": [
+          "True"
+        ]
+      }
+    ],
+    "golang.org/x/tools": [
+      {
+        "file": "go.mod",
+        "line": 13,
+        "via": "config",
+        "symbols": [
+          "stringer"
+        ]
+      }
+    ],
+    "github.com/nested/mod/sub": [
+      {
+        "file": "sub.go",
+        "line": 3,
+        "symbols": []
+      }
+    ],
     "github.com/nested/mod": []
   },
   "findings": [],
   "mustNotFind": [
-    { "kind": "unused", "dependency": "github.com/lib/pq" },
-    { "kind": "unused", "dependency": "golang.org/x/tools" }
+    {
+      "kind": "unused"
+    }
   ]
 }
