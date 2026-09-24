@@ -18,6 +18,7 @@ export {
   OUTCOME_CAPS,
   type IsolatedAnalyseOptions,
 } from "./isolated.js";
+export { buildProjectTree, projectId } from "./project-tree.js";
 export {
   analyseDirectory,
   scanCompletenessFindings,

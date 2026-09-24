@@ -76,6 +76,13 @@
       "summary": "left-pad is declared but never used"
     }
   ],
+  "projectTree": [
+    {
+      "ecosystem": "javascript-typescript",
+      "id": "javascript-typescript:.",
+      "path": "."
+    }
+  ],
   "projects": [
     {
       "ecosystem": "javascript-typescript",

@@ -616,3 +616,34 @@ describe("head reads inside the engine (#113)", () => {
     assert.ok(!result.findings.some((f) => f.rule === "file-not-sniffed"));
   });
 });
+
+describe("project tree (#55)", () => {
+  it("relates every adapter's projects in one tree", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [
+        mockAdapter({
+          ecosystem: "js",
+          confidence: 1,
+          extraProject: { path: "packages/web", ecosystem: "js", packageManagers: [] },
+        }),
+        mockAdapter({
+          ecosystem: "py",
+          confidence: 1,
+          extraProject: { path: "packages/web/api", ecosystem: "py", packageManagers: [] },
+        }),
+      ],
+    });
+    assert.deepEqual(result.projectTree, [
+      { id: "js:.", path: ".", ecosystem: "js" },
+      { id: "py:.", path: ".", ecosystem: "py" },
+      { id: "js:packages/web", path: "packages/web", ecosystem: "js", parent: "js:." },
+      {
+        id: "py:packages/web/api",
+        path: "packages/web/api",
+        ecosystem: "py",
+        parent: "js:packages/web",
+      },
+    ]);
+  });
+});
