@@ -151,9 +151,9 @@ export function preFilter(eventName: string, payload: unknown): PreFilterResult 
  */
 export interface DecideOptions {
   /**
-   * Also analyse PRs that change only analysable source (#101). Off by
-   * default until the "last import removed" finding path lands; until
-   * then a source-only analysis can only post the quiet check.
+   * Also analyse PRs that change only analysable source (#101), so a
+   * removed last import is reported. The app passes this explicitly (on
+   * unless GHOSTDEPS_SOURCE_PR_TRIGGER turns it off); omitted means off.
    */
   readonly sourcePrTrigger?: boolean;
 }

@@ -25,9 +25,9 @@ export interface GhostDepsAppOptions {
    */
   readonly appId?: number;
   /**
-   * Analyse PRs that change only source files (#101). Defaults to the
-   * GHOSTDEPS_SOURCE_PR_TRIGGER environment variable ("true" or "1"); off
-   * otherwise, until the "last import removed" finding lands.
+   * Analyse PRs that change only source files (#101), so removing a
+   * dependency's last import is reported. Defaults to on;
+   * GHOSTDEPS_SOURCE_PR_TRIGGER=false (or 0) turns it off.
    */
   readonly sourcePrTrigger?: boolean;
   /**

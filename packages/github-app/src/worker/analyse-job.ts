@@ -22,6 +22,7 @@ import {
   type AnalysisResult,
   type DependencyChange,
   type RecommendationPolicy,
+  type SourceLineChanges,
 } from "@ghostdeps/core";
 import type { AddedLines } from "../checks/diff.js";
 import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
@@ -41,6 +42,12 @@ export type RepositoryClient = ChecksClient & TarballClient & PullRequestClient;
 export interface AnalyseRunOptions {
   /** Present only for PR jobs whose dependency changes were read in full. */
   readonly pullRequestChanges?: readonly DependencyChange[];
+  /**
+   * Removed and added source lines, set together with pullRequestChanges
+   * (#101). Core bounds them and adapters report removed usages, so a PR
+   * that removes a dependency's last import gets removed-last-usage.
+   */
+  readonly pullRequestSourceChanges?: readonly SourceLineChanges[];
   /** Core's recommendation policy; omitted means facts only, no verdicts. */
   readonly recommend?: RecommendationPolicy;
 }
@@ -99,6 +106,9 @@ export async function analyseCheckout(
   return engine(handle, {
     adapters: adapterModules,
     ...(run.pullRequestChanges ? { pullRequestChanges: run.pullRequestChanges } : {}),
+    ...(run.pullRequestSourceChanges
+      ? { pullRequestSourceChanges: run.pullRequestSourceChanges }
+      : {}),
     ...(run.recommend ? { recommend: run.recommend } : {}),
     ...(scanCompleteness.length > 0 ? { scanIncomplete: true, scanCompleteness } : {}),
   });
@@ -184,6 +194,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       let added: AddedLines = new Map();
       const run: {
         pullRequestChanges?: readonly DependencyChange[];
+        pullRequestSourceChanges?: readonly SourceLineChanges[];
         recommend?: RecommendationPolicy;
       } = options.recommend ? { recommend: options.recommend } : {};
       // baseSha is from the payload at enqueue time. If the base branch has
@@ -198,8 +209,10 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
           headSha: job.headSha,
         });
         added = pr.added;
-        if (pr.complete) run.pullRequestChanges = pr.dependencyChanges.changes;
-        else {
+        if (pr.complete) {
+          run.pullRequestChanges = pr.dependencyChanges.changes;
+          run.pullRequestSourceChanges = pr.dependencyChanges.sourceLineChanges;
+        } else {
           // Scoping to a partial change list could hide a finding: analyse in full.
           options.log?.warn(
             { job: job.key, limitations: pr.dependencyChanges.limitations },

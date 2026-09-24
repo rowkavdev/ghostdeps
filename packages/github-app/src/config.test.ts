@@ -15,12 +15,12 @@ describe("appIdFromEnv", () => {
 });
 
 describe("sourcePrTriggerFromEnv", () => {
-  it("is on only for true or 1", () => {
-    assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: "true" }), true);
-    assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: " 1 " }), true);
-    assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: "TRUE" }), true);
-    for (const v of [undefined, "", "0", "false", "yes", "on"]) {
-      assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: v }), false, String(v));
+  it("is on unless false or 0", () => {
+    for (const v of [undefined, "", "true", "1", "yes"]) {
+      assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: v }), true, String(v));
+    }
+    for (const v of ["false", " 0 ", "FALSE"]) {
+      assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: v }), false, v);
     }
   });
 });

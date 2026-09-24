@@ -196,7 +196,9 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(queue.jobs.length, 0);
   });
 
-  it("skips a source-only pull request while the source trigger is off (default)", async () => {
+  it("skips a source-only pull request with the source trigger off", async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await listen({ sourcePrTrigger: false });
     mockInstallationToken();
     mockPrFiles(["src/index.js", "README.md"]);
     const res = await deliver("pull_request", await fixture("pull_request.opened"));
@@ -204,9 +206,7 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(queue.jobs.length, 0);
   });
 
-  it("analyses a source-only pull request with the source trigger on (#101)", async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    await listen({ sourcePrTrigger: true });
+  it("analyses a source-only pull request by default (#101)", async () => {
     mockInstallationToken();
     mockPrFiles(["src/index.js", "README.md"]);
     const res = await deliver("pull_request", await fixture("pull_request.opened"));
