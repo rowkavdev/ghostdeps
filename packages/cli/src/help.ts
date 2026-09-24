@@ -2,17 +2,19 @@ import { commands, type Command } from "./commands.js";
 
 const optionLines = [
   "Options:",
-  "  --json        Machine-readable JSON output (schema-versioned)",
-  "  -h, --help    Show help",
-  "  -V, --version Show the version",
-  "  --            Treat everything after it as positional (paths starting with -)",
+  "  --json              Machine-readable JSON output (schema-versioned)",
+  "  --fail-on <sev>     scan: exit 1 when any finding reaches this severity",
+  "  --severity <min>    scan: only show findings at or above this severity",
+  "  -h, --help          Show help",
+  "  -V, --version       Show the version",
+  "  --                  Treat everything after it as positional (paths starting with -)",
 ];
 
 const exitCodeLines = [
   "Exit codes:",
-  "  0  success",
-  "  1  unexpected error",
-  "  2  usage error (unknown command or arguments)",
+  "  0  success (with --fail-on: no finding at or above the threshold)",
+  "  1  scan --fail-on threshold met or exceeded",
+  "  2  usage error, or the scan itself failed",
   "  3  command not implemented yet",
 ];
 

@@ -123,7 +123,7 @@ describe("ghostdeps cli", () => {
   it("treats everything after -- as positional", async () => {
     const { io, err } = capture();
     const code = await run(["--", "-odd-dir"], io);
-    assert.equal(code, 1);
+    assert.equal(code, 2);
     assert.ok(
       err.join(" ").includes("path is not a directory: -odd-dir"),
       "-odd-dir should route to scan",

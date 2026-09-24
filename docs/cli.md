@@ -59,7 +59,7 @@ On failure, `--json` emits an error object instead, and never an
 ```
 
 `code` is one of `usage`, `not-implemented`, `error`; the exit code carries
-the same information (`2`, `3`, `1`). A clean-looking empty result would be
+the same information (usage 2, not-implemented 3, error 2). A clean-looking empty result would be
 a false all-clear, which is worse than no output.
 
 Analysis is static and works fully offline; registry metadata (when wired
@@ -67,15 +67,22 @@ up) flows only through the core metadata service, never from the CLI.
 
 ## Exit codes
 
-| Code | Meaning                                    |
-| ---- | ------------------------------------------ |
-| 0    | success                                    |
-| 1    | unexpected error                           |
-| 2    | usage error (unknown command or arguments) |
-| 3    | command not implemented yet                |
+| Code | Meaning                                                         |
+| ---- | --------------------------------------------------------------- |
+| 0    | success; with `--fail-on`, no finding at or above the threshold |
+| 1    | scan `--fail-on` threshold met or exceeded                      |
+| 2    | usage error, or the scan itself failed (no usable result)       |
+| 3    | command not implemented yet                                     |
 
-GhostDeps advises, it does not gate: findings never produce a non-zero exit
-on an otherwise successful scan.
+GhostDeps advises, it does not gate: without `--fail-on`, findings never
+produce a non-zero exit on an otherwise successful scan. `ghostdeps scan
+--fail-on high` opts into gating for CI: the report prints as usual and the
+exit code becomes 1 when any finding reaches the threshold. Severity derives
+from finding kind + confidence (`severityOf` in core). Info findings - the
+scan-completeness notes from #110 and the no-recommendations notice - are
+always severity `info`, so they cannot trip `--fail-on high` (or any
+threshold above `info`). `--severity <min>` only filters what is shown;
+`--fail-on` always evaluates every finding, shown or not.
 
 ## Configuration
 
