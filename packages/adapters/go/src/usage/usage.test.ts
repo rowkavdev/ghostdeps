@@ -7,7 +7,7 @@ import type { AdapterContext, Dependency } from "@ghostdeps/core";
 import { createGoAdapter } from "../adapter.js";
 import { FIXTURES_ROOT, fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
 import { defaultPackageName, extractGoImports } from "./imports.js";
-import { owningModule } from "./scan.js";
+import { MAX_GO_SOURCE_BYTES, owningModule } from "./scan.js";
 
 type ExpectedUsage = { file: string; line: number; symbols: string[]; via?: string };
 
@@ -160,6 +160,62 @@ describe("PR mode", () => {
     assert.deepEqual(
       usages.map((u) => [u.file, u.line, u.removedInPr]),
       [["main.go", 3, true]],
+    );
+  });
+});
+
+describe("scan limits", () => {
+  const dep = (context: AdapterContext): Promise<Dependency> =>
+    (async () => {
+      const adapter = createGoAdapter();
+      const [d] = await adapter.listDirectDependencies(
+        context,
+        (await adapter.detect(context)).projects,
+      );
+      return d!;
+    })();
+
+  it("skips .go files over MAX_GO_SOURCE_BYTES instead of lexing them", async () => {
+    const big =
+      'package main\nimport "github.com/pkg/errors"\n' +
+      "// pad\n".repeat(MAX_GO_SOURCE_BYTES / 7 + 1);
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "go.mod": "module m\nrequire github.com/pkg/errors v0.9.1\n",
+        "big.go": big,
+        "small.go": 'package main\nimport "github.com/pkg/errors"\n',
+      }),
+      network: { mode: "offline" },
+    };
+    const { usages } = normaliseUsageResult(
+      await createGoAdapter().findUsage!(context, await dep(context)),
+    );
+    assert.deepEqual(
+      usages.map((u) => u.file),
+      ["small.go"],
+    );
+  });
+
+  it("throws on abort and does not cache the partial scan", async () => {
+    const files = {
+      "go.mod": "module m\nrequire github.com/pkg/errors v0.9.1\n",
+      "a.go": 'package main\nimport "github.com/pkg/errors"\n',
+    };
+    const repository = memoryHandle(files);
+    const controller = new AbortController();
+    const aborted: AdapterContext = {
+      repository,
+      network: { mode: "offline" },
+      signal: controller.signal,
+    };
+    const d = await dep(aborted);
+    controller.abort();
+    await assert.rejects(createGoAdapter().findUsage!(aborted, d));
+    const fresh: AdapterContext = { repository, network: { mode: "offline" } };
+    const { usages } = normaliseUsageResult(await createGoAdapter().findUsage!(fresh, d));
+    assert.deepEqual(
+      usages.map((u) => u.file),
+      ["a.go"],
     );
   });
 });

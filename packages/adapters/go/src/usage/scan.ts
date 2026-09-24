@@ -8,6 +8,7 @@
  * - `tool` directives reference their module from go.mod (via "config").
  * - Blank and dot imports count as usage with no symbols.
  */
+import { MAX_FILE_READ_BYTES } from "@ghostdeps/core";
 import type {
   AdapterContext,
   Dependency,
@@ -30,8 +31,16 @@ export function owningModule(importPath: string, modules: Iterable<string>): str
   return best;
 }
 
+/**
+ * .go files larger than this are skipped, not lexed (security-model: parser
+ * input limits). Same bound as the JS adapter; never above core's read cap.
+ */
+export const MAX_GO_SOURCE_BYTES = Math.min(1_000_000, MAX_FILE_READ_BYTES);
+
 interface ProjectScan {
   files: { path: string; parsed: GoFileImports }[];
+  /** Files not lexed: over MAX_GO_SOURCE_BYTES or unreadable. */
+  skipped: { path: string; reason: "too-large" | "unreadable" }[];
   modules: Set<string>;
   tools: { path: string; line: number }[];
 }
@@ -46,6 +55,8 @@ async function scanProject(context: AdapterContext, project: ProjectRef): Promis
   if (!scan) {
     scan = doScan(context, project);
     perRepo.set(project.path, scan);
+    // Never cache a failed or aborted scan: the next call starts fresh.
+    scan.catch(() => perRepo.delete(project.path));
   }
   return scan;
 }
@@ -68,18 +79,27 @@ async function doScan(context: AdapterContext, project: ProjectRef): Promise<Pro
   const mod = await readGoMod(repo, project);
   const modules = new Set((mod?.require ?? []).map((r) => r.path));
   const files: ProjectScan["files"] = [];
+  const skipped: ProjectScan["skipped"] = [];
   for (const f of all) {
-    if (context.signal?.aborted) break;
+    // Throw rather than break: a partial scan must never be cached as complete.
+    context.signal?.throwIfAborted();
     if (!f.endsWith(".go") || isIgnoredGoPath(f) || nearest(f) !== project.path) continue;
     let text: string;
     try {
       text = await repo.readFile(f);
     } catch {
+      // TODO(#121): surface skipped files as incompleteness once the #205
+      // adapter note channel lands; today they are only recorded here.
+      skipped.push({ path: f, reason: "unreadable" });
+      continue;
+    }
+    if (Buffer.byteLength(text, "utf8") > MAX_GO_SOURCE_BYTES) {
+      skipped.push({ path: f, reason: "too-large" });
       continue;
     }
     files.push({ path: f, parsed: extractGoImports(text) });
   }
-  return { files, modules, tools: mod?.tool ?? [] };
+  return { files, skipped, modules, tools: mod?.tool ?? [] };
 }
 
 export async function findGoUsage(
