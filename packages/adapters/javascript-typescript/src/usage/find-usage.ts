@@ -684,7 +684,7 @@ export async function tsconfigBaseNotes(context: AdapterContext): Promise<{ stat
     return (
       `tsconfig bases from node_modules were not read (${list}); aliases they define are unknown. ` +
       "This can only add usage evidence, never remove it, so no dependency is reported unused because of it. " +
-      "Set baseUrl/paths in your own tsconfig to have them read."
+      "Set baseUrl/paths in your own tsconfig so GhostDeps can see them."
     );
   };
   for (let shown = Math.min(bases.length, 5); shown >= 0; shown--) {

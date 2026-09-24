@@ -280,7 +280,7 @@ describe("tsconfig node_modules base run note (#275)", () => {
       notes[0]!.statement,
       "tsconfig bases from node_modules were not read (@tsconfig/node20, @tsconfig/strictest); aliases they define are unknown. " +
         "This can only add usage evidence, never remove it, so no dependency is reported unused because of it. " +
-        "Set baseUrl/paths in your own tsconfig to have them read.",
+        "Set baseUrl/paths in your own tsconfig so GhostDeps can see them.",
     );
   });
 
