@@ -13,6 +13,7 @@ import {
   createDefaultPolicy,
   normaliseUsageResult,
   type AdapterContext,
+  type Finding,
 } from "@ghostdeps/core";
 import { createPythonAdapter } from "./adapter.js";
 import { detectPython } from "./detect.js";
@@ -39,12 +40,47 @@ interface ExpectedGraph {
 /** Import resolution expectation: "stdlib", "first-party", "unresolved" or a distribution name. */
 type ExpectedImports = Record<string, Record<string, string>>;
 
+interface ExpectedFinding {
+  kind: string;
+  rule?: string;
+  dependency?: string;
+  minConfidence?: "low" | "medium" | "high";
+  /** An evidence kind the finding must carry (for run notes that have no rule). */
+  evidence?: string;
+}
+
+const CONFIDENCE_ORDER = ["low", "medium", "high"];
+
+function matches(finding: Finding, want: ExpectedFinding): boolean {
+  if (finding.kind !== want.kind) return false;
+  if (want.rule !== undefined && finding.rule !== want.rule) return false;
+  if (want.dependency !== undefined && finding.dependency !== want.dependency) return false;
+  if (want.evidence !== undefined && !finding.evidence.some((e) => e.kind === want.evidence)) {
+    return false;
+  }
+  if (
+    want.minConfidence !== undefined &&
+    CONFIDENCE_ORDER.indexOf(finding.confidence) < CONFIDENCE_ORDER.indexOf(want.minConfidence)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 interface ExpectedFixture {
   dependencies?: ExpectedDependency[];
   /** Dependency name -> exactly the "file:line" usages findUsage reports (#47). */
   usage?: Record<string, string[]>;
   /** Core analysis with the default policy (#47): no findings on these deps, none with these rules. */
   policy?: { noFindingsFor?: string[]; noRules?: string[] };
+  /**
+   * Expected-findings metadata (#48): exactly these findings, no more, from
+   * analyseDirectory with the default policy. Each entry matches on kind and,
+   * when given, rule, dependency and a confidence floor.
+   */
+  findings?: ExpectedFinding[];
+  /** Findings that must never appear; each entry matches like `findings`. */
+  mustNotFind?: ExpectedFinding[];
   /** Project root -> import path -> expected resolution (#46). */
   imports?: ExpectedImports;
   graph?: Record<string, ExpectedGraph>;
@@ -168,21 +204,38 @@ describe("python fixtures (issue #48)", () => {
         }
       }
 
-      if (expected.policy !== undefined) {
+      if (
+        expected.findings !== undefined ||
+        expected.mustNotFind !== undefined ||
+        expected.policy !== undefined
+      ) {
         const result = await analyseDirectory(path.join(PY_FIXTURES, scenario), {
           adapters: [createPythonAdapter()],
           network: { mode: "offline" },
           recommend: createDefaultPolicy({}),
         });
-        for (const name of expected.policy.noFindingsFor ?? []) {
-          const hits = result.findings.filter((f) => f.dependency === name);
-          assert.deepEqual(
-            hits.map((f) => f.rule),
-            [],
-            `${scenario}: unexpected findings on ${name}`,
-          );
+        const describe = (f: Finding) =>
+          `${f.kind}/${f.rule}${f.dependency === undefined ? "" : ` on ${f.dependency}`}`;
+        if (expected.findings !== undefined) {
+          // Exact: every expected entry claims one distinct finding, and no
+          // finding is left over.
+          const remaining = [...result.findings];
+          for (const want of expected.findings) {
+            const at = remaining.findIndex((f) => matches(f, want));
+            assert.ok(at >= 0, `${scenario}: missing finding ${JSON.stringify(want)}`);
+            remaining.splice(at, 1);
+          }
+          assert.deepEqual(remaining.map(describe), [], `${scenario}: unexpected findings`);
         }
-        for (const rule of expected.policy.noRules ?? []) {
+        for (const never of expected.mustNotFind ?? []) {
+          const hit = result.findings.find((f) => matches(f, never));
+          assert.ok(!hit, `${scenario}: must not find ${hit ? describe(hit) : ""}`);
+        }
+        for (const name of expected.policy?.noFindingsFor ?? []) {
+          const hits = result.findings.filter((f) => f.dependency === name);
+          assert.deepEqual(hits.map(describe), [], `${scenario}: unexpected findings on ${name}`);
+        }
+        for (const rule of expected.policy?.noRules ?? []) {
           assert.ok(
             !result.findings.some((f) => f.rule === rule),
             `${scenario}: unexpected ${rule}`,

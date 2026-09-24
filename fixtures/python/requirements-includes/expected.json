@@ -1,5 +1,5 @@
 {
-  "description": "requirements.txt that includes requirements/base.txt, plus requirements/dev.txt with a -r include and a -c constraints file (#44). Includes resolve relative to the including file; constraint pins are not declarations.",
+  "description": "requirements.txt that includes requirements/base.txt, plus requirements/dev.txt with a -r include and a -c constraints file (#44). Includes resolve relative to the including file; constraint pins are not declarations. gunicorn is never imported (it runs as a server), so M2 reports only the low-confidence manual-review note, never unused. The Python adapter does not report declaredLine yet, so core adds its declaration-line-unavailable note.",
   "detection": { "minConfidence": 0.7, "projects": ["."], "packageManagers": { ".": ["pip"] } },
   "dependencies": [
     { "name": "flask", "kind": "runtime", "constraint": "==3.0.3", "declaredIn": "requirements/base.txt" },
@@ -7,5 +7,8 @@
     { "name": "pytest", "kind": "dev", "constraint": ">=8", "declaredIn": "requirements/dev.txt" }
   ],
   "mustNotFind": [{ "kind": "unused", "dependency": "werkzeug" }],
-  "findings": []
+  "findings": [
+    { "kind": "info", "rule": "unverified-no-imports", "dependency": "gunicorn" },
+    { "kind": "info", "rule": "declaration-line-unavailable" }
+  ]
 }
