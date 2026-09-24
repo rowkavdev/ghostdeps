@@ -200,6 +200,28 @@ describe("decide", () => {
     if (d.analyse) {
       assert.deepEqual(d.dependencyFiles, []);
       assert.deepEqual(d.sourceFiles, ["src/a.ts"]);
+      assert.equal(d.job.trigger.kind === "pull_request" && d.job.trigger.sourceOnly, true);
+    }
+  });
+
+  it("marks a PR source-only only when the complete list has no dependency file", async () => {
+    const withManifest = await decide(
+      "pull_request",
+      pr("opened"),
+      "g1",
+      files(["src/a.ts", "package.json"]),
+      { sourcePrTrigger: true },
+    );
+    const capped = await decide(
+      "pull_request",
+      pr("opened"),
+      "g1",
+      async () => ({ files: ["src/a.ts"], complete: false }),
+      { sourcePrTrigger: true },
+    );
+    for (const d of [withManifest, capped]) {
+      assert.equal(d.analyse, true);
+      if (d.analyse) assert.equal("sourceOnly" in d.job.trigger, false);
     }
   });
 

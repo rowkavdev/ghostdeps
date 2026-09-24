@@ -10,10 +10,13 @@ export function appIdFromEnv(env: NodeJS.ProcessEnv = process.env): number | und
   return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 }
 
-/** GHOSTDEPS_SOURCE_PR_TRIGGER: "true" or "1" turns the source-only PR trigger on (#101). */
+/**
+ * GHOSTDEPS_SOURCE_PR_TRIGGER: the source-only PR trigger (#101) is on
+ * unless this is "false" or "0".
+ */
 export function sourcePrTriggerFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env.GHOSTDEPS_SOURCE_PR_TRIGGER?.trim().toLowerCase();
-  return raw === "true" || raw === "1";
+  return !(raw === "false" || raw === "0");
 }
 
 /**

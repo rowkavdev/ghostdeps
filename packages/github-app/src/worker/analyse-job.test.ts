@@ -339,6 +339,65 @@ index 3333333..4444444 100644
     assert.equal(rec.updated[0]?.conclusion, "success");
   });
 
+  it("passes removed source lines so a removed last import can be reported (#101)", async () => {
+    const removal = `diff --git a/src/index.js b/src/index.js
+index 3333333..4444444 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,2 +1,1 @@
+-import leftPad from "left-pad";
+ console.log(leftPad("x", 3));
+`;
+    const { client } = fakeClient({ diff: removal, files });
+    let seen: AnalyseRunOptions | undefined;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(prJob);
+    assert.deepEqual(seen?.pullRequestChanges, []);
+    const source = seen?.pullRequestSourceChanges ?? [];
+    assert.deepEqual(
+      source.map((f) => f.path),
+      ["src/index.js"],
+    );
+    assert.equal(source[0]?.removedLines.length, 1);
+    assert.match(source[0]?.removedLines[0]?.text ?? "", /left-pad/);
+    assert.deepEqual(source[0]?.addedLines, []);
+  });
+
+  it("keeps a source-only PR PR-scoped when its diff can't be read in full (#101)", async () => {
+    const { client, rec } = fakeClient({ diff: { status: 406 } });
+    let seen: AnalyseRunOptions | undefined;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(
+      job({
+        kind: "pull_request",
+        number: payload.number,
+        action: "opened",
+        baseSha: BASE,
+        sourceOnly: true,
+      }),
+    );
+    assert.deepEqual(seen, { pullRequestChanges: [] });
+    assert.equal(rec.updated[0]?.conclusion, "success");
+  });
+
   it("analyses the full repository when the changes cannot be read in full", async () => {
     const { client, rec } = fakeClient({ diff: { status: 406 } });
     let seen: AnalyseRunOptions | undefined;
@@ -448,6 +507,21 @@ describe("analyseCheckout: scan completeness (#136)", () => {
     ] as const;
     await analyseCheckout(await checkout(), ["m"], { pullRequestChanges: changes }, {}, engine);
     assert.deepEqual(seen.options?.pullRequestChanges, changes);
+  });
+
+  it("passes PR source line changes alongside (#101)", async () => {
+    const { seen, engine } = capture();
+    const source = [
+      { path: "src/a.js", removedLines: [{ line: 1, text: 'import x from "x";' }], addedLines: [] },
+    ];
+    await analyseCheckout(
+      await checkout(),
+      ["m"],
+      { pullRequestChanges: [], pullRequestSourceChanges: source },
+      {},
+      engine,
+    );
+    assert.deepEqual(seen.options?.pullRequestSourceChanges, source);
   });
 });
 
