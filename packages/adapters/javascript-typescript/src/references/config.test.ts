@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { memoryHandle } from "../testing/fs-handle.js";
-import { MAX_CONFIG_BYTES, expandShorthand, findConfigUsages, packageOf } from "./config.js";
+import {
+  MAX_CONFIG_BYTES,
+  expandShorthand,
+  findConfigUsages,
+  packageOf,
+  unreadConfigs,
+} from "./config.js";
 
 const project = (path = "."): ProjectRef => ({
   path,
@@ -122,5 +128,63 @@ describe("findConfigUsages", () => {
       );
     }
     assert.equal(({} as Record<string, unknown>).x, undefined);
+  });
+});
+
+describe("unreadConfigs (coverage for referenceAnalysisComplete)", () => {
+  const unread = async (context: AdapterContext, path = ".") =>
+    (await unreadConfigs(context, dep("anything", path)))
+      .map((u) => `${u.file}:${u.reason}`)
+      .sort();
+
+  it("is empty when every present config was parsed", async () => {
+    const context = ctx({
+      "package.json": `{"prettier": {"plugins": ["x"]}}`,
+      ".eslintrc.json": `{"extends": ["airbnb"]}`,
+      "tsconfig.json": `{"compilerOptions": {"types": ["node"]}}`,
+      "src/index.ts": "export {};",
+    });
+    assert.deepEqual(await unread(context), []);
+  });
+
+  it("reports malformed, oversized and unparsed package.json", async () => {
+    const context = ctx({
+      "package.json": "{",
+      ".eslintrc.json": `{"extends": `,
+      ".babelrc": " ".repeat(MAX_CONFIG_BYTES + 1),
+    });
+    assert.deepEqual(await unread(context), [
+      ".babelrc:oversized",
+      ".eslintrc.json:malformed",
+      "package.json:malformed",
+    ]);
+  });
+
+  it("reports JS/TS tool configs, which are never evaluated", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "eslint.config.mjs": "export default [];",
+      "vite.config.ts": "export default {};",
+      ".prettierrc.cjs": "module.exports = {};",
+      "src/app.config.ts": "export const x = 1;",
+    });
+    assert.deepEqual(await unread(context), [
+      ".prettierrc.cjs:not evaluated",
+      "eslint.config.mjs:not evaluated",
+      "vite.config.ts:not evaluated",
+    ]);
+  });
+
+  it("workspace members inherit root configs: references and coverage gaps", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      ".eslintrc.json": `{"plugins": ["import"]}`,
+      "eslint.config.js": "export default [];",
+      "packages/a/package.json": "{}",
+    });
+    assert.deepEqual(await via(context, "eslint-plugin-import", "packages/a"), [
+      ["config", ".eslintrc.json", 1],
+    ]);
+    assert.deepEqual(await unread(context, "packages/a"), ["eslint.config.js:not evaluated"]);
   });
 });

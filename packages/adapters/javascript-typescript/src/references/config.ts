@@ -331,26 +331,46 @@ function parseText(file: string, text: string): unknown {
   throw new Error("malformed");
 }
 
-async function readText(repository: RepositoryHandle, file: string): Promise<string | undefined> {
+type ReadResult = { text: string } | { reason: string };
+
+async function readText(repository: RepositoryHandle, file: string): Promise<ReadResult> {
+  let text: string;
   try {
-    const text = await repository.readFile(file);
-    return Buffer.byteLength(text, "utf8") > MAX_CONFIG_BYTES ? undefined : text;
+    text = await repository.readFile(file);
   } catch {
-    return undefined;
+    return { reason: "unreadable" };
   }
+  return Buffer.byteLength(text, "utf8") > MAX_CONFIG_BYTES ? { reason: "oversized" } : { text };
 }
 
-/** Every config/convention reference directly inside one project directory. */
-export async function collectConfigReferences(
+/** A config file that exists but whose references could not be read. */
+export interface UnreadConfig {
+  file: string;
+  reason: "unreadable" | "oversized" | "malformed" | "not evaluated";
+}
+
+/** Everything the config scan found for one project, plus what it could not read. */
+export interface ConfigScan {
+  refs: ConfigReference[];
+  /** Non-empty means config coverage is incomplete: no "unused" verdict may rely on it. */
+  unread: UnreadConfig[];
+}
+
+/** JS/TS tool configs are source files and are never evaluated. */
+const EXECUTABLE_CONFIG = /^(?:[^/]+\.config|\.[a-z-]+rc)\.(?:c|m)?[jt]s$/;
+
+/** Every config/convention reference directly inside one directory. */
+async function collectDirectory(
   repository: RepositoryHandle,
   projectDir: string,
   files: readonly string[],
-): Promise<ConfigReference[]> {
+): Promise<ConfigScan> {
   const prefix = projectDir === "." ? "" : `${projectDir}/`;
   const inProject = new Set(
     files.filter((f) => f.startsWith(prefix)).map((f) => f.slice(prefix.length)),
   );
   const refs: ConfigReference[] = [];
+  const unread: UnreadConfig[] = [];
   const collector =
     (file: string, text: string): Collector =>
     (source, rawNames, expand) => {
@@ -364,26 +384,40 @@ export async function collectConfigReferences(
   for (const [base, handler] of FILE_HANDLERS) {
     if (!inProject.has(base)) continue;
     const file = `${prefix}${base}`;
-    const text = await readText(repository, file);
-    if (text === undefined) continue;
+    const read = await readText(repository, file);
+    if (!("text" in read)) {
+      unread.push({ file, reason: read.reason as UnreadConfig["reason"] });
+      continue;
+    }
     try {
-      handler(parseText(file, text), collector(file, text));
+      handler(parseText(file, read.text), collector(file, read.text));
     } catch {
-      // Malformed config: no references from it. Usage only ever adds, so skipping is safe.
+      // No references from a malformed config, and coverage is no longer complete.
+      unread.push({ file, reason: "malformed" });
+    }
+  }
+  for (const f of inProject) {
+    if (!f.includes("/") && EXECUTABLE_CONFIG.test(f)) {
+      unread.push({ file: `${prefix}${f}`, reason: "not evaluated" });
     }
   }
 
   const manifestFile = `${prefix}package.json`;
-  const manifestText = inProject.has("package.json")
-    ? await readText(repository, manifestFile)
-    : undefined;
+  let manifestText: string | undefined;
   let manifest: Record<string, unknown> | undefined;
-  if (manifestText !== undefined) {
-    try {
-      const doc: unknown = JSON.parse(manifestText);
-      if (isRecord(doc)) manifest = doc;
-    } catch {
-      manifest = undefined;
+  if (inProject.has("package.json")) {
+    const read = await readText(repository, manifestFile);
+    if ("text" in read) {
+      manifestText = read.text;
+      try {
+        const doc: unknown = JSON.parse(read.text);
+        if (isRecord(doc)) manifest = doc;
+      } catch {
+        manifest = undefined;
+      }
+      if (!manifest) unread.push({ file: manifestFile, reason: "malformed" });
+    } else {
+      unread.push({ file: manifestFile, reason: read.reason as UnreadConfig["reason"] });
     }
   }
   if (manifest && manifestText !== undefined) {
@@ -433,16 +467,29 @@ export async function collectConfigReferences(
       });
     }
   }
-  return refs;
+  return { refs, unread };
 }
 
-const cache = new WeakMap<AdapterContext, Map<string, Promise<ConfigReference[]>>>();
+/**
+ * Config references for one project. Workspace members also inherit the
+ * repository root's configs (a root ESLint or Babel config applies to them),
+ * so the root's references credit the member and the root's unread configs
+ * make the member's coverage incomplete too.
+ */
+export async function collectConfigReferences(
+  repository: RepositoryHandle,
+  projectDir: string,
+  files: readonly string[],
+): Promise<ConfigScan> {
+  const own = await collectDirectory(repository, projectDir, files);
+  if (projectDir === ".") return own;
+  const root = await collectDirectory(repository, ".", files);
+  return { refs: [...own.refs, ...root.refs], unread: [...own.unread, ...root.unread] };
+}
 
-/** via="config" / via="convention" usages of `dependency` inside its own project directory. */
-export async function findConfigUsages(
-  context: AdapterContext,
-  dependency: Dependency,
-): Promise<Usage[]> {
+const cache = new WeakMap<AdapterContext, Map<string, Promise<ConfigScan>>>();
+
+function scanFor(context: AdapterContext, dependency: Dependency): Promise<ConfigScan> {
   const projectDir = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
   let perProject = cache.get(context);
   if (!perProject) {
@@ -457,7 +504,15 @@ export async function findConfigUsages(
     })();
     perProject.set(projectDir, pending);
   }
-  const refs = await pending;
+  return pending;
+}
+
+/** via="config" / via="convention" usages of `dependency` from its project's (and the root's) configs. */
+export async function findConfigUsages(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<Usage[]> {
+  const { refs } = await scanFor(context, dependency);
   return refs
     .filter((r) => r.packages.includes(dependency.name))
     .map((r) => ({
@@ -468,4 +523,12 @@ export async function findConfigUsages(
       via: r.via,
       symbols: [r.source],
     }));
+}
+
+/** Config files for `dependency`'s project that exist but could not be read. Empty = complete coverage. */
+export async function unreadConfigs(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<UnreadConfig[]> {
+  return (await scanFor(context, dependency)).unread;
 }
