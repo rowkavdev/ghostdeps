@@ -1,0 +1,9 @@
+{
+  "description": "Static import (default + members), scoped subpath import and destructured require are all usage; left-pad is declared but never imported.",
+  "findings": [{ "kind": "unused", "dependency": "left-pad", "minConfidence": "high" }],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "axios" },
+    { "kind": "unused", "dependency": "uuid" },
+    { "kind": "unused", "dependency": "@scope/util" }
+  ]
+}

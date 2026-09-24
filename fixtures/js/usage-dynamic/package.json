@@ -1,0 +1,9 @@
+{
+  "name": "fixture-usage-dynamic",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "dayjs": "^1.11.0",
+    "plugin-a": "^1.0.0"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "description": "dayjs is used via a literal dynamic import(). plugin-a is only reachable through a non-literal import(), so it must not be reported unused with high confidence; manual review is the correct outcome.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "dayjs" },
+    { "kind": "unused", "dependency": "plugin-a", "minConfidence": "high" }
+  ]
+}
