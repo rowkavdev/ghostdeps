@@ -8,6 +8,7 @@ import type { LockfileGraphResult, ParsedLockfile } from "./model.js";
 import { parseNpmLockfile } from "./npm.js";
 import { parsePnpmLockfile } from "./pnpm.js";
 import { parseYarnLockfile } from "./yarn.js";
+import { parseBunLockfile } from "./bun.js";
 
 /**
  * Lockfiles above this size are not parsed (security-model: parser input
@@ -16,12 +17,13 @@ import { parseYarnLockfile } from "./yarn.js";
  */
 export const MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
 
-type Format = "npm" | "pnpm" | "yarn";
+type Format = "npm" | "pnpm" | "yarn" | "bun";
 const LOCKFILES: [string, Format][] = [
   ["npm-shrinkwrap.json", "npm"],
   ["package-lock.json", "npm"],
   ["pnpm-lock.yaml", "pnpm"],
   ["yarn.lock", "yarn"],
+  ["bun.lock", "bun"],
 ];
 
 const join = (dir: string, file: string) => (dir === "." || dir === "" ? file : `${dir}/${file}`);
@@ -117,9 +119,18 @@ export async function buildLockfileGraph(
   const declared = await readDeclared(context, projectDir, evidence);
   const lock = await findLockfile(context, project, evidence);
   if (!lock) {
+    const binary = join(projectDir, "bun.lockb");
+    if (await context.repository.exists(binary)) {
+      evidence.push({
+        kind: "lockfile-unsupported",
+        statement: `${binary} is Bun's binary lockfile, which is not parsed (the text bun.lock format is)`,
+        file: binary,
+      });
+      return { graph: emptyGraph(project), evidence, lockfile: binary };
+    }
     evidence.push({
       kind: "lockfile-missing",
-      statement: `no npm, pnpm or Yarn lockfile found for ${projectDir}; transitive graph unknown`,
+      statement: `no npm, pnpm, Yarn or Bun lockfile found for ${projectDir}; transitive graph unknown`,
     });
     return { graph: emptyGraph(project), evidence };
   }
@@ -150,7 +161,9 @@ export async function buildLockfileGraph(
         ? parseNpmLockfile(text, lock.path, rel === "." ? "" : rel, declared)
         : lock.format === "pnpm"
           ? parsePnpmLockfile(text, lock.path, rel, declared)
-          : parseYarnLockfile(text, lock.path, rel, declared);
+          : lock.format === "yarn"
+            ? parseYarnLockfile(text, lock.path, rel, declared)
+            : parseBunLockfile(text, lock.path, rel, declared);
   } catch (err) {
     evidence.push({
       kind: "lockfile-malformed",

@@ -4,3 +4,4 @@ export type { LockfileGraphResult, ParsedLockfile, ResolvedPackage } from "./mod
 export { parseNpmLockfile } from "./npm.js";
 export { parsePnpmLockfile } from "./pnpm.js";
 export { parseYarnLockfile, readClassicLockfile } from "./yarn.js";
+export { parseBunLockfile, stripTrailingCommas } from "./bun.js";
