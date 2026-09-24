@@ -43,6 +43,16 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 7. **Recommendation engine.** Core-owned policy turns facts into findings: unused, potentially unnecessary (native alternative / duplicate capability), risk notes (unmaintained, footprint). Every finding carries evidence, confidence, and limitations. Conservative by design: uncertainty downgrades the recommendation, never upgrades it.
 8. **Reporting.** A single `AnalysisResult` schema feeds both the CLI (human + `--json`) and the GitHub App (Checks + annotations).
 
+## JSON output
+
+`renderJsonReport()` in `packages/core/src/report/json.ts` is the one serialiser for `AnalysisResult`. The CLI's `--json` and any later integration use it, so the output is a public, versioned schema.
+
+- **`schemaVersion`** is the first key. It is `1` today. Any breaking change (a removed or renamed field, a changed meaning) bumps it; adding an optional field does not.
+- **Stable bytes.** The same result always gives the same output: object keys are sorted, and `projects`, `dependencies`, `usages`, `findings`, `detected` and `surface` are sorted by their identifying fields, so adapter run order never shows up as a diff. Order inside a finding (`evidence`, `limitations`) is kept as the recommendation engine set it.
+- **Missing fields are omitted**, never written as `null`.
+- **Repository content is escaped.** Line separators, bidi controls and zero-width characters are written as `\uXXXX` escapes so a hostile name or path can't hide or reorder text (security model rule 6).
+- **Golden files** in `packages/core/test/golden/` pin the exact output. After an intended schema change, regenerate them with `UPDATE_GOLDEN=1 pnpm --filter @ghostdeps/core test` and review the diff.
+
 ## Key concepts
 
 - **Unused vs potentially unnecessary.** _Unused_: declared, never imported. _Potentially unnecessary_: imported, but used only for functionality the runtime provides natively or another existing dependency already covers. The second category is the product's differentiator and demands the strongest evidence.
