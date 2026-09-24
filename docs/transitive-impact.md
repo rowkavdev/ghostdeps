@@ -1,6 +1,6 @@
 # Transitive impact and footprint (#59) - design
 
-Status: slice A implemented (#59). The lead's rulings on the open questions are recorded below.
+Status: slices A and B implemented (#59). The lead's rulings on the open questions are recorded below.
 
 ## What "impact" means
 
@@ -24,6 +24,26 @@ The source is `DependencyGraph.transitiveClosure`, the same data the policy alre
 - **No bundle size.** Measuring it would need a build, which ADR 0004 rules out.
 - Sizes come only from a caller-supplied, cached metadata provider (`AnalyseOptions.metadata`, core's metadata service per ADR 0004 point 5). Adapters never fetch.
 - With no provider (the CLI offline, tests) or no size data for an ecosystem (e.g. Go), `footprint` is simply absent. That's not a note and not incomplete.
+
+### Provider contract (slice B)
+
+```ts
+interface PackageMetadataProvider {
+  installSizes(request: {
+    ecosystem: string;
+    packages: readonly { name: string; version: string }[];
+  }): Promise<
+    | { basis: string; sizes: readonly { name: string; version: string; bytes: number }[] }
+    | undefined
+  >;
+}
+```
+
+- Core makes **one call per ecosystem** with every locked version it needs, deduplicated and sorted, across all projects. More than `MAX_FOOTPRINT_PACKAGES` (50,000) means no call and no footprint for that ecosystem.
+- **Caching is the provider's job.** Serve from cache. Leave unknown packages out of `sizes`. Return `undefined` for an ecosystem with no size data. Never install or build anything.
+- Offline behaviour: a throw, a timeout (`FOOTPRINT_TIMEOUT_MS`, 10 s), a missing or empty `basis`, or no valid sizes leaves `footprint` absent for that ecosystem. Sizes must be non-negative safe integers for exactly the versions asked for. Anything else is ignored.
+- Per entry, core sums the sizes of the dependency itself and **every locked version** of each closure member (closures are by name), deduplicated by name and version. `coverage` is `{ sized, total }`, and `bytes` is a lower bound when `sized < total`. An entry with `transitive: null` or no sized package gets no footprint.
+- Adapters never see the provider. The isolated engine keeps it in the parent process. Footprint changes no finding, severity or conclusion.
 
 ## Caps and notes
 

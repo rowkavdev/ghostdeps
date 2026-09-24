@@ -15,6 +15,7 @@
  * - Recommendation policy lives in core and is injected here; adapters report facts.
  */
 import { adapterNoteFindings } from "./adapter-notes.js";
+import { addFootprints } from "./footprint.js";
 import { computeImpact, impactLimitedNote } from "./impact.js";
 import { manifestMalformedNotes } from "./manifest-malformed.js";
 import { type EcosystemAdapter } from "../adapter.js";
@@ -33,6 +34,7 @@ import type {
   GraphCompleteness,
   Finding,
   NetworkPolicy,
+  PackageMetadataProvider,
   ProjectRef,
   RepositoryHandle,
   SourceLineChanges,
@@ -135,6 +137,13 @@ export interface AnalyseOptions {
    * ecosystem-free. Ignored unless pullRequestChanges is also set.
    */
   pullRequestSourceChanges?: readonly SourceLineChanges[];
+  /**
+   * Cached registry metadata for impact footprints (#59 slice B, ADR 0004
+   * point 5). Omit (the CLI offline, tests) and `impact[].footprint` is
+   * absent; that is not a note and not incomplete. Core only reads sizes
+   * for locked versions through it; adapters never see it.
+   */
+  metadata?: PackageMetadataProvider;
 }
 
 /** Finding kinds whose claim ("not needed") can be wrong when files were not scanned. */
@@ -256,6 +265,8 @@ export async function assembleAnalysisResult(
     notes?: readonly Finding[];
     /** Emitted unified-graph cap (#55). Default MAX_EMITTED_GRAPH_NODES. */
     maxGraphNodes?: number;
+    /** See AnalyseOptions.metadata. */
+    metadata?: PackageMetadataProvider;
   } = {},
 ): Promise<AnalysisResult> {
   // Caller notes plus notes adapters raised while running (#113).
@@ -464,7 +475,9 @@ export async function assembleAnalysisResult(
   // Declaration-anchored findings without a verified line (#198): one note.
   // Transitive impact (#59): engine-derived facts from the full graphs,
   // never a verdict. A budget cut adds one non-capping "note".
-  const { impact, limitedProjects, limitedDependencies } = computeImpact(graphs, dependencies);
+  const computed = computeImpact(graphs, dependencies);
+  const { limitedProjects, limitedDependencies } = computed;
+  const impact = await addFootprints(computed.impact, graphs, context.metadata);
   if (limitedProjects > 0) {
     const note = impactLimitedNote(limitedProjects, limitedDependencies);
     findings.push({ ...note, severity: severityOf(note) });
@@ -528,6 +541,7 @@ export async function analyseRepository(
     scanIncomplete: options.scanIncomplete === true,
     scanCompleteness: options.scanCompleteness ?? [],
     notes: sourceChanges.findings,
+    ...(options.metadata ? { metadata: options.metadata } : {}),
   });
 }
 

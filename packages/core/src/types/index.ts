@@ -334,6 +334,56 @@ export interface DependencyImpact {
   exclusive: number | null;
   /** True when the engine's impact work budget ran out before this project. */
   limited?: true;
+  /**
+   * Approximate install footprint (#59 slice B): registry-reported sizes of
+   * the dependency and its closure at the versions the lockfile pins. Only
+   * when the caller supplied `AnalyseOptions.metadata` and it returned sizes
+   * for at least one of those packages; otherwise absent (not a note, not
+   * incomplete). Install size only, never bundle size (ADR 0004).
+   */
+  footprint?: DependencyFootprint;
+}
+
+/** See DependencyImpact.footprint. A fact, never a verdict. */
+export interface DependencyFootprint {
+  approximate: true;
+  /** Where the sizes come from, as the provider names it, e.g. "npm unpackedSize". */
+  basis: string;
+  /** Summed bytes over the sized packages; a lower bound when coverage is partial. */
+  bytes: number;
+  /**
+   * Sized packages out of all packages counted: the dependency itself plus
+   * every locked version of each closure member, deduplicated by name and
+   * version.
+   */
+  coverage: { sized: number; total: number };
+}
+
+/** One exact package version whose install size the engine asks for. */
+export interface PackageVersionRef {
+  name: string;
+  version: string;
+}
+
+/**
+ * Caller-supplied, cached registry metadata (ADR 0004 point 5, #59 slice
+ * B). Core never fetches; the GitHub App wires its cached metadata service
+ * here, and the CLI offline and tests pass nothing. Adapters never see it.
+ */
+export interface PackageMetadataProvider {
+  /**
+   * Registry-reported install sizes for exact versions of one ecosystem.
+   * Serve from cache; never install or build anything. Leave unknown
+   * packages out of `sizes`, and return `undefined` for an ecosystem with no
+   * size data (e.g. Go). A throw, a timeout or a malformed answer just
+   * leaves `footprint` absent for that ecosystem.
+   */
+  installSizes(request: {
+    ecosystem: string;
+    packages: readonly PackageVersionRef[];
+  }): Promise<
+    { basis: string; sizes: readonly (PackageVersionRef & { bytes: number })[] } | undefined
+  >;
 }
 
 export interface AnalysisResult {
