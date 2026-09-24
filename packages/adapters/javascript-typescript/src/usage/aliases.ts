@@ -34,6 +34,8 @@ const MAX_TARGETS_PER_ENTRY = 16;
 export const MAX_WORKSPACE_MANIFESTS = 5_000;
 /** Memoised isInternal answers kept per config file (#145). */
 const MAX_MEMO_PER_CONFIG = 50_000;
+/** Distinct node_modules extends bases remembered for the run note. */
+const MAX_PACKAGE_BASES = 1_000;
 
 const CONFIG_NAMES = ["tsconfig.json", "jsconfig.json"] as const;
 const RESOLVE_EXTENSIONS = [
@@ -97,10 +99,19 @@ interface ParsedConfigFile {
   extendsFile: string | undefined;
 }
 
+/** "<name>" or "<name>/<subpath>" for a package-style extends value. */
+const PACKAGE_EXTENDS = /^((?:@[^/]+\/)?[^/@.][^/]*)(?:\/(.+))?$/;
+
+function packageName(entry: string): string | undefined {
+  return PACKAGE_EXTENDS.exec(entry)?.[1];
+}
+
 interface WorkspacePackage {
   dir: string;
   /** package.json `tsconfig` field: the base `extends: "<name>"` loads. */
   tsconfig?: string;
+  /** More than one package.json has this name; extends through it isn't followed. */
+  ambiguous?: true;
 }
 
 interface RawConfig {
@@ -119,6 +130,12 @@ export class AliasResolver {
   private readonly memo = new Map<string, Map<string, boolean>>();
   private workspace: Promise<Map<string, WorkspacePackage>> | undefined;
   readonly limitations: Evidence[] = [];
+  /**
+   * `extends` bases from node_modules packages that were not read (ADR
+   * 0004, #276), by package name. Reported once per run as a non-capping
+   * adapter note, never a limitation: an unknown alias can only add usage.
+   */
+  readonly packageBases = new Set<string>();
 
   constructor(
     private readonly repository: RepositoryHandle,
@@ -346,27 +363,59 @@ export class AliasResolver {
   ): Promise<string | undefined> {
     const list = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
     // TS 5 array extends: later entries override earlier ones, so the last local one is the nearest base.
+    let found: string | undefined;
+    // Every entry is looked at, so each unread package base is recorded even
+    // when a nearer base was found.
     for (const entry of [...list].reverse()) {
       if (typeof entry !== "string") continue;
       if (entry.startsWith("./") || entry.startsWith("../")) {
         const target = joinPath(dir, entry);
         if (target === undefined) continue;
-        if (this.files.has(target)) return target;
-        if (this.files.has(`${target}.json`)) return `${target}.json`;
+        const nm = target.split("/").indexOf("node_modules");
+        if (nm >= 0) {
+          const pkg = packageName(
+            target
+              .split("/")
+              .slice(nm + 1)
+              .join("/"),
+          );
+          if (pkg !== undefined) this.notePackageBase(pkg);
+          continue;
+        }
+        if (found !== undefined) continue;
+        if (this.files.has(target)) found = target;
+        else if (this.files.has(`${target}.json`)) found = `${target}.json`;
         continue;
       }
-      const found = await this.workspaceExtends(entry, file);
-      if (found !== undefined) return found;
+      const pkg = packageName(entry);
+      if (pkg === undefined) continue;
+      if (!(await this.workspacePackages()).has(pkg)) {
+        this.notePackageBase(pkg);
+        continue;
+      }
+      if (found === undefined) found = await this.workspaceExtends(entry, file);
     }
-    return undefined;
+    return found;
+  }
+
+  private notePackageBase(pkg: string): void {
+    if (this.packageBases.size < MAX_PACKAGE_BASES) this.packageBases.add(pkg);
   }
 
   /** `extends` naming a workspace package: "<name>/<file>" or "<name>" (its `tsconfig` field, else tsconfig.json). */
   private async workspaceExtends(entry: string, file: string): Promise<string | undefined> {
-    const m = /^((?:@[^/]+\/)?[^/@.][^/]*)(?:\/(.+))?$/.exec(entry);
+    const m = PACKAGE_EXTENDS.exec(entry);
     if (!m) return undefined;
     const pkg = (await this.workspacePackages()).get(m[1]!);
-    if (pkg === undefined) return undefined; // a node_modules package: not resolved
+    if (pkg === undefined) return undefined;
+    if (pkg.ambiguous) {
+      this.limit(
+        "tsconfig-extends-ambiguous",
+        `${file} extends "${entry}", but more than one package.json in the repository is named ${m[1]!}; aliases it defines are unknown`,
+        file,
+      );
+      return undefined;
+    }
     const candidates: string[] = [];
     const sub = m[2];
     if (sub !== undefined) candidates.push(sub, `${sub}.json`);
@@ -410,7 +459,13 @@ export class AliasResolver {
         }
         if (!isRecord(doc)) continue;
         const name = own(doc, "name");
-        if (typeof name !== "string" || out.has(name)) continue;
+        if (typeof name !== "string") continue;
+        if (out.has(name)) {
+          // Two packages with one name (e.g. a fixture copy): which one an
+          // extends means is ambiguous, so neither is followed.
+          out.set(name, { dir: out.get(name)!.dir, ambiguous: true });
+          continue;
+        }
         const tsconfig = own(doc, "tsconfig");
         out.set(name, {
           dir: dirname(manifest),

@@ -128,6 +128,44 @@ describe("AliasResolver", () => {
     );
   });
 
+  it("two packages with the same name are ambiguous: not followed, a limitation", async () => {
+    const files = {
+      "fixtures/copy/package.json": `{"name":"@repo/typescript-config"}`,
+      "fixtures/copy/base.json": `{"compilerOptions":{"baseUrl":"."}}`,
+      "packages/tsconfig/package.json": `{"name":"@repo/typescript-config"}`,
+      "packages/tsconfig/base.json": `{"compilerOptions":{"baseUrl":"."}}`,
+      "apps/a/tsconfig.json": `{"extends":"@repo/typescript-config/base.json"}`,
+    };
+    const r = resolver(files);
+    const config = await r.configFor("apps/a/tsconfig.json");
+    assert.equal(config?.baseUrl, undefined);
+    assert.deepEqual(
+      r.limitations.map((e) => [e.kind, e.file]),
+      [["tsconfig-extends-ambiguous", "apps/a/tsconfig.json"]],
+    );
+    assert.deepEqual([...r.packageBases], []);
+  });
+
+  it("records node_modules extends bases for the run note, never as limitations", async () => {
+    const files = {
+      "packages/tsconfig/package.json": `{"name":"@repo/typescript-config"}`,
+      "packages/tsconfig/base.json": "{}",
+      "tsconfig.base.json": "{}",
+      "apps/a/tsconfig.json": `{"extends":["@tsconfig/node20/tsconfig.json","@repo/typescript-config/base.json"]}`,
+      "apps/b/tsconfig.json": `{"extends":["fastify-tsconfig","../../tsconfig.base.json"]}`,
+      "apps/c/tsconfig.json": `{"extends":"../../node_modules/@tsconfig/strictest/tsconfig.json"}`,
+    };
+    const r = resolver(files);
+    for (const f of ["apps/a/tsconfig.json", "apps/b/tsconfig.json", "apps/c/tsconfig.json"])
+      await r.configFor(f);
+    assert.deepEqual([...r.packageBases].sort(), [
+      "@tsconfig/node20",
+      "@tsconfig/strictest",
+      "fastify-tsconfig",
+    ]);
+    assert.deepEqual(r.limitations, []);
+  });
+
   it("memoises isInternal per config and specifier (#145)", async () => {
     const files = {
       "tsconfig.json": `{"compilerOptions":{"baseUrl":"."}}`,

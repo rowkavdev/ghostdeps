@@ -8,6 +8,7 @@ export {
   findRemovedUsages,
   scanForContext,
   scanRepository,
+  tsconfigBaseNotes,
   usageLimitations,
   MAX_SOURCE_BYTES,
   MAX_UNRESOLVED_PER_FILE,

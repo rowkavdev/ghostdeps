@@ -259,3 +259,50 @@ describe("findUsage is computed once per dependency per run (#267 review)", () =
     assert.notEqual(second.usages, first.usages);
   });
 });
+
+describe("tsconfig node_modules base run note (#275)", () => {
+  const run = (files: Record<string, string>) =>
+    createJavaScriptTypeScriptAdapter().notes!(
+      { repository: memoryHandle(files), network: { mode: "offline" } },
+      [root],
+    );
+
+  it("one run note naming the unread bases; no dependency, so never awareness or a cap", async () => {
+    const notes = await run({
+      "package.json": JSON.stringify({ dependencies: { lodash: "1" } }),
+      "tsconfig.json": `{"extends":["@tsconfig/node20/tsconfig.json","@tsconfig/strictest"]}`,
+      "src/a.ts": `import x from "lodash";`,
+      "src/b.ts": `import y from "lodash/fp";`,
+    });
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0]!.dependency, undefined);
+    assert.equal(
+      notes[0]!.statement,
+      "tsconfig bases from node_modules were not read (@tsconfig/node20, @tsconfig/strictest); aliases they define are unknown. " +
+        "This can only add usage evidence, never remove it, so no dependency is reported unused because of it. " +
+        "Set baseUrl/paths in your own tsconfig to have them read.",
+    );
+  });
+
+  it("stays within core's 300-character cut however many bases there are", async () => {
+    const bases = Array.from({ length: 40 }, (_, i) => `@some-long-scope/tsconfig-base-${i}`);
+    const notes = await run({
+      "package.json": "{}",
+      "tsconfig.json": JSON.stringify({ extends: bases }),
+      "src/a.ts": `import x from "lodash";`,
+    });
+    assert.equal(notes.length, 1);
+    assert.ok(notes[0]!.statement.length <= 300, notes[0]!.statement);
+    assert.match(notes[0]!.statement, /\+ \d+ more\)|\(40\)/);
+  });
+
+  it("no note when every base is local or a workspace package", async () => {
+    const notes = await run({
+      "package.json": "{}",
+      "tsconfig.base.json": "{}",
+      "tsconfig.json": `{"extends":"./tsconfig.base.json"}`,
+      "src/a.ts": `import x from "lodash";`,
+    });
+    assert.deepEqual(notes, []);
+  });
+});

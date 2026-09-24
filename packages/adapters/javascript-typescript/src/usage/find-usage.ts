@@ -662,3 +662,34 @@ export async function findPreprocessorUsages(
   }
   return usages.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
 }
+
+/** Core cuts adapter notes at 300 characters (#205); the base-note statement stays under it. */
+const MAX_NOTE_CHARS = 300;
+
+/**
+ * One run-level note (#205, lead ruling on #275) when tsconfig/jsconfig
+ * `extends` names node_modules bases that were not read (ADR 0004; reading
+ * them is #276). Never a limitation: an unknown alias can only make an
+ * internal import look like package usage, so it adds usage evidence and
+ * never removes it. Names as many packages as fit.
+ */
+export async function tsconfigBaseNotes(context: AdapterContext): Promise<{ statement: string }[]> {
+  const scan = await scanForContext(context);
+  const bases = [...scan.aliases.packageBases].sort();
+  if (bases.length === 0) return [];
+  const text = (shown: number): string => {
+    const names = bases.slice(0, shown).join(", ");
+    const more = bases.length - shown;
+    const list = shown === 0 ? `${bases.length}` : `${names}${more > 0 ? `, + ${more} more` : ""}`;
+    return (
+      `tsconfig bases from node_modules were not read (${list}); aliases they define are unknown. ` +
+      "This can only add usage evidence, never remove it, so no dependency is reported unused because of it. " +
+      "Set baseUrl/paths in your own tsconfig to have them read."
+    );
+  };
+  for (let shown = Math.min(bases.length, 5); shown >= 0; shown--) {
+    const statement = text(shown);
+    if (statement.length <= MAX_NOTE_CHARS) return [{ statement }];
+  }
+  return [{ statement: text(0) }];
+}
