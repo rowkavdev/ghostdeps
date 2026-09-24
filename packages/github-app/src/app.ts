@@ -5,7 +5,7 @@ import { createDefaultPolicy } from "@ghostdeps/core";
 import { appIdFromEnv, recommendationsFromEnv, sourcePrTriggerFromEnv } from "./config.js";
 import { changedFiles } from "./events/changed-files.js";
 import { checkName } from "./checks/render.js";
-import { analysedEvents, decide, type ChangedFilesLookup } from "./events/filter.js";
+import { analysedEvents, decide, isSourceOnly, type ChangedFilesLookup } from "./events/filter.js";
 import { decideRerequest } from "./events/rerequested.js";
 import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
@@ -156,7 +156,38 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
         context.log.debug({ delivery: context.id, reason: decision.reason }, "re-run skipped");
         return;
       }
-      const result = queue.enqueue(decision.job);
+      let job = decision.job;
+      // The re-run payload has no file list. Rebuild it from the PR files
+      // API, with the same caps as the first run, so an unreadable diff is
+      // scoped exactly as it was then (#196). On failure, no flag: the worker
+      // falls back as for a capped list, with a note.
+      const trigger = job.trigger;
+      if (trigger.kind === "rerequested" && trigger.pullRequest && sourcePrTrigger) {
+        const pr = trigger.pullRequest;
+        try {
+          const changed = await changedFiles(context.octokit, {
+            key: job.key,
+            installationId: job.installationId,
+            repository: job.repository,
+            headSha: job.headSha,
+            trigger: {
+              kind: "pull_request",
+              number: pr.number,
+              action: "synchronize",
+              baseSha: pr.baseSha,
+            },
+          });
+          if (isSourceOnly(changed, true)) {
+            job = { ...job, trigger: { ...trigger, pullRequest: { ...pr, sourceOnly: true } } };
+          }
+        } catch (error) {
+          context.log.warn(
+            { delivery: context.id, err: error },
+            "re-run changed-files lookup failed; re-running without it",
+          );
+        }
+      }
+      const result = queue.enqueue(job);
       const fields = {
         delivery: context.id,
         repository: decision.job.repository.id,

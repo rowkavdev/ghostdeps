@@ -158,6 +158,20 @@ export interface DecideOptions {
   readonly sourcePrTrigger?: boolean;
 }
 
+/**
+ * A PR is source-only when its complete changed-file list has analysable
+ * source and no manifest or lockfile (#101). Shared by the first run and
+ * re-runs (#196), so both scope an unreadable diff the same way.
+ */
+export function isSourceOnly(changed: ChangedFiles, sourcePrTrigger: boolean): boolean {
+  return (
+    sourcePrTrigger &&
+    changed.complete &&
+    dependencyFilesIn(changed.files).length === 0 &&
+    sourceFilesIn(changed.files).length > 0
+  );
+}
+
 export async function decide(
   eventName: string,
   payload: unknown,
@@ -196,10 +210,7 @@ export async function decide(
     };
   }
   const sourceOnly =
-    job.trigger.kind === "pull_request" &&
-    changed.complete &&
-    dependencyFiles.length === 0 &&
-    sourceFiles.length > 0;
+    job.trigger.kind === "pull_request" && isSourceOnly(changed, options.sourcePrTrigger === true);
   return {
     analyse: true,
     job: sourceOnly ? { ...job, trigger: { ...job.trigger, sourceOnly: true } } : job,

@@ -421,6 +421,67 @@ index 3333333..4444444 100644
     );
   });
 
+  async function checkOutputFor(j: AnalysisJob, diff: string | { status: number }) {
+    const { client, rec } = fakeClient({ diff, files });
+    let seen: AnalyseRunOptions | undefined;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(j);
+    const update = rec.updated[0];
+    return { seen, conclusion: update?.conclusion, output: update?.output };
+  }
+
+  it("a re-run of a source-only PR matches the first run when the diff is unreadable (#196)", async () => {
+    const first = await checkOutputFor(
+      job({
+        kind: "pull_request",
+        number: payload.number,
+        action: "opened",
+        baseSha: BASE,
+        sourceOnly: true,
+      }),
+      { status: 406 },
+    );
+    const rerun = await checkOutputFor(
+      job({
+        kind: "rerequested",
+        checkRunId: 7,
+        pullRequest: { number: payload.number, baseSha: BASE, sourceOnly: true },
+      }),
+      { status: 406 },
+    );
+    assert.deepEqual(rerun, first);
+    assert.deepEqual(rerun.seen, { pullRequestChanges: [] });
+  });
+
+  it("a re-run without the source-only flag falls back to full with a note, like a capped first run (#196)", async () => {
+    const first = await checkOutputFor(
+      job({ kind: "pull_request", number: payload.number, action: "opened", baseSha: BASE }),
+      { status: 406 },
+    );
+    const rerun = await checkOutputFor(
+      job({
+        kind: "rerequested",
+        checkRunId: 7,
+        pullRequest: { number: payload.number, baseSha: BASE },
+      }),
+      { status: 406 },
+    );
+    assert.deepEqual(rerun, first);
+    assert.deepEqual(rerun.seen, {});
+    assert.equal(rerun.conclusion, "neutral");
+    const text = ((rerun.output as { summary?: string }).summary ?? "").replace(/\\/g, "");
+    assert.match(text, /GhostDeps analysed the whole repository/);
+  });
+
   it("analyses the full repository when the changes cannot be read in full", async () => {
     const { client, rec } = fakeClient({ diff: { status: 406 } });
     let seen: AnalyseRunOptions | undefined;

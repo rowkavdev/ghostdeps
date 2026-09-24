@@ -123,6 +123,20 @@ export async function analyseCheckout(
 export const SKIPPED_REMOVED_USAGE_NOTE =
   "Removed-usage check skipped: this pull request's diff was too large or unavailable to read in full, so GhostDeps did not check whether it removed the last use of a dependency.";
 
+/**
+ * App-authored status note (#196): the app couldn't read the PR's changes in
+ * full, so it analysed the whole repository rather than scoping to the PR.
+ */
+export const FULL_FALLBACK_NOTE =
+  "Pull request changes couldn't be read in full, so GhostDeps analysed the whole repository. Findings may include dependencies this pull request didn't change.";
+
+/** Source-only per the changed-file list, on the first run or a re-run (#101, #196). */
+function sourceOnly(job: AnalysisJob): boolean {
+  if (job.trigger.kind === "pull_request") return job.trigger.sourceOnly === true;
+  if (job.trigger.kind === "rerequested") return job.trigger.pullRequest?.sourceOnly === true;
+  return false;
+}
+
 /** The PR base for jobs that have one; fork re-runs and pushes have none. */
 function pullRequestBase(job: AnalysisJob): string | undefined {
   if (job.trigger.kind === "pull_request") return job.trigger.baseSha;
@@ -222,7 +236,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         if (pr.complete) {
           run.pullRequestChanges = pr.dependencyChanges.changes;
           run.pullRequestSourceChanges = pr.dependencyChanges.sourceLineChanges;
-        } else if (job.trigger.kind === "pull_request" && job.trigger.sourceOnly === true) {
+        } else if (sourceOnly(job)) {
           // A source-only PR changed no dependencies, so a full analysis would
           // post repository-wide verdicts it didn't cause. Stay PR-scoped and
           // quiet; without the full diff there is no removed-last-usage (#101).
@@ -234,6 +248,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
           );
         } else {
           // Scoping to a partial change list could hide a finding: analyse in full.
+          appNotes.push(FULL_FALLBACK_NOTE);
           options.log?.warn(
             { job: job.key, limitations: pr.dependencyChanges.limitations },
             "PR dependency changes incomplete; analysing the full repository",
