@@ -193,6 +193,16 @@ const FIXTURES = [
     expect: { result: "extract", symlinks: 2, links: [{ path: "a/b/c/L", target: "../../.." }, { path: "a/b/c/M", target: "L/../.." }] },
   },
   {
+    dir: "archive-symlink-stale-prefix",
+    attacks: "A link target's meaning changes as later links land: L points at x/y/z, then x becomes a link to '.', then M -> L/../../.. climbs out of the root when L is resolved against the new x. This escaped the second, creation-time-resolution extractor (independent-review re-review PoC on PR #81); recording links as metadata removes resolution entirely.",
+    entries: [
+      { name: "r/L", typeflag: "2".charCodeAt(0), linkName: "x/y/z" },
+      { name: "r/x", typeflag: "2".charCodeAt(0), linkName: "." },
+      { name: "r/M", typeflag: "2".charCodeAt(0), linkName: "L/../../.." },
+    ],
+    expect: { result: "extract", symlinks: 3, links: [{ path: "r/L", target: "x/y/z" }, { path: "r/x", target: "." }, { path: "r/M", target: "L/../../.." }] },
+  },
+  {
     dir: "archive-case-collision",
     attacks: "Two entries differing only by case ('A.txt' vs 'a.txt'). On case-insensitive filesystems the second overwrites the first; validators must be at least as strict as the most lenient consumer FS.",
     entries: [

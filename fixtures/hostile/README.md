@@ -1,7 +1,7 @@
 # fixtures/hostile
 
 Attacker-controlled inputs, per docs/security-model.md rule 7: traversal
-archives, symlink loops and escapes, giant files, malformed manifests and
+archives, hostile symlinks, giant files, malformed manifests and
 Unicode tricks are first-class tests here. Fixtures are data - nothing in
 this tree is ever installed, built, or executed.
 
@@ -26,9 +26,17 @@ node fixtures/hostile/generate.mjs
 valid archive that must always extract, guarding against a validator that
 rejects everything.
 
+Symlink entries are never rejected and never materialised: extraction
+records them as metadata (`summary.links`) and the harness asserts no
+symlink exists on disk for every extract case (security-model rule 2).
+The symlink fixtures - absolute target, relative escape, loop,
+shallow-target escape and stale-prefix re-meaning - pin that contract,
+including both escapes the independent review reproduced on PR #81.
+
 Current classes: path traversal (dots, nested, backslash), absolute paths
 (POSIX, Windows drive, UNC), pax path override, GNU longname escape,
-symlink absolute/relative escape, symlink loop, hardlink to missing
+symlink absolute/relative escape, symlink loop, symlink shallow-target
+escape, symlink stale-prefix re-meaning, hardlink to missing
 target, duplicate paths, device node, fifo, sparse file, huge declared
 file, entry flood, total-size bomb, deep nesting, corrupt checksum, v7
 magic, base-256 size, truncation, NFKC Unicode folding, invalid UTF-8

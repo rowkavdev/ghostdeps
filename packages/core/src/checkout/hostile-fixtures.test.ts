@@ -81,6 +81,18 @@ describe("hostile archive fixtures", () => {
         assert.equal(summary.directories, expected.expect.directories);
       if (expected.expect.links !== undefined)
         assert.deepEqual(summary.links, expected.expect.links, `${fixture} recorded links`);
+      // Security invariant for every extract case: nothing on disk is a
+      // symlink. Links live only in summary.links as recorded metadata.
+      const foundSymlinks: string[] = [];
+      const walk = async (dir: string): Promise<void> => {
+        for (const entry of await readdir(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name);
+          if (entry.isSymbolicLink()) foundSymlinks.push(full);
+          else if (entry.isDirectory()) await walk(full);
+        }
+      };
+      await walk(dest);
+      assert.deepEqual(foundSymlinks, [], `${fixture}: symlinks materialised on disk`);
       await rm(dest, { recursive: true, force: true });
     });
   }
