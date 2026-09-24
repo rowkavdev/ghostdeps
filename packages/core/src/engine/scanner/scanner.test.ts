@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readRepositoryFileHead } from "../../repository-head.js";
+import type { RepositoryHandle } from "../../types/index.js";
 import { FsRepositoryHandle, RepositoryReadError } from "./handle.js";
 import { DEFAULT_SCAN_LIMITS, resolveLimits } from "./limits.js";
 import { scanRepository } from "./scanner.js";
@@ -297,5 +299,60 @@ describe("FsRepositoryHandle", () => {
     await assert.rejects(repo.readFile("grow.txt"), (e: unknown) => {
       return e instanceof RepositoryReadError && e.code === "too-large";
     });
+  });
+});
+
+describe("FsRepositoryHandle.readFileHead (#113)", () => {
+  let root: string;
+  let outside: string;
+  const multi = "aé€😀z\nsecond line";
+
+  before(async () => {
+    root = await mkdtemp(path.join(tmpdir(), "ghostdeps-head-"));
+    outside = await mkdtemp(path.join(tmpdir(), "ghostdeps-head-out-"));
+    await tree(outside, { "secret.txt": "do not read" });
+    await tree(root, {
+      "multi.txt": multi,
+      "yarn.lock": `__metadata:\n  version: 8\n${"x".repeat(200)}`,
+      "img.png": Buffer.from([0x89, 0x50, 0x00, 0x47]),
+      "swap.ts": "export {};",
+    });
+  });
+
+  after(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  it("matches the readFile fallback byte for byte, across multibyte boundaries", async () => {
+    const repo = await FsRepositoryHandle.open(root);
+    const fallback: RepositoryHandle = {
+      listFiles: () => repo.listFiles(),
+      readFile: (p) => repo.readFile(p),
+      exists: (p) => repo.exists(p),
+    };
+    for (let n = 0; n <= Buffer.byteLength(multi) + 2; n++) {
+      const head = await repo.readFileHead("multi.txt", n);
+      assert.equal(head, await readRepositoryFileHead(fallback, "multi.txt", n), `maxBytes ${n}`);
+      assert.ok(!head!.includes("\ufffd"));
+    }
+    assert.equal(await repo.readFileHead("multi.txt", 5), "aé");
+  });
+
+  it("reads the head of a file past its size ceiling (the point of a head read)", async () => {
+    const repo = await FsRepositoryHandle.open(root, { limits: { maxLockfileBytes: 1024 } });
+    await writeFile(path.join(root, "yarn.lock"), `__metadata:\n${"y".repeat(4096)}`);
+    await assert.rejects(repo.readFile("yarn.lock"));
+    assert.equal(await repo.readFileHead("yarn.lock", 11), "__metadata:");
+  });
+
+  it("resolves undefined for unlisted, escaping, binary and swapped files", async () => {
+    const repo = await FsRepositoryHandle.open(root);
+    assert.equal(await repo.readFileHead("missing.txt", 10), undefined);
+    assert.equal(await repo.readFileHead("../secret.txt", 10), undefined);
+    assert.equal(await repo.readFileHead("img.png", 1), undefined);
+    await unlink(path.join(root, "swap.ts"));
+    await symlink(path.join(outside, "secret.txt"), path.join(root, "swap.ts"));
+    assert.equal(await repo.readFileHead("swap.ts", 10), undefined);
   });
 });

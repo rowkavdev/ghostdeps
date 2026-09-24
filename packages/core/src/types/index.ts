@@ -183,6 +183,15 @@ export interface RepositoryHandle {
   listFiles(): Promise<string[]>;
   /** Read a file as UTF-8 text. Throws for missing/binary-oversized files. */
   readFile(path: string): Promise<string>;
+  /**
+   * Optional (#113): read at most `maxBytes` source bytes from the start of
+   * the file and return the decoded prefix, with any trailing partial UTF-8
+   * sequence dropped. Resolve undefined where readFile would fail with
+   * not-found. Core feature-detects this method and never branches on
+   * adapterApiVersion; call it through readRepositoryFileHead, which falls
+   * back to readFile plus a byte slice. The prefix need not end on a line.
+   */
+  readFileHead?(path: string, maxBytes: number): Promise<string | undefined>;
   exists(path: string): Promise<boolean>;
 }
 
