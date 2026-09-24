@@ -10,10 +10,10 @@ import { parsePnpmLockfile } from "./pnpm.js";
 
 /**
  * Lockfiles above this size are not parsed (security-model: parser input
- * limits). Budget: a 30,000-package lockfile parses in well under 5 s on CI
+ * limits). Matches the repository scanner's lockfile ceiling (#73). Budget: a 30,000-package lockfile parses in well under 5 s on CI
  * hardware (see build.test.ts).
  */
-export const MAX_LOCKFILE_BYTES = 64 * 1024 * 1024;
+export const MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
 
 type Format = "npm" | "pnpm";
 const LOCKFILES: [string, Format][] = [
@@ -45,6 +45,7 @@ interface Declared {
 async function readDeclared(context: AdapterContext, project: string, evidence: Evidence[]) {
   const manifest = join(project, "package.json");
   const out: Declared[] = [];
+  const seen = new Set<string>();
   try {
     const doc: unknown = JSON.parse(await context.repository.readFile(manifest));
     if (typeof doc !== "object" || doc === null) return out;
@@ -56,8 +57,11 @@ async function readDeclared(context: AdapterContext, project: string, evidence: 
     ] as const) {
       const map = rec[field];
       if (typeof map !== "object" || map === null || Array.isArray(map)) continue;
-      for (const name of Object.keys(map))
-        if (!out.some((d) => d.name === name)) out.push({ name, dev });
+      for (const name of Object.keys(map)) {
+        if (seen.has(name)) continue;
+        seen.add(name);
+        out.push({ name, dev });
+      }
     }
   } catch {
     evidence.push({
@@ -151,7 +155,9 @@ export async function buildLockfileGraph(
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
   evidence.push(...parsed.evidence);
-  const graph = assembleGraph(project, parsed);
+  const assembled = assembleGraph(project, parsed);
+  evidence.push(...assembled.evidence);
+  const graph = assembled.graph;
   const unsupported = parsed.evidence.some((e) => e.kind === "lockfile-unsupported");
   if (unsupported) graph.incomplete = true;
   return { graph, evidence, lockfile: lock.path };

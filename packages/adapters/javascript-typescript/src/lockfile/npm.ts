@@ -4,6 +4,7 @@
  * registry. Edges follow Node's node_modules lookup over the recorded tree.
  */
 import type { Evidence } from "@ghostdeps/core";
+import { own } from "./model.js";
 import type { ParsedLockfile, ResolvedPackage } from "./model.js";
 
 interface NpmEntry {
@@ -59,12 +60,16 @@ export function parseNpmLockfile(
   const packages = new Map<string, ResolvedPackage>();
 
   if (isObject(doc.packages)) {
-    const entries = doc.packages as Record<string, NpmEntry>;
+    const entries = doc.packages as Record<string, unknown>;
+    const entry = (key: string): NpmEntry | undefined => {
+      const e = own(entries, key);
+      return isObject(e) ? (e as NpmEntry) : undefined;
+    };
     const lookup = (from: string, dep: string): string | undefined => {
       let dir: string | undefined = from;
       for (;;) {
         const candidate = dir ? `${dir}/node_modules/${dep}` : `node_modules/${dep}`;
-        if (isObject(entries[candidate])) return follow(candidate);
+        if (entry(candidate)) return follow(candidate);
         if (dir === undefined || dir === "") return undefined;
         const up = parentDir(dir);
         // Workspace dirs ("packages/a") fall back to the root node_modules.
@@ -72,8 +77,8 @@ export function parseNpmLockfile(
       }
     };
     const follow = (key: string, depth = 0): string => {
-      const e = entries[key];
-      if (e?.link && typeof e.resolved === "string" && depth < 8 && isObject(entries[e.resolved])) {
+      const e = entry(key);
+      if (e?.link && typeof e.resolved === "string" && depth < 8 && entry(e.resolved)) {
         return follow(e.resolved, depth + 1);
       }
       return key;
@@ -84,8 +89,9 @@ export function parseNpmLockfile(
       ...Object.keys(isObject(e.peerDependencies) ? e.peerDependencies : {}),
       ...(includeDev ? Object.keys(isObject(e.devDependencies) ? e.devDependencies : {}) : []),
     ];
-    for (const [key, e] of Object.entries(entries)) {
-      if (!isObject(e) || key === "" || e.link) continue;
+    for (const key of Object.keys(entries)) {
+      const e = entry(key);
+      if (!e || key === "" || e.link) continue;
       const deps: string[] = [];
       for (const d of new Set(depsOf(e, false))) {
         const id = lookup(key, d);
@@ -102,8 +108,8 @@ export function parseNpmLockfile(
       dev: d.dev,
       id: lookup(projectDir, d.name),
     }));
-    const root = entries[projectDir];
-    if (isObject(root)) mismatches(root, declared, lockfile, evidence);
+    const root = entry(projectDir);
+    if (root) mismatches(root, declared, lockfile, evidence);
     return { packages, direct, evidence };
   }
 

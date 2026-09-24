@@ -5,6 +5,7 @@
  */
 import { parse } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
+import { own } from "./model.js";
 import type { ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
@@ -59,7 +60,7 @@ export function parsePnpmLockfile(
     // Aliases: "string-width@4.2.3" (v9) or "/string-width@4.2.3" (v6).
     const alias = !/^\d/.test(raw) ? splitKey(raw) : undefined;
     const key = alias ? `${prefix}${alias.name}@${alias.version}` : `${prefix}${name}@${raw}`;
-    return key in table ? key : undefined;
+    return Object.hasOwn(table, key) ? key : undefined;
   };
 
   for (const [key, entry] of Object.entries(table)) {
@@ -85,7 +86,7 @@ export function parsePnpmLockfile(
 
   // Importers: workspace lockfiles have `importers`; v6 single-project lockfiles keep deps at the root.
   const importers = isObject(doc.importers) ? doc.importers : { ".": doc };
-  const importer = importers[importerPath];
+  const importer = own(importers, importerPath);
   if (!isObject(importer)) {
     evidence.push({
       kind: "lockfile-manifest-mismatch",

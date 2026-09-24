@@ -233,6 +233,74 @@ describe("buildLockfileGraph", () => {
     assert.ok(res.evidence.some((e) => e.kind === "lockfile-malformed"));
   });
 
+  for (const shape of ["all direct deps at the chain head", "direct deps spread along the chain"]) {
+    it(`adversarial graph (${shape}) stops at the work budget instead of going quadratic`, async () => {
+      const N = 20_000;
+      const D = 2_000;
+      const packages: Record<string, unknown> = {};
+      for (let i = 0; i < N; i++) {
+        packages[`node_modules/p${i}`] = {
+          version: "1.0.0",
+          dependencies: i + 1 < N ? { [`p${i + 1}`]: "1" } : {},
+        };
+      }
+      const direct: Record<string, string> = {};
+      for (let j = 0; j < D; j++) {
+        // Each direct dep is an alias-like package pointing into the chain.
+        const target = shape.startsWith("all") ? "p0" : `p${j}`;
+        packages[`node_modules/d${j}`] = { version: "1.0.0", dependencies: { [target]: "1" } };
+        direct[`d${j}`] = "1";
+      }
+      packages[""] = { dependencies: direct };
+      const started = performance.now();
+      const res = await buildLockfileGraph(
+        ctx(
+          memoryHandle({
+            "package.json": JSON.stringify({ dependencies: direct }),
+            "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages }),
+          }),
+        ),
+        project(),
+      );
+      const elapsed = performance.now() - started;
+      assert.equal(res.graph.incomplete, true);
+      assert.ok(res.evidence.some((e) => e.kind === "graph-budget-exceeded"));
+      assert.ok(elapsed < 5000, `took ${Math.round(elapsed)} ms`);
+    });
+  }
+
+  it("a dependency named __proto__ is kept as an own key, never lost or used as a prototype", async () => {
+    const lock = `{"lockfileVersion":3,"packages":{"":{"dependencies":{"__proto__":"1","a":"1"}},"node_modules/__proto__":{"version":"1.0.0","dependencies":{"a":"1"}},"node_modules/a":{"version":"1.0.0"}}}`;
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": `{"dependencies":{"__proto__":"1","a":"1"}}`,
+          "package-lock.json": lock,
+        }),
+      ),
+      project(),
+    );
+    assert.deepEqual(Object.keys(res.graph.transitiveClosure).sort(), ["__proto__", "a"]);
+    assert.deepEqual(
+      Object.getOwnPropertyDescriptor(res.graph.transitiveClosure, "__proto__")?.value,
+      ["a"],
+    );
+    assert.equal(Object.getPrototypeOf(res.graph.transitiveClosure), Object.prototype);
+  });
+
+  it("a project directory named __proto__ does not read Object.prototype as a lockfile entry", async () => {
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: { "": {} } }),
+          "__proto__/package.json": JSON.stringify({ dependencies: { x: "1" } }),
+        }),
+      ),
+      project("__proto__"),
+    );
+    assert.deepEqual(res.graph.transitiveClosure, { x: [] });
+  });
+
   it("huge lockfile (30,000 packages) parses within the 5 s budget", async () => {
     const N = 30_000;
     const packages: Record<string, unknown> = { "": { dependencies: { p0: "1" } } };
