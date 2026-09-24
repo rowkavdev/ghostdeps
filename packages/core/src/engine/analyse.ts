@@ -15,6 +15,7 @@
  * - Recommendation policy lives in core and is injected here; adapters report facts.
  */
 import { type EcosystemAdapter } from "../adapter.js";
+import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
 import type {
   AnalysisResult,
@@ -56,6 +57,14 @@ export interface RecommendationInput {
   graphs: readonly DependencyGraph[];
   /** Ecosystems whose adapter had usage analysis; policy must not call deps "unused" elsewhere. */
   usageAnalysedEcosystems: ReadonlySet<string>;
+  /**
+   * "full": whole-repository analysis, verdicts over every dependency.
+   * "pull-request": the caller supplied pullRequestChanges; policy scopes
+   * findings to the dependencies those changes touch (#128).
+   */
+  mode: "full" | "pull-request";
+  /** Present exactly when mode is "pull-request". */
+  pullRequestChanges?: readonly DependencyChange[];
 }
 
 /** Core-owned policy that turns facts into findings (#56 and friends plug in here). */
@@ -71,6 +80,73 @@ export interface AnalyseOptions {
   usageConcurrency?: number;
   /** Omit to emit facts only (no recommendation findings). */
   recommend?: RecommendationPolicy;
+  /**
+   * Dependency changes in the pull request under analysis (#128). Omit for a
+   * full scan. The GitHub App builds them from the PR diff: parseUnifiedDiff,
+   * listDirectDependencies over base/head manifests, then
+   * extractDependencyChanges (#31, wired in #115). When present, policy runs
+   * in "pull-request" mode and scopes findings to touched dependencies.
+   * Added/changed dependencies the adapters could not account for become
+   * info findings. Source-only PRs (#101) pass an empty array; policy
+   * support for last-import-removal lands with #101.
+   * Versioned with @ghostdeps/core, not the adapter contract.
+   */
+  pullRequestChanges?: readonly DependencyChange[];
+}
+
+/**
+ * Info findings for PR dependency changes the analysis could not cover:
+ * an added/changed dependency in an ecosystem nobody analysed, or one the
+ * adapter did not list from that manifest. Never silently dropped.
+ */
+export function pullRequestCoverageFindings(
+  changes: readonly DependencyChange[],
+  dependencies: readonly Dependency[],
+  detectedEcosystems: ReadonlySet<string>,
+): Finding[] {
+  const findings: Finding[] = [];
+  for (const change of changes) {
+    if (change.change === "removed") continue;
+    const evidence = [
+      {
+        kind: "pr-dependency-change",
+        statement: `${change.change} ${change.name} in ${change.manifest}`,
+        file: change.manifest,
+      },
+    ];
+    if (!detectedEcosystems.has(change.ecosystem)) {
+      findings.push({
+        kind: "info",
+        dependency: change.name,
+        summary: `${change.name} was ${change.change} in this PR but ${change.ecosystem} was not analysed`,
+        recommendation: "Manual review recommended for this dependency change.",
+        evidence,
+        confidence: "high",
+        limitations: [`No adapter analysed ${change.ecosystem} in this repository.`],
+        affectedFiles: [change.manifest],
+      });
+      continue;
+    }
+    const listed = dependencies.some(
+      (d) =>
+        d.name === change.name &&
+        d.project.ecosystem === change.ecosystem &&
+        d.declaredIn === change.manifest,
+    );
+    if (!listed) {
+      findings.push({
+        kind: "info",
+        dependency: change.name,
+        summary: `${change.name} was ${change.change} in this PR but was not found in the analysed dependencies of ${change.manifest}`,
+        recommendation: "Manual review recommended for this dependency change.",
+        evidence,
+        confidence: "medium",
+        limitations: ["The adapter did not list this dependency, so its usage was not analysed."],
+        affectedFiles: [change.manifest],
+      });
+    }
+  }
+  return findings;
 }
 
 /**
@@ -105,6 +181,7 @@ function isPlainData(value: unknown, depth = 32): boolean {
 export async function assembleAnalysisResult(
   outcomes: readonly AdapterOutcome[],
   recommend?: RecommendationPolicy,
+  pullRequestChanges?: readonly DependencyChange[],
 ): Promise<AnalysisResult> {
   const projects = new Map<string, ProjectRef>();
   const dependencies: Dependency[] = [];
@@ -138,14 +215,27 @@ export async function assembleAnalysisResult(
     });
   }
 
+  if (pullRequestChanges) {
+    findings.push(
+      ...pullRequestCoverageFindings(
+        pullRequestChanges,
+        dependencies,
+        new Set(detected.map((d) => d.ecosystem)),
+      ),
+    );
+  }
+
   if (recommend) {
     try {
-      const proposed = await recommend({
+      const input: RecommendationInput = {
         dependencies,
         usages,
         graphs,
         usageAnalysedEcosystems,
-      });
+        mode: pullRequestChanges ? "pull-request" : "full",
+      };
+      if (pullRequestChanges) input.pullRequestChanges = pullRequestChanges;
+      const proposed = await recommend(input);
       const rejected = proposed.filter((finding) => !isPlainData(finding));
       findings.push(...proposed.filter((finding) => isPlainData(finding)));
       if (rejected.length > 0) {
@@ -209,5 +299,5 @@ export async function analyseRepository(
     ),
   );
 
-  return assembleAnalysisResult(outcomes, options.recommend);
+  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges);
 }

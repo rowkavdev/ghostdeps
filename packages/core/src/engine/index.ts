@@ -1,6 +1,7 @@
 export {
   analyseRepository,
   detectionConfidence,
+  pullRequestCoverageFindings,
   DEFAULT_ADAPTER_TIMEOUT_MS,
   DEFAULT_DETECTION_THRESHOLD,
   DEFAULT_USAGE_CONCURRENCY,
