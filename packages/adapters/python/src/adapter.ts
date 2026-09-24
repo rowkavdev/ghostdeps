@@ -12,14 +12,16 @@ import type {
   ProjectRef,
 } from "@ghostdeps/core";
 import { PYTHON_ECOSYSTEM, detectPython } from "./detect.js";
+import { buildDependencyGraph } from "./lockfile.js";
 import { parseManifests } from "./manifest.js";
 
 export function createPythonAdapter(): EcosystemAdapter {
   return {
     ecosystem: PYTHON_ECOSYSTEM,
     apiVersion: adapterApiVersion,
-    capabilities: new Set<AdapterCapability>(),
+    capabilities: new Set<AdapterCapability>(["dependencyGraph", "lockfileParsing"]),
     detect: detectPython,
+    buildDependencyGraph,
     async listDirectDependencies(
       context: AdapterContext,
       projects: ProjectRef[],

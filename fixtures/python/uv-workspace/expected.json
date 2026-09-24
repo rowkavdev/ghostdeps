@@ -1,0 +1,8 @@
+{
+  "description": "uv workspace (#45): one uv.lock at the workspace root serves both members. The workspace root has no source and is skipped; packages/api resolves click (1 transitive: colorama) through the inherited lockfile.",
+  "detection": { "minConfidence": 0.8, "projects": ["packages/api", "packages/core"] },
+  "graph": {
+    "packages/api": { "incomplete": false, "transitiveCounts": { "click": 1, "core": 0 } }
+  },
+  "findings": []
+}
