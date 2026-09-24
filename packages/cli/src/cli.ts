@@ -125,6 +125,13 @@ function buildConfig(
   if ((failOn !== undefined || severity !== undefined) && command !== "scan") {
     throw new UsageError("--fail-on and --severity only apply to ghostdeps scan");
   }
+  if (severity !== undefined && json) {
+    // --json is always the complete schema-stable result; a display filter
+    // has no meaning there and silently ignoring it would lie.
+    throw new UsageError(
+      "--severity filters human output only; --json always prints the complete result",
+    );
+  }
   if (repoCommands.has(command)) {
     if (args.length > 1) {
       throw new UsageError(`ghostdeps ${command} takes at most one path argument`);

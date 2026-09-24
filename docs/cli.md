@@ -81,8 +81,14 @@ exit code becomes 1 when any finding reaches the threshold. Severity derives
 from finding kind + confidence (`severityOf` in core). Info findings - the
 scan-completeness notes from #110 and the no-recommendations notice - are
 always severity `info`, so they cannot trip `--fail-on high` (or any
-threshold above `info`). `--severity <min>` only filters what is shown;
-`--fail-on` always evaluates every finding, shown or not.
+threshold above `info`). `--severity <min>` only filters the human display
+(filtered findings are counted under the summary, never silently dropped);
+`--json` always prints the complete result, so `--severity` with `--json`
+is a usage error rather than a silent lie. `--fail-on` always evaluates
+every finding, shown or not.
+
+Contract change in #155: scan errors moved from exit 1 to exit 2 (1 is now
+dedicated to the `--fail-on` threshold), and usage and scan errors share 2.
 
 ## Configuration
 

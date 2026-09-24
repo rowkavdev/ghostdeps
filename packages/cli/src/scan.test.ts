@@ -81,7 +81,7 @@ describe("ghostdeps scan --json", () => {
     assert.match(text, /Findings:\n {2}\d+ info/);
   });
 
-  it("reports a missing path as one clear error line, exit 1", async () => {
+  it("reports a missing path as one clear error line, exit 2", async () => {
     const { io, out, err } = capture();
     const code = await run(["scan", fixture("does-not-exist")], io);
     assert.equal(code, 2);
@@ -121,12 +121,11 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     assert.match(text, /\(\d+ findings? below the --severity high filter hidden\)/);
   });
 
-  it("--severity filters the JSON findings list", async () => {
-    const { io, out } = capture();
+  it("--json always prints the complete result; --severity with it is a usage error", async () => {
+    const { io, err } = capture();
     const code = await run(["scan", "--severity", "high", "--json", fixture("basic-unused")], io);
-    assert.equal(code, 0);
-    const body = JSON.parse(out.join("\n")) as { findings: unknown[] };
-    assert.deepEqual(body.findings, []);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /--severity filters human output only/);
   });
 
   it("--fail-on only applies to scan", async () => {

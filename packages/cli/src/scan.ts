@@ -55,10 +55,12 @@ export const noRecommendationsFinding: Finding = {
 };
 
 /**
- * `ghostdeps scan [path]`. --json prints the schema-stable AnalysisResult.
- * --severity filters what is shown; --fail-on exits 1 when any finding (shown
- * or not) reaches the threshold, so CI can gate on it. Without --fail-on a
- * successful scan always exits 0: GhostDeps advises, it does not gate.
+ * `ghostdeps scan [path]`. --json prints the complete schema-stable
+ * AnalysisResult - never filtered, so the completeness and no-policy info
+ * findings can't be hidden into a false all-clear. --severity filters the
+ * human display only. --fail-on exits 1 when any finding (shown or not)
+ * reaches the threshold, so CI can gate on it. Without --fail-on a successful
+ * scan always exits 0: GhostDeps advises, it does not gate.
  */
 export async function runScan(config: CliConfig, io: Io): Promise<number> {
   await assertDirectory(config.path);
