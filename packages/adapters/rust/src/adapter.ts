@@ -16,14 +16,18 @@ import { detectRust } from "./detect.js";
 import { discoverCrates } from "./discover.js";
 import { buildDependencyGraph } from "./lockfile.js";
 import { parseCargoManifest } from "./manifest.js";
+import { findUsage } from "./usage.js";
 
 export function createRustAdapter(): EcosystemAdapter {
   return {
     ecosystem: RUST_ECOSYSTEM,
     apiVersion: adapterApiVersion,
-    capabilities: new Set<AdapterCapability>(["dependencyGraph"]),
+    // No "referenceAnalysis": findUsage returns plain Usage[] (read as
+    // incomplete), so policy never reaches an "unused" verdict from it (#121).
+    capabilities: new Set<AdapterCapability>(["dependencyGraph", "usageAnalysis"]),
     detect: detectRust,
     buildDependencyGraph,
+    findUsage,
     async listDirectDependencies(
       context: AdapterContext,
       projects: ProjectRef[],

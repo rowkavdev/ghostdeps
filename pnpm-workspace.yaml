@@ -2,5 +2,14 @@ packages:
   - "packages/*"
   - "packages/adapters/*"
 
+allowBuilds:
+  tree-sitter-rust: false
+
 onlyBuiltDependencies:
   - esbuild
+
+# @ghostdeps/rust uses tree-sitter-rust only for its .wasm grammar, loaded by
+# web-tree-sitter. Drop the native `tree-sitter` peer and never run the
+# grammar's node-gyp build (#50, #63).
+overrides:
+  "tree-sitter-rust>tree-sitter": "-"
