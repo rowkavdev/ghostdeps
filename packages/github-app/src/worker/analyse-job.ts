@@ -21,6 +21,7 @@ import {
   scanCompletenessFindings,
   type AnalysisResult,
   type DependencyChange,
+  type RecommendationPolicy,
 } from "@ghostdeps/core";
 import type { AddedLines } from "../checks/diff.js";
 import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
@@ -40,6 +41,8 @@ export type RepositoryClient = ChecksClient & TarballClient & PullRequestClient;
 export interface AnalyseRunOptions {
   /** Present only for PR jobs whose dependency changes were read in full. */
   readonly pullRequestChanges?: readonly DependencyChange[];
+  /** Core's recommendation policy; omitted means facts only, no verdicts. */
+  readonly recommend?: RecommendationPolicy;
 }
 
 export interface AnalysisWorkerOptions {
@@ -54,6 +57,12 @@ export interface AnalysisWorkerOptions {
   /** Wall-clock budget for download + extraction. Default 5 minutes. */
   readonly downloadTimeoutMs?: number;
   readonly fetch?: typeof fetch;
+  /**
+   * Core's recommendation policy for verdicts ("unused", "should-be-dev"...).
+   * Omit for facts only. The app default is createDefaultPolicy(), the same
+   * default the CLI scan uses; see GhostDepsAppOptions.recommendations.
+   */
+  readonly recommend?: RecommendationPolicy;
   /** Checkout scan limits/exclusions. Defaults to core's. */
   readonly scan?: CheckoutScanOptions;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
@@ -90,6 +99,7 @@ export async function analyseCheckout(
   return engine(handle, {
     adapters: adapterModules,
     ...(run.pullRequestChanges ? { pullRequestChanges: run.pullRequestChanges } : {}),
+    ...(run.recommend ? { recommend: run.recommend } : {}),
     ...(scanCompleteness.length > 0 ? { scanIncomplete: true, scanCompleteness } : {}),
   });
 }
@@ -172,7 +182,10 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         { destDir },
       );
       let added: AddedLines = new Map();
-      const run: { pullRequestChanges?: readonly DependencyChange[] } = {};
+      const run: {
+        pullRequestChanges?: readonly DependencyChange[];
+        recommend?: RecommendationPolicy;
+      } = options.recommend ? { recommend: options.recommend } : {};
       // baseSha is from the payload at enqueue time. If the base branch has
       // moved since, base...head still diffs from the merge base, so the
       // change list is still the PR's own.

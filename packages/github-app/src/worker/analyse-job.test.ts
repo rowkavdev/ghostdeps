@@ -3,11 +3,12 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import type { AnalysisResult } from "@ghostdeps/core";
+import { createDefaultPolicy, severityOf, type AnalysisResult } from "@ghostdeps/core";
 import type { AnalysisJob } from "../jobs.js";
 import {
   analyseCheckout,
   createAnalysisWorker,
+  DEFAULT_ADAPTER_MODULES,
   type AnalyseRunOptions,
   type RepositoryClient,
 } from "./analyse-job.js";
@@ -447,5 +448,79 @@ describe("analyseCheckout: scan completeness (#136)", () => {
     ] as const;
     await analyseCheckout(await checkout(), ["m"], { pullRequestChanges: changes }, {}, engine);
     assert.deepEqual(seen.options?.pullRequestChanges, changes);
+  });
+});
+
+describe("analyseCheckout: recommendation policy on the app path", () => {
+  async function unusedRepo(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "ghostdeps-policy-test-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "p", dependencies: { "left-pad": "^1.3.0", lodash: "^4.0.0" } }),
+    );
+    await mkdir(join(dir, "src"));
+    await writeFile(
+      join(dir, "src/index.js"),
+      'import _ from "lodash";\nconsole.log(_.chunk([1], 1));\n',
+    );
+    for (let i = 0; i < 3; i++)
+      await writeFile(join(dir, `src/f${i}.js`), `export const a${i} = 1;\n`);
+    return dir;
+  }
+  const policy = { recommend: createDefaultPolicy() };
+
+  it("reports an unused dependency, capped at medium severity and confidence (#173, #178)", async () => {
+    const result = await analyseCheckout(await unusedRepo(), DEFAULT_ADAPTER_MODULES, policy);
+    const unused = result.findings.filter((f) => f.kind === "unused");
+    assert.deepEqual(
+      unused.map((f) => f.dependency),
+      ["left-pad"],
+    );
+    for (const f of unused) {
+      assert.notEqual(f.confidence, "high");
+      assert.ok(["info", "low", "medium"].includes(severityOf(f)), severityOf(f));
+    }
+  });
+
+  it("never reports unused on a truncated checkout", async () => {
+    const result = await analyseCheckout(await unusedRepo(), DEFAULT_ADAPTER_MODULES, policy, {
+      limits: { maxFiles: 2 },
+    });
+    assert.equal(
+      result.findings.some((f) => f.kind === "unused"),
+      false,
+    );
+    assert.equal(
+      result.findings.some((f) => f.confidence === "high" && f.kind !== "info"),
+      false,
+    );
+    assert.ok(result.findings.some((f) => f.kind === "info" && /stopped early/.test(f.summary)));
+  });
+
+  it("reports facts only without a policy", async () => {
+    const result = await analyseCheckout(await unusedRepo(), DEFAULT_ADAPTER_MODULES, {});
+    assert.equal(
+      result.findings.some((f) => f.kind === "unused"),
+      false,
+    );
+  });
+
+  it("the worker passes its policy through to the engine", async () => {
+    const { client } = fakeClient();
+    let seen: AnalyseRunOptions | undefined;
+    const recommend = createDefaultPolicy();
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(repo)),
+      recommend,
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(job());
+    assert.equal(seen?.recommend, recommend);
   });
 });

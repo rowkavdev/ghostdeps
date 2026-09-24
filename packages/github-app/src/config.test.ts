@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { appIdFromEnv, sourcePrTriggerFromEnv } from "./config.js";
+import { appIdFromEnv, recommendationsFromEnv, sourcePrTriggerFromEnv } from "./config.js";
 
 describe("appIdFromEnv", () => {
   it("accepts a positive integer", () => {
@@ -21,6 +21,17 @@ describe("sourcePrTriggerFromEnv", () => {
     assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: "TRUE" }), true);
     for (const v of [undefined, "", "0", "false", "yes", "on"]) {
       assert.equal(sourcePrTriggerFromEnv({ GHOSTDEPS_SOURCE_PR_TRIGGER: v }), false, String(v));
+    }
+  });
+});
+
+describe("recommendationsFromEnv", () => {
+  it("is on unless false or 0", () => {
+    for (const v of [undefined, "", "true", "1", "yes"]) {
+      assert.equal(recommendationsFromEnv({ GHOSTDEPS_RECOMMENDATIONS: v }), true, String(v));
+    }
+    for (const v of ["false", "FALSE", " 0 "]) {
+      assert.equal(recommendationsFromEnv({ GHOSTDEPS_RECOMMENDATIONS: v }), false, v);
     }
   });
 });
