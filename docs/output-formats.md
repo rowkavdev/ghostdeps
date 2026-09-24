@@ -160,6 +160,8 @@ No significant dependency issues found.
 - Conservative wording: "potentially unnecessary", "consider whether" —
   never "remove this".
 - Findings carry confidence and evidence; uncertainty downgrades.
+- Every finding in the JSON output carries `severity`, stamped by core (#188).
+  Renderers and gates read it and never re-derive it from `confidence`.
 - Check conclusions: `success` when quiet, `neutral` with findings,
   never `failure`. GhostDeps advises, it does not gate.
 - PR comments only when a finding cannot be expressed as a check annotation.
