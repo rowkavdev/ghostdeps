@@ -2,11 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { analyseDirectory, createDefaultPolicy } from "@ghostdeps/core";
-import { defaultAdapters } from "./adapters.js";
 import { run, type Io } from "./cli.js";
 import { runScan } from "./scan.js";
-import { createStubPythonAdapter } from "./testing/stub-python-adapter.js";
 
 /** Tests run from packages/cli/dist. */
 const fixture = (name: string): string =>
@@ -139,24 +136,17 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     assert.match(text, /\(2 findings below the --severity critical filter hidden\)/);
   });
 
-  // The polyglot fixture only yields awareness findings with the test-only
-  // stub Python adapter in, so these call runScan with it injected.
+  // The polyglot fixture yields only awareness findings (cross-ecosystem
+  // overlap notes) through the shipped adapters, real Python included.
   const polyglot = fileURLToPath(
     new URL("../../../fixtures/polyglot/js-app-python-service", import.meta.url),
   );
-  const analyseWithStubPython = (path: string) =>
-    analyseDirectory(path, {
-      adapters: [...defaultAdapters(), createStubPythonAdapter()],
-      network: { mode: "offline" },
-      recommend: createDefaultPolicy({}),
-    });
 
   it("exits 0 on --fail-on info when every finding is awareness-only (#234)", async () => {
     const { io, out } = capture();
     const code = await runScan(
       { command: "scan", json: false, path: polyglot, failOn: "info" },
       io,
-      analyseWithStubPython,
     );
     assert.equal(code, 0);
     const text = out.join("\n");
@@ -170,7 +160,6 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     const code = await runScan(
       { command: "scan", json: false, path: polyglot, severity: "critical" },
       io,
-      analyseWithStubPython,
     );
     assert.equal(code, 0);
     const text = out.join("\n");
