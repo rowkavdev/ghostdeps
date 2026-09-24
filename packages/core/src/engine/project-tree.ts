@@ -17,14 +17,12 @@ export function projectId(project: Pick<ProjectRef, "ecosystem" | "path">): stri
   return `${project.ecosystem}:${normalisePath(project.path)}`;
 }
 
-/** True when `ancestor` is a strict ancestor directory of `path`. */
-function isStrictAncestor(ancestor: string, path: string): boolean {
-  if (ancestor === path) return false;
-  if (ancestor === ".") return true;
-  return path.startsWith(`${ancestor}/`);
+/** Parent directory in the "." / "a/b" form; undefined for ".". */
+function parentDir(path: string): string | undefined {
+  if (path === ".") return undefined;
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "." : path.slice(0, slash);
 }
-
-const depth = (path: string): number => (path === "." ? 0 : path.split("/").length);
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -33,6 +31,7 @@ const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  * project root of any ecosystem (deepest strict ancestor path); ties at
  * that path go to the lowest ecosystem name. Duplicate projects (same
  * ecosystem and path) collapse to one node. Sorted by path, then ecosystem.
+ * O(n x path depth): each project walks up its own ancestor directories.
  */
 export function buildProjectTree(projects: readonly ProjectRef[]): ProjectNode[] {
   const unique = new Map<string, { path: string; ecosystem: string }>();
@@ -46,21 +45,19 @@ export function buildProjectTree(projects: readonly ProjectRef[]): ProjectNode[]
   const nodes = [...unique.values()].sort(
     (a, b) => compare(a.path, b.path) || compare(a.ecosystem, b.ecosystem),
   );
+  // Lowest ecosystem name at each path: nodes are sorted, so the first wins.
+  const firstAt = new Map<string, string>();
+  for (const node of nodes) if (!firstAt.has(node.path)) firstAt.set(node.path, node.ecosystem);
+
   return nodes.map((node) => {
-    let best: { path: string; ecosystem: string } | undefined;
-    for (const candidate of nodes) {
-      if (!isStrictAncestor(candidate.path, node.path)) continue;
-      if (
-        best === undefined ||
-        depth(candidate.path) > depth(best.path) ||
-        (depth(candidate.path) === depth(best.path) &&
-          compare(candidate.ecosystem, best.ecosystem) < 0)
-      ) {
-        best = candidate;
+    const out: ProjectNode = { id: projectId(node), path: node.path, ecosystem: node.ecosystem };
+    for (let dir = parentDir(node.path); dir !== undefined; dir = parentDir(dir)) {
+      const ecosystem = firstAt.get(dir);
+      if (ecosystem !== undefined) {
+        out.parent = projectId({ ecosystem, path: dir });
+        break;
       }
     }
-    const out: ProjectNode = { id: projectId(node), path: node.path, ecosystem: node.ecosystem };
-    if (best !== undefined) out.parent = projectId(best);
     return out;
   });
 }

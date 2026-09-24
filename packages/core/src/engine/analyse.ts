@@ -19,6 +19,7 @@ import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
 import { UNUSED_CONFIDENCE_CAP, capConfidence, severityOf } from "../report/severity.js";
 import { buildProjectTree } from "./project-tree.js";
+import { buildUnifiedGraph } from "./unified-graph.js";
 import { boundSourceChanges } from "./source-changes.js";
 import type {
   AnalysisResult,
@@ -248,6 +249,8 @@ export async function assembleAnalysisResult(
     scanCompleteness?: readonly Finding[];
     /** Engine notes (e.g. capped PR source changes) appended as findings. */
     notes?: readonly Finding[];
+    /** Emitted unified-graph cap (#55). Default MAX_EMITTED_GRAPH_NODES. */
+    maxGraphNodes?: number;
   } = {},
 ): Promise<AnalysisResult> {
   // Caller notes plus notes adapters raised while running (#113).
@@ -373,6 +376,11 @@ export async function assembleAnalysisResult(
     });
   }
 
+  // Unified graph (#55), built after the policy has seen the full graphs:
+  // the emission cap trims the output only and never changes a verdict.
+  const unified = buildUnifiedGraph(graphs, dependencies, surface, context.maxGraphNodes);
+  if (unified.note) findings.push(unified.note);
+
   // Severity is core's output (ADR-0004). Stamp it on every finding BEFORE
   // the confidence cap below, so the cap limits only the displayed
   // confidence and severity keeps the computed value (#188). Whatever an
@@ -417,6 +425,7 @@ export async function assembleAnalysisResult(
     schemaVersion: 1,
     projects: [...projects.values()],
     projectTree: buildProjectTree([...projects.values()]),
+    graph: unified.graph,
     dependencies,
     usages,
     findings,

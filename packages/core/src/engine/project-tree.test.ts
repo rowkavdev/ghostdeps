@@ -72,6 +72,21 @@ describe("buildProjectTree (#55)", () => {
     assert.equal(expected.find((n) => n.path === "a/b")?.parent, "go:a");
   });
 
+  it("scales linearly: 10,000 projects build quickly", () => {
+    const many: ProjectRef[] = [p(JS, ".")];
+    for (let i = 0; i < 100; i++) {
+      many.push(p(JS, `pkgs/g${i}`));
+      for (let j = 0; j < 99; j++) many.push(p(PY, `pkgs/g${i}/m${j}`));
+    }
+    const start = performance.now();
+    const tree = buildProjectTree(many);
+    const ms = performance.now() - start;
+    assert.equal(tree.length, 10_001);
+    assert.equal(tree.find((n) => n.path === "pkgs/g7/m3")?.parent, `${JS}:pkgs/g7`);
+    // The quadratic version took seconds here; the ancestor walk takes milliseconds.
+    assert.ok(ms < 1000, `took ${ms}ms`);
+  });
+
   it("returns an empty tree for no projects", () => {
     assert.deepEqual(buildProjectTree([]), []);
   });

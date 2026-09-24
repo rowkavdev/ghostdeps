@@ -241,6 +241,47 @@ export interface ProjectNode {
   parent?: string;
 }
 
+/** One resolved package in the repository-wide graph (#55). */
+export interface UnifiedGraphNode {
+  /** "<ecosystem>:<name>@<version>". npm "debug" and PyPI "debug" never merge. */
+  id: string;
+  ecosystem: string;
+  name: string;
+  version: string;
+  /** Names (same ecosystem) this package depends on, as the lockfile records them. */
+  dependencies: string[];
+  /** True only when every project graph that contains it marks it dev. */
+  dev: boolean;
+  /** Project ids (ProjectNode.id) whose graph contains this package. */
+  projects: string[];
+  /** Project ids that declare it directly (matched by name). */
+  directIn: string[];
+}
+
+/** Per-ecosystem coverage of the emitted graph. */
+export interface UnifiedGraphEcosystem {
+  ecosystem: string;
+  /** Same meaning as SurfaceEntry.graphs (#114). */
+  graphs: GraphCompleteness;
+  /** Unique packages in the full in-memory graph. */
+  nodes: number;
+  /** Packages emitted here; less than `nodes` when the output was capped. */
+  emitted: number;
+}
+
+/**
+ * The repository-wide dependency graph (#55): every project's lockfile
+ * graph merged into one package index. Only the EMITTED graph is capped
+ * (MAX_EMITTED_GRAPH_NODES); findings are always computed from the full
+ * in-memory graphs first, so a capped graph never changes a verdict.
+ */
+export interface UnifiedGraph {
+  nodes: UnifiedGraphNode[];
+  ecosystems: UnifiedGraphEcosystem[];
+  /** True when nodes were left out of the output; one info note says so. */
+  truncated: boolean;
+}
+
 export interface AnalysisResult {
   schemaVersion: 1;
   projects: ProjectRef[];
@@ -250,6 +291,8 @@ export interface AnalysisResult {
    * schemaVersion stays 1.
    */
   projectTree?: ProjectNode[];
+  /** Repository-wide dependency graph (#55). Additive; the engine always sets it. */
+  graph?: UnifiedGraph;
   dependencies: Dependency[];
   usages: Usage[];
   findings: Finding[];
