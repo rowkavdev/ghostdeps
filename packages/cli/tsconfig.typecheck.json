@@ -3,7 +3,8 @@
   "compilerOptions": {
     "noEmit": true,
     "paths": {
-      "@ghostdeps/core": ["../core/src/index.ts"]
+      "@ghostdeps/core": ["../core/src/index.ts"],
+      "@ghostdeps/javascript-typescript": ["../adapters/javascript-typescript/src/index.ts"]
     }
   },
   "include": ["src"]

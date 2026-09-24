@@ -1,16 +1,18 @@
+import type { Io } from "./cli.js";
 import type { CliConfig } from "./config.js";
 import { NotImplementedError } from "./errors.js";
+import { runScan } from "./scan.js";
 
 /** A CLI command in the router. */
 export interface Command {
   readonly name: string;
   readonly summary: string;
   readonly usage: string;
-  readonly run: (config: CliConfig) => Promise<number>;
+  readonly run: (config: CliConfig, io: Io) => Promise<number>;
 }
 
-/** Commands the router accepts before the engine lands (issue #39 wires scan). */
-function notImplemented(name: string): (config: CliConfig) => Promise<number> {
+/** Commands the router accepts before their implementation lands. */
+function notImplemented(name: string): (config: CliConfig, io: Io) => Promise<number> {
   return () => Promise.reject(new NotImplementedError(`ghostdeps ${name} is not implemented yet`));
 }
 
@@ -19,7 +21,7 @@ export const commands: readonly Command[] = [
     name: "scan",
     summary: "Analyse a repository's dependencies",
     usage: "ghostdeps scan [path]",
-    run: notImplemented("scan"),
+    run: runScan,
   },
   {
     name: "inspect",

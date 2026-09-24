@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "constraint": "^1.3.0",
+      "declaredIn": "package.json",
+      "kind": "runtime",
+      "name": "left-pad",
+      "project": {
+        "ecosystem": "javascript-typescript",
+        "packageManagers": [],
+        "path": "."
+      }
+    }
+  ],
+  "detected": [
+    {
+      "confidence": "medium",
+      "ecosystem": "javascript-typescript",
+      "evidence": [
+        {
+          "file": "package.json",
+          "kind": "manifest-found",
+          "statement": "found package.json"
+        },
+        {
+          "kind": "source-files",
+          "statement": "1 JS/TS source file(s) under repository root"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "affectedFiles": [],
+      "confidence": "high",
+      "evidence": [
+        {
+          "kind": "recommendation-policy-missing",
+          "statement": "this build of ghostdeps runs without a recommendation policy"
+        }
+      ],
+      "kind": "info",
+      "limitations": [
+        "Unused, unnecessary and native-replacement findings are not produced yet."
+      ],
+      "recommendation": "Treat this result as facts only (detected ecosystems, dependencies, usages). It is not an all-clear.",
+      "summary": "No dependency recommendations were made: the recommendation policy is not implemented yet."
+    }
+  ],
+  "projects": [
+    {
+      "ecosystem": "javascript-typescript",
+      "packageManagers": [],
+      "path": "."
+    }
+  ],
+  "surface": [
+    {
+      "direct": 1,
+      "ecosystem": "javascript-typescript",
+      "transitive": 0
+    }
+  ],
+  "usages": []
+}
