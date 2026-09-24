@@ -152,6 +152,10 @@ describe("real-repo coverage regressions (validation pass after #164)", () => {
     ["refs-workflow-only", "publint", "script"],
     ["convention-simple-git-hooks-key", "simple-git-hooks", "convention"],
     ["convention-size-limit-preset", "@size-limit/preset-small-lib", "convention"],
+    ["refs-string-specifier", "regenerator-runtime", "convention"],
+    ["refs-string-specifier", "systemjs", "convention"],
+    ["convention-css-preprocessor-ext", "sugarss", "convention"],
+    ["convention-css-preprocessor-ext", "sass", "convention"],
   ] as const;
   for (const [fixture, name, via] of cases) {
     it(`${fixture}: ${name} has via=${via} usage and the analysis is complete`, async () => {

@@ -6,11 +6,6 @@
     {
       "kind": "info",
       "severity": "info",
-      "dependency": "@tailwindcss/postcss"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
       "dependency": "autoprefixer"
     },
     {
@@ -26,26 +21,6 @@
     {
       "kind": "info",
       "severity": "info",
-      "dependency": "regenerator-runtime"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "sugarss"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "sugarss"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "systemjs"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
       "dependency": "unrun"
     },
     {
@@ -62,11 +37,6 @@
       "kind": "info",
       "severity": "info",
       "dependency": "url"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "vue34"
     },
     {
       "kind": "should-be-dev",

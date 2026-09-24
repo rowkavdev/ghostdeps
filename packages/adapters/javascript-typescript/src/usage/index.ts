@@ -3,6 +3,7 @@ export type { ParsedSpecifier, SpecifierKind } from "./specifier.js";
 export { scanSource, scriptKindFor, SCANNABLE_EXTENSIONS } from "./scan.js";
 export type { FileScanResult, ImportReference } from "./scan.js";
 export {
+  findPreprocessorUsages,
   findUsage,
   findRemovedUsages,
   scanForContext,

@@ -1,0 +1,9 @@
+{
+  "name": "fixture-refs-string-specifier",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "regenerator-runtime": "^0.14.0",
+    "systemjs": "^6.15.0"
+  }
+}

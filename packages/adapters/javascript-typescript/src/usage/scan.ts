@@ -26,6 +26,12 @@ export interface ImportReference {
   reExport: boolean;
   /** Set when a tsconfig/jsconfig alias resolved the specifier to a repository file (#29); packageName is then cleared. */
   aliased?: true;
+  /**
+   * Found in string text rather than an import: a package subpath literal
+   * ("regenerator-runtime/runtime.js", "core-js/") or an import/require
+   * inside a string or template (generated code). form is "unknown".
+   */
+  stringReference?: true;
 }
 
 export interface FileScanResult {
@@ -54,6 +60,22 @@ export function scriptKindFor(file: string): ts.ScriptKind | undefined {
   if (dot < 0) return undefined;
   return EXTENSION_KINDS[file.slice(dot).toLowerCase()];
 }
+
+/** String literals examined per file, and the longest one examined. */
+const MAX_STRINGS_PER_FILE = 20_000;
+const MAX_STRING_CHARS = 100_000;
+
+/**
+ * A whole string that is a package subpath: "pkg/", "pkg/sub/file.js",
+ * "@scope/pkg" or "@scope/pkg/sub". Bare unscoped words ("debug", "url") are
+ * too common in ordinary strings to count.
+ */
+const SUBPATH_LITERAL =
+  /^(?:@[a-z0-9-~][a-z0-9-._~]*\/[a-z0-9-~][a-z0-9-._~]*(?:\/[^\s'"`]*)?|[a-z0-9-~][a-z0-9-._~]*\/[^\s'"`]*)$/i;
+
+/** `import "x"`, `from "x"` and `require("x")` inside string or template text. */
+const CODE_SPECIFIER =
+  /\b(?:import|from)\s*["']([^"'\s]{1,300})["']|\brequire\(\s*["']([^"'\s]{1,300})["']\s*\)/g;
 
 function stringValue(node: ts.Node | undefined): string | undefined {
   if (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
@@ -160,7 +182,19 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   const isRequireFunction = (callee: ts.Node): boolean =>
     (ts.isIdentifier(callee) && requireNames.has(callee.text)) || isCreateRequire(callee);
 
+  /** String text seen in the file, checked for package references after the import pass. */
+  const strings: { node: ts.Node; text: string }[] = [];
+
   const visit = (node: ts.Node): void => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    ) {
+      if (strings.length < MAX_STRINGS_PER_FILE) strings.push({ node, text: node.text });
+    }
     if (ts.isImportDeclaration(node)) {
       const spec = stringValue(node.moduleSpecifier);
       const clause = node.importClause;
@@ -227,6 +261,33 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     ts.forEachChild(node, visit);
   };
   visit(sf);
+
+  // String references (#172, vite plugin-legacy): packages a module names in
+  // string text, typically code it generates or resolves for a bundle. They
+  // only ever add usage. Real import specifiers are also string literals, so
+  // anything already found on the same line is not repeated.
+  const seen = new Set(references.map((r) => `${r.line}:${r.packageName ?? ""}`));
+  const addString = (node: ts.Node, specifier: string) => {
+    const parsed = parseSpecifier(specifier);
+    if (parsed.kind !== "package" || !parsed.packageName) return;
+    const key = `${lineOf(node)}:${parsed.packageName}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const ref = add(node, specifier, "unknown", []);
+    ref.stringReference = true;
+  };
+  for (const { node, text } of strings) {
+    if (text.length > MAX_STRING_CHARS) continue;
+    if (SUBPATH_LITERAL.test(text)) addString(node, text);
+    CODE_SPECIFIER.lastIndex = 0;
+    for (
+      let m = CODE_SPECIFIER.exec(text), n = 0;
+      m && n < 50;
+      m = CODE_SPECIFIER.exec(text), n++
+    ) {
+      addString(node, (m[1] ?? m[2])!);
+    }
+  }
 
   // Second pass: member names accessed on default/namespace/require bindings,
   // e.g. `axios.get(...)` adds "get". Shadowing is not tracked; this can only

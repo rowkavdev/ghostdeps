@@ -1,0 +1,8 @@
+{
+  "description": "Regression from vite playground: bundlers load stylesheet preprocessors by file extension (.sss -> sugarss, .scss -> sass). With matching stylesheets in the project they are used via=convention and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "sugarss" },
+    { "kind": "unused", "dependency": "sass" }
+  ]
+}

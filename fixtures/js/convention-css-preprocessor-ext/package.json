@@ -1,0 +1,9 @@
+{
+  "name": "fixture-convention-css-preprocessor-ext",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "sugarss": "^5.0.0",
+    "sass": "^1.80.0"
+  }
+}
