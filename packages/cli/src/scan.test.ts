@@ -65,11 +65,27 @@ describe("ghostdeps scan --json", () => {
     assert.equal(body["schemaVersion"], undefined);
   });
 
-  it("leaves human scan output unchanged until the summary renderer lands", async () => {
+  it("prints the canonical repository summary for js/basic-unused", async () => {
     const { io, out, err } = capture();
     const code = await run(["scan", fixture("basic-unused")], io);
-    assert.equal(code, 3);
+    assert.equal(code, 0, err.join("\n"));
+    assert.deepEqual(err, []);
+    const text = out.join("\n");
+    assert.match(text, /^GhostDeps\n/);
+    assert.match(text, /Languages:\n {2}JavaScript\/TypeScript\n/);
+    assert.match(text, /Package managers:\n/);
+    assert.match(text, /Direct dependencies:\n {2}\d/);
+    assert.match(text, /Transitive dependencies:\n/);
+    // The no-recommendations info finding must be visible in the summary:
+    // "Findings: none" would read as an all-clear.
+    assert.match(text, /Findings:\n {2}\d+ info/);
+  });
+
+  it("reports a missing path as one clear error line, exit 1", async () => {
+    const { io, out, err } = capture();
+    const code = await run(["scan", fixture("does-not-exist")], io);
+    assert.equal(code, 1);
     assert.deepEqual(out, []);
-    assert.match(err.join(" "), /ghostdeps scan is not implemented yet/);
+    assert.match(err.join(" "), /path is not a directory: .*does-not-exist/);
   });
 });

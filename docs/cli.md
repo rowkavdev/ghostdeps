@@ -36,16 +36,16 @@ Human output follows the canonical formats in
 `AnalysisResult` from `@ghostdeps/core`, serialised by core's stable JSON
 reporter (canonical ordering, escaping) - the CLI has no second JSON writer.
 
-Implementation status: `ghostdeps scan --json` runs the engine today. It
-calls core's `analyseDirectory`, which scans the directory through the inert
+Implementation status: `ghostdeps scan` runs the engine today. It calls
+core's `analyseDirectory`, which scans the directory through the inert
 `FsRepositoryHandle`, runs the JavaScript/TypeScript adapter (the only one
 wired so far) offline, and reports skipped files as scan-incompleteness `info`
-findings. No recommendation policy exists yet, so every scan also carries one
-`info` finding (`recommendation-policy-missing`) saying no dependency
-judgements were made. An empty `findings` list must never be read as an
-all-clear. Human `scan` output is still
-the not-implemented stub (exit 3) until the repository-summary renderer is
-wired (#39). A golden file (`packages/cli/test/golden/`) pins the JSON for
+findings. `--json` prints the schema-stable `AnalysisResult`; without it, scan
+prints the canonical repository summary from docs/output-formats.md (#39,
+renderer from #109). No recommendation policy exists yet, so every scan also
+carries one `info` finding (`recommendation-policy-missing`) saying no
+dependency judgements were made. An empty `findings` list must never be read as
+an all-clear. A golden file (`packages/cli/test/golden/`) pins the JSON for
 `fixtures/js/basic-unused`. Regenerate it with `UPDATE_GOLDEN=1` when adapter
 output changes on purpose.
 

@@ -53,17 +53,17 @@ describe("ghostdeps cli", () => {
   });
 
   it("routes a bare path to scan (ghostdeps .)", async () => {
-    const { io, err } = capture();
+    const { io, out, err } = capture();
     const code = await run(["."], io);
-    assert.equal(code, 3);
-    assert.ok(err.join(" ").includes("ghostdeps scan"));
+    assert.equal(code, 0, err.join("\n"));
+    assert.ok(out.join("\n").startsWith("GhostDeps\n"));
   });
 
   it("routes a bare existing directory to scan", async () => {
-    const { io, err } = capture();
+    const { io, out, err } = capture();
     const code = await run(["src"], io);
-    assert.equal(code, 3);
-    assert.ok(err.join(" ").includes("ghostdeps scan"));
+    assert.equal(code, 0, err.join("\n"));
+    assert.ok(out.join("\n").startsWith("GhostDeps\n"));
   });
 
   it("rejects a mistyped command with a suggestion", async () => {
@@ -123,8 +123,11 @@ describe("ghostdeps cli", () => {
   it("treats everything after -- as positional", async () => {
     const { io, err } = capture();
     const code = await run(["--", "-odd-dir"], io);
-    assert.equal(code, 3);
-    assert.ok(err.join(" ").includes("ghostdeps scan"), "-odd-dir should route to scan");
+    assert.equal(code, 1);
+    assert.ok(
+      err.join(" ").includes("path is not a directory: -odd-dir"),
+      "-odd-dir should route to scan",
+    );
   });
 
   it("help <command> shows command-specific help", async () => {

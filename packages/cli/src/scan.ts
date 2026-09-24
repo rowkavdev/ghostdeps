@@ -5,9 +5,11 @@ import {
   type Finding,
 } from "@ghostdeps/core";
 import { createJavaScriptTypeScriptAdapter } from "@ghostdeps/javascript-typescript";
+import { stat } from "node:fs/promises";
 import type { CliConfig } from "./config.js";
 import type { Io } from "./cli.js";
-import { EXIT_OK, NotImplementedError } from "./errors.js";
+import { EXIT_OK } from "./errors.js";
+import { renderRepositorySummary } from "./output/human.js";
 import { printJson } from "./output/json.js";
 
 /** Adapters the CLI ships with. More ecosystems join as their adapters land. */
@@ -53,10 +55,20 @@ export const noRecommendationsFinding: Finding = {
 
 /** `ghostdeps scan [path]`. --json prints the schema-stable AnalysisResult. */
 export async function runScan(config: CliConfig, io: Io): Promise<number> {
-  if (!config.json) {
-    // Human output lands with the repository-summary renderer (#39/#109).
-    throw new NotImplementedError("ghostdeps scan is not implemented yet");
+  await assertDirectory(config.path);
+  const result = await analysePath(config.path);
+  if (config.json) {
+    printJson(result, io);
+  } else {
+    io.stdout(renderRepositorySummary(result));
   }
-  printJson(await analysePath(config.path), io);
   return EXIT_OK;
+}
+
+/** Fail with one clear line on a missing path or a file, not an ENOENT dump. */
+async function assertDirectory(path: string): Promise<void> {
+  const st = await stat(path).catch(() => undefined);
+  if (st === undefined || !st.isDirectory()) {
+    throw new Error(`path is not a directory: ${path}`);
+  }
 }
