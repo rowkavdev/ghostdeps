@@ -113,6 +113,28 @@ async function mapBounded<T, R>(
   return results;
 }
 
+/**
+ * True when a value is plain JSON data: null, booleans, strings, finite
+ * numbers, arrays and plain objects, nested at most `depth` levels. The
+ * reporter's canonical ordering throws on anything else (#98), so findings
+ * are checked here before they reach it: one bad finding must not abort
+ * the whole analysis.
+ */
+function isPlainData(value: unknown, depth = 32): boolean {
+  if (depth < 0) return false;
+  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every((item) => isPlainData(item, depth - 1));
+  if (typeof value === "object") {
+    const proto: unknown = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return false;
+    return Object.values(value as Record<string, unknown>).every(
+      (item) => item === undefined || isPlainData(item, depth - 1),
+    );
+  }
+  return false;
+}
+
 function majorOf(version: string): string | undefined {
   return /^(\d+)\.(\d+)\.\d+$/.exec(version)?.slice(1, 3).join(".");
 }
@@ -333,9 +355,25 @@ export async function analyseRepository(
 
   if (options.recommend) {
     try {
-      findings.push(
-        ...(await options.recommend({ dependencies, usages, graphs, usageAnalysedEcosystems })),
-      );
+      const proposed = await options.recommend({
+        dependencies,
+        usages,
+        graphs,
+        usageAnalysedEcosystems,
+      });
+      const rejected = proposed.filter((finding) => !isPlainData(finding));
+      findings.push(...proposed.filter((finding) => isPlainData(finding)));
+      if (rejected.length > 0) {
+        findings.push({
+          kind: "info",
+          summary: `recommendation policy returned ${rejected.length} finding(s) that are not plain data`,
+          recommendation: "Manual review recommended; those findings were dropped.",
+          evidence: [{ kind: "policy-error", statement: "non-plain finding rejected" }],
+          confidence: "low",
+          limitations: ["Some recommendations are missing from this result."],
+          affectedFiles: [],
+        });
+      }
     } catch (error) {
       findings.push({
         kind: "info",

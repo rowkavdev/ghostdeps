@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { adapterApiVersion, type AdapterCapability, type EcosystemAdapter } from "../adapter.js";
-import type { Dependency, ProjectRef, RepositoryHandle } from "../types/index.js";
+import type { Dependency, Finding, ProjectRef, RepositoryHandle } from "../types/index.js";
 import { analyseRepository, detectionConfidence } from "./analyse.js";
 
 // dist/engine -> repository root
@@ -326,6 +326,36 @@ describe("analyseRepository", () => {
     });
     assert.ok(failed.findings.some((f) => f.evidence[0]?.kind === "policy-error"));
     assert.equal(failed.dependencies.length, 2, "facts survive a policy failure");
+  });
+
+  it("drops non-plain policy findings instead of aborting on a sort tie", async () => {
+    const repo = await fixtureHandle(fixture);
+    const tied = (evidence: unknown) =>
+      ({
+        kind: "unused",
+        dependency: "x",
+        summary: "same",
+        recommendation: "Remove it.",
+        evidence: [evidence],
+        confidence: "high",
+        limitations: [],
+        affectedFiles: [],
+      }) as unknown as Finding;
+    const result = await analyseRepository(repo, {
+      adapters: [mockAdapter({ ecosystem: "js", confidence: 1, deps: ["x"] })],
+      recommend: () => [
+        tied({ kind: "a", statement: "plain" }),
+        tied({ kind: "a", statement: "date", at: new Date(0) }),
+        tied({ kind: "a", statement: "map", extra: new Map([["k", 1]]) }),
+        tied({ kind: "a", statement: "nan", line: Number.NaN }),
+      ],
+    });
+    const unused = result.findings.filter((f) => f.kind === "unused");
+    assert.equal(unused.length, 1);
+    assert.equal(unused[0]?.evidence[0]?.statement, "plain");
+    assert.ok(
+      result.findings.some((f) => f.summary.includes("3 finding(s) that are not plain data")),
+    );
   });
 
   it("is deterministic regardless of adapter order and completion timing", async () => {
