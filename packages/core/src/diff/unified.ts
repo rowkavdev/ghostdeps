@@ -27,6 +27,12 @@ export interface DiffHunk {
   lines: DiffLine[];
 }
 
+/**
+ * One file in the diff. Paths are attacker data exactly as written in the
+ * diff: they may contain `..`, absolute paths or control characters.
+ * Consumers must validate them (see isSafeRepositoryPath) and read only
+ * through a RepositoryHandle, and escape them before display.
+ */
 export interface FileDiff {
   /** Path before the change; undefined for added files. */
   oldPath?: string;
@@ -38,7 +44,10 @@ export interface FileDiff {
 }
 
 export interface DiffParseLimits {
-  /** Maximum diff size in UTF-16 code units. Default 5,000,000. */
+  /**
+   * Maximum diff size in UTF-16 code units (JavaScript string length), not
+   * bytes. Default 5,000,000.
+   */
   maxChars: number;
   /** Maximum number of files. Default 3,000 (GitHub's own PR file cap). */
   maxFiles: number;
@@ -119,7 +128,10 @@ function splitGitHeader(rest: string): [string | undefined, string | undefined] 
   return [undefined, undefined];
 }
 
-function finalise(file: FileDiff): FileDiff {
+function finalise(file: FileDiff, problem: (msg: string) => void): FileDiff {
+  if (file.oldPath === undefined && file.newPath === undefined) {
+    problem("a file header had no readable path");
+  }
   if (file.status === "modified" && file.oldPath !== undefined && file.newPath !== undefined) {
     if (file.oldPath !== file.newPath) file.status = "renamed";
   }
@@ -152,7 +164,7 @@ export function parseUnifiedDiff(input: string, limits: Partial<DiffParseLimits>
   let totalLines = 0;
 
   const startFile = (oldPath: string | undefined, newPath: string | undefined): boolean => {
-    if (current) files.push(finalise(current));
+    if (current) files.push(finalise(current, problem));
     current = undefined;
     hunk = undefined;
     if (files.length >= lim.maxFiles) {
@@ -264,7 +276,7 @@ export function parseUnifiedDiff(input: string, limits: Partial<DiffParseLimits>
       current.binary = true;
     }
   }
-  if (current) files.push(finalise(current));
+  if (current) files.push(finalise(current, problem));
   if (oldLeft > 0 || newLeft > 0) problem("diff ended inside a hunk");
   return { files, truncated, problems };
 }
