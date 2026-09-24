@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { describe, it } from "node:test";
 
 const hostileDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../fixtures/hostile");
@@ -31,8 +32,23 @@ describe("hostile archive generator reproducibility (#103)", () => {
         for (const name of ["archive.tar.gz", "expected.json", "README.md"]) {
           const committed = await readFile(join(hostileDir, fixture, name));
           const generated = await readFile(join(dir, fixture, name));
+          // Compare tar payloads, not gzip bytes: compressed output can
+          // change between Node/zlib builds with identical tar content,
+          // which would fail the check for no real reason (#151). The
+          // truncated-archive fixture cannot be gunzipped at all, so fall
+          // back to raw bytes when either side fails to decompress.
+          let match: boolean;
+          if (name.endsWith(".gz")) {
+            try {
+              match = gunzipSync(committed).equals(gunzipSync(generated));
+            } catch {
+              match = committed.equals(generated);
+            }
+          } else {
+            match = committed.equals(generated);
+          }
           assert.ok(
-            committed.equals(generated),
+            match,
             `${fixture}/${name} differs from the generator output - rerun fixtures/hostile/generate.mjs and commit the result`,
           );
         }
