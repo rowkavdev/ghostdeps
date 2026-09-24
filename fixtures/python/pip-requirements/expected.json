@@ -1,0 +1,6 @@
+{
+  "description": "Plain pip project: requirements.txt plus a small package. Detected at the root with pip as the package manager.",
+  "detection": { "minConfidence": 0.7, "maxConfidence": 0.7, "projects": ["."], "packageManagers": { ".": ["pip"] } },
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "requests" }, { "kind": "unused", "dependency": "click" }]
+}

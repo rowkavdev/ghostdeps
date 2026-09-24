@@ -210,6 +210,15 @@ importers:
         specifier: ^22.10.0
         version: 22.20.4
 
+  packages/adapters/python:
+    devDependencies:
+      '@ghostdeps/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.4
+
   packages/adapters/rust:
     dependencies:
       smol-toml:

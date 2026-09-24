@@ -1,0 +1,5 @@
+{
+  "description": "TypeScript frontend at the root with a Python API in api/ (#42). Only api/ is a Python project; scripts/ has a requirements file but no source and is skipped.",
+  "detection": { "minConfidence": 0.7, "projects": ["api"] },
+  "findings": []
+}

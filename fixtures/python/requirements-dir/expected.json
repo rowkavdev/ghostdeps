@@ -1,0 +1,5 @@
+{
+  "description": "Django-style requirements/ directory (base.txt, dev.txt) with no top-level requirements.txt: the parent directory is the project root, managed by pip.",
+  "detection": { "minConfidence": 0.7, "projects": ["."], "packageManagers": { ".": ["pip"] } },
+  "findings": []
+}
