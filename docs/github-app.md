@@ -19,7 +19,7 @@ Explicitly **not** requested: `issues`, `actions`, `contents: write`, `pull_requ
 - `push` (configured branches)
 - `installation`, `installation_repositories` (setup and initial scan)
 
-No other events are subscribed.
+No other events are subscribed. The manifest ([`packages/github-app/app.yml`](../packages/github-app/app.yml)) lists only `pull_request` and `push`: GitHub delivers `installation` and `installation_repositories` to every app automatically, and `checks: write` also delivers `check_suite` and `check_run`. A test in `packages/github-app` fails if the manifest and the permissions table above drift apart.
 
 ## Behaviour
 

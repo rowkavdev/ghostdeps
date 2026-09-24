@@ -42,3 +42,7 @@ The interface is versioned (`adapterApiVersion` in the core package). Breaking c
 - Adapter authors write TypeScript and run the shared contract suite; the bar is explicit and mechanical.
 - The core owns all recommendation policy, so "conservative by design" is enforced in one place.
 - Adding a capability later (e.g. `fixGeneration` for M4) extends the capability enum instead of breaking the interface.
+
+## Amendment (2026-09-24): type-only imports
+
+`Usage` gained `typeOnly?: boolean`, orthogonal to `form`. A dependency imported only in type positions (`import type`, type-level `import()`) is evidence for a devDependency move, not runtime necessity - collapsing it into "static" would lose that signal. Additive change; no `adapterApiVersion` bump.

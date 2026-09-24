@@ -34,7 +34,7 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 
 ## The core pipeline
 
-1. **Repository discovery.** Walk the repository through a read-only `RepositoryHandle`. Identify candidate projects, including workspaces and monorepo sub-projects. Skip vendor/generated directories.
+1. **Repository discovery.** Walk the repository through a read-only `RepositoryHandle`. Identify candidate projects, including workspaces and monorepo sub-projects. Skip vendor/generated directories. See [repository-scanner.md](repository-scanner.md).
 2. **Ecosystem detection.** Every adapter's `detect()` runs and returns a confidence-scored result with evidence. Adapters below threshold are skipped — `package.json` present but no meaningful JS/TS source means no JS analysis.
 3. **Package-manager detection.** Within each detected ecosystem, identify the package manager(s) from lockfiles and manifests (npm/pnpm/Yarn/Bun; pip/Poetry/uv/Pipenv; Cargo; Go Modules), per project.
 4. **Dependency model.** Parse manifests into a normalised `Dependency` model: name, version constraint, kind (runtime/dev/peer/optional/build), scope (root vs workspace package).
@@ -42,6 +42,16 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 6. **Usage analysis.** For each direct dependency, find imports/requires and the APIs actually used, with file/line evidence. JS/TS uses the TypeScript compiler API; other languages use tree-sitter grammars.
 7. **Recommendation engine.** Core-owned policy turns facts into findings: unused, potentially unnecessary (native alternative / duplicate capability), risk notes (unmaintained, footprint). Every finding carries evidence, confidence, and limitations. Conservative by design: uncertainty downgrades the recommendation, never upgrades it.
 8. **Reporting.** A single `AnalysisResult` schema feeds both the CLI (human + `--json`) and the GitHub App (Checks + annotations).
+
+## JSON output
+
+`renderJsonReport()` in `packages/core/src/report/json.ts` is the one serialiser for `AnalysisResult`. The CLI's `--json` and any later integration use it, so the output is a public, versioned schema.
+
+- **`schemaVersion`** is the first key. It is `1` today. Any breaking change (a removed or renamed field, a changed meaning) bumps it; adding an optional field does not.
+- **Stable bytes.** The same result always gives the same output: object keys are sorted, and `projects`, `dependencies`, `usages`, `findings`, `detected` and `surface` are sorted by their identifying fields, so adapter run order never shows up as a diff. Order inside a finding (`evidence`, `limitations`) is kept as the recommendation engine set it.
+- **Missing fields are omitted**, never written as `null`.
+- **Repository content is escaped.** Line separators, bidi controls and zero-width characters are written as `\uXXXX` escapes so a hostile name or path can't hide or reorder text (security model rule 6).
+- **Golden files** in `packages/core/test/golden/` pin the exact output. After an intended schema change, regenerate them with `UPDATE_GOLDEN=1 pnpm --filter @ghostdeps/core test` and review the diff.
 
 ## Key concepts
 

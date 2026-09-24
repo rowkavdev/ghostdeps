@@ -1,0 +1,5 @@
+{
+  "description": "package.json exists for tooling metadata but there is no meaningful JS/TS source; detection must stay below threshold and skip the project with a stated reason.",
+  "findings": [],
+  "mustNotFind": []
+}

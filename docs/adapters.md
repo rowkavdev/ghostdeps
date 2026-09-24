@@ -29,8 +29,9 @@ recommendation policy lives in core.
 
 ## Status
 
-| Adapter    | Ecosystem                               | Status                                                       |
-| ---------- | --------------------------------------- | ------------------------------------------------------------ |
-| (none yet) | JavaScript/TypeScript, Python, Rust, Go | contracts only - implementations start from the M1/M2 issues |
+| Adapter                            | Ecosystem                                    | Status                                                                 |
+| ---------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------- |
+| `@ghostdeps/javascript-typescript` | JavaScript/TypeScript (npm, pnpm, Yarn, Bun) | in progress: ecosystem detection (#24); parsing, graphs, usage to come |
+| (none yet)                         | Python, Rust, Go                             | contracts only - implementations start from the M1/M2 issues           |
 
 New adapters: read [contributing-adapters.md](contributing-adapters.md).

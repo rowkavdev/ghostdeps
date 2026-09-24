@@ -1,0 +1,26 @@
+{
+  "action": "added",
+  "installation": {
+    "id": 55501,
+    "account": {
+      "login": "octo-org",
+      "id": 9001,
+      "type": "Organization"
+    }
+  },
+  "repository_selection": "selected",
+  "repositories_added": [
+    {
+      "id": 872002,
+      "name": "api",
+      "full_name": "octo-org/api",
+      "private": true
+    }
+  ],
+  "repositories_removed": [],
+  "sender": {
+    "login": "octocat",
+    "id": 583231,
+    "type": "User"
+  }
+}
