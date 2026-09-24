@@ -11,7 +11,7 @@ import type {
   ProjectRef,
   RepositoryHandle,
 } from "../types/index.js";
-import { UNUSED_CONFIDENCE_CAP } from "../report/severity.js";
+import { UNUSED_CONFIDENCE_CAP, atOrAboveSeverity } from "../report/severity.js";
 import { analyseRepository, detectionConfidence } from "./analyse.js";
 
 // dist/engine -> repository root
@@ -163,6 +163,38 @@ describe("unused confidence cap (#178 contract)", () => {
     assert.equal(notes.length, 1);
     assert.equal(notes[0]?.kind, "info");
     assert.equal(notes[0]?.summary, "unused confidence capped pending corpus validation");
+  });
+
+  it("composes the caps: computed-high unused is severity medium, displayed confidence medium (#188)", async () => {
+    const result = await withPolicy([
+      finding("unused", "high", "a"),
+      finding("unused", "medium", "b"),
+      finding("should-be-dev", "high", "c"),
+      finding("should-be-dev", "medium", "d"),
+      { ...finding("unused", "high", "e"), severity: "critical" },
+    ]);
+    const get = (dep: string) => result.findings.find((f) => f.dependency === dep)!;
+    assert.equal(get("a").confidence, "medium");
+    assert.equal(get("a").severity, "medium");
+    // --fail-on medium still catches it; --fail-on high still cannot (#173).
+    assert.equal(atOrAboveSeverity(get("a"), "medium"), true);
+    assert.equal(atOrAboveSeverity(get("a"), "high"), false);
+    // Computed medium is not capped and keeps its own severity.
+    assert.equal(get("b").confidence, "medium");
+    assert.equal(get("b").severity, "low");
+    // Other kinds are unaffected.
+    assert.equal(get("c").severity, "medium");
+    assert.equal(get("d").severity, "low");
+    // A policy-supplied severity is overwritten by core's.
+    assert.equal(get("e").severity, "medium");
+    // Every emitted finding is stamped, the run-level notes included.
+    assert.ok(result.findings.every((f) => f.severity !== undefined));
+    assert.equal(
+      result.findings.find((f) => f.rule === "unused-confidence-capped")?.severity,
+      "info",
+    );
+    // The pre-cap confidence does not travel on the output.
+    assert.ok(!JSON.stringify(result).includes("computedConfidence"));
   });
 
   it("never raises confidence and adds no note when nothing was capped", async () => {

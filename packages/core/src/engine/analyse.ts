@@ -17,7 +17,7 @@
 import { type EcosystemAdapter } from "../adapter.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
-import { UNUSED_CONFIDENCE_CAP, capConfidence } from "../report/severity.js";
+import { UNUSED_CONFIDENCE_CAP, capConfidence, severityOf } from "../report/severity.js";
 import { boundSourceChanges } from "./source-changes.js";
 import type {
   AnalysisResult,
@@ -372,6 +372,14 @@ export async function assembleAnalysisResult(
     });
   }
 
+  // Severity is core's output (ADR-0004). Stamp it on every finding BEFORE
+  // the confidence cap below, so the cap limits only the displayed
+  // confidence and severity keeps the computed value (#188). Whatever an
+  // adapter or policy put in `severity` is overwritten.
+  for (let i = 0; i < findings.length; i++) {
+    findings[i] = { ...findings[i]!, severity: severityOf(findings[i]!) };
+  }
+
   // Shipping gate (#178): until the corpus check proves recall, no unused
   // verdict claims more than UNUSED_CONFIDENCE_CAP, whoever produced it.
   let cappedUnused = 0;
@@ -397,6 +405,7 @@ export async function assembleAnalysisResult(
         },
       ],
       confidence: "high",
+      severity: "info",
       limitations: [],
       affectedFiles: [],
     });

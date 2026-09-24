@@ -134,6 +134,12 @@ export type FindingKind =
   | "type-only"
   | "info";
 
+/**
+ * Severity ladder for CI gating and display filtering (see
+ * report/severity.ts for how core derives it).
+ */
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+
 /** A finding. If confidence cannot be established, GhostDeps says so. */
 export interface Finding {
   kind: FindingKind;
@@ -148,6 +154,13 @@ export interface Finding {
   recommendation: string;
   evidence: Evidence[];
   confidence: Confidence;
+  /**
+   * Effective severity, stamped by the engine on every emitted finding
+   * (ADR-0004: severity is core's output). Consumers read it and never
+   * re-derive it from `confidence`, which a display cap (#178) may have
+   * lowered. Any value an adapter or policy sets is overwritten.
+   */
+  severity?: Severity;
   /** Why this finding might be wrong; empty only when evidence is complete. */
   limitations: string[];
   /** Files likely affected by acting on the recommendation. */

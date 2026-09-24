@@ -1,12 +1,13 @@
-import type { Confidence, Finding, FindingKind } from "../types/index.js";
+import type { Confidence, Finding, FindingKind, Severity } from "../types/index.js";
 
-/**
- * Severity ladder for CI gating and display filtering. Derived from kind +
- * confidence, never from the policy rule: the Finding contract leaves
- * derivation to reporters, and this one helper keeps every reporter
- * deriving it the same way.
+export type { Severity };
+
+/*
+ * Severity for CI gating and display filtering. Derived from kind +
+ * confidence, never from the policy rule. The engine derives it once,
+ * before the #178 confidence cap, and stamps it on every emitted finding
+ * (Finding.severity). Consumers read the stamp through effectiveSeverity.
  */
-export type Severity = "critical" | "high" | "medium" | "low" | "info";
 
 /** Highest first; the array index is the rank used for comparisons. */
 export const severityOrder: readonly Severity[] = ["critical", "high", "medium", "low", "info"];
@@ -38,6 +39,11 @@ export const UNUSED_SEVERITY_CAP: Severity = "medium";
  * The lift criterion is the same as UNUSED_SEVERITY_CAP (#172 green for 14
  * consecutive nightly runs). Both caps come off in one PR, with their
  * contract tests updated together.
+ *
+ * Composition (#188): the engine stamps severity BEFORE applying this cap,
+ * so the cap limits only the displayed confidence. An unused finding
+ * computed at high confidence is severity medium (the #173 ceiling) with
+ * displayed confidence medium, not low, so `--fail-on medium` catches it.
  */
 export const UNUSED_CONFIDENCE_CAP: Confidence = "medium";
 
@@ -85,7 +91,16 @@ export function severityOf(finding: Finding): Severity {
   return severityOrder[rank] ?? "info";
 }
 
-/** True when the finding's severity is at or above the threshold. */
+/**
+ * The severity consumers act on: the engine's stamp (Finding.severity).
+ * Only a finding that never went through the engine (a hand-built one in a
+ * test or tool) falls back to deriving it from its own kind and confidence.
+ */
+export function effectiveSeverity(finding: Finding): Severity {
+  return finding.severity ?? severityOf(finding);
+}
+
+/** True when the finding's effective severity is at or above the threshold. */
 export function atOrAboveSeverity(finding: Finding, threshold: Severity): boolean {
-  return severityOrder.indexOf(severityOf(finding)) <= severityOrder.indexOf(threshold);
+  return severityOrder.indexOf(effectiveSeverity(finding)) <= severityOrder.indexOf(threshold);
 }

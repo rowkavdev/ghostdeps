@@ -10,7 +10,7 @@
     },
     {
       "kind": "unused",
-      "severity": "low",
+      "severity": "medium",
       "dependency": "yoctodelay"
     }
   ]

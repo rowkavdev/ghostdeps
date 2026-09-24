@@ -58,7 +58,8 @@ function findingSet(result) {
   return result.findings
     .map((f) => ({
       kind: f.kind,
-      severity: severityOf(f),
+      // The engine stamps severity (#188); derive only for an unstamped finding.
+      severity: f.severity ?? severityOf(f),
       dependency: f.dependency ?? null,
     }))
     .sort((a, b) =>

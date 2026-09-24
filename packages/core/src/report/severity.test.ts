@@ -4,6 +4,7 @@ import type { Confidence, Finding, FindingKind } from "../types/index.js";
 import {
   UNUSED_SEVERITY_CAP,
   atOrAboveSeverity,
+  effectiveSeverity,
   parseSeverity,
   severityOf,
   severityOrder,
@@ -17,6 +18,15 @@ const finding = (kind: FindingKind, confidence: Confidence): Finding => ({
   confidence,
   limitations: [],
   affectedFiles: [],
+});
+
+describe("effectiveSeverity (#188)", () => {
+  it("reads the engine's stamp and derives only for an unstamped finding", () => {
+    const stamped: Finding = { ...finding("unused", "medium"), severity: "medium" };
+    assert.equal(effectiveSeverity(stamped), "medium");
+    assert.equal(atOrAboveSeverity(stamped, "medium"), true);
+    assert.equal(effectiveSeverity(finding("unused", "medium")), "low");
+  });
 });
 
 describe("severityOf", () => {

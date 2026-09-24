@@ -4,6 +4,7 @@ export {
   UNUSED_SEVERITY_CAP,
   capConfidence,
   atOrAboveSeverity,
+  effectiveSeverity,
   parseSeverity,
   severityOf,
   severityOrder,

@@ -44,6 +44,7 @@
       "limitations": [],
       "recommendation": "Unused findings are reported at medium confidence at most until the pinned corpus check has stayed green; review before removing.",
       "rule": "unused-confidence-capped",
+      "severity": "info",
       "summary": "unused confidence capped pending corpus validation"
     },
     {
@@ -71,6 +72,7 @@
       "limitations": [],
       "recommendation": "Remove left-pad from package.json.",
       "rule": "unused",
+      "severity": "medium",
       "summary": "left-pad is declared but never used"
     }
   ],

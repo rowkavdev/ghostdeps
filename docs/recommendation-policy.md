@@ -78,5 +78,14 @@ capped anything, the result carries one run-level `unused-confidence-capped`
 info note ("unused confidence capped pending corpus validation"). The lift
 criterion is the same as the severity cap, and both caps come off in one PR
 with their contract tests.
+
+How the two caps compose (#188): the engine works out each finding's severity
+from its computed confidence, stamps it on the finding (`severity`), and only
+then applies the confidence cap. Consumers read `severity` and never re-derive
+it from the capped confidence. So an `unused` finding computed at high
+confidence is severity medium (the #173 ceiling) with displayed confidence
+medium. It does not drop twice to low, so `--fail-on medium` still catches it.
+The pre-cap confidence is not part of the output. This note comes off with
+both caps in the lift PR.
 `summariseFindings` returns counts by kind, rule and confidence for check-run
 summaries.
