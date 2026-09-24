@@ -42,6 +42,12 @@ Verdicts:
       - imports found only under test/ and build/
 ```
 
+`Transitive dependencies` reads the per-ecosystem graph completeness
+markers (#114): it prints the exact total only when every ecosystem's graphs
+are `complete`, `at least N` when the total is a lower bound (`partial`
+graphs, or a pre-#114 result with no marker), and `unknown` when no usable
+graph was built at all. It never prints `0` for "we could not see".
+
 `Verdicts` expands the non-info findings from the counts: one group per
 kind in canonical order, each verdict with its dependency, summary,
 confidence and rule id, then evidence lines (capped, with a "+N more" note

@@ -76,9 +76,9 @@ describe("renderRepositorySummary", () => {
         { ecosystem: "rust", confidence: "high", evidence: [] },
       ],
       surface: [
-        { ecosystem: "javascript-typescript", direct: 60, transitive: 900 },
-        { ecosystem: "python", direct: 30, transitive: 400 },
-        { ecosystem: "rust", direct: 22, transitive: 182 },
+        { ecosystem: "javascript-typescript", direct: 60, transitive: 900, graphs: "complete" },
+        { ecosystem: "python", direct: 30, transitive: 400, graphs: "complete" },
+        { ecosystem: "rust", direct: 22, transitive: 182, graphs: "complete" },
       ],
     };
 
@@ -165,6 +165,62 @@ describe("renderRepositorySummary", () => {
       "  none",
     ].join("\n");
     assert.equal(renderRepositorySummary(emptyResult()), expected);
+  });
+
+  it("says unknown when every surface entry has graphs: none", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      projects: [rootProject],
+      dependencies: makeDeps(1),
+      detected: [{ ecosystem: "javascript-typescript", confidence: "high", evidence: [] }],
+      surface: [{ ecosystem: "javascript-typescript", direct: 1, transitive: 0, graphs: "none" }],
+    };
+    assert.ok(renderRepositorySummary(result).includes("Transitive dependencies:\n  unknown"));
+  });
+
+  it("marks a partial graph total as a lower bound", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      projects: [rootProject],
+      dependencies: makeDeps(2),
+      detected: [{ ecosystem: "javascript-typescript", confidence: "high", evidence: [] }],
+      surface: [
+        { ecosystem: "javascript-typescript", direct: 2, transitive: 42, graphs: "partial" },
+      ],
+    };
+    assert.ok(renderRepositorySummary(result).includes("Transitive dependencies:\n  at least 42"));
+  });
+
+  it("reads a missing graphs marker as never complete, keeping the lower bound", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      projects: [rootProject],
+      dependencies: makeDeps(1),
+      detected: [{ ecosystem: "javascript-typescript", confidence: "high", evidence: [] }],
+      surface: [{ ecosystem: "javascript-typescript", direct: 1, transitive: 7 }],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(text.includes("Transitive dependencies:\n  at least 7"));
+    assert.ok(!text.includes("Transitive dependencies:\n  7\n"));
+  });
+
+  it("mixes complete and partial graphs into one lower bound", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      projects: [rootProject],
+      dependencies: makeDeps(2),
+      detected: [
+        { ecosystem: "javascript-typescript", confidence: "high", evidence: [] },
+        { ecosystem: "python", confidence: "high", evidence: [] },
+      ],
+      surface: [
+        { ecosystem: "javascript-typescript", direct: 1, transitive: 900, graphs: "complete" },
+        { ecosystem: "python", direct: 1, transitive: 400, graphs: "partial" },
+      ],
+    };
+    assert.ok(
+      renderRepositorySummary(result).includes("Transitive dependencies:\n  at least 1,300"),
+    );
   });
 
   it("says unknown for transitive totals when no graph was built", () => {
