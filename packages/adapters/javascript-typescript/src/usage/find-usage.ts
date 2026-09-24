@@ -3,6 +3,7 @@
  * packages, with file/line evidence. Reads files through the read-only
  * RepositoryHandle only; never executes or resolves anything.
  */
+import { DEFAULT_EXCLUDED_DIRECTORIES, DEFAULT_EXCLUDED_FILE_SUFFIXES } from "@ghostdeps/core";
 import type {
   AdapterContext,
   Dependency,
@@ -16,13 +17,13 @@ import type { FileScanResult } from "./scan.js";
 /** Files larger than this are skipped and reported, not parsed (security-model: parser input limits). */
 export const MAX_SOURCE_BYTES = 1_000_000;
 
-/** Directories never scanned even if the handle lists them. */
-const SKIP_SEGMENTS = new Set(["node_modules", ".git", "bower_components", "jspm_packages"]);
+/** Unresolved dynamic-import limitations recorded individually per file; the rest are summarised. */
+export const MAX_UNRESOLVED_PER_FILE = 20;
 
 export interface RepositoryScan {
   /** Parsed files keyed by repository-relative path. */
   files: Map<string, FileScanResult>;
-  /** Project root ("." or a workspace dir) that owns each scanned file. */
+  /** Project root ("." or a workspace dir) that owns each scanned file. Files outside every root have no entry. */
   owner: Map<string, string>;
   /** Evidence that weakens completeness: unresolvable dynamic imports, skipped files, parse errors. */
   limitations: Evidence[];
@@ -33,8 +34,14 @@ function dirname(path: string): string {
   return i < 0 ? "." : path.slice(0, i);
 }
 
+/**
+ * The RepositoryHandle already applies the scanner's exclusions (#73). This
+ * applies the same core lists again so handles that list more (test
+ * handles, custom callers) never pull vendored or generated code into usage.
+ */
 function isSkipped(path: string): boolean {
-  return path.split("/").some((seg) => SKIP_SEGMENTS.has(seg));
+  if (DEFAULT_EXCLUDED_FILE_SUFFIXES.some((suffix) => path.endsWith(suffix))) return true;
+  return path.split("/").some((seg) => DEFAULT_EXCLUDED_DIRECTORIES.has(seg));
 }
 
 /** Deepest directory containing a package.json that is an ancestor of `file`. */
@@ -47,16 +54,26 @@ function owningRoot(file: string, roots: Set<string>): string | undefined {
   }
 }
 
-const cache = new WeakMap<RepositoryHandle, Promise<RepositoryScan>>();
+/**
+ * Memoised per AdapterContext: one analysis job builds one context, so a
+ * long-lived handle reused across jobs is rescanned each job and never serves
+ * stale results. Entries die with the context.
+ */
+const cache = new WeakMap<AdapterContext, Promise<RepositoryScan>>();
 
-/** Scan every JS/TS source file once per repository handle (memoised). */
-export function scanRepository(repository: RepositoryHandle): Promise<RepositoryScan> {
-  let pending = cache.get(repository);
+/** Scan every JS/TS source file once per analysis context. */
+export function scanForContext(context: AdapterContext): Promise<RepositoryScan> {
+  let pending = cache.get(context);
   if (!pending) {
-    pending = doScan(repository);
-    cache.set(repository, pending);
+    pending = scanRepository(context.repository);
+    cache.set(context, pending);
   }
   return pending;
+}
+
+/** Scan every JS/TS source file in `repository`. Not memoised. */
+export function scanRepository(repository: RepositoryHandle): Promise<RepositoryScan> {
+  return doScan(repository);
 }
 
 async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
@@ -70,7 +87,17 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
   const scan: RepositoryScan = { files: new Map(), owner: new Map(), limitations: [] };
   for (const file of all) {
     if (isSkipped(file) || !scriptKindFor(file)) continue;
-    const root = owningRoot(file, roots) ?? ".";
+    const root = owningRoot(file, roots);
+    if (root === undefined) {
+      // No package.json above it: no project declares its imports, so it is
+      // attributed to nobody rather than guessed into the root.
+      scan.limitations.push({
+        kind: "file-outside-project",
+        statement: `${file} is not inside any package.json project and was not attributed`,
+        file,
+      });
+      continue;
+    }
     let text: string;
     try {
       text = await repository.readFile(file);
@@ -96,8 +123,11 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
         file,
       });
     }
+    let unresolved = 0;
     for (const ref of result.references) {
       if (ref.specifier === undefined) {
+        unresolved += 1;
+        if (unresolved > MAX_UNRESOLVED_PER_FILE) continue;
         scan.limitations.push({
           kind: "dynamic-import-unresolved",
           statement:
@@ -106,6 +136,13 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
           line: ref.line,
         });
       }
+    }
+    if (unresolved > MAX_UNRESOLVED_PER_FILE) {
+      scan.limitations.push({
+        kind: "dynamic-import-unresolved-summary",
+        statement: `${unresolved - MAX_UNRESOLVED_PER_FILE} more unresolvable import/require targets in ${file} were not listed individually`,
+        file,
+      });
     }
   }
   return scan;
@@ -116,7 +153,7 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
  * nested workspace package are attributed to that package, not the root.
  */
 export async function findUsage(context: AdapterContext, dependency: Dependency): Promise<Usage[]> {
-  const scan = await scanRepository(context.repository);
+  const scan = await scanForContext(context);
   const project = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
   const usages: Usage[] = [];
   for (const [file, result] of scan.files) {
@@ -138,12 +175,17 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
   return usages.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
 }
 
-/** Limitations relevant to one project (unresolved dynamic imports, skipped or broken files). */
+/**
+ * Limitations relevant to one project (unresolved dynamic imports, skipped
+ * or broken files). Files with no owner (skipped before attribution, or
+ * outside every project) weaken every project's completeness, so they are
+ * reported to all of them.
+ */
 export async function usageLimitations(
   context: AdapterContext,
   projectPath: string,
 ): Promise<Evidence[]> {
-  const scan = await scanRepository(context.repository);
+  const scan = await scanForContext(context);
   const project = projectPath.replace(/^\.\//, "").replace(/\/$/, "") || ".";
   return scan.limitations.filter((e) => !e.file || (scan.owner.get(e.file) ?? project) === project);
 }
