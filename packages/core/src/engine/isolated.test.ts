@@ -5,9 +5,10 @@
  * and a well-behaved adapter produces the same result as in-process.
  */
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, it } from "node:test";
 import { analyseRepository, assembleAnalysisResult } from "./analyse.js";
 import { analyseRepositoryIsolated, capOutcome, OUTCOME_CAPS } from "./isolated.js";
@@ -185,6 +186,43 @@ describe("worker-thread adapter isolation (#90)", () => {
       assert.equal(result.detected.length, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a specifier resolving inside the analysed repository is rejected before a worker starts (#150)", async () => {
+    const { dir, handle } = await fixtureRepo();
+    const outside = await mkdtemp(join(tmpdir(), "ghostdeps-outside-"));
+    try {
+      // An adapter module inside the analysed tree: repository content must
+      // never choose what code the engine loads. The symlink case points at
+      // it from OUTSIDE the root - a lexical prefix check would miss it.
+      await writeFile(join(dir, "evil-adapter.mjs"), "export default {};");
+      const link = join(outside, "linked-adapter.mjs");
+      await symlink(join(dir, "evil-adapter.mjs"), link);
+      const rejected = [
+        pathToFileURL(join(dir, "evil-adapter.mjs")).href,
+        pathToFileURL(link).href,
+        join(dir, "evil-adapter.mjs"), // absolute path form
+        join(dir, "does-not-exist-yet.mjs"), // non-existent, still inside
+        "./relative-adapter.mjs", // relative: rejected outright
+      ];
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [...rejected, fixture("good.mjs")],
+        adapterTimeoutMs: 30_000,
+      });
+      const findings = result.findings.filter((f) =>
+        f.summary.includes("must be trusted configuration"),
+      );
+      assert.equal(
+        findings.length,
+        rejected.length,
+        `expected ${rejected.length} specifier-rejection findings, got ${JSON.stringify(result.findings.map((f) => f.summary))}`,
+      );
+      // The trusted adapter still ran.
+      assert.equal(result.detected.length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 

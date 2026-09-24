@@ -14,6 +14,9 @@
  * the scan - cheap while adapter count is small, and it keeps untrusted
  * parsing out of the main thread entirely.
  */
+import { realpathSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import type { AnalysisResult, NetworkPolicy } from "../types/index.js";
@@ -70,6 +73,9 @@ export interface IsolatedAnalyseOptions {
    * adapter. TRUSTED CONFIGURATION ONLY: every specifier goes to import()
    * inside the worker, so specifiers must come from CLI flags or project
    * config, never from repository content (manifests, lockfiles, source).
+   * A file URL or absolute path that resolves inside the analysed
+   * repository root is rejected with an info finding before a worker
+   * starts, and relative specifiers are rejected outright (#150).
    */
   adapters: readonly string[];
   /**
@@ -210,6 +216,65 @@ function emptyOutcome(
   };
 }
 
+/**
+ * Enforce the trusted-config rule (#126/#150): adapter specifiers go to
+ * import() in the worker, so they must be CLI/project config, never
+ * repository content. A specifier that is a file URL or filesystem path
+ * resolving inside the analysed repository root is rejected before a
+ * worker starts. Bare package specifiers are left to module resolution
+ * (they come from the consumer's own dependencies, not the analysed repo).
+ */
+/**
+ * Resolve symlinks so containment cannot be bypassed by a link into the
+ * repository (and so a root that is itself a symlink, like macOS
+ * /var -> /private/var, compares correctly). realpathSync.native also
+ * normalises casing on case-insensitive filesystems. A candidate that
+ * does not exist falls back to the realpath of its nearest existing
+ * parent with the remainder re-appended.
+ */
+function realpathOrNearest(target: string): string {
+  const missing: string[] = [];
+  let current = target;
+  for (;;) {
+    try {
+      const real = realpathSync.native(current);
+      return missing.reduceRight((acc, segment) => path.join(acc, segment), real);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return target;
+      missing.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+export function specifierInsideRoot(specifier: string, root: string): boolean {
+  let candidate: string;
+  if (specifier.startsWith("file:")) {
+    try {
+      candidate = fileURLToPath(specifier);
+    } catch {
+      return false;
+    }
+  } else if (path.isAbsolute(specifier)) {
+    candidate = specifier;
+  } else if (specifier.startsWith("./") || specifier.startsWith("../")) {
+    // Rejected outright: import() in the worker resolves relative
+    // specifiers against the worker module, not the caller's cwd, so the
+    // check and the actual load could otherwise disagree.
+    return true;
+  } else {
+    return false;
+  }
+  const realRoot = realpathOrNearest(path.resolve(root));
+  const realCandidate = realpathOrNearest(candidate);
+  const relative = path.relative(realRoot, realCandidate);
+  return (
+    relative === "" ||
+    (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
+  );
+}
+
 /** Run one adapter module in a worker and resolve its outcome; never rejects. */
 export function runAdapterIsolated(
   specifier: string,
@@ -221,6 +286,22 @@ export function runAdapterIsolated(
   heapMb: number,
   debugLog?: (line: string) => void,
 ): Promise<AdapterOutcome> {
+  // Trusted-config rule: never import() code from inside the analysed
+  // repository (#150). Reject before a worker even starts.
+  if (specifierInsideRoot(specifier, repository.scan.root)) {
+    return Promise.resolve(
+      emptyOutcome(
+        specifier,
+        adapterFailure(
+          { ecosystem: specifier },
+          "load",
+          new Error(
+            "adapter specifier must be trusted configuration (absolute path, file: URL, or bare package specifier) and must not resolve inside the analysed repository",
+          ),
+        ),
+      ),
+    );
+  }
   return new Promise((resolve) => {
     // The name shown in findings before the worker tells us the ecosystem.
     let ecosystem = specifier;
