@@ -3,7 +3,14 @@ import { describe, it } from "node:test";
 import { adapterApiVersion, type EcosystemAdapter } from "../adapter.js";
 import { runRecommendationPolicyContractTests } from "../contract-tests/policy.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
-import type { Finding, ProjectRef, RepositoryHandle } from "../types/index.js";
+import { defaultPolicy } from "../recommend/policy.js";
+import type {
+  Finding,
+  ProjectRef,
+  RepositoryHandle,
+  SourceLineChanges,
+  Usage,
+} from "../types/index.js";
 import {
   analyseRepository,
   type RecommendationInput,
@@ -135,3 +142,106 @@ describe("analyseRepository pullRequestChanges (#128)", () => {
 });
 
 runRecommendationPolicyContractTests("example scoped unused policy", scopedUnused);
+
+describe("PR source changes reach usage analysis (#101)", () => {
+  /** Matches removed lines naively by name; real adapters own the matching. */
+  const seen: (readonly SourceLineChanges[] | undefined)[] = [];
+  const usageAdapter: EcosystemAdapter = {
+    ...adapter,
+    capabilities: new Set(["usageAnalysis", "referenceAnalysis"]),
+    async listDirectDependencies() {
+      return ["dropped", "kept"].map((name) => ({
+        name,
+        constraint: "^1.0.0",
+        kind: "runtime" as const,
+        project,
+        declaredIn: "package.json",
+      }));
+    },
+    async findUsage(context, dependency) {
+      seen.push(context.pullRequestSourceChanges);
+      const usages: Usage[] = [];
+      if (dependency.name === "kept") {
+        usages.push({ dependency: "kept", file: "src/a.ts", line: 1, form: "static", symbols: [] });
+      }
+      for (const file of context.pullRequestSourceChanges ?? []) {
+        for (const l of file.removedLines) {
+          if (l.text.includes(`"${dependency.name}"`)) {
+            usages.push({
+              dependency: dependency.name,
+              file: file.path,
+              line: l.line,
+              form: "static",
+              symbols: [],
+              removedInPr: true,
+            });
+          }
+        }
+      }
+      return { usages, referenceAnalysisComplete: true };
+    },
+  };
+  const sourceChanges: SourceLineChanges[] = [
+    {
+      path: "src/a.ts",
+      removedLines: [
+        { line: 4, text: 'import d from "dropped";' },
+        { line: 5, text: 'import k from "kept";' },
+      ],
+      addedLines: [],
+    },
+  ];
+
+  it("reports a PR-scoped unused finding when the PR removed the last use", async () => {
+    seen.length = 0;
+    const result = await analyseRepository(repo, {
+      adapters: [usageAdapter],
+      recommend: defaultPolicy,
+      pullRequestChanges: [],
+      pullRequestSourceChanges: sourceChanges,
+    });
+    assert.deepEqual(seen[0], sourceChanges);
+    const verdicts = result.findings.filter((f) => f.kind === "unused");
+    assert.deepEqual(
+      verdicts.map((f) => [f.rule, f.dependency]),
+      [["removed-last-usage", "dropped"]],
+    );
+    assert.deepEqual(
+      verdicts[0]?.evidence.find((e) => e.kind === "usage-removed-in-pr"),
+      {
+        kind: "usage-removed-in-pr",
+        statement: "this pull request removes a use of dropped",
+        file: "src/a.ts",
+        line: 4,
+      },
+    );
+    assert.deepEqual(verdicts[0]?.affectedFiles, ["package.json", "src/a.ts"]);
+    // "kept" is still used at head: its removed line is not a verdict.
+    assert.ok(!result.findings.some((f) => f.dependency === "kept"));
+  });
+
+  it("never forwards source changes on a full scan", async () => {
+    seen.length = 0;
+    await analyseRepository(repo, {
+      adapters: [usageAdapter],
+      recommend: defaultPolicy,
+      pullRequestSourceChanges: sourceChanges,
+    });
+    assert.ok(seen.length > 0);
+    assert.ok(seen.every((s) => s === undefined));
+  });
+
+  it("notes capped source changes in the result", async () => {
+    const result = await analyseRepository(repo, {
+      adapters: [usageAdapter],
+      recommend: defaultPolicy,
+      pullRequestChanges: [],
+      pullRequestSourceChanges: [
+        { path: "../escape.ts", removedLines: [], addedLines: [] },
+        ...sourceChanges,
+      ],
+    });
+    assert.ok(result.findings.some((f) => f.rule === "pr-source-changes-capped"));
+    assert.ok(result.findings.some((f) => f.rule === "removed-last-usage"));
+  });
+});

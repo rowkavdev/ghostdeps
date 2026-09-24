@@ -9,15 +9,22 @@ raises it, and ambiguous evidence never produces a removal verdict.
 Each rule is a pure function over one dependency and the pre-indexed facts.
 Rules run in order and the first finding for a dependency wins.
 
-| Rule id                 | Kind            | Confidence | When                                                                                                                                                  |
-| ----------------------- | --------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unused`                | `unused`        | high       | No usage of any kind, not allowlisted, no used `@types` companion, no other direct dependency depends on it, and the ecosystem is reference-analysed. |
-| `unverified-no-imports` | `info`          | low        | No imports found, but scripts/config were not checked, or another direct dependency depends on it. Manual review only.                                |
-| `type-only`             | `type-only`     | medium     | A runtime dependency whose every usage is a type-only import, in an ecosystem that strips types.                                                      |
-| `should-be-dev`         | `should-be-dev` | medium     | A runtime dependency imported only from test, build or config paths.                                                                                  |
+| Rule id                 | Kind            | Confidence | When                                                                                                                                                                                        |
+| ----------------------- | --------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `removed-last-usage`    | `unused`        | high       | PR mode only (#101): still declared, no usage at head, and usage analysis found it on a line the PR removed (`Usage.removedInPr`). Same guards as `unused`; the removed lines are evidence. |
+| `unused`                | `unused`        | high       | No usage of any kind, not allowlisted, no used `@types` companion, no other direct dependency depends on it, and the ecosystem is reference-analysed.                                       |
+| `unverified-no-imports` | `info`          | low        | No imports found, but scripts/config were not checked, or another direct dependency depends on it. Manual review only.                                                                      |
+| `type-only`             | `type-only`     | medium     | A runtime dependency whose every usage is a type-only import, in an ecosystem that strips types.                                                                                            |
+| `should-be-dev`         | `should-be-dev` | medium     | A runtime dependency imported only from test, build or config paths.                                                                                                                        |
 
 Peer and optional dependencies, and non-registry specifiers (workspace, link,
 file, git), never get a no-imports verdict.
+
+A usage with `removedInPr: true` sits on a line the pull request removed. No
+rule counts it as usage at head. In PR mode, a dependency with such a usage
+counts as touched by the PR, so `removed-last-usage` can report it even when
+the PR changed no manifest. The policy never matches diff lines itself:
+adapters do that in usage analysis, which keeps core ecosystem-free.
 
 ## What counts as usage
 

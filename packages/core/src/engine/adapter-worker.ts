@@ -18,7 +18,7 @@
  */
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import type { EcosystemAdapter } from "../adapter.js";
-import type { NetworkPolicy } from "../types/index.js";
+import type { NetworkPolicy, SourceLineChanges } from "../types/index.js";
 import { FsRepositoryHandle } from "./scanner/handle.js";
 import type { ScanResult } from "./scanner/scanner.js";
 import { runAdapter } from "./run-adapter.js";
@@ -31,6 +31,8 @@ export interface AdapterWorkerData {
   detectionThreshold: number;
   adapterTimeoutMs: number;
   usageConcurrency: number;
+  /** PR mode (#101): bounded by the main thread before cloning. */
+  pullRequestSourceChanges?: SourceLineChanges[];
 }
 
 function resolveAdapter(module: Record<string, unknown>, specifier: string): EcosystemAdapter {
@@ -72,6 +74,7 @@ async function main(): Promise<void> {
     data.adapterTimeoutMs,
     data.usageConcurrency,
     (stage) => port.postMessage({ type: "stage", stage }),
+    data.pullRequestSourceChanges,
   );
   port.postMessage({ type: "outcome", outcome });
 }

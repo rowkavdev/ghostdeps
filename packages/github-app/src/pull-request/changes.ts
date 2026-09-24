@@ -77,6 +77,7 @@ const empty = (limitation: string): PullRequestDependencyChanges => ({
   lockfilesChanged: [],
   manifestsWithoutLockfileChange: [],
   changedSourceFiles: [],
+  sourceLineChanges: [],
   limitations: [limitation],
 });
 

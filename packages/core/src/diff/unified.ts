@@ -281,6 +281,13 @@ export function parseUnifiedDiff(input: string, limits: Partial<DiffParseLimits>
   return { files, truncated, problems };
 }
 
+/** Lines removed from the old version of a file, with old-file line numbers. */
+export function removedLines(file: FileDiff): { line: number; text: string }[] {
+  return file.hunks.flatMap((h) =>
+    h.lines.filter((l) => l.type === "del").map((l) => ({ line: l.oldLine ?? 0, text: l.text })),
+  );
+}
+
 /** Lines added in the new version of a file, with new-file line numbers. */
 export function addedLines(file: FileDiff): { line: number; text: string }[] {
   return file.hunks.flatMap((h) =>

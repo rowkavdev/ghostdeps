@@ -4,7 +4,12 @@
  * logic must not fork: both isolation tiers run adapters through the same
  * stage sequence, error-isolation contract and timeout shape.
  */
-import { adapterApiVersion, normaliseUsageResult, type EcosystemAdapter } from "../adapter.js";
+import {
+  adapterApiVersion,
+  normaliseUsageResult,
+  type AdapterContext,
+  type EcosystemAdapter,
+} from "../adapter.js";
 import type {
   Dependency,
   DependencyGraph,
@@ -13,6 +18,7 @@ import type {
   NetworkPolicy,
   ProjectRef,
   RepositoryHandle,
+  SourceLineChanges,
   Usage,
 } from "../types/index.js";
 
@@ -144,6 +150,8 @@ export async function runAdapter(
   timeoutMs: number,
   usageConcurrency: number,
   onStage?: StageObserver,
+  /** PR mode (#101): already bounded by the engine. */
+  pullRequestSourceChanges?: readonly SourceLineChanges[],
 ): Promise<AdapterOutcome> {
   const outcome: AdapterOutcome = {
     ecosystem: adapter.ecosystem,
@@ -154,7 +162,8 @@ export async function runAdapter(
     findings: [],
   };
   const controller = new AbortController();
-  const context = { repository, network, signal: controller.signal };
+  const context: AdapterContext = { repository, network, signal: controller.signal };
+  if (pullRequestSourceChanges) context.pullRequestSourceChanges = pullRequestSourceChanges;
 
   if (!apiCompatible(adapter.apiVersion)) {
     outcome.findings.push({
