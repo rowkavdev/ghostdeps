@@ -65,6 +65,41 @@ describe("renderCheck", () => {
     assert.equal(out.output.annotations.length, 0);
   });
 
+  const capNote: Finding = {
+    ...finding(),
+    kind: "info",
+    summary: "unused confidence capped pending corpus validation",
+    evidence: [{ kind: "unused-confidence-capped", statement: "capped" }],
+  };
+  delete (capNote as { dependency?: string }).dependency;
+
+  it("keeps run-level notes out of the title, count and headline (#195)", () => {
+    const unused = finding({ confidence: "medium" });
+    const out = renderCheck(result([capNote, unused]), added);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, "1 dependency finding to review");
+    const s = out.output.summary;
+    assert.match(s, /^GhostDeps found 1 finding worth review/);
+    assert.doesNotMatch(s, /### High confidence/);
+    assert.match(s, /1 lower-confidence finding/);
+    const notesAt = s.indexOf("### Notes");
+    assert.ok(notesAt > s.indexOf("left\\-pad"), "notes come after the findings");
+    assert.match(s.slice(notesAt), /unused confidence capped/);
+  });
+
+  it("is success with notes listed when only run-level notes remain", () => {
+    const out = renderCheck(result([capNote]), added);
+    assert.equal(out.conclusion, "success");
+    assert.equal(out.output.title, quietSummary);
+    assert.match(out.output.summary, new RegExp(`^${quietSummary}\\n\\n### Notes`));
+    assert.equal(out.output.annotations.length, 0);
+  });
+
+  it("still counts a dependency-level info finding as a finding", () => {
+    const out = renderCheck(result([finding({ kind: "info", confidence: "low" })]), added);
+    assert.equal(out.output.title, "1 dependency finding to review");
+  });
+
   it("is neutral, never failure, when there are findings", () => {
     assert.equal(
       renderCheck(result([finding({ confidence: "low" })]), added).conclusion,
