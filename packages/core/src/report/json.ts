@@ -64,8 +64,26 @@ const findingOrder = by<Finding>(
   (f) => f.evidence[0]?.line ?? 0,
   // Last resort: the whole finding, so equal-looking findings from
   // concurrently running adapters still land in one fixed order.
-  (f) => JSON.stringify(canonical(f)),
+  (f) => sortKey(f),
 );
+/**
+ * Content key for the last-resort tie-break. Never throws: sorting runs
+ * inside the engine (normaliseAnalysisResult), and one odd value must not
+ * abort a whole analysis. Non-plain values are still rejected, loudly, by
+ * renderJsonReport.
+ */
+function sortKey(value: unknown): string {
+  try {
+    return JSON.stringify(canonical(value));
+  } catch {
+    try {
+      return JSON.stringify(value) ?? "";
+    } catch {
+      return "";
+    }
+  }
+}
+
 /** Sort keys recursively, dropping undefined. schemaVersion stays first at the top. */
 function canonical(value: unknown, top = false): Json {
   if (value === null || typeof value === "boolean" || typeof value === "string") return value;

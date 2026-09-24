@@ -116,9 +116,9 @@ async function mapBounded<T, R>(
 /**
  * True when a value is plain JSON data: null, booleans, strings, finite
  * numbers, arrays and plain objects, nested at most `depth` levels. The
- * reporter's canonical ordering throws on anything else (#98), so findings
- * are checked here before they reach it: one bad finding must not abort
- * the whole analysis.
+ * JSON reporter (renderJsonReport) throws on anything else (#98), so
+ * findings are checked here before they reach it: one bad finding must not
+ * abort the whole analysis. The canonical sort itself never throws (#102).
  */
 function isPlainData(value: unknown, depth = 32): boolean {
   if (depth < 0) return false;
