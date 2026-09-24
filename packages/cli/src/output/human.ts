@@ -1,4 +1,4 @@
-import type { AnalysisResult, Finding, FindingKind } from "@ghostdeps/core";
+import type { AnalysisResult, Finding, FindingKind, SurfaceEntry } from "@ghostdeps/core";
 import { escapeTerminal } from "./escape.js";
 
 /**
@@ -100,11 +100,21 @@ function renderVerdicts(findings: readonly Finding[]): string[] {
 }
 
 /**
+ * Transitive totals come from `surface`, read through the #114 completeness
+ * marker: "complete" makes the sum exact, anything else makes it a lower
+ * bound, and no usable graph at all makes it unknown. A missing marker reads
+ * as unknown, never as complete - conservative by design.
+ */
+function transitiveSummary(surface: readonly SurfaceEntry[]): string {
+  if (surface.length === 0) return "unknown";
+  const lower = surface.reduce((total, s) => total + s.transitive, 0);
+  if (surface.every((s) => s.graphs === "complete")) return groupThousands(lower);
+  if (lower > 0) return `at least ${groupThousands(lower)}`;
+  return "unknown";
+}
+
+/**
  * Render the repository summary for a full scan.
- *
- * Transitive totals come from `surface`. When the engine could not build a
- * graph for any project (no lockfiles), surface is empty and the summary
- * says "unknown" rather than guessing - conservative by design.
  */
 export function renderRepositorySummary(result: AnalysisResult): string {
   const languages = unique(result.detected.map((d) => ecosystemName(d.ecosystem)));
@@ -115,10 +125,7 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     ),
   );
   const direct = result.dependencies.length;
-  const transitive =
-    result.surface.length > 0
-      ? groupThousands(result.surface.reduce((total, s) => total + s.transitive, 0))
-      : "unknown";
+  const transitive = transitiveSummary(result.surface);
 
   const counts = new Map<FindingKind, number>();
   for (const finding of result.findings) {

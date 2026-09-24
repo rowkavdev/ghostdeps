@@ -75,7 +75,8 @@ describe("ghostdeps scan --json", () => {
     assert.match(text, /Languages:\n {2}JavaScript\/TypeScript\n/);
     assert.match(text, /Package managers:\n/);
     assert.match(text, /Direct dependencies:\n {2}\d/);
-    assert.match(text, /Transitive dependencies:\n/);
+    // No lockfile: the graph completeness marker (#114) makes this unknown, never 0.
+    assert.match(text, /Transitive dependencies:\n {2}unknown/);
     // The unused verdict must be visible in the summary: "Findings: none"
     // would read as an all-clear.
     assert.match(text, /Findings:\n {2}1 unused\n/);
