@@ -1,0 +1,8 @@
+{
+  "description": "Regression from vite (playground/optimize-deps, playground/resolve): vuex and normalize.css are only imported from a <script type=\"module\"> in index.html. They must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "vuex" },
+    { "kind": "unused", "dependency": "normalize.css" }
+  ]
+}

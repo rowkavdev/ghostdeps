@@ -115,6 +115,32 @@ describe("scanSource", () => {
     assert.deepEqual(refs, []);
   });
 
+  it("treats createRequire-bound functions as require (vite plugin-legacy, pnpapi)", () => {
+    const refs = byPkg(
+      "a.mjs",
+      [
+        `import { createRequire } from "node:module";`,
+        `import module from "node:module";`,
+        `const _require = createRequire(import.meta.url);`,
+        `const version = _require("core-js/package.json").version;`,
+        `_require.resolve("systemjs/dist/s.min.js");`,
+        `const pnp = createRequire(import.meta.url)("pnpapi");`,
+        `module.createRequire(import.meta.url)("via-module");`,
+        `const other = makeThing(); other("not-a-dep");`,
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      refs.map((r) => [r.packageName, r.form, r.line]),
+      [
+        ["core-js", "require", 4],
+        ["systemjs", "require", 5],
+        ["pnpapi", "require", 6],
+        ["via-module", "require", 7],
+      ],
+    );
+    assert.deepEqual(refs[0]?.symbols, ["version"]);
+  });
+
   it("flags syntax errors but still returns what it could read", () => {
     const res = scanSource("a.ts", `import a from "left-pad";\nconst = ;`);
     assert.equal(res.parseErrors, true);

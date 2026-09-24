@@ -1,0 +1,12 @@
+{
+  "name": "fixture-refs-create-require",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "core-js": "^3.40.0"
+  },
+  "devDependencies": {
+    "@types/pnpapi": "^0.0.5"
+  }
+}

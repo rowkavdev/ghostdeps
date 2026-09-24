@@ -12,6 +12,7 @@ import type {
   Usage,
 } from "@ghostdeps/core";
 import { AliasResolver } from "./aliases.js";
+import { extractScriptBlocks, isEmbeddedScriptFile } from "./embedded.js";
 import { scanSource, scriptKindFor } from "./scan.js";
 import type { FileScanResult } from "./scan.js";
 
@@ -40,6 +41,8 @@ export interface RepositoryScan {
   byProject: Map<string, Evidence[]>;
   /** Bounded limitations that apply to every project (files outside all projects). */
   shared: Evidence[];
+  /** Every project root ("." or a workspace dir) found by package.json. */
+  roots: Set<string>;
 }
 
 function dirname(path: string): string {
@@ -117,6 +120,32 @@ export function scanRepository(repository: RepositoryHandle): Promise<Repository
   return doScan(repository);
 }
 
+/**
+ * Scan the script blocks of an HTML page or single-file component
+ * (.vue/.svelte/.astro) as one file, with lines mapped back to the file.
+ * Style blocks and templates are not read.
+ */
+function scanEmbedded(file: string, text: string, limitations: Evidence[]): FileScanResult {
+  const { blocks, dropped } = extractScriptBlocks(file, text);
+  const result: FileScanResult = { file, references: [], parseErrors: false };
+  for (const block of blocks) {
+    const part = scanSource(file, block.code, block.kind);
+    for (const ref of part.references) {
+      ref.line += block.line - 1;
+      result.references.push(ref);
+    }
+    if (part.parseErrors) result.parseErrors = true;
+  }
+  if (dropped > 0) {
+    limitations.push({
+      kind: "script-blocks-unscanned",
+      statement: `${dropped} more script blocks in ${file} were not scanned`,
+      file,
+    });
+  }
+  return result;
+}
+
 async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
   const all = (await repository.listFiles()).map((f) => f.replace(/^\.\//, ""));
   const roots = new Set<string>();
@@ -131,6 +160,7 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     limitations: [],
     byProject: new Map(),
     shared: [],
+    roots,
   };
   const aliases = new AliasResolver(
     repository,
@@ -138,7 +168,8 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
   );
   let outside = 0;
   for (const file of all) {
-    if (isSkipped(file) || !scriptKindFor(file)) continue;
+    const embedded = isEmbeddedScriptFile(file);
+    if (isSkipped(file) || !(embedded || scriptKindFor(file))) continue;
     const root = owningRoot(file, roots);
     if (root === undefined) {
       // No package.json above it: no project declares its imports, so it is
@@ -171,7 +202,7 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
       });
       continue;
     }
-    const result = scanSource(file, text);
+    const result = embedded ? scanEmbedded(file, text, limitations) : scanSource(file, text);
     await applyAliases(aliases, file, result);
     scan.files.set(file, result);
     scan.owner.set(file, root);
@@ -224,18 +255,131 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
   return scan;
 }
 
+type IndexEntry = { file: string; ref: FileScanResult["references"][number] };
+
+/** References grouped by package name, built once per scan. */
+const indexes = new WeakMap<RepositoryScan, Map<string, IndexEntry[]>>();
+
+function indexFor(scan: RepositoryScan): Map<string, IndexEntry[]> {
+  let index = indexes.get(scan);
+  if (!index) {
+    index = new Map();
+    for (const [file, result] of scan.files) {
+      for (const ref of result.references) {
+        if (ref.packageName === undefined) continue;
+        const list = index.get(ref.packageName);
+        if (list) list.push({ file, ref });
+        else index.set(ref.packageName, [{ file, ref }]);
+      }
+    }
+    indexes.set(scan, index);
+  }
+  return index;
+}
+
+const DECLARATION_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const;
+
+/** Names each project root declares, read once per analysis context. Unreadable manifests declare nothing. */
+const declaredCaches = new WeakMap<AdapterContext, Promise<Map<string, Set<string>>>>();
+
+function declaredFor(
+  context: AdapterContext,
+  scan: RepositoryScan,
+): Promise<Map<string, Set<string>>> {
+  let pending = declaredCaches.get(context);
+  if (!pending) {
+    pending = (async () => {
+      const out = new Map<string, Set<string>>();
+      for (const root of scan.roots) {
+        const names = new Set<string>();
+        out.set(root, names);
+        try {
+          const doc: unknown = JSON.parse(
+            await context.repository.readFile(
+              root === "." ? "package.json" : `${root}/package.json`,
+            ),
+          );
+          if (typeof doc !== "object" || doc === null) continue;
+          for (const field of DECLARATION_FIELDS) {
+            const map = Object.hasOwn(doc, field)
+              ? (doc as Record<string, unknown>)[field]
+              : undefined;
+            if (typeof map === "object" && map !== null && !Array.isArray(map)) {
+              for (const name of Object.keys(map)) names.add(name);
+            }
+          }
+        } catch {
+          // Unreadable or malformed: declares nothing, so ancestors stay credited (safe direction).
+        }
+      }
+      return out;
+    })();
+    declaredCaches.set(context, pending);
+  }
+  return pending;
+}
+
+function normaliseProject(path: string): string {
+  return path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
+}
+
+function isWithin(owner: string, project: string): boolean {
+  return project === "." || owner === project || owner.startsWith(`${project}/`);
+}
+
 /**
- * Usages of `dependency` inside its declaring project. Files belonging to a
- * nested workspace package are attributed to that package, not the root.
+ * Whether a reference in a file owned by `owner` resolves to `name` as
+ * declared by `project`. Node and pnpm resolve a bare specifier by walking up
+ * node_modules, so a nested project that does not declare `name` itself
+ * falls through to the nearest ancestor project that does.
+ */
+function resolvesTo(
+  owner: string,
+  project: string,
+  name: string,
+  declared: Map<string, Set<string>>,
+): boolean {
+  if (owner === project) return true;
+  // Only a real project (one with a package.json) is resolved from nested projects.
+  if (!declared.has(project) || !isWithin(owner, project)) return false;
+  for (let dir = owner; dir !== project; dir = dirname(dir)) {
+    if (declared.get(dir)?.has(name)) return false;
+    if (dir === ".") return false;
+  }
+  return true;
+}
+
+/** `@types/foo` -> `foo`, `@types/scope__pkg` -> `@scope/pkg`; undefined for other names. */
+function typesTarget(name: string): string | undefined {
+  if (!name.startsWith("@types/")) return undefined;
+  const bare = name.slice("@types/".length);
+  if (!bare) return undefined;
+  const i = bare.indexOf("__");
+  return i > 0 ? `@${bare.slice(0, i)}/${bare.slice(i + 2)}` : bare;
+}
+
+/**
+ * Usages of `dependency` from files its declaring project resolves: the
+ * project's own files, plus files of nested projects that do not declare the
+ * name themselves. `@types/foo` is also used wherever `foo` is referenced,
+ * declared or not (e.g. `pnpapi`, provided at runtime by Yarn PnP).
  */
 export async function findUsage(context: AdapterContext, dependency: Dependency): Promise<Usage[]> {
   const scan = await scanForContext(context);
-  const project = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
+  const index = indexFor(scan);
+  const project = normaliseProject(dependency.project.path);
+  const declared = await declaredFor(context, scan);
+  const typed = typesTarget(dependency.name);
   const usages: Usage[] = [];
-  for (const [file, result] of scan.files) {
-    if (scan.owner.get(file) !== project) continue;
-    for (const ref of result.references) {
-      if (ref.packageName !== dependency.name) continue;
+  for (const target of typed ? [dependency.name, typed] : [dependency.name]) {
+    for (const { file, ref } of index.get(target) ?? []) {
+      const owner = scan.owner.get(file);
+      if (owner === undefined || !resolvesTo(owner, project, dependency.name, declared)) continue;
       const usage: Usage = {
         dependency: dependency.name,
         file,
@@ -244,7 +388,8 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
         symbols: [...new Set(ref.symbols)],
       };
       // Only `import type` / `export type` / `typeof import()` - erased at runtime.
-      if (ref.typeOnly) usage.typeOnly = true;
+      // A types package is always type-only usage.
+      if (ref.typeOnly || target !== dependency.name) usage.typeOnly = true;
       usages.push(usage);
     }
   }
@@ -252,15 +397,31 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
 }
 
 /**
- * Limitations relevant to one project (unresolved dynamic imports, skipped
- * or broken files), plus the bounded shared set for files outside every
- * project, which weakens every project's completeness. O(1) lookup per call.
+ * Limitations relevant to one project: its own (unresolved dynamic imports,
+ * skipped or broken files), those of nested projects (their unresolved
+ * requires can fall through to this project's declarations), plus the
+ * bounded shared set for files outside every project.
  */
 export async function usageLimitations(
   context: AdapterContext,
   projectPath: string,
 ): Promise<Evidence[]> {
   const scan = await scanForContext(context);
-  const project = projectPath.replace(/^\.\//, "").replace(/\/$/, "") || ".";
-  return [...(scan.byProject.get(project) ?? []), ...scan.shared];
+  const project = normaliseProject(projectPath);
+  const out: Evidence[] = [];
+  for (const [root, list] of scan.byProject) {
+    if (root === project) {
+      out.push(...list);
+    } else if (scan.roots.has(project) && isWithin(root, project)) {
+      // Upward only: a nested project's gaps reach its ancestors, never siblings or descendants.
+      const to = project === "." ? "the root project" : project;
+      for (const e of list) {
+        out.push({
+          ...e,
+          statement: `${e.statement} (import gap in nested project ${root}; it can fall through to ${to})`,
+        });
+      }
+    }
+  }
+  return [...out, ...scan.shared];
 }

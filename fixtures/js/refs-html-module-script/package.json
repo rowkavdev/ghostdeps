@@ -1,0 +1,9 @@
+{
+  "name": "fixture-refs-html-module-script",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "normalize.css": "^8.0.1",
+    "vuex": "^4.1.0"
+  }
+}

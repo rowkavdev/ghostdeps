@@ -45,6 +45,10 @@ export function parseSpecifier(specifier: string): ParsedSpecifier {
   if (spec.startsWith("node:")) return { kind: "builtin" };
   // Any "scheme:" prefix (https:, data:, file:, bun:, npm:, jsr:, virtual: ...).
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(spec)) return { kind: "url" };
+  // Bundler resource queries ("normalize.css?inline", "x/logo.svg?url") still name the package.
+  const query = spec.indexOf("?");
+  if (query === 0) return { kind: "invalid" };
+  if (query > 0) return parseSpecifier(spec.slice(0, query));
 
   const parts = spec.split("/");
   let name: string;

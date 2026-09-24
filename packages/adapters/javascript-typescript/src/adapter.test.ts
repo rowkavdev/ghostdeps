@@ -106,6 +106,35 @@ describe("reference analysis completeness (#132)", () => {
   });
 });
 
+describe("real-repo import regressions (vite hand-check after #176)", () => {
+  const adapter = createJavaScriptTypeScriptAdapter();
+  const dep = (name: string): Dependency => ({
+    name,
+    constraint: "*",
+    kind: "runtime",
+    project: root,
+    declaredIn: "package.json",
+  });
+  const cases = [
+    ["refs-html-module-script", "vuex", "index.html"],
+    ["refs-html-module-script", "normalize.css", "index.html"],
+    ["refs-vue-sfc", "@iconify/vue", "src/Community.vue"],
+    ["refs-root-dep-from-member", "execa", "packages/create-app/__tests__/cli.spec.ts"],
+    ["refs-create-require", "core-js", "src/index.ts"],
+    ["refs-create-require", "@types/pnpapi", "src/index.ts"],
+  ] as const;
+  for (const [fixture, name, file] of cases) {
+    it(`${fixture}: ${name} has import usage in ${file} and the analysis is complete`, async () => {
+      const r = normaliseUsageResult(await adapter.findUsage!(ctx(fixture), dep(name)));
+      assert.ok(
+        r.usages.some((u) => u.file === file),
+        JSON.stringify(r.usages),
+      );
+      assert.equal(r.referenceAnalysisComplete, true);
+    });
+  }
+});
+
 describe("real-repo coverage regressions (validation pass after #164)", () => {
   const adapter = createJavaScriptTypeScriptAdapter();
   const dev = (name: string): Dependency => ({

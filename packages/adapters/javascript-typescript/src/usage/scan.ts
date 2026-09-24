@@ -62,8 +62,8 @@ function stringValue(node: ts.Node | undefined): string | undefined {
   return undefined;
 }
 
-export function scanSource(file: string, text: string): FileScanResult {
-  const kind = scriptKindFor(file) ?? ts.ScriptKind.TS;
+export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKind): FileScanResult {
+  const kind = scriptKind ?? scriptKindFor(file) ?? ts.ScriptKind.TS;
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
   const references: ImportReference[] = [];
   /** Local binding name -> references it was bound from (for member-access symbols). */
@@ -132,6 +132,34 @@ export function scanSource(file: string, text: string): FileScanResult {
     }
   };
 
+  /** `createRequire(...)` / `module.createRequire(...)`, which returns a require function. */
+  const isCreateRequire = (node: ts.Node): boolean =>
+    ts.isCallExpression(node) &&
+    ((ts.isIdentifier(node.expression) && node.expression.text === "createRequire") ||
+      (ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "createRequire"));
+
+  // Names bound to a require function: `require` itself plus
+  // `const r = createRequire(import.meta.url)`. Scoping is not tracked; a
+  // shadowed name can only add a reference, never hide one.
+  const requireNames = new Set(["require"]);
+  const findRequireAliases = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isCreateRequire(node.initializer)
+    ) {
+      requireNames.add(node.name.text);
+    }
+    ts.forEachChild(node, findRequireAliases);
+  };
+  if (text.includes("createRequire")) findRequireAliases(sf);
+
+  /** A callee that behaves like `require`: a require name, or `createRequire(...)` called directly. */
+  const isRequireFunction = (callee: ts.Node): boolean =>
+    (ts.isIdentifier(callee) && requireNames.has(callee.text)) || isCreateRequire(callee);
+
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node)) {
       const spec = stringValue(node.moduleSpecifier);
@@ -182,18 +210,13 @@ export function scanSource(file: string, text: string): FileScanResult {
           [],
         );
         bindDeclaration(node, ref, "*");
-      } else if (
-        ts.isIdentifier(callee) &&
-        callee.text === "require" &&
-        node.arguments.length >= 1
-      ) {
+      } else if (isRequireFunction(callee) && node.arguments.length >= 1) {
         const spec = stringValue(arg);
         const ref = add(node, spec, spec === undefined ? "unknown" : "require", []);
         bindDeclaration(node, ref, "default");
       } else if (
         ts.isPropertyAccessExpression(callee) &&
-        ts.isIdentifier(callee.expression) &&
-        callee.expression.text === "require" &&
+        isRequireFunction(callee.expression) &&
         callee.name.text === "resolve" &&
         node.arguments.length >= 1
       ) {

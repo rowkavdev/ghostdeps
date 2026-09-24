@@ -42,4 +42,17 @@ describe("parseSpecifier", () => {
       assert.notEqual(parseSpecifier(s).kind, "package", JSON.stringify(s));
     }
   });
+  it("strips bundler resource queries (normalize.css?inline)", () => {
+    assert.deepEqual(parseSpecifier("normalize.css?inline"), {
+      kind: "package",
+      packageName: "normalize.css",
+    });
+    assert.deepEqual(parseSpecifier("@scope/icons/logo.svg?url"), {
+      kind: "package",
+      packageName: "@scope/icons",
+      subpath: "logo.svg",
+    });
+    assert.equal(parseSpecifier("./local.css?inline").kind, "relative");
+    assert.equal(parseSpecifier("?x").kind, "invalid");
+  });
 });
