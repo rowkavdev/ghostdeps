@@ -381,17 +381,24 @@ export async function assembleAnalysisResult(
   // the emission cap trims the output only and never changes a verdict.
   const unified = buildUnifiedGraph(graphs, dependencies, surface, context.maxGraphNodes);
 
-  // Cross-ecosystem capability overlap (#55): info findings with a
-  // dependency, added after the policy so they never feed a verdict. In a
-  // PR, only packages the PR added are reported.
-  findings.push(...crossEcosystemOverlaps(dependencies, pullRequestChanges));
-
   // Severity is core's output (ADR-0004). Stamp it on every finding BEFORE
   // the confidence cap below, so the cap limits only the displayed
   // confidence and severity keeps the computed value (#188). Whatever an
   // adapter or policy put in `severity` is overwritten.
+  // `awareness` (#234) is core's call, made by the rule that emits the
+  // finding. Adapters and policies can't set it: strip it here (fail-closed).
   for (let i = 0; i < findings.length; i++) {
-    findings[i] = { ...findings[i]!, severity: severityOf(findings[i]!) };
+    const finding: Finding = { ...findings[i]! };
+    delete finding.awareness;
+    findings[i] = { ...finding, severity: severityOf(finding) };
+  }
+
+  // Cross-ecosystem capability overlap (#55): awareness-only info findings
+  // with a dependency, added after the policy so they never feed a verdict
+  // and after the strip above so they keep `awareness`. In a PR, only
+  // packages the PR added are reported.
+  for (const finding of crossEcosystemOverlaps(dependencies, pullRequestChanges)) {
+    findings.push({ ...finding, severity: severityOf(finding) });
   }
 
   // Shipping gate (#178): until the corpus check proves recall, no unused

@@ -161,6 +161,16 @@ export interface Finding {
    * lowered. Any value an adapter or policy sets is overwritten.
    */
   severity?: Severity;
+  /**
+   * Awareness only, no action suggested (#234). Presenters put these in an
+   * awareness section that never affects a check conclusion, title, count
+   * or exit code. Set only by the core rule that emits the finding: today
+   * just "cross-ecosystem-capability-overlap". Absent means NOT awareness
+   * (fail-closed), so a new info rule costs a clean check until core marks
+   * it, and marking a rule needs arbiter sign-off. The engine strips it from
+   * adapter and policy findings.
+   */
+  awareness?: true;
   /** Why this finding might be wrong; empty only when evidence is complete. */
   limitations: string[];
   /** Files likely affected by acting on the recommendation. */
