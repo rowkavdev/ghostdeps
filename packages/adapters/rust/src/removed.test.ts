@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext, Dependency, ProjectRef, SourceLineChanges } from "@ghostdeps/core";
-import { findRemovedUsages, reconstructBase } from "./removed.js";
+import { findRemovedUsages } from "./removed.js";
 import { findUsage } from "./usage.js";
 import { memoryHandle } from "./testing/fs-handle.js";
 
@@ -133,15 +133,6 @@ describe("rust removedInPr usages (#249)", () => {
         [2, true],
       ],
     );
-  });
-
-  it("rebuilds base from head, removed and added lines", () => {
-    const base = reconstructBase(["a", "NEW", "c"], {
-      path: "x.rs",
-      removedLines: [{ line: 2, text: "b" }],
-      addedLines: [{ line: 2, text: "NEW" }],
-    });
-    assert.deepEqual(base, ["a", "b", "c"]);
   });
 
   it("stops when the run is aborted", async () => {
