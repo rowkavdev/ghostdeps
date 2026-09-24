@@ -1,0 +1,8 @@
+{
+  "name": "fixture-refs-nested-tsconfig",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "fastify-tsconfig": "^2.0.0"
+  }
+}

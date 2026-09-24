@@ -1,0 +1,5 @@
+{
+  "description": "Regression from fastify: autocannon only runs inside a quoted command argument to concurrently. It is used via=script and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "autocannon" }]
+}

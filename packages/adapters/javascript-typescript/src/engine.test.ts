@@ -38,6 +38,20 @@ describe("JS adapter through the engine and default policy (#138)", () => {
   });
 
   for (const [fixture, dependency] of [
+    ["refs-concurrently-args", "autocannon"],
+    ["refs-script-flag-value", "@jsumners/line-reporter"],
+    ["refs-script-flag-value", "tsx"],
+    ["refs-nested-tsconfig", "fastify-tsconfig"],
+    ["refs-workflow-only", "publint"],
+    ["convention-simple-git-hooks-key", "simple-git-hooks"],
+    ["convention-size-limit-preset", "@size-limit/preset-small-lib"],
+  ] as const) {
+    it(`real-repo regression (${fixture}): ${dependency} is not reported unused`, async () => {
+      assert.deepEqual(unused(await findings(fixture), dependency), []);
+    });
+  }
+
+  for (const [fixture, dependency] of [
     ["usage-dynamic", "plugin-a"],
     ["refs-partial-js-config", "eslint-plugin-foo"],
     ["refs-pnpm-bin-mismatch", "npm-check-updates"],

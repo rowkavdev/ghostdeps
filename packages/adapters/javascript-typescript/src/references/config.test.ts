@@ -188,3 +188,48 @@ describe("unreadConfigs (coverage for referenceAnalysisComplete)", () => {
     assert.deepEqual(await unread(context, "packages/a"), ["eslint.config.js:not evaluated"]);
   });
 });
+
+describe("nested configs and discovery conventions", () => {
+  it("reads nested tsconfig variants and per-folder configs, but not a member project's", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "test/types/tsconfig.json": `{"extends": "fastify-tsconfig"}`,
+      "tsconfig.build.json": `{"extends": "@tsconfig/node22/tsconfig.json"}`,
+      "packages/a/package.json": "{}",
+      "packages/a/.eslintrc.json": `{"plugins": ["only-a"]}`,
+    });
+    assert.deepEqual(await via(context, "fastify-tsconfig"), [
+      ["config", "test/types/tsconfig.json", 1],
+    ]);
+    assert.deepEqual(await via(context, "@tsconfig/node22"), [
+      ["config", "tsconfig.build.json", 1],
+    ]);
+    assert.deepEqual(await via(context, "eslint-plugin-only-a"), []);
+  });
+
+  it("known JS tool configs are unread at any depth; other nested *.config.ts are source", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "test/bundler/webpack.config.js": "module.exports = {};",
+      "src/app.config.ts": "export const x = 1;",
+    });
+    assert.deepEqual(
+      (await unreadConfigs(context, dep("x"))).map((u) => `${u.file}:${u.reason}`),
+      ["test/bundler/webpack.config.js:not evaluated"],
+    );
+  });
+
+  it("size-limit credits discovered @size-limit/* presets; simple-git-hooks key is a convention", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        "size-limit": [],
+        "simple-git-hooks": { "pre-commit": "x" },
+      }),
+    });
+    assert.deepEqual(await via(context, "@size-limit/preset-small-lib"), [
+      ["convention", "package.json", 1],
+    ]);
+    assert.deepEqual(await via(context, "simple-git-hooks"), [["convention", "package.json", 1]]);
+    assert.deepEqual(await via(context, "@size-limitx/other"), []);
+  });
+});

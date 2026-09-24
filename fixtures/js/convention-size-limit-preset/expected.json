@@ -1,0 +1,5 @@
+{
+  "description": "Convention regression from nanoid: size-limit loads @size-limit/preset-small-lib by discovery, with no explicit reference anywhere. The preset is used via=convention and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "@size-limit/preset-small-lib" }]
+}

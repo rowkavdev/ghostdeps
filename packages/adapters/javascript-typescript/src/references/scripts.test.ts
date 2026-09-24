@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { memoryHandle } from "../testing/fs-handle.js";
-import { analyseScript, commandWords, findScriptUsages, scriptGaps } from "./scripts.js";
+import { analyseScript, commandWords, findScriptUsages, mentions, scriptGaps } from "./scripts.js";
 
 const project = (path = "."): ProjectRef => ({
   path,
@@ -58,6 +58,28 @@ describe("commandWords", () => {
     assert.deepEqual(commandWords("npx -p typescript tsc"), ["tsc"]);
     assert.deepEqual(commandWords("pnpm --filter web exec vite build"), ["vite"]);
     assert.deepEqual(commandWords("env -u CI jest"), ["jest"]);
+  });
+
+  it("reads concurrently's quoted arguments as commands", () => {
+    assert.deepEqual(commandWords('concurrently -k -s first "tsc -w" "autocannon -c 100 x"'), [
+      "concurrently",
+      "tsc",
+      "autocannon",
+    ]);
+    assert.deepEqual(commandWords('conc "npm:lint" "vitest"'), ["conc", "vitest"]);
+    assert.deepEqual(analyseScript('concurrently --weird "tsc"').gaps, [
+      "concurrently: unrecognised flag --weird",
+    ]);
+  });
+
+  it("mentions finds a package named anywhere, including subpaths", () => {
+    assert.deepEqual(
+      mentions("borp --reporter=@jsumners/line-reporter", "@jsumners/line-reporter"),
+      ["@jsumners/line-reporter"],
+    );
+    assert.deepEqual(mentions("NODE_OPTIONS='--import=tsx/esm' ava", "tsx"), ["tsx/esm"]);
+    assert.deepEqual(mentions("node -r ts-node/register x.ts", "ts-node"), ["ts-node/register"]);
+    assert.deepEqual(mentions("tsxx build", "tsx"), []);
   });
 
   it("reports what it could not analyse", () => {

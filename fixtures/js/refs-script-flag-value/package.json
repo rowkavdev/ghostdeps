@@ -1,0 +1,14 @@
+{
+  "name": "fixture-refs-script-flag-value",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "test": "borp --reporter=@jsumners/line-reporter",
+    "test:ts": "NODE_OPTIONS='--import=tsx/esm' borp"
+  },
+  "devDependencies": {
+    "@jsumners/line-reporter": "^1.0.0",
+    "borp": "^0.19.0",
+    "tsx": "^4.19.0"
+  }
+}

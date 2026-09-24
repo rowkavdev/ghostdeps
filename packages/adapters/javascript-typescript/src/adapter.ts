@@ -17,6 +17,7 @@ import { buildDependencyGraph } from "./lockfile/index.js";
 import { parseManifest } from "./manifest.js";
 import { findConfigUsages, unreadConfigs } from "./references/config.js";
 import { findScriptUsages, scriptGaps } from "./references/scripts.js";
+import { findWorkflowUsages } from "./references/workflows.js";
 import { findUsage, usageLimitations } from "./usage/index.js";
 
 export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
@@ -41,16 +42,20 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
      * policy reports "manual review" rather than "unused".
      */
     async findUsage(context: AdapterContext, dependency: Dependency): Promise<UsageAnalysisReport> {
-      const [imports, scripts, configs, importGaps, scriptProblems, unread] = await Promise.all([
-        findUsage(context, dependency),
-        findScriptUsages(context, dependency),
-        findConfigUsages(context, dependency),
-        usageLimitations(context, dependency.project.path),
-        scriptGaps(context, dependency),
-        unreadConfigs(context, dependency),
-      ]);
+      const [imports, scripts, configs, importGaps, scriptProblems, unread, ci] = await Promise.all(
+        [
+          findUsage(context, dependency),
+          findScriptUsages(context, dependency),
+          findConfigUsages(context, dependency),
+          usageLimitations(context, dependency.project.path),
+          scriptGaps(context, dependency),
+          unreadConfigs(context, dependency),
+          // CI workflow run steps only add usage; they never create gaps.
+          findWorkflowUsages(context, dependency),
+        ],
+      );
       return {
-        usages: [...imports, ...scripts, ...configs],
+        usages: [...imports, ...scripts, ...configs, ...ci],
         referenceAnalysisComplete:
           importGaps.length === 0 && scriptProblems.length === 0 && unread.length === 0,
       };

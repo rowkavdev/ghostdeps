@@ -1,0 +1,5 @@
+{
+  "description": "Regression from fastify: fastify-tsconfig is only extended by a nested test/types/tsconfig.json. It is used via=config and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "fastify-tsconfig" }]
+}
