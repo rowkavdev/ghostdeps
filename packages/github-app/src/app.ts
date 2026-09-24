@@ -1,4 +1,4 @@
-import type { ApplicationFunction, Probot } from "probot";
+import { ProbotOctokit, type ApplicationFunction, type Probot } from "probot";
 import { BusyLimiter } from "./checks/busy-limiter.js";
 import { CheckReporter } from "./checks/reporter.js";
 import { createDefaultPolicy } from "@ghostdeps/core";
@@ -14,7 +14,7 @@ import {
 import { decideRerequest } from "./events/rerequested.js";
 import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
-import { WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./github/rate-limit.js";
+import { noWaitThrottle, WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./github/rate-limit.js";
 import { repoScopedClients } from "./worker/github-client.js";
 
 export const HEALTH_PATH = "/healthz";
@@ -46,18 +46,45 @@ export interface GhostDepsAppOptions {
   readonly busyLimiter?: BusyLimiter;
 }
 
+type LookupOctokit = Parameters<typeof changedFiles>[0];
+
+/**
+ * An installation client for webhook lookups that never sleeps on a rate
+ * limit and never retries (#255 follow-up). The token comes from Probot's
+ * token cache, so this costs no extra token request.
+ */
+async function noWaitOctokit(
+  app: Probot,
+  installationId: number,
+  log: { warn(obj: object, msg: string): void },
+): Promise<LookupOctokit> {
+  const appOctokit = await app.auth();
+  const { token } = (await appOctokit.auth({ type: "installation", installationId })) as {
+    token: string;
+  };
+  return new ProbotOctokit({
+    auth: { token },
+    throttle: noWaitThrottle(log),
+    retry: { enabled: false },
+  }) as unknown as LookupOctokit;
+}
+
 /** The changed-files lookup both first runs and re-runs use (#36, #196). */
-function changedFilesLookup(context: {
-  octokit: Parameters<typeof changedFiles>[0];
-  id: string;
-  log: { warn(obj: object, msg: string): void };
-}): ChangedFilesLookup {
+function changedFilesLookup(
+  app: Probot,
+  context: {
+    id: string;
+    log: { warn(obj: object, msg: string): void };
+  },
+): ChangedFilesLookup {
   return async (candidate) => {
     try {
-      // The webhook never waits on a rate limit (#255): past the deadline the
-      // lookup counts as failed and the event takes the analyse-anyway path.
+      // The webhook never waits on a rate limit (#255): its client fails a
+      // rate-limited request at once, and past the deadline the lookup counts
+      // as failed; either way the event takes the analyse-anyway path.
+      const octokit = await noWaitOctokit(app, candidate.installationId, context.log);
       return await withDeadline(
-        changedFiles(context.octokit, candidate),
+        changedFiles(octokit, candidate),
         WEBHOOK_LOOKUP_DEADLINE_MS,
         "changed-files lookup",
       );
@@ -131,7 +158,7 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
           context.name,
           context.payload,
           context.id,
-          changedFilesLookup(context),
+          changedFilesLookup(app, context),
           { sourcePrTrigger },
         );
         if (!decision.analyse) {
@@ -181,7 +208,7 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
         return;
       }
       // Same lookup and source-only rule as the first run (#196).
-      const job = await withRerunSourceOnly(decision.job, changedFilesLookup(context), {
+      const job = await withRerunSourceOnly(decision.job, changedFilesLookup(app, context), {
         sourcePrTrigger,
       });
       const result = queue.enqueue(job);

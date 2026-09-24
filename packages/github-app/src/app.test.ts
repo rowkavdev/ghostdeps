@@ -335,6 +335,32 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(rerun?.kind === "rerequested" && rerun.pullRequest?.sourceOnly, undefined);
   });
 
+  it("never waits on a rate-limited files lookup: one request, then analyse anyway (#255)", async () => {
+    mockInstallationToken();
+    const reset = Math.floor(Date.now() / 1000) + 3600;
+    let calls = 0;
+    nock(API)
+      .get(`${REPO_PATH}/pulls/42/files`)
+      .query({ per_page: "100" })
+      .times(4)
+      .reply(() => {
+        calls++;
+        return [
+          403,
+          { message: "API rate limit exceeded" },
+          { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) },
+        ];
+      });
+    const started = Date.now();
+    const res = await deliver("pull_request", await fixture("pull_request.opened"));
+    assert.equal(res.status, 200);
+    assert.ok(Date.now() - started < 3_000, "did not wait for the reset");
+    assert.equal(queue.jobs.length, 1, "analysed anyway");
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(calls, 1, "no retry left sleeping in the background");
+    nock.cleanAll();
+  });
+
   it("ignores check_run actions other than rerequested", async () => {
     const body = JSON.parse(await fixture("check_run.rerequested")) as Record<string, unknown>;
     const res = await deliver("check_run", JSON.stringify({ ...body, action: "completed" }));
