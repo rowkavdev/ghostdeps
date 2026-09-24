@@ -78,8 +78,8 @@ export function hasExcludedSegment(path: string): boolean {
  * parsing. 32 MiB: the largest real-world lockfiles (big pnpm/yarn
  * monorepos) run to a few MiB, so 32 MiB never excludes a real repository,
  * and it still bounds the parse cost of hostile input. The scanner (#73)
- * and the js-adapter lockfile graph (#83) previously carried 32 MiB and
- * 64 MiB; they converge here on the more conservative value. Anything
+ * and the js-adapter lockfile graph (#83) each defined their own constant
+ * (32 MiB on main); they now share this one. Anything
  * larger must be reported as a limitation, not parsed and not silently
  * dropped.
  */
