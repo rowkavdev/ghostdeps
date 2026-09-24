@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decide, preFilter, PUSH_PAYLOAD_COMMIT_CAP, type ChangedFilesLookup } from "./filter.js";
+import type { AnalysisJob } from "../jobs.js";
+import {
+  decide,
+  preFilter,
+  PUSH_PAYLOAD_COMMIT_CAP,
+  withRerunSourceOnly,
+  type Candidate,
+  type ChangedFilesLookup,
+} from "./filter.js";
 import { isAnalysableSource, isDependencyFile } from "./manifests.js";
 
 const repository = { id: 9, name: "demo", owner: { login: "acme" }, default_branch: "main" };
@@ -283,5 +291,49 @@ describe("decide", () => {
       (await decide("push", push({ ref: "refs/heads/dev" }), "g", noLookup)).analyse,
       false,
     );
+  });
+});
+
+describe("withRerunSourceOnly (#196)", () => {
+  const rerun: AnalysisJob = {
+    key: "k",
+    deliveryId: "d",
+    installationId: 1,
+    repository: { id: 2, owner: "o", name: "r" },
+    headSha: "a".repeat(40),
+    trigger: {
+      kind: "rerequested",
+      checkRunId: 3,
+      pullRequest: { number: 42, baseSha: "b".repeat(40) },
+    },
+  };
+  const flag = (j: AnalysisJob) =>
+    j.trigger.kind === "rerequested" ? j.trigger.pullRequest?.sourceOnly : "not a re-run";
+
+  it("flags a re-run whose complete PR file list is source-only, via the first run's lookup", async () => {
+    const asked: Candidate[] = [];
+    const out = await withRerunSourceOnly(
+      rerun,
+      async (c) => {
+        asked.push(c);
+        return { files: ["src/a.ts"], complete: true };
+      },
+      { sourcePrTrigger: true },
+    );
+    assert.equal(flag(out), true);
+    assert.equal(asked[0]?.trigger.kind === "pull_request" && asked[0].trigger.number, 42);
+  });
+
+  it("leaves it unflagged for a manifest, a capped list, a failed lookup or the trigger off", async () => {
+    const cases: [ChangedFilesLookup, boolean][] = [
+      [async () => ({ files: ["src/a.ts", "package.json"], complete: true }), true],
+      [async () => ({ files: ["src/a.ts"], complete: false }), true],
+      [async () => Promise.reject(new Error("boom")), true],
+      [async () => ({ files: ["src/a.ts"], complete: true }), false],
+    ];
+    for (const [lookup, on] of cases) {
+      const out = await withRerunSourceOnly(rerun, lookup, { sourcePrTrigger: on });
+      assert.equal(flag(out), undefined);
+    }
   });
 });

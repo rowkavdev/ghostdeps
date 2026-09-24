@@ -172,6 +172,45 @@ export function isSourceOnly(changed: ChangedFiles, sourcePrTrigger: boolean): b
   );
 }
 
+/**
+ * Re-run counterpart of decide()'s source-only flag (#196). The payload has
+ * no file list, so it asks the same lookup the first run used (PR files API,
+ * same caps) and applies the same isSourceOnly rule. A failed lookup leaves
+ * the job unflagged, like a capped list.
+ */
+export async function withRerunSourceOnly(
+  job: AnalysisJob,
+  lookup: ChangedFilesLookup,
+  options: DecideOptions = {},
+): Promise<AnalysisJob> {
+  const trigger = job.trigger;
+  if (trigger.kind !== "rerequested" || !trigger.pullRequest || options.sourcePrTrigger !== true) {
+    return job;
+  }
+  const pr = trigger.pullRequest;
+  const candidate: Candidate = {
+    key: job.key,
+    installationId: job.installationId,
+    repository: job.repository,
+    headSha: job.headSha,
+    trigger: {
+      kind: "pull_request",
+      number: pr.number,
+      action: "synchronize",
+      baseSha: pr.baseSha,
+    },
+  };
+  let changed: ChangedFiles;
+  try {
+    changed = await lookup(candidate);
+  } catch {
+    return job;
+  }
+  return isSourceOnly(changed, true)
+    ? { ...job, trigger: { ...trigger, pullRequest: { ...pr, sourceOnly: true } } }
+    : job;
+}
+
 export async function decide(
   eventName: string,
   payload: unknown,

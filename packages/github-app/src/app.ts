@@ -5,7 +5,12 @@ import { createDefaultPolicy } from "@ghostdeps/core";
 import { appIdFromEnv, recommendationsFromEnv, sourcePrTriggerFromEnv } from "./config.js";
 import { changedFiles } from "./events/changed-files.js";
 import { checkName } from "./checks/render.js";
-import { analysedEvents, decide, isSourceOnly, type ChangedFilesLookup } from "./events/filter.js";
+import {
+  analysedEvents,
+  decide,
+  withRerunSourceOnly,
+  type ChangedFilesLookup,
+} from "./events/filter.js";
 import { decideRerequest } from "./events/rerequested.js";
 import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
@@ -38,6 +43,25 @@ export interface GhostDepsAppOptions {
   readonly recommendations?: boolean;
   /** Limits "busy" check runs when the queue is full. Defaults to one per repository per minute. */
   readonly busyLimiter?: BusyLimiter;
+}
+
+/** The changed-files lookup both first runs and re-runs use (#36, #196). */
+function changedFilesLookup(context: {
+  octokit: Parameters<typeof changedFiles>[0];
+  id: string;
+  log: { warn(obj: object, msg: string): void };
+}): ChangedFilesLookup {
+  return async (candidate) => {
+    try {
+      return await changedFiles(context.octokit, candidate);
+    } catch (error) {
+      context.log.warn(
+        { delivery: context.id, err: error },
+        "changed-files lookup failed; analysing anyway",
+      );
+      throw error;
+    }
+  };
 }
 
 export function createGhostDepsApp(options: GhostDepsAppOptions = {}): ApplicationFunction {
@@ -96,20 +120,13 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
     app.on(
       [...analysedEvents.pull_request.map((a) => `pull_request.${a}` as const), "push"],
       async (context) => {
-        const lookup: ChangedFilesLookup = async (candidate) => {
-          try {
-            return await changedFiles(context.octokit, candidate);
-          } catch (error) {
-            context.log.warn(
-              { delivery: context.id, err: error },
-              "changed-files lookup failed; analysing anyway",
-            );
-            throw error;
-          }
-        };
-        const decision = await decide(context.name, context.payload, context.id, lookup, {
-          sourcePrTrigger,
-        });
+        const decision = await decide(
+          context.name,
+          context.payload,
+          context.id,
+          changedFilesLookup(context),
+          { sourcePrTrigger },
+        );
         if (!decision.analyse) {
           context.log.debug({ delivery: context.id, reason: decision.reason }, "event skipped");
           return;
@@ -156,37 +173,10 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
         context.log.debug({ delivery: context.id, reason: decision.reason }, "re-run skipped");
         return;
       }
-      let job = decision.job;
-      // The re-run payload has no file list. Rebuild it from the PR files
-      // API, with the same caps as the first run, so an unreadable diff is
-      // scoped exactly as it was then (#196). On failure, no flag: the worker
-      // falls back as for a capped list, with a note.
-      const trigger = job.trigger;
-      if (trigger.kind === "rerequested" && trigger.pullRequest && sourcePrTrigger) {
-        const pr = trigger.pullRequest;
-        try {
-          const changed = await changedFiles(context.octokit, {
-            key: job.key,
-            installationId: job.installationId,
-            repository: job.repository,
-            headSha: job.headSha,
-            trigger: {
-              kind: "pull_request",
-              number: pr.number,
-              action: "synchronize",
-              baseSha: pr.baseSha,
-            },
-          });
-          if (isSourceOnly(changed, true)) {
-            job = { ...job, trigger: { ...trigger, pullRequest: { ...pr, sourceOnly: true } } };
-          }
-        } catch (error) {
-          context.log.warn(
-            { delivery: context.id, err: error },
-            "re-run changed-files lookup failed; re-running without it",
-          );
-        }
-      }
+      // Same lookup and source-only rule as the first run (#196).
+      const job = await withRerunSourceOnly(decision.job, changedFilesLookup(context), {
+        sourcePrTrigger,
+      });
       const result = queue.enqueue(job);
       const fields = {
         delivery: context.id,
