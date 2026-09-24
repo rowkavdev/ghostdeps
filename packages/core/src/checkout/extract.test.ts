@@ -124,6 +124,54 @@ describe("extractTarball", () => {
     assert.equal(await readFile(join(dir, "sub/x.txt"), "utf8"), "through-link");
   });
 
+  it("rejects links climbing out via a shallower link plus '..' (independent-review PoC)", async () => {
+    // L sits at a/b/c but points at the root; M's target 'L/../..' resolves
+    // physically: L -> root, '..' -> above root, '..' -> escape. A lexical
+    // check that pops 'L' as one segment wrongly allows this.
+    await expectRejects(
+      [
+        { name: "a/b/c/L", type: "symlink", linkName: "../../.." },
+        { name: "a/b/c/M", type: "symlink", linkName: "L/../.." },
+      ],
+      "LINK_ESCAPE",
+    );
+    // Same shape with a real directory in between.
+    await expectRejects(
+      [
+        { name: "x/", type: "directory" },
+        { name: "a", type: "symlink", linkName: "." },
+        { name: "evil", type: "symlink", linkName: "a/x/../../etc" },
+      ],
+      "LINK_ESCAPE",
+    );
+    // The benign version of the same pattern stays allowed.
+    const { dir } = await extract([
+      { name: "sub/real.txt", data: "content" },
+      { name: "a/b/c/L", type: "symlink", linkName: "../../.." },
+      { name: "a/b/c/M", type: "symlink", linkName: "L/sub/real.txt" },
+    ]);
+    assert.equal(await readlink(join(dir, "a/b/c/M")), "L/sub/real.txt");
+  });
+
+  it("treats case-only and Unicode-normalisation collisions as duplicates", async () => {
+    // Map keys are case-folded + NFC so the check is at least as strict as
+    // the most lenient filesystem a checkout can land on.
+    await expectRejects(
+      [
+        { name: "A.txt", data: "1" },
+        { name: "a.txt", data: "2" },
+      ],
+      "DUPLICATE_PATH",
+    );
+    await expectRejects(
+      [
+        { name: "caf\u00e9.txt", data: "nfc" },
+        { name: "cafe\u0301.txt", data: "nfd" },
+      ],
+      "DUPLICATE_PATH",
+    );
+  });
+
   it("detects symlink loops when writing through them", async () => {
     await expectRejects(
       [

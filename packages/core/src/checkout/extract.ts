@@ -119,60 +119,83 @@ function normalizePath(name: string, limits: ExtractionLimits): string[] {
 }
 
 /**
- * Lexically resolve `targetSegments` (a link target) against `baseSegments`
- * (the directory containing the link), inside the root. Returns the
- * resolved root-relative segments, or null if the target escapes the root.
+ * Normalise a root-relative path for map keys: NFC per segment, then
+ * case-folded. The check must be at least as strict as the most lenient
+ * filesystem a checkout can land on (APFS/HFS+ normalise, NTFS/APFS fold
+ * case), so two entries that collide only under normalisation are treated
+ * as duplicates. Disk writes still use the original segments.
  */
-function resolveLexically(baseSegments: string[], targetSegments: string[]): string[] | null {
-  const out = [...baseSegments];
-  for (const segment of targetSegments) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") {
-      if (out.length === 0) return null; // escapes the root
-      out.pop();
-      continue;
-    }
-    out.push(segment);
-  }
-  return out;
+function mapKey(segments: string[]): string {
+  return segments
+    .map((segment) => segment.normalize("NFC"))
+    .join("/")
+    .toLowerCase();
 }
 
 /** Per-extraction state: the symlink map and written-entry bookkeeping. */
 class ExtractionState {
-  /** Normalised link path -> resolved root-relative target path ("a/b/c"). */
-  readonly links = new Map<string, string>();
-  /** Normalised path -> kind of entry written there. */
+  /** mapKey(link path) -> fully resolved root-relative target segments. */
+  readonly links = new Map<string, string[]>();
+  /** mapKey(path) -> kind of entry written there. */
   readonly written = new Map<string, "file" | "directory" | "symlink" | "hardlink">();
 
   /**
-   * Resolve a root-relative path through previously extracted symlinks.
-   * Any parent directory that is an extracted symlink is substituted with
-   * its (already validated, root-confined) target. Throws LINK_LOOP if
-   * substitutions exceed the cap.
+   * Resolve a root-relative path the way the kernel would: walk segment by
+   * segment, substitute extracted symlinks as they are encountered, and
+   * apply `..` to the *expanded* path. Substituting before applying `..`
+   * matters: a link pointing shallower than its own location (e.g. `L` at
+   * a/b/c pointing at the root) must let a following `..` climb only real
+   * levels - resolving lexically first is the classic escape.
+   *
+   * Stored link targets are always fully resolved root-relative paths, so
+   * substitution is a wholesale replacement of the path walked so far.
+   * Throws LINK_ESCAPE when the walk climbs above the root and LINK_LOOP
+   * past the substitution cap.
    */
-  resolveThroughLinks(segments: string[], entryName: string): string[] {
-    let current = segments;
-    for (let i = 0; i < MAX_LINK_RESOLUTIONS; i++) {
-      const resolved: string[] = [];
-      let substituted = false;
-      for (const segment of current) {
-        resolved.push(segment);
-        const target = this.links.get(resolved.join("/"));
-        if (target !== undefined) {
-          // Replace the symlink prefix with its target and restart.
-          const rest = current.slice(resolved.length);
-          current = [...target.split("/"), ...rest];
-          substituted = true;
-          break;
+  resolvePhysically(segments: string[], entryName: string): string[] {
+    let out: string[] = [];
+    let substitutions = 0;
+    for (const segment of segments) {
+      if (segment === "..") {
+        if (out.length === 0) {
+          throw new ExtractionError(
+            "LINK_ESCAPE",
+            "path climbs above the extraction root through a symlink",
+            entryName,
+          );
         }
+        out.pop();
+        continue;
       }
-      if (!substituted) return resolved;
+      out.push(segment);
+      // Substitute while the path walked so far ends at an extracted link.
+      for (;;) {
+        const target = this.links.get(mapKey(out));
+        if (target === undefined) break;
+        if (++substitutions > MAX_LINK_RESOLUTIONS) {
+          throw new ExtractionError(
+            "LINK_LOOP",
+            `path resolution exceeded ${MAX_LINK_RESOLUTIONS} link substitutions`,
+            entryName,
+          );
+        }
+        out = [...target];
+      }
     }
-    throw new ExtractionError(
-      "LINK_LOOP",
-      `path resolution exceeded ${MAX_LINK_RESOLUTIONS} link substitutions`,
-      entryName,
-    );
+    return out;
+  }
+
+  /** True if anything was written at this (normalised) path. */
+  writtenAt(segments: string[]): "file" | "directory" | "symlink" | "hardlink" | undefined {
+    return this.written.get(mapKey(segments));
+  }
+
+  record(segments: string[], kind: "file" | "directory" | "symlink" | "hardlink"): void {
+    this.written.set(mapKey(segments), kind);
+  }
+
+  recordLink(segments: string[], targetSegments: string[]): void {
+    this.links.set(mapKey(segments), targetSegments);
   }
 }
 
@@ -238,10 +261,10 @@ async function extractEntry(
   summary: ExtractionSummary,
 ): Promise<void> {
   const segments = normalizePath(header.name, limits);
-  const resolved = state.resolveThroughLinks(segments, header.name);
+  const resolved = state.resolvePhysically(segments, header.name);
   const relPath = resolved.join("/");
 
-  const prior = state.written.get(relPath);
+  const prior = state.writtenAt(resolved);
   if (prior !== undefined && !(prior === "directory" && header.type === "directory")) {
     throw new ExtractionError(
       "DUPLICATE_PATH",
@@ -256,7 +279,7 @@ async function extractEntry(
     case "directory": {
       if (prior === undefined) {
         await mkdir(dest, { recursive: true, mode: 0o755 });
-        state.written.set(relPath, "directory");
+        state.record(resolved, "directory");
         summary.directories++;
       }
       return;
@@ -285,7 +308,7 @@ async function extractEntry(
       } finally {
         await handle.close();
       }
-      state.written.set(relPath, "file");
+      state.record(resolved, "file");
       summary.files++;
       summary.totalBytes += header.size;
       return;
@@ -300,30 +323,26 @@ async function extractEntry(
         );
       }
       const targetSegments = target.split(/[\\/]+/);
-      // Resolve the target from the link's directory, through links.
-      const parentResolved = state.resolveThroughLinks(resolved.slice(0, -1), header.name);
-      const lexical = resolveLexically(parentResolved, targetSegments);
-      if (lexical === null) {
-        throw new ExtractionError(
-          "LINK_ESCAPE",
-          "symlink target escapes the extraction root",
-          header.name,
-        );
-      }
-      const finalTarget = state.resolveThroughLinks(lexical, header.name);
+      // Resolve the target physically from the link's own directory:
+      // substitute links as encountered, then apply '..' to what remains.
+      const parentResolved = state.resolvePhysically(resolved.slice(0, -1), header.name);
+      const finalTarget = state.resolvePhysically(
+        [...parentResolved, ...targetSegments.filter((part) => part !== "" && part !== ".")],
+        header.name,
+      );
       await mkdir(resolve(dest, ".."), { recursive: true, mode: 0o755 });
       // Store the original relative target so the tree stays relocatable.
       await symlink(target.split(/[\\/]/).join("/"), dest);
-      state.links.set(relPath, finalTarget.join("/"));
-      state.written.set(relPath, "symlink");
+      state.recordLink(resolved, finalTarget);
+      state.record(resolved, "symlink");
       summary.symlinks++;
       return;
     }
     case "hardlink": {
       const target = header.linkName ?? "";
       const targetSegments = normalizePath(target, limits);
-      const resolvedTarget = state.resolveThroughLinks(targetSegments, header.name).join("/");
-      if (state.written.get(resolvedTarget) !== "file") {
+      const resolvedTarget = state.resolvePhysically(targetSegments, header.name);
+      if (state.writtenAt(resolvedTarget) !== "file") {
         throw new ExtractionError(
           "LINK_TARGET_MISSING",
           "hardlink target was not extracted as a regular file",
@@ -331,8 +350,8 @@ async function extractEntry(
         );
       }
       await mkdir(resolve(dest, ".."), { recursive: true, mode: 0o755 });
-      await link(safeJoin(destRoot, resolvedTarget, header.name), dest);
-      state.written.set(relPath, "hardlink");
+      await link(safeJoin(destRoot, resolvedTarget.join("/"), header.name), dest);
+      state.record(resolved, "hardlink");
       summary.hardlinks++;
       return;
     }
