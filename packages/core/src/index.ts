@@ -10,3 +10,4 @@ export * from "./report/index.js";
 export * from "./diff/index.js";
 export { runAdapterContractTests } from "./contract-tests/index.js";
 export * from "./engine/scanner/index.js";
+export * from "./engine/index.js";
