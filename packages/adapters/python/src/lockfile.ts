@@ -238,7 +238,10 @@ export async function buildProjectGraph(
   const missingNames: string[] = [];
   for (const dep of direct) {
     if (!byName.has(dep.name)) {
-      missingNames.push(dep.name);
+      // [build-system] requires are resolved by the build frontend in an
+      // isolated environment; neither uv.lock nor poetry.lock records them,
+      // so their absence says nothing about staleness.
+      if (dep.kind !== "build") missingNames.push(dep.name);
       continue;
     }
     transitiveClosure[dep.name] = thirdParty(closureOf(dep.name, byName));

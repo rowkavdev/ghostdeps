@@ -222,6 +222,19 @@ source = { registry = "https://pypi.org/simple" }
     assert.equal(evidence[0]?.kind, "lockfile-malformed");
   });
 
+  it("does not treat unlocked [build-system] requires as a stale lockfile", async () => {
+    const { graph, evidence } = await buildProjectGraph(
+      ctx({
+        "pyproject.toml": `${PYPROJECT}\n[build-system]\nrequires = ["hatchling>=1.24", "hatch-vcs"]\nbuild-backend = "hatchling.build"\n`,
+        "uv.lock": UV_LOCK,
+      }),
+      project,
+    );
+    assert.equal(graph.incomplete, false);
+    assert.ok(!evidence.some((e) => e.kind === "lockfile-mismatch"));
+    assert.equal(graph.transitiveClosure.hatchling, undefined);
+  });
+
   it("flags declared dependencies missing from the lockfile", async () => {
     const { graph, evidence } = await buildProjectGraph(
       ctx({
