@@ -410,7 +410,18 @@ export async function usageLimitations(
   const project = normaliseProject(projectPath);
   const out: Evidence[] = [];
   for (const [root, list] of scan.byProject) {
-    if (root === project || (scan.roots.has(project) && isWithin(root, project))) out.push(...list);
+    if (root === project) {
+      out.push(...list);
+    } else if (scan.roots.has(project) && isWithin(root, project)) {
+      // Upward only: a nested project's gaps reach its ancestors, never siblings or descendants.
+      const to = project === "." ? "the root project" : project;
+      for (const e of list) {
+        out.push({
+          ...e,
+          statement: `${e.statement} (import gap in nested project ${root}; it can fall through to ${to})`,
+        });
+      }
+    }
   }
   return [...out, ...scan.shared];
 }

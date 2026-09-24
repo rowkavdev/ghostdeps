@@ -129,6 +129,24 @@ describe("findUsage", () => {
     assert.deepEqual(await kinds("."), ["dynamic-import-unresolved:packages/a/x.js"]);
     assert.deepEqual(await kinds("packages/a"), ["dynamic-import-unresolved:packages/a/x.js"]);
     assert.deepEqual(await kinds("packages/b"), []);
+    const [propagated] = await usageLimitations(context, ".");
+    assert.match(
+      propagated!.statement,
+      /import gap in nested project packages\/a; it can fall through to the root project/,
+    );
+    const [own] = await usageLimitations(context, "packages/a");
+    assert.doesNotMatch(own!.statement, /nested project/);
+  });
+
+  it("a gap in a project never reaches its nested projects (no downward propagation)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "index.js": `require(name);`,
+      "packages/a/package.json": "{}",
+      "packages/a/x.js": `import "ok";`,
+    });
+    assert.deepEqual(await usageLimitations(context, "packages/a"), []);
+    assert.equal((await usageLimitations(context, ".")).length, 1);
   });
 
   it("@types/foo is used wherever foo is referenced, even when foo is not declared (pnpapi)", async () => {
