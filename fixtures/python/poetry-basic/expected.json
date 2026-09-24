@@ -1,0 +1,5 @@
+{
+  "description": "Poetry project with [tool.poetry] and poetry.lock. Detected at the root with poetry identified by its lockfile.",
+  "detection": { "minConfidence": 0.9, "projects": ["."], "packageManagers": { ".": ["poetry"] } },
+  "findings": []
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@ghostdeps/python",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm --filter @ghostdeps/core run build && tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
+    "typecheck": "pnpm --filter @ghostdeps/core run build && tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@ghostdeps/core": "workspace:*",
+    "@types/node": "^22.10.0"
+  }
+}

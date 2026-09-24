@@ -1,0 +1,5 @@
+{
+  "description": "Tool-config-only pyproject.toml with no Python source (#42): stays below the detection threshold and is skipped with a reason.",
+  "detection": { "maxConfidence": 0.49, "projects": [] },
+  "findings": []
+}
