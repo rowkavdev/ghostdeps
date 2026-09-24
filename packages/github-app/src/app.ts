@@ -26,7 +26,7 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
       });
 
     addHandler((req, res) => {
-      if (req.method !== "GET" || req.url !== HEALTH_PATH) return false;
+      if (req.method !== "GET" || req.url?.split("?")[0] !== HEALTH_PATH) return false;
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ status: "ok" }));
       return true;
@@ -77,10 +77,12 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             baseSha: payload.pull_request.base.sha,
           },
         });
-        context.log.info(
-          { delivery: context.id, repository: payload.repository.id, result },
-          "pull_request analysis job",
-        );
+        const fields = { delivery: context.id, repository: payload.repository.id, result };
+        if (result === "overloaded") {
+          context.log.warn(fields, "analysis queue full; pull_request job dropped");
+        } else {
+          context.log.info(fields, "pull_request analysis job");
+        }
       },
     );
   };

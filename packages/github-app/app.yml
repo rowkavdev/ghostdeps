@@ -9,6 +9,9 @@ name: GhostDeps
 description: Finds dependencies your code doesn't really need. Reports through GitHub Checks, never gates.
 url: https://github.com/rowkavdev/ghostdeps
 
+hook_attributes:
+  active: true
+
 # installation and installation_repositories are delivered to every app and
 # cannot be listed here. checks:write also delivers check_suite and check_run.
 default_events:
