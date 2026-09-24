@@ -1,6 +1,5 @@
 import {
-  analyseRepository,
-  FsRepositoryHandle,
+  analyseDirectory,
   type AnalysisResult,
   type EcosystemAdapter,
   type Finding,
@@ -17,12 +16,12 @@ export function defaultAdapters(): EcosystemAdapter[] {
 }
 
 /**
- * Analyse a local directory. Static and offline: the scanner reads files
- * through an inert FsRepositoryHandle and nothing in the repository runs.
+ * Analyse a local directory. Static and offline: core's analyseDirectory reads
+ * files through an inert handle, nothing in the repository runs, and skipped
+ * files come back as scan-incompleteness findings.
  */
 export async function analysePath(path: string): Promise<AnalysisResult> {
-  const repository = await FsRepositoryHandle.open(path);
-  const result = await analyseRepository(repository, {
+  const result = await analyseDirectory(path, {
     adapters: defaultAdapters(),
     network: { mode: "offline" },
   });

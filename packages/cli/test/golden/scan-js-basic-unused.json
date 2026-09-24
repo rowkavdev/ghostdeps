@@ -1,6 +1,18 @@
 {
   "schemaVersion": 1,
-  "dependencies": [],
+  "dependencies": [
+    {
+      "constraint": "^1.3.0",
+      "declaredIn": "package.json",
+      "kind": "runtime",
+      "name": "left-pad",
+      "project": {
+        "ecosystem": "javascript-typescript",
+        "packageManagers": [],
+        "path": "."
+      }
+    }
+  ],
   "detected": [
     {
       "confidence": "medium",
@@ -45,7 +57,7 @@
   ],
   "surface": [
     {
-      "direct": 0,
+      "direct": 1,
       "ecosystem": "javascript-typescript",
       "transitive": 0
     }

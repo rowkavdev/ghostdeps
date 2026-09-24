@@ -37,10 +37,13 @@ Human output follows the canonical formats in
 reporter (canonical ordering, escaping) - the CLI has no second JSON writer.
 
 Implementation status: `ghostdeps scan --json` runs the engine today. It
-scans the directory through the inert `FsRepositoryHandle` and runs the
-JavaScript/TypeScript adapter, the only one wired so far. Until the
-package.json parser (#26) lands, that adapter lists no direct dependencies,
-so `dependencies` is empty even for JS projects. No recommendation policy exists yet either, so every scan carries one `info` finding (`recommendation-policy-missing`) saying no dependency judgements were made. An empty `findings` list must never be read as an all-clear. Human `scan` output is still
+calls core's `analyseDirectory`, which scans the directory through the inert
+`FsRepositoryHandle`, runs the JavaScript/TypeScript adapter (the only one
+wired so far) offline, and reports skipped files as scan-incompleteness `info`
+findings. No recommendation policy exists yet, so every scan also carries one
+`info` finding (`recommendation-policy-missing`) saying no dependency
+judgements were made. An empty `findings` list must never be read as an
+all-clear. Human `scan` output is still
 the not-implemented stub (exit 3) until the repository-summary renderer is
 wired (#39). A golden file (`packages/cli/test/golden/`) pins the JSON for
 `fixtures/js/basic-unused`. Regenerate it with `UPDATE_GOLDEN=1` when adapter
