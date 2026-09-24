@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { createDefaultPolicy, severityOf, type AnalysisResult } from "@ghostdeps/core";
 import type { AnalysisJob } from "../jobs.js";
+import { ResultCache } from "./result-cache.js";
 import {
   analyseCheckout,
   createAnalysisWorker,
@@ -480,6 +481,87 @@ index 3333333..4444444 100644
     assert.equal(rerun.conclusion, "neutral");
     const text = ((rerun.output as { summary?: string }).summary ?? "").replace(/\\/g, "");
     assert.match(text, /GhostDeps analysed the whole repository/);
+  });
+
+  describe("same-SHA re-run result cache (#174)", () => {
+    const rerunJob = (over: { baseSha?: string; sourceOnly?: true } = {}) =>
+      job({
+        kind: "rerequested",
+        checkRunId: 7,
+        pullRequest: {
+          number: payload.number,
+          baseSha: over.baseSha ?? BASE,
+          ...(over.sourceOnly ? { sourceOnly: true as const } : {}),
+        },
+      });
+
+    async function runBoth(opts: {
+      result?: AnalysisResult;
+      rerun?: AnalysisJob;
+      cache?: ResultCache | false;
+    }) {
+      const cache = opts.cache ?? new ResultCache();
+      let calls = 0;
+      const outputs: unknown[] = [];
+      for (const j of [prJob, opts.rerun ?? rerunJob()]) {
+        const { client, rec } = fakeClient({ diff: DIFF, files });
+        const worker = createAnalysisWorker({
+          appId: APP_ID,
+          clientFor: async () => client,
+          workRoot: await workRoot(),
+          fetch: fetchServing(tarGz(prRepo)),
+          resultCache: cache,
+          analyse: async () => {
+            calls++;
+            return opts.result ?? emptyResult;
+          },
+        });
+        await worker(j);
+        const u = rec.updated.at(-1);
+        outputs.push({ conclusion: u?.conclusion, output: u?.output });
+      }
+      return { calls, outputs, cache };
+    }
+
+    it("serves a same-SHA re-run from the cache with identical output", async () => {
+      const { calls, outputs } = await runBoth({});
+      assert.equal(calls, 1);
+      assert.deepEqual(outputs[1], outputs[0]);
+    });
+
+    it("misses on a different base SHA or source-only flag", async () => {
+      assert.equal((await runBoth({ rerun: rerunJob({ baseSha: "c".repeat(40) }) })).calls, 2);
+      assert.equal((await runBoth({ rerun: rerunJob({ sourceOnly: true }) })).calls, 2);
+    });
+
+    it("never caches an analysis with an adapter error", async () => {
+      const failed: AnalysisResult = {
+        ...emptyResult,
+        findings: [
+          {
+            kind: "info",
+            summary: "javascript-typescript analysis incomplete: usage analysis timed out",
+            recommendation: "Manual review recommended for this ecosystem.",
+            evidence: [
+              {
+                kind: "adapter-error",
+                statement: "javascript-typescript adapter usage analysis stage",
+              },
+            ],
+            confidence: "low",
+            limitations: [],
+            affectedFiles: [],
+          },
+        ],
+      };
+      const { calls, cache } = await runBoth({ result: failed });
+      assert.equal(calls, 2);
+      assert.equal((cache as ResultCache).size, 0);
+    });
+
+    it("can be turned off", async () => {
+      assert.equal((await runBoth({ cache: false })).calls, 2);
+    });
   });
 
   it("analyses the full repository when the changes cannot be read in full", async () => {
