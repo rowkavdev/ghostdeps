@@ -74,6 +74,42 @@ describe("detectPython (issue #42)", () => {
     assert.equal(result.projects.length, 1);
   });
 
+  it("recognises a requirements/ directory layout at the parent root", async () => {
+    const result = await detectPython(
+      ctx({
+        "requirements/base.txt": "flask\n",
+        "requirements/dev.txt": "-r base.txt\n",
+        "app/main.py": "",
+      }),
+    );
+    assert.deepEqual(result.projects, [
+      { path: ".", ecosystem: "python", packageManagers: [{ name: "pip" }] },
+    ]);
+  });
+
+  it("skips docs/requirements.txt with a Sphinx conf.py", async () => {
+    const result = await detectPython(
+      ctx({
+        "docs/requirements.txt": "sphinx\n",
+        "docs/conf.py": "project = 'x'\n",
+        "docs/index.rst": "",
+        "docs/_ext/custom.py": "",
+      }),
+    );
+    assert.deepEqual(result.projects, []);
+    assert.ok(result.evidence.some((e) => e.kind === "docs-build"));
+  });
+
+  it("still detects a docs directory that is a real package project", async () => {
+    const result = await detectPython(
+      ctx({ "docs/pyproject.toml": "[project]\n", "docs/build.py": "" }),
+    );
+    assert.deepEqual(
+      result.projects.map((p) => p.path),
+      ["docs"],
+    );
+  });
+
   it("tolerates an unreadable pyproject.toml", async () => {
     const repository = memoryHandle({ "pyproject.toml": "", "a.py": "" });
     const result = await detectPython({

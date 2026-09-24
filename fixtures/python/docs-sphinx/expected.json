@@ -1,0 +1,5 @@
+{
+  "description": "Library at the root with a Sphinx docs/ build (docs/requirements.txt + conf.py). Only the root is a Python project; docs/ is skipped as a documentation build.",
+  "detection": { "minConfidence": 0.8, "projects": ["."] },
+  "findings": []
+}

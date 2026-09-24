@@ -51,6 +51,27 @@ function isRootManifest(path: string): boolean {
   return (ROOT_MANIFESTS as readonly string[]).includes(name) || isRequirementsFile(name);
 }
 
+/** requirements/base.txt, requirements/dev.in: a requirements directory layout. */
+function isRequirementsDirFile(path: string): boolean {
+  return baseName(dirName(path)) === "requirements" && /\.(?:txt|in)$/i.test(path);
+}
+
+/** The project root a manifest belongs to; requirements/ files belong to the parent. */
+function manifestRoot(path: string): string {
+  return isRequirementsDirFile(path) ? dirName(dirName(path)) : dirName(path);
+}
+
+/** A documentation build directory: docs/ or doc/, or one holding a Sphinx index. */
+function isDocsRoot(root: string, fileSet: ReadonlySet<string>): boolean {
+  const name = baseName(root).toLowerCase();
+  return (
+    name === "docs" ||
+    name === "doc" ||
+    fileSet.has(joinPath(root, "index.rst")) ||
+    (fileSet.has(joinPath(root, "conf.py")) && fileSet.has(joinPath(root, "index.md")))
+  );
+}
+
 /** The deepest root containing the file wins, so monorepo members own their source. */
 function nearestRoot(file: string, rootSet: ReadonlySet<string>): string | undefined {
   let dir = file;
@@ -64,7 +85,13 @@ function nearestRoot(file: string, rootSet: ReadonlySet<string>): string | undef
 
 /** Manifests found directly in one root, in a stable order. */
 function manifestsIn(root: string, files: readonly string[]): string[] {
-  return files.filter((file) => dirName(file) === root && isRootManifest(file)).sort();
+  return files
+    .filter(
+      (file) =>
+        (dirName(file) === root && isRootManifest(file)) ||
+        (isRequirementsDirFile(file) && manifestRoot(file) === root),
+    )
+    .sort();
 }
 
 /** Package managers signalled by files in one root. Lockfiles first, then manifests. */
@@ -110,7 +137,10 @@ async function detectPackageManagers(
     }
   }
   if (fileSet.has(joinPath(root, "Pipfile"))) add("pipenv");
-  if (managers.length === 0 && manifests.some((m) => isRequirementsFile(baseName(m)))) {
+  if (
+    managers.length === 0 &&
+    manifests.some((m) => isRequirementsFile(baseName(m)) || isRequirementsDirFile(m))
+  ) {
     add("pip");
   }
   return { managers, evidence };
@@ -120,9 +150,11 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
   const { repository } = context;
   const files = (await repository.listFiles()).filter((file) => !hasExcludedSegment(file));
   const fileSet = new Set(files);
-  const roots = [...new Set(files.filter(isRootManifest).map(dirName))].sort(
-    (a, b) => a.length - b.length || a.localeCompare(b),
-  );
+  const roots = [
+    ...new Set(
+      files.filter((file) => isRootManifest(file) || isRequirementsDirFile(file)).map(manifestRoot),
+    ),
+  ].sort((a, b) => a.length - b.length || a.localeCompare(b));
 
   if (roots.length === 0) {
     return { confidence: 0, projects: [], evidence: [] };
@@ -130,7 +162,10 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
 
   const rootSet = new Set(roots);
   const sourceCountByRoot = new Map<string, number>(roots.map((root) => [root, 0]));
-  for (const file of files.filter(isSourceFile)) {
+  // Sphinx's conf.py configures a docs build; it is not project source.
+  const sphinxConf = (file: string): boolean =>
+    baseName(file) === "conf.py" && isDocsRoot(dirName(file), fileSet);
+  for (const file of files.filter((f) => isSourceFile(f) && !sphinxConf(f))) {
     const root = nearestRoot(file, rootSet);
     if (root !== undefined) sourceCountByRoot.set(root, (sourceCountByRoot.get(root) ?? 0) + 1);
   }
@@ -156,7 +191,19 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
     const pm = await detectPackageManagers(context, root, fileSet, manifests);
     let confidence: number;
 
-    if (sourceCount === 0) {
+    const docsOnly =
+      isDocsRoot(root, fileSet) &&
+      manifests.every((m) => isRequirementsFile(baseName(m)) || isRequirementsDirFile(m));
+
+    if (docsOnly) {
+      // docs/requirements.txt pins the documentation toolchain (Sphinx and
+      // friends), not a Python project whose dependencies we should judge.
+      confidence = 0.3;
+      evidence.push({
+        kind: "docs-build",
+        statement: `${displayRoot(root)} is a documentation build; its requirements are not a Python project`,
+      });
+    } else if (sourceCount === 0) {
       confidence = 0.3;
       evidence.push({
         kind: "no-python-source",
