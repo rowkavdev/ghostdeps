@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { MAX_FILE_READ_BYTES } from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
+import { MAX_SCRIPT_BLOCKS_PER_FILE } from "./embedded.js";
 import {
   MAX_SOURCE_BYTES,
   MAX_OUTSIDE_PROJECT_RECORDS,
@@ -79,7 +80,9 @@ describe("findUsage", () => {
     const context = ctx({
       "package.json": "{}",
       "index.js": `require("root-only");`,
-      "packages/a/package.json": "{}",
+      "packages/a/package.json": JSON.stringify({
+        dependencies: { "root-only": "1", "a-only": "1" },
+      }),
       "packages/a/src/x.ts": `import "a-only";\nimport "root-only";`,
     });
     assert.deepEqual(
@@ -91,6 +94,116 @@ describe("findUsage", () => {
       ["packages/a/src/x.ts"],
     );
     assert.deepEqual(await findUsage(context, dep("a-only")), []);
+  });
+
+  it("credits an ancestor project's declaration from nested projects that do not declare it (vite)", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({ devDependencies: { execa: "1", shared: "1" } }),
+      "packages/a/package.json": JSON.stringify({ dependencies: { shared: "1" } }),
+      "packages/a/__tests__/cli.spec.ts": `import { execaCommandSync } from "execa";\nimport "shared";`,
+      "packages/a/b/package.json": "{}",
+      "packages/a/b/t.ts": `import "shared";`,
+    });
+    // execa: undeclared in packages/a, so it resolves to the root's copy.
+    assert.deepEqual(
+      (await findUsage(context, dep("execa"))).map((u) => u.file),
+      ["packages/a/__tests__/cli.spec.ts"],
+    );
+    // shared: packages/a declares it, so packages/a and packages/a/b resolve to packages/a, not the root.
+    assert.deepEqual(await findUsage(context, dep("shared")), []);
+    assert.deepEqual(
+      (await findUsage(context, dep("shared", "packages/a"))).map((u) => u.file),
+      ["packages/a/__tests__/cli.spec.ts", "packages/a/b/t.ts"],
+    );
+  });
+
+  it("nested projects' limitations weaken an ancestor's completeness, never a sibling's", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "packages/a/package.json": "{}",
+      "packages/a/x.js": `require(name);`,
+      "packages/b/package.json": "{}",
+    });
+    const kinds = async (p: string) =>
+      (await usageLimitations(context, p)).map((e) => `${e.kind}:${e.file}`);
+    assert.deepEqual(await kinds("."), ["dynamic-import-unresolved:packages/a/x.js"]);
+    assert.deepEqual(await kinds("packages/a"), ["dynamic-import-unresolved:packages/a/x.js"]);
+    assert.deepEqual(await kinds("packages/b"), []);
+  });
+
+  it("@types/foo is used wherever foo is referenced, even when foo is not declared (pnpapi)", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        devDependencies: { "@types/pnpapi": "1", "@types/babel__core": "1" },
+      }),
+      "src/packages.ts": [
+        `import { createRequire } from "node:module";`,
+        `let pnp: typeof import("pnpapi") | undefined;`,
+        `pnp = createRequire(import.meta.url)("pnpapi");`,
+      ].join("\n"),
+      "src/b.ts": `import type { TransformOptions } from "@babel/core";`,
+    });
+    const pnp = await findUsage(context, dep("@types/pnpapi"));
+    assert.deepEqual(
+      pnp.map((u) => [u.line, u.typeOnly]),
+      [
+        [2, true],
+        [3, true],
+      ],
+    );
+    assert.deepEqual(
+      (await findUsage(context, dep("@types/babel__core"))).map((u) => u.file),
+      ["src/b.ts"],
+    );
+  });
+
+  it("scans script blocks in HTML pages and Vue, Svelte and Astro components (vite)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "index.html": [
+        "<!doctype html>",
+        "<div>no imports here: import 'not-a-dep'</div>",
+        '<script type="module">',
+        "  import { createStore } from 'vuex'",
+        "  import css from 'normalize.css?inline'",
+        "</script>",
+        '<script type="importmap">{"imports":{"ignored":"x"}}</script>',
+        "<SCRIPT>require('classic')</SCRIPT>",
+      ].join("\n"),
+      "Community.vue": [
+        '<script setup lang="ts">',
+        "import { Icon } from '@iconify/vue'",
+        "</script>",
+        "<template><Icon /></template>",
+      ].join("\n"),
+      "App.svelte": `<script context="module">\nexport { x } from "svelte-dep";\n</script>\n<h1>hi</h1>`,
+      "Page.astro": `---\nimport Layout from "astro-dep";\n---\n<Layout><script>import "astro-client-dep";</script></Layout>`,
+    });
+    const at = async (name: string) =>
+      (await findUsage(context, dep(name))).map((u) => `${u.file}:${u.line}`);
+    assert.deepEqual(await at("vuex"), ["index.html:4"]);
+    assert.deepEqual(await at("normalize.css"), ["index.html:5"]);
+    assert.deepEqual(await at("classic"), ["index.html:8"]);
+    assert.deepEqual(await at("ignored"), []);
+    assert.deepEqual(await at("not-a-dep"), []);
+    assert.deepEqual(await at("@iconify/vue"), ["Community.vue:2"]);
+    assert.deepEqual(await at("svelte-dep"), ["App.svelte:2"]);
+    assert.deepEqual(await at("astro-dep"), ["Page.astro:2"]);
+    assert.deepEqual(await at("astro-client-dep"), ["Page.astro:4"]);
+  });
+
+  it("bounds script blocks per file and reports the rest", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "many.html": Array.from(
+        { length: MAX_SCRIPT_BLOCKS_PER_FILE + 5 },
+        (_, i) => `<script>import "p${i}"</script>`,
+      ).join("\n"),
+    });
+    assert.equal((await findUsage(context, dep(`p${MAX_SCRIPT_BLOCKS_PER_FILE - 1}`))).length, 1);
+    assert.deepEqual(await findUsage(context, dep(`p${MAX_SCRIPT_BLOCKS_PER_FILE}`)), []);
+    const limits = await usageLimitations(context, ".");
+    assert.ok(limits.some((e) => e.kind === "script-blocks-unscanned" && e.file === "many.html"));
   });
 
   it("marks type-only references with Usage.typeOnly and leaves runtime imports unmarked", async () => {

@@ -45,6 +45,12 @@ describe("JS adapter through the engine and default policy (#138)", () => {
     ["refs-workflow-only", "publint"],
     ["convention-simple-git-hooks-key", "simple-git-hooks"],
     ["convention-size-limit-preset", "@size-limit/preset-small-lib"],
+    ["refs-html-module-script", "vuex"],
+    ["refs-html-module-script", "normalize.css"],
+    ["refs-vue-sfc", "@iconify/vue"],
+    ["refs-root-dep-from-member", "execa"],
+    ["refs-create-require", "core-js"],
+    ["refs-create-require", "@types/pnpapi"],
   ] as const) {
     it(`real-repo regression (${fixture}): ${dependency} is not reported unused`, async () => {
       assert.deepEqual(unused(await findings(fixture), dependency), []);

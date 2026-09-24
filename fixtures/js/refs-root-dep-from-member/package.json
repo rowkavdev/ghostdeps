@@ -1,0 +1,9 @@
+{
+  "name": "fixture-refs-root-dep-from-member",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": ["packages/*"],
+  "devDependencies": {
+    "execa": "^9.0.0"
+  }
+}

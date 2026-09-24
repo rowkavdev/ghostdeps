@@ -1,0 +1,5 @@
+{
+  "description": "Regression from vite: execa is a root devDependency used only from a workspace member's tests. The member doesn't declare it, so resolution falls through to the root. It must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "execa" }]
+}

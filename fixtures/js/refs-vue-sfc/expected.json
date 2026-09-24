@@ -1,0 +1,5 @@
+{
+  "description": "Regression from vite (docs): @iconify/vue is only imported in a Vue single-file component. It must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "@iconify/vue" }]
+}

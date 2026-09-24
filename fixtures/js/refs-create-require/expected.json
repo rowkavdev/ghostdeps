@@ -1,0 +1,8 @@
+{
+  "description": "Regression from vite (packages/plugin-legacy, packages/vite): core-js is only loaded through a createRequire-bound function, and @types/pnpapi types pnpapi, which Yarn PnP provides at runtime and is never declared. Neither may be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "core-js" },
+    { "kind": "unused", "dependency": "@types/pnpapi" }
+  ]
+}
