@@ -42,10 +42,10 @@ core's `analyseDirectory`, which scans the directory through the inert
 wired so far) offline, and reports skipped files as scan-incompleteness `info`
 findings. `--json` prints the schema-stable `AnalysisResult`; without it, scan
 prints the canonical repository summary from docs/output-formats.md (#39,
-renderer from #109). No recommendation policy exists yet, so every scan also
-carries one `info` finding (`recommendation-policy-missing`) saying no
-dependency judgements were made. An empty `findings` list must never be read as
-an all-clear. A golden file (`packages/cli/test/golden/`) pins the JSON for
+renderer from #109). Core's default recommendation policy (#136) turns the
+facts into verdicts; conservative rules mean a dependency is only called
+`unused` when usage and script/config references were fully analysed -
+anything less becomes a low-confidence info note, never a verdict. A golden file (`packages/cli/test/golden/`) pins the JSON for
 `fixtures/js/basic-unused`. Regenerate it with `UPDATE_GOLDEN=1` when adapter
 output changes on purpose.
 
@@ -65,6 +65,23 @@ a false all-clear, which is worse than no output.
 Analysis is static and works fully offline; registry metadata (when wired
 up) flows only through the core metadata service, never from the CLI.
 
+## Flags
+
+`--json` is global; the rest apply to `ghostdeps scan` only.
+
+| Flag                              | Meaning                                                            |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `--json`                          | Emit the schema-versioned `AnalysisResult`; never filtered         |
+| `--fail-on <min>`                 | Exit 1 when any finding reaches the severity threshold (CI gating) |
+| `--severity <min>`                | Filter the human display to findings at or above `<min>`           |
+| `--disable-rule <id>`             | Turn a recommendation rule off for the run (repeatable)            |
+| `--downgrade <rule>=<confidence>` | Cap a rule's confidence at high, medium or low - never raises it   |
+| `--allowlist <ecosystem>:<name>`  | Mark expected tooling; a trailing `*` makes the name a prefix      |
+
+The policy flags are validated loudly: an unknown rule id or ecosystem is a
+usage error (exit 2) that names the known values, so a typo can never read as
+"rule matched nothing".
+
 ## Exit codes
 
 | Code | Meaning                                                         |
@@ -81,7 +98,13 @@ exit code becomes 1 when any finding reaches the threshold. Severity derives
 from finding kind + confidence (`severityOf` in core). Info findings - the
 scan-completeness notes from #110 and the no-recommendations notice - are
 always severity `info`, so they cannot trip `--fail-on high` (or any
-threshold above `info`). `--severity <min>` only filters the human display
+threshold above `info`). Policy behaviour is adjustable per run (repeatable flags): `--disable-rule
+<id>` turns a rule off, `--downgrade <rule>=<confidence>` caps a rule's
+confidence (never raises it), and `--allowlist <ecosystem>:<name>` marks a
+tooling package as expected (trailing `*` for a prefix). These mirror core's
+PolicyConfig (#136); there is still no config file.
+
+`--severity <min>` only filters the human display
 (filtered findings are counted under the summary, never silently dropped);
 `--json` always prints the complete result, so `--severity` with `--json`
 is a usage error rather than a silent lie. `--fail-on` always evaluates

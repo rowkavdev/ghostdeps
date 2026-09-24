@@ -1,11 +1,11 @@
 import {
   analyseDirectory,
+  createDefaultPolicy,
   type AnalysisResult,
-  type EcosystemAdapter,
-  type Finding,
+  type PolicyConfig,
 } from "@ghostdeps/core";
-import { createJavaScriptTypeScriptAdapter } from "@ghostdeps/javascript-typescript";
 import { stat } from "node:fs/promises";
+import { defaultAdapters } from "./adapters.js";
 import type { CliConfig } from "./config.js";
 import type { Io } from "./cli.js";
 import { atOrAboveSeverity } from "@ghostdeps/core";
@@ -13,46 +13,18 @@ import { EXIT_OK, EXIT_THRESHOLD } from "./errors.js";
 import { renderRepositorySummary } from "./output/human.js";
 import { printJson } from "./output/json.js";
 
-/** Adapters the CLI ships with. More ecosystems join as their adapters land. */
-export function defaultAdapters(): EcosystemAdapter[] {
-  return [createJavaScriptTypeScriptAdapter()];
-}
-
 /**
  * Analyse a local directory. Static and offline: core's analyseDirectory reads
  * files through an inert handle, nothing in the repository runs, and skipped
  * files come back as scan-incompleteness findings.
  */
-export async function analysePath(path: string): Promise<AnalysisResult> {
-  const result = await analyseDirectory(path, {
+export async function analysePath(path: string, policy?: PolicyConfig): Promise<AnalysisResult> {
+  return analyseDirectory(path, {
     adapters: defaultAdapters(),
     network: { mode: "offline" },
+    recommend: createDefaultPolicy(policy ?? {}),
   });
-  // No recommendation policy exists yet, so the engine emits facts only.
-  // Say so in the result: an empty findings list would read as an all-clear.
-  return { ...result, findings: [...result.findings, noRecommendationsFinding] };
 }
-
-/**
- * Present on every scan until core ships a recommendation policy (#56 and
- * friends). Remove it, and pass the policy to the engine, then.
- */
-export const noRecommendationsFinding: Finding = {
-  kind: "info",
-  summary:
-    "No dependency recommendations were made: the recommendation policy is not implemented yet.",
-  recommendation:
-    "Treat this result as facts only (detected ecosystems, dependencies, usages). It is not an all-clear.",
-  evidence: [
-    {
-      kind: "recommendation-policy-missing",
-      statement: "this build of ghostdeps runs without a recommendation policy",
-    },
-  ],
-  confidence: "high",
-  limitations: ["Unused, unnecessary and native-replacement findings are not produced yet."],
-  affectedFiles: [],
-};
 
 /**
  * `ghostdeps scan [path]`. --json prints the complete schema-stable
@@ -64,15 +36,16 @@ export const noRecommendationsFinding: Finding = {
  */
 export async function runScan(config: CliConfig, io: Io): Promise<number> {
   await assertDirectory(config.path);
-  const result = await analysePath(config.path);
-  const min = config.severity;
-  const shown =
-    min === undefined
-      ? result
-      : { ...result, findings: result.findings.filter((f) => atOrAboveSeverity(f, min)) };
+  const result = await analysePath(config.path, config.policy);
   if (config.json) {
-    printJson(shown, io);
+    // Always the complete result (buildConfig rejects --severity with --json).
+    printJson(result, io);
   } else {
+    const min = config.severity;
+    const shown =
+      min === undefined
+        ? result
+        : { ...result, findings: result.findings.filter((f) => atOrAboveSeverity(f, min)) };
     io.stdout(renderRepositorySummary(shown));
     const hidden = result.findings.length - shown.findings.length;
     if (hidden > 0) {

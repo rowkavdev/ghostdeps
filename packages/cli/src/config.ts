@@ -1,4 +1,4 @@
-import type { Severity } from "@ghostdeps/core";
+import type { PolicyConfig, Severity } from "@ghostdeps/core";
 
 /**
  * CLI configuration. Today resolution is flags over defaults; when a config
@@ -17,4 +17,6 @@ export interface CliConfig {
   failOn?: Severity | undefined;
   /** scan --severity: only show findings at or above this severity. */
   severity?: Severity | undefined;
+  /** scan policy config: --disable-rule / --downgrade / --allowlist. */
+  policy?: PolicyConfig | undefined;
 }

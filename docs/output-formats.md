@@ -30,7 +30,25 @@ Findings:
   8 potentially unnecessary
   3 native replacements
   2 duplicate capabilities
+
+Verdicts:
+  unused:
+    left-pad - declared as a runtime dependency but never imported (high confidence, rule: unused)
+      - no import, require or dynamic import of left-pad found
+    moment - imported only from a file deleted in this PR (medium confidence, rule: unused)
+      - last import removed in src/legacy/report.ts
+  should be dev dependencies:
+    typescript - imported only from tests and build config (high confidence, rule: should-be-dev)
+      - imports found only under test/ and build/
 ```
+
+`Verdicts` expands the non-info findings from the counts: one group per
+kind in canonical order, each verdict with its dependency, summary,
+confidence and rule id, then evidence lines (capped, with a "+N more" note
+when truncated). Info findings are caveats about the analysis itself (scan
+completeness, coverage gaps) and stay in the `Findings` counts only. The
+section is omitted when there are no verdicts. Everything verdict-derived
+is terminal-escaped.
 
 ## Per-dependency report (CLI `inspect`/`explain`, check annotations)
 

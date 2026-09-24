@@ -38,11 +38,11 @@ describe("ghostdeps scan --json", () => {
       parsed.detected.map((d) => d.ecosystem),
       ["javascript-typescript"],
     );
-    const findings = (JSON.parse(text) as { findings: { evidence: { kind: string }[] }[] })
+    const findings = (JSON.parse(text) as { findings: { rule?: string; confidence?: string }[] })
       .findings;
     assert.ok(
-      findings.some((f) => f.evidence[0]?.kind === "recommendation-policy-missing"),
-      "a scan with no policy must say so, never print an empty all-clear",
+      findings.some((f) => f.rule === "unused" && f.confidence === "high"),
+      "the default policy runs: fully analysed usage produces a real high-confidence unused verdict",
     );
     assertGolden("scan-js-basic-unused.json", text);
   });
@@ -76,9 +76,10 @@ describe("ghostdeps scan --json", () => {
     assert.match(text, /Package managers:\n/);
     assert.match(text, /Direct dependencies:\n {2}\d/);
     assert.match(text, /Transitive dependencies:\n/);
-    // The no-recommendations info finding must be visible in the summary:
-    // "Findings: none" would read as an all-clear.
-    assert.match(text, /Findings:\n {2}\d+ info/);
+    // The unused verdict must be visible in the summary: "Findings: none"
+    // would read as an all-clear.
+    assert.match(text, /Findings:\n {2}1 unused\n/);
+    assert.match(text, /Verdicts:\n {2}unused:\n {4}left-pad - /);
   });
 
   it("reports a missing path as one clear error line, exit 2", async () => {
@@ -99,10 +100,18 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     assert.deepEqual(err, []);
   });
 
-  it("exits 0 under --fail-on high: info completeness notes never gate (#110)", async () => {
-    const { io, err } = capture();
-    const code = await run(["scan", "--fail-on", "high", fixture("basic-unused")], io);
-    assert.equal(code, 0, err.join("\n"));
+  it("exits 0 when every finding sits below the --fail-on gate (#110)", async () => {
+    const a = capture();
+    const codeA = await run(["scan", "--fail-on", "critical", fixture("basic-unused")], a.io);
+    assert.equal(codeA, 0, a.err.join("\n"));
+    // A low-confidence note never trips the high gate: downgraded findings
+    // advise, they do not gate.
+    const b = capture();
+    const codeB = await run(
+      ["scan", "--fail-on", "high", "--downgrade", "unused=low", fixture("basic-unused")],
+      b.io,
+    );
+    assert.equal(codeB, 0, b.err.join("\n"));
   });
 
   it("rejects an unknown severity as a usage error", async () => {
@@ -114,11 +123,11 @@ describe("ghostdeps scan --fail-on / --severity", () => {
 
   it("--severity filters the human findings and says so", async () => {
     const { io, out } = capture();
-    const code = await run(["scan", "--severity", "high", fixture("basic-unused")], io);
+    const code = await run(["scan", "--severity", "critical", fixture("basic-unused")], io);
     assert.equal(code, 0);
     const text = out.join("\n");
     assert.match(text, /Findings:\n {2}none/);
-    assert.match(text, /\(\d+ findings? below the --severity high filter hidden\)/);
+    assert.match(text, /\(1 finding below the --severity critical filter hidden\)/);
   });
 
   it("--json always prints the complete result; --severity with it is a usage error", async () => {
@@ -132,6 +141,74 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     const { io, err } = capture();
     const code = await run(["languages", "--fail-on", "high"], io);
     assert.equal(code, 2);
-    assert.match(err.join(" "), /--fail-on and --severity only apply to ghostdeps scan/);
+    assert.match(err.join(" "), /only apply to ghostdeps scan/);
+  });
+});
+
+describe("ghostdeps scan policy flags", () => {
+  it("--disable-rule turns a rule off for the run", async () => {
+    const { io, out } = capture();
+    const code = await run(
+      ["scan", "--json", "--disable-rule", "unused", fixture("basic-unused")],
+      io,
+    );
+    assert.equal(code, 0);
+    const body = JSON.parse(out.join("\n")) as { findings: { rule?: string }[] };
+    assert.equal(body.findings.length, 0);
+  });
+
+  it("rejects an unknown rule for --disable-rule", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--disable-rule", "unsed", fixture("basic-unused")], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /unknown rule for --disable-rule: unsed/);
+    assert.match(err.join(" "), /unused, unverified-no-imports, type-only, should-be-dev/);
+  });
+
+  it("rejects an unknown rule for --downgrade", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--downgrade", "unsed=low", fixture("basic-unused")], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /unknown rule for --downgrade: unsed/);
+  });
+
+  it("rejects an unknown ecosystem for --allowlist", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--allowlist", "pythn:left-pad", fixture("basic-unused")], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /unknown ecosystem for --allowlist: pythn/);
+    assert.match(err.join(" "), /javascript-typescript/);
+  });
+
+  it("rejects a malformed --downgrade as a usage error", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--downgrade", "unused=severe", fixture("basic-unused")], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /--downgrade wants <rule>=<confidence>/);
+  });
+
+  it("rejects a malformed --allowlist as a usage error", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--allowlist", "no-colon-here", fixture("basic-unused")], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /--allowlist wants <ecosystem>:<package>/);
+  });
+
+  it("--allowlist marks tooling as expected, quieting its note", async () => {
+    const { io, out } = capture();
+    const code = await run(
+      ["scan", "--json", "--allowlist", "javascript-typescript:left-pad", fixture("basic-unused")],
+      io,
+    );
+    assert.equal(code, 0);
+    const body = JSON.parse(out.join("\n")) as { findings: { dependency?: string }[] };
+    assert.ok(body.findings.every((f) => f.dependency !== "left-pad"));
+  });
+
+  it("policy flags only apply to scan", async () => {
+    const { io, err } = capture();
+    const code = await run(["languages", "--disable-rule", "unused"], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /only apply to ghostdeps scan/);
   });
 });

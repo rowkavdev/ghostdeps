@@ -105,6 +105,41 @@ describe("renderRepositorySummary", () => {
       "  5 unused",
       "  8 potentially unnecessary",
       "  2 duplicate capabilities",
+      "",
+      "Verdicts:",
+      "  unused:",
+      "    (repository-wide) - unused finding 0 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - unused finding 1 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - unused finding 2 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - unused finding 3 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - unused finding 4 (high confidence)",
+      "      - test evidence",
+      "  potentially unnecessary:",
+      "    (repository-wide) - potentially-unnecessary finding 0 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - potentially-unnecessary finding 1 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - potentially-unnecessary finding 2 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - potentially-unnecessary finding 3 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - potentially-unnecessary finding 4 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - potentially-unnecessary finding 5 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - potentially-unnecessary finding 6 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - potentially-unnecessary finding 7 (high confidence)",
+      "      - test evidence",
+      "  duplicate capabilities:",
+      "    (repository-wide) - duplicate-capability finding 0 (high confidence)",
+      "      - test evidence",
+      "    (repository-wide) - duplicate-capability finding 1 (high confidence)",
+      "      - test evidence",
     ].join("\n");
 
     assert.equal(renderRepositorySummary(result), expected);
@@ -196,5 +231,85 @@ describe("renderRepositorySummary", () => {
     };
     const text = renderRepositorySummary(result);
     assert.ok(text.includes("Evi\uFFFDl"), text);
+  });
+
+  it("renders verdicts grouped by kind with evidence, info stays in counts", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      findings: [
+        {
+          kind: "unused",
+          rule: "unused",
+          dependency: "left-pad",
+          summary: "left-pad is declared but never used",
+          recommendation: "Remove left-pad.",
+          evidence: [{ kind: "no-import-found", statement: "no import of left-pad found" }],
+          confidence: "high",
+          limitations: [],
+          affectedFiles: ["package.json"],
+        },
+        {
+          kind: "should-be-dev",
+          rule: "should-be-dev",
+          dependency: "typescript",
+          summary: "typescript is imported only from tests and build config",
+          recommendation: "Move typescript to devDependencies.",
+          evidence: [{ kind: "test-import", statement: "imports found only under test/" }],
+          confidence: "medium",
+          limitations: [],
+          affectedFiles: ["package.json"],
+        },
+        ...makeFindings("info", 2),
+      ],
+    };
+    const text = renderRepositorySummary(result);
+    assert.match(text, /Findings:\n {2}1 unused\n {2}1 should be dev dependencies\n {2}2 info/);
+    assert.ok(
+      text.includes(
+        [
+          "Verdicts:",
+          "  unused:",
+          "    left-pad - left-pad is declared but never used (high confidence, rule: unused)",
+          "      - no import of left-pad found",
+          "  should be dev dependencies:",
+          "    typescript - typescript is imported only from tests and build config (medium confidence, rule: should-be-dev)",
+          "      - imports found only under test/",
+        ].join("\n"),
+      ),
+      text,
+    );
+    // Info findings never get verdict lines.
+    assert.ok(!text.includes("info finding 0 -"), text);
+  });
+
+  it("omits the Verdicts section when every finding is info", () => {
+    const result: AnalysisResult = { ...emptyResult(), findings: makeFindings("info", 2) };
+    assert.ok(!renderRepositorySummary(result).includes("Verdicts:"));
+  });
+
+  it("caps long evidence lists with a +N more line and escapes verdict text", () => {
+    const evidence = Array.from({ length: 11 }, (_, i) => ({
+      kind: "e",
+      statement: `evidence line ${i}`,
+    }));
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      findings: [
+        {
+          kind: "unused",
+          dependency: "evil\u001B[8;;https://bad.example",
+          summary: "declared but never used",
+          recommendation: "Remove it.",
+          evidence,
+          confidence: "high",
+          limitations: [],
+          affectedFiles: [],
+        },
+      ],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(!text.includes("\u001B"), "raw ESC must never reach the terminal");
+    assert.ok(text.includes("evil\uFFFD[8;;https://bad.example - declared but never used"), text);
+    assert.ok(text.includes("- ... and 3 more"), text);
   });
 });
