@@ -69,5 +69,14 @@ consecutive days. The cap is the kind's ceiling, and confidence still drops rung
 below it: high → medium, medium → low, low → info. Lifting it is a one-line change
 plus the contract test in `severity.test.ts`. A regression after the lift does
 not bring the cap back by itself; that needs a fresh decision.
+
+The confidence core emits for `unused` findings is capped too (#178):
+min(computed, `medium`), set by `UNUSED_CONFIDENCE_CAP`. It never raises
+confidence. The engine applies the cap where findings are assembled, never in
+the CLI or check-run renderers, so every surface shows the same value. When it
+capped anything, the result carries one run-level `unused-confidence-capped`
+info note ("unused confidence capped pending corpus validation"). The lift
+criterion is the same as the severity cap, and both caps come off in one PR
+with their contract tests.
 `summariseFindings` returns counts by kind, rule and confidence for check-run
 summaries.

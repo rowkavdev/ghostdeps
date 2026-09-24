@@ -27,7 +27,8 @@ describe("JS adapter through the engine and default policy (#138)", () => {
   it("complete analysis: a dependency with no evidence anywhere is reported unused", async () => {
     const hits = unused(await findings("basic-unused"), "left-pad");
     assert.equal(hits.length, 1);
-    assert.equal(hits[0]!.confidence, "high");
+    // Medium, not high: core caps unused confidence until the corpus check greens (#178).
+    assert.equal(hits[0]!.confidence, "medium");
   });
 
   it("script-only and config-only dependencies are never unused", async () => {

@@ -11,6 +11,7 @@ import type {
   ProjectRef,
   RepositoryHandle,
 } from "../types/index.js";
+import { UNUSED_CONFIDENCE_CAP } from "../report/severity.js";
 import { analyseRepository, detectionConfidence } from "./analyse.js";
 
 // dist/engine -> repository root
@@ -119,6 +120,61 @@ function mockAdapter(spec: MockSpec): EcosystemAdapter & { calls: string[] } {
   }
   return adapter;
 }
+
+describe("unused confidence cap (#178 contract)", () => {
+  const finding = (
+    kind: Finding["kind"],
+    confidence: Finding["confidence"],
+    dependency: string,
+  ): Finding => ({
+    kind,
+    rule: kind,
+    dependency,
+    summary: `${dependency} ${kind}`,
+    recommendation: "r",
+    evidence: [],
+    confidence,
+    limitations: [],
+    affectedFiles: [],
+  });
+  const withPolicy = async (findings: Finding[]) => {
+    const repo = await fixtureHandle(fixture);
+    return analyseRepository(repo, {
+      adapters: [mockAdapter({ ecosystem: "js", confidence: 1, deps: ["a"] })],
+      recommend: () => findings,
+    });
+  };
+
+  it("emits a high-computed unused finding at medium, with one run-level note", async () => {
+    assert.equal(UNUSED_CONFIDENCE_CAP, "medium");
+    const result = await withPolicy([
+      finding("unused", "high", "a"),
+      finding("unused", "high", "b"),
+      finding("should-be-dev", "high", "c"),
+      finding("potentially-unnecessary", "high", "d"),
+    ]);
+    const conf = (dep: string) => result.findings.find((f) => f.dependency === dep)?.confidence;
+    assert.equal(conf("a"), "medium");
+    assert.equal(conf("b"), "medium");
+    // Other kinds are unaffected.
+    assert.equal(conf("c"), "high");
+    assert.equal(conf("d"), "high");
+    const notes = result.findings.filter((f) => f.rule === "unused-confidence-capped");
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0]?.kind, "info");
+    assert.equal(notes[0]?.summary, "unused confidence capped pending corpus validation");
+  });
+
+  it("never raises confidence and adds no note when nothing was capped", async () => {
+    const result = await withPolicy([
+      finding("unused", "low", "a"),
+      finding("unused", "medium", "b"),
+    ]);
+    assert.equal(result.findings.find((f) => f.dependency === "a")?.confidence, "low");
+    assert.equal(result.findings.find((f) => f.dependency === "b")?.confidence, "medium");
+    assert.ok(!result.findings.some((f) => f.rule === "unused-confidence-capped"));
+  });
+});
 
 describe("analyseRepository", () => {
   describe("surface graph completeness (#114)", () => {
@@ -402,7 +458,7 @@ describe("analyseRepository", () => {
           })),
     });
     assert.deepEqual(
-      ok.findings.map((f) => f.dependency),
+      ok.findings.filter((f) => f.kind !== "info").map((f) => f.dependency),
       ["unused"],
     );
     const failed = await analyseRepository(repo, {

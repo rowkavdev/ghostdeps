@@ -17,6 +17,7 @@
 import { type EcosystemAdapter } from "../adapter.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
+import { UNUSED_CONFIDENCE_CAP, capConfidence } from "../report/severity.js";
 import { boundSourceChanges } from "./source-changes.js";
 import type {
   AnalysisResult,
@@ -363,6 +364,36 @@ export async function assembleAnalysisResult(
       limitations: [
         "Files outside the scan may use dependencies, import them from shipped code, or use them as values.",
       ],
+      affectedFiles: [],
+    });
+  }
+
+  // Shipping gate (#178): until the corpus check proves recall, no unused
+  // verdict claims more than UNUSED_CONFIDENCE_CAP, whoever produced it.
+  let cappedUnused = 0;
+  for (let i = 0; i < findings.length; i++) {
+    const finding = findings[i]!;
+    if (finding.kind !== "unused") continue;
+    const capped = capConfidence(finding.confidence, UNUSED_CONFIDENCE_CAP);
+    if (capped === finding.confidence) continue;
+    findings[i] = { ...finding, confidence: capped };
+    cappedUnused++;
+  }
+  if (cappedUnused > 0) {
+    findings.push({
+      kind: "info",
+      rule: "unused-confidence-capped",
+      summary: "unused confidence capped pending corpus validation",
+      recommendation:
+        "Unused findings are reported at medium confidence at most until the pinned corpus check has stayed green; review before removing.",
+      evidence: [
+        {
+          kind: "unused-confidence-capped",
+          statement: `${cappedUnused} unused finding(s) capped at ${UNUSED_CONFIDENCE_CAP} confidence`,
+        },
+      ],
+      confidence: "high",
+      limitations: [],
       affectedFiles: [],
     });
   }
