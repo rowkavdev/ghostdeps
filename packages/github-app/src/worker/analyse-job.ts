@@ -72,8 +72,9 @@ export interface AnalysisWorkerOptions {
    */
   readonly recommend?: RecommendationPolicy;
   /**
-   * Same-SHA re-run result cache (#174). Defaults to a bounded in-process
-   * cache; false turns it off.
+   * Same-SHA re-run result cache (#174): holds the posted check output.
+   * Defaults to an in-process cache bounded by bytes (16 MiB) and per
+   * repository (4 entries); false turns it off.
    */
   readonly resultCache?: ResultCache | false;
   /** Checkout scan limits/exclusions. Defaults to core's. */
@@ -216,7 +217,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       const hit = cache?.get(job.repository.id, cacheKey);
       if (hit) {
         try {
-          await reporter.complete(target, checkRunId, hit.result, hit.added);
+          await reporter.completeRendered(target, checkRunId, hit);
           options.log?.info({ job: job.key }, "re-run served from the same-SHA result cache");
           return;
         } catch (error) {
@@ -285,9 +286,9 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         }
       }
       const result = await analyse(await checkoutRoot(destDir), adapterModules, run);
-      await reporter.complete(target, checkRunId, result, added, appNotes);
+      const posted = await reporter.complete(target, checkRunId, result, added, appNotes);
       if (cache && isCacheable(result, appNotes)) {
-        cache.set(job.repository.id, cacheKey, { result, added });
+        cache.set(job.repository.id, cacheKey, posted);
       }
       options.log?.info({ job: job.key, findings: result.findings.length }, "analysis complete");
     } catch (error) {
