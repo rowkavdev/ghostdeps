@@ -11,11 +11,16 @@ import { parseYarnLockfile } from "./yarn.js";
 import { parseBunLockfile } from "./bun.js";
 
 /**
- * Lockfiles above this size are not parsed (security-model: parser input
- * limits). Matches the repository scanner's lockfile ceiling (#73). Budget: a 30,000-package lockfile parses in well under 5 s on CI
- * hardware (see build.test.ts).
+ * Lockfiles above this size are not parsed; the oversize lockfile is
+ * reported as a limitation (security-model: parser input limits, and #89's
+ * rule that oversize input surfaces as evidence, never a silent skip). The
+ * cap itself lives in core (issue #89 single source) and is re-exported
+ * here so existing imports keep working. Budget: a 30,000-package lockfile
+ * parses in well under 5 s on CI hardware (see build.test.ts).
  */
-export const MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
+import { MAX_LOCKFILE_BYTES } from "@ghostdeps/core";
+
+export { MAX_LOCKFILE_BYTES };
 
 type Format = "npm" | "pnpm" | "yarn" | "bun" | "bun-binary";
 const LOCKFILES: [string, Format][] = [

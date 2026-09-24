@@ -35,7 +35,10 @@ Everything in the scanned directory is attacker-controlled ([security-model.md](
 
 ## Limits
 
-Defaults (`DEFAULT_SCAN_LIMITS`), overridable per scan:
+Defaults (`DEFAULT_SCAN_LIMITS`), overridable per scan. The shared ceilings
+(`maxFiles`, `maxFileBytes`, `maxLockfileBytes`) are owned by
+`packages/core/src/limits.ts` (issue #89 single source); the values below
+mirror it.
 
 | Limit              | Default | Effect when exceeded                       |
 | ------------------ | ------- | ------------------------------------------ |
@@ -51,7 +54,7 @@ Lockfiles get their own, larger ceiling because graph parsing depends on them an
 
 ## Default exclusions
 
-Excluded directories are recorded once, at the directory, and never walked. The list lives in `exclusions.ts`; callers can replace it.
+Excluded directories are recorded once, at the directory, and never walked. The list lives in `packages/core/src/limits.ts` (issue #89 single source, shared with detection and usage); the scanner's `exclusions.ts` re-exports it and callers can replace it per scan.
 
 - VCS: `.git`, `.hg`, `.svn`
 - JavaScript/TypeScript: `node_modules`, `bower_components`, `jspm_packages`, `.pnpm-store`, `.yarn`, `dist`, `build`, `out`, `coverage`, `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.parcel-cache`
