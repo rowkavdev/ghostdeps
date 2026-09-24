@@ -13,6 +13,7 @@ import type {
 } from "@ghostdeps/core";
 import { JS_ECOSYSTEM, detectJavaScriptTypeScript } from "./detect.js";
 import { buildDependencyGraph } from "./lockfile/index.js";
+import { parseManifest } from "./manifest.js";
 import { findUsage } from "./usage/index.js";
 
 export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
@@ -23,13 +24,18 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
     detect: detectJavaScriptTypeScript,
     buildDependencyGraph,
     findUsage,
-    // Issue #26 lands the package.json -> Dependency parser. Until then this
-    // adapter reports no dependencies rather than guessing.
     async listDirectDependencies(
-      _context: AdapterContext,
-      _projects: ProjectRef[],
+      context: AdapterContext,
+      projects: ProjectRef[],
     ): Promise<Dependency[]> {
-      return [];
+      const all: Dependency[] = [];
+      for (const project of projects) {
+        // Parse errors surface as detection evidence (manifest-malformed);
+        // a broken manifest yields zero dependencies here, never a crash.
+        const result = await parseManifest(context.repository, project);
+        all.push(...result.dependencies);
+      }
+      return all;
     },
   };
 }
