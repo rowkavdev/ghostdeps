@@ -8,6 +8,7 @@ export * from "./adapter.js";
 export * from "./repository-head.js";
 export * from "./checkout/index.js";
 export * from "./native-rules/index.js";
+export * from "./capabilities/index.js";
 export * from "./report/index.js";
 export * from "./diff/index.js";
 export { runAdapterContractTests } from "./contract-tests/index.js";

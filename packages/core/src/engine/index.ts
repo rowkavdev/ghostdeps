@@ -25,3 +25,4 @@ export {
   scanCompletenessFindings,
   type AnalyseDirectoryOptions,
 } from "./analyse-directory.js";
+export { crossEcosystemOverlaps, CROSS_ECOSYSTEM_OVERLAP_RULE } from "./capability-overlap.js";
