@@ -11,11 +11,6 @@
     {
       "kind": "info",
       "severity": "info",
-      "dependency": null
-    },
-    {
-      "kind": "info",
-      "severity": "info",
       "dependency": "react-fake-client"
     },
     {

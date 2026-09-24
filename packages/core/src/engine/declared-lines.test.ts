@@ -3,7 +3,12 @@ import { describe, it } from "node:test";
 import { createDefaultPolicy } from "../recommend/index.js";
 import type { Dependency, ProjectRef, RepositoryHandle } from "../types/index.js";
 import { assembleAnalysisResult } from "./analyse.js";
-import { declarationLineNote, verifyDeclaredLines } from "./declared-lines.js";
+import {
+  declarationLineNote,
+  MAX_VERIFIED_MANIFEST_CHARS,
+  MAX_VERIFIED_MANIFESTS,
+  verifyDeclaredLines,
+} from "./declared-lines.js";
 import type { AdapterOutcome } from "./run-adapter.js";
 
 const MANIFEST = [
@@ -65,6 +70,34 @@ describe("verifyDeclaredLines (#198)", () => {
     );
     assert.ok(!("declaredLine" in out[3]!), "a dropped line is removed, not set to undefined");
     assert.equal(reads, 2, "each manifest is read once");
+  });
+
+  it("caps manifest reads and drops lines past the cap", async () => {
+    let count = 0;
+    const many: RepositoryHandle = {
+      ...repo,
+      async readFile() {
+        count++;
+        return MANIFEST;
+      },
+    };
+    const deps = Array.from({ length: MAX_VERIFIED_MANIFESTS + 5 }, (_, i) =>
+      dep("left-pad", 4, `p${i}/package.json`),
+    );
+    const out = await verifyDeclaredLines(many, deps);
+    assert.equal(count, MAX_VERIFIED_MANIFESTS);
+    assert.equal(out.filter((d) => d.declaredLine === 4).length, MAX_VERIFIED_MANIFESTS);
+  });
+
+  it("does not verify an oversized manifest", async () => {
+    const big: RepositoryHandle = {
+      ...repo,
+      async readFile() {
+        return MANIFEST + " ".repeat(MAX_VERIFIED_MANIFEST_CHARS);
+      },
+    };
+    const [out] = await verifyDeclaredLines(big, [dep("left-pad", 4)]);
+    assert.equal(out!.declaredLine, undefined);
   });
 });
 

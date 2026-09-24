@@ -4,6 +4,7 @@
     {
       "constraint": "^1.6.0",
       "declaredIn": "package.json",
+      "declaredLine": 6,
       "kind": "runtime",
       "name": "axios",
       "project": {

@@ -1,13 +1,20 @@
 import { DECLARATION_ANCHORED_RULES, DECLARATION_EVIDENCE_KINDS } from "../recommend/policy.js";
 import type { Dependency, Finding, RepositoryHandle } from "../types/index.js";
 
+/** At most this many distinct manifests are read to verify lines. */
+export const MAX_VERIFIED_MANIFESTS = 1000;
+/** Manifests larger than this (UTF-16 code units) are not line-verified. */
+export const MAX_VERIFIED_MANIFEST_CHARS = 2_000_000;
+
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Keep an adapter's `declaredLine` (#198) only if that line of the manifest
  * contains the dependency name as a whole token. Adapter output is
  * untrusted: a non-integer, out-of-range or mismatched line is dropped,
- * never guessed or corrected. Each manifest is read once.
+ * never guessed or corrected. Each manifest is read once, and reads are
+ * capped (MAX_VERIFIED_MANIFESTS, MAX_VERIFIED_MANIFEST_CHARS): past a cap
+ * the line is dropped and the declaration-line note counts it.
  */
 export async function verifyDeclaredLines(
   repository: RepositoryHandle,
@@ -16,10 +23,11 @@ export async function verifyDeclaredLines(
   const manifests = new Map<string, Promise<string[] | undefined>>();
   const linesOf = (file: string): Promise<string[] | undefined> => {
     if (!manifests.has(file)) {
+      if (manifests.size >= MAX_VERIFIED_MANIFESTS) return Promise.resolve(undefined);
       manifests.set(
         file,
         repository.readFile(file).then(
-          (text) => text.split(/\r?\n/),
+          (text) => (text.length > MAX_VERIFIED_MANIFEST_CHARS ? undefined : text.split(/\r?\n/)),
           () => undefined,
         ),
       );
