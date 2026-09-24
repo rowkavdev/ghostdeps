@@ -483,28 +483,37 @@ export async function collectConfigReferences(
 ): Promise<ConfigScan> {
   const own = await collectDirectory(repository, projectDir, files);
   if (projectDir === ".") return own;
-  const root = await collectDirectory(repository, ".", files);
+  return mergeScans(own, await collectDirectory(repository, ".", files));
+}
+
+function mergeScans(own: ConfigScan, root: ConfigScan): ConfigScan {
   return { refs: [...own.refs, ...root.refs], unread: [...own.unread, ...root.unread] };
 }
 
+/** One scan per directory per analysis run; the root is scanned once, not once per member. */
 const cache = new WeakMap<AdapterContext, Map<string, Promise<ConfigScan>>>();
 
-function scanFor(context: AdapterContext, dependency: Dependency): Promise<ConfigScan> {
-  const projectDir = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
-  let perProject = cache.get(context);
-  if (!perProject) {
-    perProject = new Map();
-    cache.set(context, perProject);
+function directoryScan(context: AdapterContext, dir: string): Promise<ConfigScan> {
+  let perDir = cache.get(context);
+  if (!perDir) {
+    perDir = new Map();
+    cache.set(context, perDir);
   }
-  let pending = perProject.get(projectDir);
+  let pending = perDir.get(dir);
   if (!pending) {
     pending = (async () => {
       const files = (await context.repository.listFiles()).map((f) => f.replace(/^\.\//, ""));
-      return collectConfigReferences(context.repository, projectDir, files);
+      return collectDirectory(context.repository, dir, files);
     })();
-    perProject.set(projectDir, pending);
+    perDir.set(dir, pending);
   }
   return pending;
+}
+
+async function scanFor(context: AdapterContext, dependency: Dependency): Promise<ConfigScan> {
+  const projectDir = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
+  const own = await directoryScan(context, projectDir);
+  return projectDir === "." ? own : mergeScans(own, await directoryScan(context, "."));
 }
 
 /** via="config" / via="convention" usages of `dependency` from its project's (and the root's) configs. */

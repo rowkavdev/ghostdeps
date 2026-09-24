@@ -1,0 +1,5 @@
+{
+  "description": "eslint.config.mjs is a JS config that is never evaluated, so reference analysis is incomplete. eslint-plugin-foo has no visible usage but must not be reported unused with high confidence; manual review is the correct outcome.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "eslint-plugin-foo", "minConfidence": "high" }]
+}

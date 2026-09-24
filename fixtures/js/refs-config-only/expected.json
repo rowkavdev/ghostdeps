@@ -1,0 +1,8 @@
+{
+  "description": "eslint-plugin-import is only referenced from .eslintrc.json plugins and @types/node only from tsconfig types. Both are used via=config and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "eslint-plugin-import" },
+    { "kind": "unused", "dependency": "@types/node" }
+  ]
+}

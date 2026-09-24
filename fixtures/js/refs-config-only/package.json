@@ -1,0 +1,9 @@
+{
+  "name": "fixture-refs-config-only",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "eslint-plugin-import": "^2.31.0"
+  }
+}
