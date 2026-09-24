@@ -1,0 +1,5 @@
+{
+  "description": "Convention regression from nanoid: simple-git-hooks is configured only through its package.json key. It is used via=convention and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "simple-git-hooks" }]
+}

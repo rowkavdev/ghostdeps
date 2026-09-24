@@ -1,0 +1,5 @@
+{
+  "description": "Regression from uuid: publint only runs from a CI workflow step (npm exec publint). It is used via=script and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "publint" }]
+}

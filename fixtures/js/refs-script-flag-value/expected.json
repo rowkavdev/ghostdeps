@@ -1,0 +1,8 @@
+{
+  "description": "Regression from fastify: @jsumners/line-reporter is named only as a flag value, and tsx only as tsx/esm inside NODE_OPTIONS. Both are used via=script and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "@jsumners/line-reporter" },
+    { "kind": "unused", "dependency": "tsx" }
+  ]
+}

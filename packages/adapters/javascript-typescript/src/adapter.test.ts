@@ -105,3 +105,33 @@ describe("reference analysis completeness (#132)", () => {
     assert.equal(r.referenceAnalysisComplete, false);
   });
 });
+
+describe("real-repo coverage regressions (validation pass after #164)", () => {
+  const adapter = createJavaScriptTypeScriptAdapter();
+  const dev = (name: string): Dependency => ({
+    name,
+    constraint: "*",
+    kind: "dev",
+    project: root,
+    declaredIn: "package.json",
+  });
+  const cases = [
+    ["refs-concurrently-args", "autocannon", "script"],
+    ["refs-script-flag-value", "@jsumners/line-reporter", "script"],
+    ["refs-script-flag-value", "tsx", "script"],
+    ["refs-nested-tsconfig", "fastify-tsconfig", "config"],
+    ["refs-workflow-only", "publint", "script"],
+    ["convention-simple-git-hooks-key", "simple-git-hooks", "convention"],
+    ["convention-size-limit-preset", "@size-limit/preset-small-lib", "convention"],
+  ] as const;
+  for (const [fixture, name, via] of cases) {
+    it(`${fixture}: ${name} has via=${via} usage and the analysis is complete`, async () => {
+      const r = normaliseUsageResult(await adapter.findUsage!(ctx(fixture), dev(name)));
+      assert.ok(
+        r.usages.some((u) => u.via === via),
+        JSON.stringify(r.usages),
+      );
+      assert.equal(r.referenceAnalysisComplete, true);
+    });
+  }
+});

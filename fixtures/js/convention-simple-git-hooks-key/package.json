@@ -1,0 +1,11 @@
+{
+  "name": "fixture-convention-simple-git-hooks-key",
+  "private": true,
+  "version": "0.0.0",
+  "simple-git-hooks": {
+    "pre-commit": "echo checking"
+  },
+  "devDependencies": {
+    "simple-git-hooks": "^2.11.0"
+  }
+}

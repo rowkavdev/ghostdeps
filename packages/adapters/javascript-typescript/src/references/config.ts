@@ -32,6 +32,8 @@ export interface ConfigReference {
   via: Via;
   /** What referenced it, e.g. "eslint plugins" or "tsconfig types". */
   source: string;
+  /** Package-name prefixes also credited (tools that auto-discover plugins: "@size-limit/"). */
+  prefixes?: string[];
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -255,6 +257,8 @@ interface Convention {
   files: readonly string[];
   dirs?: readonly string[];
   packageJsonKey?: string;
+  /** Declared packages with this prefix are also credited: the tool loads them by discovery. */
+  creditPrefix?: string;
 }
 
 const rc = (base: string, exts: readonly string[]) => exts.map((e) => `${base}${e}`);
@@ -317,7 +321,87 @@ export const CONVENTIONS: readonly Convention[] = [
     packageJsonKey: "stylelint",
   },
   { package: "typescript", files: ["tsconfig.json"] },
+  // size-limit loads every installed @size-limit/* preset or plugin by discovery.
+  {
+    package: "size-limit",
+    files: rc(".size-limit", [".json", ...JS_EXTS, ".ts"]),
+    packageJsonKey: "size-limit",
+    creditPrefix: "@size-limit/",
+  },
+  {
+    package: "simple-git-hooks",
+    files: [
+      ...rc(".simple-git-hooks", [".json", ...JS_EXTS]),
+      ...rc("simple-git-hooks", [".json", ...JS_EXTS]),
+    ],
+    packageJsonKey: "simple-git-hooks",
+  },
+  {
+    package: "nano-staged",
+    files: rc(".nano-staged", [".json", ...JS_EXTS]),
+    packageJsonKey: "nano-staged",
+  },
+  { package: "c8", files: rc(".c8rc", ["", ".json"]), packageJsonKey: "c8" },
+  { package: "nyc", files: rc(".nycrc", ["", ".json", ".yaml", ".yml"]), packageJsonKey: "nyc" },
+  { package: "ava", files: rc("ava.config", JS_EXTS), packageJsonKey: "ava" },
+  { package: "xo", files: rc("xo.config", [...JS_EXTS, ".ts"]), packageJsonKey: "xo" },
+  {
+    package: "mocha",
+    files: rc(".mocharc", [".json", ".jsonc", ".yaml", ".yml", ...JS_EXTS]),
+    packageJsonKey: "mocha",
+  },
+  {
+    package: "vitest",
+    files: [
+      ...rc("vitest.config", [...JS_EXTS, ".ts", ".mts", ".cts"]),
+      ...rc("vitest.workspace", [".json", ...JS_EXTS, ".ts"]),
+    ],
+  },
+  { package: "vite", files: rc("vite.config", [...JS_EXTS, ".ts", ".mts", ".cts"]) },
+  { package: "webpack", files: rc("webpack.config", [...JS_EXTS, ".ts"]) },
+  { package: "rollup", files: rc("rollup.config", [...JS_EXTS, ".ts"]) },
+  { package: "@playwright/test", files: rc("playwright.config", [...JS_EXTS, ".ts"]) },
+  { package: "cypress", files: rc("cypress.config", [...JS_EXTS, ".ts"]) },
+  { package: "next", files: rc("next.config", [...JS_EXTS, ".ts"]) },
+  { package: "turbo", files: ["turbo.json"] },
+  { package: "nx", files: ["nx.json"] },
+  { package: "lerna", files: ["lerna.json"] },
+  { package: "@changesets/cli", files: [], dirs: [".changeset"] },
+  {
+    package: "release-it",
+    files: rc(".release-it", [".json", ".yaml", ".yml", ".toml", ...JS_EXTS, ".ts"]),
+    packageJsonKey: "release-it",
+  },
+  {
+    package: "semantic-release",
+    files: rc(".releaserc", ["", ".json", ".yaml", ".yml", ...JS_EXTS]),
+    packageJsonKey: "release",
+  },
+  { package: "typedoc", files: ["typedoc.json"] },
+  {
+    package: "knip",
+    files: ["knip.json", "knip.jsonc", ...rc("knip.config", [...JS_EXTS, ".ts"])],
+    packageJsonKey: "knip",
+  },
+  { package: "tsd", files: [], packageJsonKey: "tsd" },
 ];
+
+/** Tool config basenames (JS/TS) that are never evaluated, recognised at any depth. */
+const KNOWN_EXECUTABLE_CONFIGS: ReadonlySet<string> = new Set(
+  CONVENTIONS.flatMap((c) => c.files).filter((f) => /\.(?:c|m)?[jt]s$/.test(f)),
+);
+
+/** Declarative configs recognised below the project root (nested tsconfig, per-folder .eslintrc). */
+function handlerFor(base: string): Handler | undefined {
+  const direct = FILE_HANDLERS.get(base);
+  if (direct) return direct;
+  // tsconfig.build.json, tsconfig.test.json, ...
+  if (/^tsconfig\.[^/]+\.json$/.test(base)) return TSCONFIG;
+  return undefined;
+}
+
+/** Config files read per project, nested ones included. */
+const MAX_CONFIG_FILES = 500;
 
 function parseText(file: string, text: string): unknown {
   if (file.endsWith(".yaml") || file.endsWith(".yml")) {
@@ -346,7 +430,7 @@ async function readText(repository: RepositoryHandle, file: string): Promise<Rea
 /** A config file that exists but whose references could not be read. */
 export interface UnreadConfig {
   file: string;
-  reason: "unreadable" | "oversized" | "malformed" | "not evaluated";
+  reason: "unreadable" | "oversized" | "malformed" | "not evaluated" | "over limit";
 }
 
 /** Everything the config scan found for one project, plus what it could not read. */
@@ -381,9 +465,28 @@ async function collectDirectory(
       }
     };
 
-  for (const [base, handler] of FILE_HANDLERS) {
-    if (!inProject.has(base)) continue;
-    const file = `${prefix}${base}`;
+  // A nested package.json starts another project; its files belong to it.
+  const nestedRoots = [...inProject]
+    .filter((f) => f.endsWith("/package.json"))
+    .map((f) => f.slice(0, -"package.json".length));
+  const ownFiles = [...inProject]
+    .filter((f) => !nestedRoots.some((root) => f.startsWith(root)))
+    .sort();
+  let configFiles = 0;
+  for (const f of ownFiles) {
+    const base = f.slice(f.lastIndexOf("/") + 1);
+    const nested = f.includes("/");
+    if (nested ? KNOWN_EXECUTABLE_CONFIGS.has(base) : EXECUTABLE_CONFIG.test(base)) {
+      unread.push({ file: `${prefix}${f}`, reason: "not evaluated" });
+      continue;
+    }
+    const handler = handlerFor(base);
+    if (!handler) continue;
+    const file = `${prefix}${f}`;
+    if (++configFiles > MAX_CONFIG_FILES) {
+      unread.push({ file, reason: "over limit" });
+      continue;
+    }
     const read = await readText(repository, file);
     if (!("text" in read)) {
       unread.push({ file, reason: read.reason as UnreadConfig["reason"] });
@@ -394,11 +497,6 @@ async function collectDirectory(
     } catch {
       // No references from a malformed config, and coverage is no longer complete.
       unread.push({ file, reason: "malformed" });
-    }
-  }
-  for (const f of inProject) {
-    if (!f.includes("/") && EXECUTABLE_CONFIG.test(f)) {
-      unread.push({ file: `${prefix}${f}`, reason: "not evaluated" });
     }
   }
 
@@ -441,6 +539,7 @@ async function collectDirectory(
         file: `${prefix}${file}`,
         line: 1,
         via: "convention",
+        ...(c.creditPrefix ? { prefixes: [c.creditPrefix] } : {}),
         source: `${file} present`,
       });
     } else if (dir !== undefined) {
@@ -450,6 +549,7 @@ async function collectDirectory(
         file: `${prefix}${inside}`,
         line: 1,
         via: "convention",
+        ...(c.creditPrefix ? { prefixes: [c.creditPrefix] } : {}),
         source: `${dir}/ present`,
       });
     } else if (
@@ -463,6 +563,7 @@ async function collectDirectory(
         file: manifestFile,
         line: lineOf(manifestText, c.packageJsonKey),
         via: "convention",
+        ...(c.creditPrefix ? { prefixes: [c.creditPrefix] } : {}),
         source: `package.json "${c.packageJsonKey}" present`,
       });
     }
@@ -523,7 +624,11 @@ export async function findConfigUsages(
 ): Promise<Usage[]> {
   const { refs } = await scanFor(context, dependency);
   return refs
-    .filter((r) => r.packages.includes(dependency.name))
+    .filter(
+      (r) =>
+        r.packages.includes(dependency.name) ||
+        (r.prefixes?.some((p) => dependency.name.startsWith(p)) ?? false),
+    )
     .map((r) => ({
       dependency: dependency.name,
       file: r.file,

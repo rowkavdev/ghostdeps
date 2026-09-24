@@ -52,10 +52,56 @@ interface WrapperSpec {
   value?: readonly string[];
   exec?: readonly string[];
   bool?: readonly string[];
+  /** Every positional argument is itself a command (`concurrently "a" "b"`). */
+  commandArgs?: boolean;
 }
+
+const CONCURRENTLY: WrapperSpec = {
+  isPackage: true,
+  commandArgs: true,
+  value: [
+    "-n",
+    "--names",
+    "-c",
+    "--prefix-colors",
+    "-p",
+    "--prefix",
+    "-l",
+    "--prefix-length",
+    "-t",
+    "--timestamp-format",
+    "-s",
+    "--success",
+    "--hide",
+    "--restart-tries",
+    "--restart-after",
+    "-m",
+    "--max-processes",
+    "--default-input-target",
+    "--name-separator",
+    "--pad-prefix",
+  ],
+  bool: [
+    "-k",
+    "--kill-others",
+    "--kill-others-on-fail",
+    "-r",
+    "--raw",
+    "--no-color",
+    "-i",
+    "--handle-input",
+    "-g",
+    "--group",
+    "--timings",
+    "-P",
+    "--passthrough-arguments",
+  ],
+};
 
 /** Runners and wrapper CLIs whose next command word is the bin. */
 const WRAPPER_SPECS: Readonly<Record<string, WrapperSpec>> = Object.freeze({
+  concurrently: CONCURRENTLY,
+  conc: CONCURRENTLY,
   npx: {
     isPackage: false,
     value: ["-p", "--package"],
@@ -281,6 +327,27 @@ function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): vo
     if (word === undefined) return;
     const bare = bareCommand(word);
     const spec = Object.hasOwn(WRAPPER_SPECS, bare) ? WRAPPER_SPECS[bare] : undefined;
+    if (spec?.commandArgs) {
+      out.words.push(bare);
+      for (let j = i + 1; j < words.length; j++) {
+        const raw = words[j]!;
+        if (raw === "--") continue;
+        if (raw.startsWith("-")) {
+          const eq = raw.indexOf("=");
+          const flag = eq > 0 ? raw.slice(0, eq) : raw;
+          if (spec.value?.includes(flag)) {
+            if (eq < 0) j++;
+          } else if (!spec.bool?.includes(flag)) {
+            out.gaps.push(`${bare}: unrecognised flag ${flag}`);
+          }
+          continue;
+        }
+        // `npm:lint` / `yarn:build` shortcuts name scripts, not commands.
+        if (/^(npm|yarn|pnpm|bun):/.test(raw)) continue;
+        analyseNested(raw, depth, out);
+      }
+      return;
+    }
     if (spec) {
       if (spec.isPackage) out.words.push(bare);
       i++;
@@ -357,6 +424,21 @@ export function analyseScript(script: string): ScriptAnalysis {
 /** Words in command position across one script, e.g. "tsc -p . && vitest run" -> ["tsc", "vitest"]. */
 export function commandWords(script: string): string[] {
   return analyseScript(script).words;
+}
+
+/**
+ * Tokens in a command string that name `packageName` directly or through a
+ * subpath: `--reporter=@jsumners/line-reporter`, `--import=tsx/esm`,
+ * `-r ts-node/register`. A package named anywhere in a script is used by it,
+ * even when it isn't in command position. Only adds usage.
+ */
+export function mentions(command: string, packageName: string): string[] {
+  const out: string[] = [];
+  const text = command.slice(0, MAX_SCRIPT_LENGTH);
+  for (const token of text.match(/[^\s"'=,;|&()<>`]+/g) ?? []) {
+    if (token === packageName || token.startsWith(`${packageName}/`)) out.push(token);
+  }
+  return out;
 }
 
 /** 1-based line of `"name":` inside the "scripts" object, falling back to the "scripts" key line. */
@@ -633,11 +715,15 @@ export async function findScriptUsages(
   );
   if (manifests.length === 0) return [];
   const bins = await binNames(context, dependency);
-  if (bins.size === 0) return [];
   const usages: Usage[] = [];
   for (const manifest of manifests) {
     for (const [name, command] of manifest.scripts) {
-      const hits = [...new Set(commandWords(command).filter((w) => bins.has(w)))];
+      const hits = [
+        ...new Set([
+          ...commandWords(command).filter((w) => bins.has(w)),
+          ...mentions(command, dependency.name),
+        ]),
+      ];
       if (hits.length === 0) continue;
       usages.push({
         dependency: dependency.name,
