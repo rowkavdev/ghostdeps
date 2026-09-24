@@ -84,6 +84,14 @@ describe("crossEcosystemOverlaps (#55)", () => {
     assert.deepEqual(findings[0]!.affectedFiles, ["apps/admin/package.json", "apps/web/manifest"]);
   });
 
+  it("skips clusters marked crossEcosystem: false, like test runners (#211)", () => {
+    const testRunner = CAPABILITY_CATALOGUE.clusters.find((c) => c.id === "test-runner");
+    assert.equal(testRunner?.crossEcosystem, false, "kept in the catalogue for #58");
+    assert.deepEqual(crossEcosystemOverlaps([dep(web, "vitest"), dep(svc, "pytest")]), []);
+    // Other clusters still report.
+    assert.equal(crossEcosystemOverlaps([dep(web, "zod"), dep(svc, "pydantic")]).length, 2);
+  });
+
   it("stays quiet within one ecosystem (that is #58's job)", () => {
     assert.deepEqual(crossEcosystemOverlaps([dep(web, "axios"), dep(web, "got")]), []);
   });
