@@ -1,0 +1,30 @@
+{
+  "description": "uv project with a realistic uv.lock (#45): httpx pulls in 6 packages transitively, the dev group's pytest pulls in 3, and the dev flag follows runtime reachability. Its [build-system] requires (hatchling) is never locked and must not make the graph incomplete.",
+  "detection": {
+    "minConfidence": 0.9,
+    "projects": [
+      "."
+    ],
+    "packageManagers": {
+      ".": [
+        "uv"
+      ]
+    }
+  },
+  "graph": {
+    ".": {
+      "incomplete": false,
+      "transitiveCounts": {
+        "httpx": 6,
+        "pytest": 3
+      },
+      "devNodes": [
+        "iniconfig",
+        "packaging",
+        "pluggy",
+        "pytest"
+      ]
+    }
+  },
+  "findings": []
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Poetry project with poetry.lock (#45): requests has 4 transitive dependencies, the test group's pytest has 1. Its [build-system] requires (poetry-core) is never locked and must not make the graph incomplete.",
+  "detection": {
+    "minConfidence": 0.9,
+    "projects": [
+      "."
+    ],
+    "packageManagers": {
+      ".": [
+        "poetry"
+      ]
+    }
+  },
+  "graph": {
+    ".": {
+      "incomplete": false,
+      "transitiveCounts": {
+        "requests": 4,
+        "pytest": 1
+      },
+      "devNodes": [
+        "iniconfig",
+        "pytest"
+      ]
+    }
+  },
+  "findings": []
+}

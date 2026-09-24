@@ -20,8 +20,19 @@ interface ExpectedDependency {
   declaredIn?: string;
 }
 
+interface ExpectedGraph {
+  incomplete?: boolean;
+  /** Direct dependency -> size of its transitive closure. */
+  transitiveCounts?: Record<string, number>;
+  /** Exactly the nodes flagged dev, sorted. */
+  devNodes?: string[];
+  /** Exactly the graph's nodes, sorted. */
+  nodes?: string[];
+}
+
 interface ExpectedFixture {
   dependencies?: ExpectedDependency[];
+  graph?: Record<string, ExpectedGraph>;
   description?: string;
   detection?: {
     minConfidence?: number;
@@ -102,6 +113,43 @@ describe("python fixtures (issue #48)", () => {
         }
         if (expected.dependencies.length === 0) {
           assert.deepEqual(actual, [], `${scenario}: expected no parsed dependencies`);
+        }
+      }
+
+      if (expected.graph !== undefined) {
+        const adapter = createPythonAdapter();
+        const detection = await adapter.detect(context);
+        const graphs = await adapter.buildDependencyGraph!(context, detection.projects);
+        for (const [root, want] of Object.entries(expected.graph)) {
+          const graph = graphs.find((candidate) => candidate.project.path === root);
+          assert.ok(graph, `${scenario}: no graph for ${root}`);
+          if (want.incomplete !== undefined) {
+            assert.equal(graph.incomplete, want.incomplete, `${scenario}: ${root} incomplete`);
+          }
+          for (const [dep, count] of Object.entries(want.transitiveCounts ?? {})) {
+            assert.equal(
+              graph.transitiveClosure[dep]?.length,
+              count,
+              `${scenario}: ${root} transitive count for ${dep}`,
+            );
+          }
+          if (want.nodes !== undefined) {
+            assert.deepEqual(
+              graph.nodes.map((node) => node.name).sort(),
+              want.nodes,
+              `${scenario}: ${root} nodes`,
+            );
+          }
+          if (want.devNodes !== undefined) {
+            assert.deepEqual(
+              graph.nodes
+                .filter((node) => node.dev)
+                .map((node) => node.name)
+                .sort(),
+              want.devNodes,
+              `${scenario}: ${root} dev nodes`,
+            );
+          }
         }
       }
     });

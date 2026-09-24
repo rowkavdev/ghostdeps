@@ -1,0 +1,7 @@
+[project]
+name = "api"
+version = "0.1.0"
+dependencies = ["core", "click>=8"]
+
+[tool.uv.sources]
+core = { workspace = true }

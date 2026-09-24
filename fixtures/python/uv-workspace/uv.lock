@@ -1,0 +1,27 @@
+version = 1
+requires-python = ">=3.11"
+
+[manifest]
+members = ["api", "core"]
+
+[[package]]
+name = "api"
+version = "0.1.0"
+source = { editable = "packages/api" }
+dependencies = [{ name = "click" }, { name = "core" }]
+
+[[package]]
+name = "click"
+version = "8.1.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [{ name = "colorama", marker = "sys_platform == 'win32'" }]
+
+[[package]]
+name = "colorama"
+version = "0.4.6"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "core"
+version = "0.1.0"
+source = { editable = "packages/core" }
