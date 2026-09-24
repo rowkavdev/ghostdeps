@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { isPublicNpmRegistryOrigin, PUBLIC_NPM_REGISTRY_ORIGINS } from "@ghostdeps/core";
 import {
   MAX_ORIGIN_URL_LENGTH,
   mergeBindings,
@@ -204,5 +205,45 @@ describe("scoped .npmrc registry bindings", () => {
     assert.equal(registryUrlOrigin("https://u@r.example/"), undefined);
     assert.equal(registryUrlOrigin("https://r.example/?a"), undefined);
     assert.equal(registryUrlOrigin("https://r.example/#a"), undefined);
+  });
+});
+
+describe("origins meet core's public-registry allowlist", () => {
+  it("npm and yarn classic tarballs derive exactly core's public origins", () => {
+    const derived = [
+      tarballOrigin("https://registry.npmjs.org/a/-/a-1.0.0.tgz", "a"),
+      tarballOrigin("https://registry.yarnpkg.com/a/-/a-1.0.0.tgz#abc", "a", {
+        allowFragment: true,
+      }),
+    ];
+    assert.deepEqual(derived, [...PUBLIC_NPM_REGISTRY_ORIGINS]);
+    for (const o of derived) assert.equal(isPublicNpmRegistryOrigin(o), true, o);
+  });
+
+  it("private and look-alike origins are reported but never public", () => {
+    for (const [url, origin] of [
+      ["https://npm.acme.example/a/-/a-1.0.0.tgz", "https://npm.acme.example"],
+      ["http://registry.npmjs.org/a/-/a-1.0.0.tgz", "http://registry.npmjs.org"],
+      ["https://registry.npmjs.org:8443/a/-/a-1.0.0.tgz", "https://registry.npmjs.org:8443"],
+      [
+        "https://registry.npmjs.org.evil.example/a/-/a-1.0.0.tgz",
+        "https://registry.npmjs.org.evil.example",
+      ],
+      [
+        "https://mirror.registry.yarnpkg.com/a/-/a-1.0.0.tgz",
+        "https://mirror.registry.yarnpkg.com",
+      ],
+    ] as const) {
+      assert.equal(tarballOrigin(url, "a"), origin, url);
+      assert.equal(isPublicNpmRegistryOrigin(tarballOrigin(url, "a")), false, url);
+    }
+  });
+
+  it("a scoped .npmrc binding to npm is public only via core's check", () => {
+    const b = scopedRegistries(
+      "@acme:registry=https://registry.npmjs.org/\n@priv:registry=https://p.example/",
+    );
+    assert.equal(isPublicNpmRegistryOrigin(scopedOrigin("@acme/x", b)), true);
+    assert.equal(isPublicNpmRegistryOrigin(scopedOrigin("@priv/x", b)), false);
   });
 });

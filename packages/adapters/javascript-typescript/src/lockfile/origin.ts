@@ -6,7 +6,14 @@
  * scope. Everything here is repository data, so anything unusual (other
  * schemes, credentials, queries, env interpolation, conflicting bindings)
  * yields undefined: absent fails closed, meaning no registry lookup.
+ *
+ * Origins are reported faithfully, private registries included, and
+ * canonicalised by core's normaliseRegistryOrigin. Which origins count as
+ * the public npm registry is decided only by core's
+ * PUBLIC_NPM_REGISTRY_ORIGINS / isPublicNpmRegistryOrigin, which the
+ * app's provider reads; nothing here keeps a copy of that allowlist.
  */
+import { normaliseRegistryOrigin } from "@ghostdeps/core";
 
 /** Longest URL (tarball or registry) considered; real ones are far shorter. */
 export const MAX_ORIGIN_URL_LENGTH = 2048;
@@ -75,12 +82,13 @@ export function tarballOrigin(
     const i = n === name ? path.indexOf(`/${n}/-/`) : lower.indexOf(`/${n.toLowerCase()}/-/`);
     return i >= 0 && !path.slice(i + n.length + 4).includes("/");
   });
-  return shaped ? url.origin : undefined;
+  return shaped ? normaliseRegistryOrigin(url.origin) : undefined;
 }
 
 /** Origin of a registry URL from a scoped .npmrc binding (any path allowed), or undefined. */
 export function registryUrlOrigin(value: string): string | undefined {
-  return strictHttpUrl(value, false)?.origin;
+  const url = strictHttpUrl(value, false);
+  return url ? normaliseRegistryOrigin(url.origin) : undefined;
 }
 
 /**
