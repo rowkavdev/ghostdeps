@@ -134,6 +134,11 @@ export function normaliseAnalysisResult(result: AnalysisResult): AnalysisResult 
     ...result,
     projects: [...result.projects].sort(projectOrder),
     ...(result.projectTree ? { projectTree: [...result.projectTree].sort(projectOrder) } : {}),
+    ...(result.impact
+      ? {
+          impact: [...result.impact].sort(by((i) => `${i.ecosystem}\0${i.project}\0${i.name}`)),
+        }
+      : {}),
     dependencies: [...result.dependencies].sort(dependencyOrder),
     usages: [...result.usages].sort(usageOrder),
     findings: [...result.findings].sort(findingOrder),

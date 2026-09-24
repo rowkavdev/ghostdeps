@@ -195,8 +195,9 @@ No significant dependency issues found.
   - `"incomplete"`: engine cap and incompleteness notes, and any other info
     finding without a marker. Listed in Notes; a run whose only notes are
     these is neutral "Analysis incomplete".
-  - `"note"`: non-capping run-level adapter notes (rule `adapter-note`,
-    `adapterNote: true`, set by the engine, #205). Listed in Notes; the check
+  - `"note"`: non-capping run notes marked `adapterNote: true` by the
+    engine: adapter run-level notes (rule `adapter-note`, #205) and the
+    impact work-limit note (rule `impact-limited`, #59). Listed in Notes; the check
     stays success.
   - `"awareness"`: `awareness: true`. Awareness section, never affects
     anything.

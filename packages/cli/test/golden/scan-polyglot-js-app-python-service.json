@@ -242,6 +242,24 @@
     ],
     "truncated": false
   },
+  "impact": [
+    {
+      "ecosystem": "javascript-typescript",
+      "exclusive": 1,
+      "graph": "complete",
+      "name": "axios",
+      "project": ".",
+      "transitive": 1
+    },
+    {
+      "ecosystem": "python",
+      "exclusive": null,
+      "graph": "complete",
+      "name": "requests",
+      "project": "services/api",
+      "transitive": null
+    }
+  ],
   "projectTree": [
     {
       "ecosystem": "javascript-typescript",

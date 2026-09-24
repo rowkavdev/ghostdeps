@@ -1,6 +1,6 @@
 # Transitive impact and footprint (#59) - design
 
-Status: draft for review before implementation.
+Status: slice A implemented (#59). The lead's rulings on the open questions are recorded below.
 
 ## What "impact" means
 
@@ -36,8 +36,8 @@ The source is `DependencyGraph.transitiveClosure`, the same data the policy alre
 - **B (core)**: the footprint provider contract, offline behaviour and caching expectations.
 - **C (presenter lanes)**: e.g. "removing left-pad drops 0 other packages" next to an existing verdict. Out of scope here.
 
-## Open questions for the lead
+## Rulings (lead, on #265)
 
-1. Top-level `impact[]` (proposed: keeps `Dependency` adapter-owned) or a core-set field on each dependency?
-2. Hitting the work limit: silent `null` plus `limited` (proposed), or an engine note? If a note, which findingGroup? It isn't a verdict gap, so "incomplete" would overstate it.
-3. PR mode: compute impact for every dependency (proposed, cheap) and let the app choose what to show, or only for added or changed ones?
+1. **Top-level `impact[]`.** `Dependency` is the adapter contract type. Impact is engine-derived and keyed by dependency, so adapters stay untouched.
+2. **Work limit: an engine note, group "note".** It's visible and non-capping, and the check keeps success. `limited: true` stays in the data. It's not silent (ADR 0004 rules out silent incompleteness) and not "incomplete": no coverage was lost, only an optional analytics block hit a budget.
+3. **PR mode: compute for every dependency.** Adding a dependency that shares subtrees shrinks existing dependencies' exclusive counts. The app chooses what to show.
