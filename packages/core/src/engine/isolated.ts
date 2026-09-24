@@ -20,7 +20,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { DependencyChange } from "../diff/dependency-changes.js";
-import type { AnalysisResult, Finding, NetworkPolicy, SourceLineChanges } from "../types/index.js";
+import type {
+  AnalysisResult,
+  Finding,
+  NetworkPolicy,
+  PackageMetadataProvider,
+  SourceLineChanges,
+} from "../types/index.js";
 import {
   assembleAnalysisResult,
   boundPullRequestSourceChanges,
@@ -106,6 +112,8 @@ export interface IsolatedAnalyseOptions {
   maxParallelAdapters?: number;
   /** Omit to emit facts only (no recommendation findings). */
   recommend?: RecommendationPolicy;
+  /** See AnalyseOptions.metadata. Stays in the parent; workers never see it. */
+  metadata?: PackageMetadataProvider;
   /** Dependency changes in the pull request under analysis; see AnalyseOptions. */
   pullRequestChanges?: readonly DependencyChange[];
 }
@@ -500,5 +508,6 @@ export async function analyseRepositoryIsolated(
     scanIncomplete: options.scanIncomplete === true,
     scanCompleteness: options.scanCompleteness ?? [],
     notes: sourceChanges.findings,
+    ...(options.metadata ? { metadata: options.metadata } : {}),
   });
 }
