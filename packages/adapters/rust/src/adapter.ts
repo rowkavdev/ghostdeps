@@ -14,14 +14,16 @@ import type {
 import { RUST_ECOSYSTEM } from "./cargo-toml.js";
 import { detectRust } from "./detect.js";
 import { discoverCrates } from "./discover.js";
+import { buildDependencyGraph } from "./lockfile.js";
 import { parseCargoManifest } from "./manifest.js";
 
 export function createRustAdapter(): EcosystemAdapter {
   return {
     ecosystem: RUST_ECOSYSTEM,
     apiVersion: adapterApiVersion,
-    capabilities: new Set<AdapterCapability>(),
+    capabilities: new Set<AdapterCapability>(["dependencyGraph"]),
     detect: detectRust,
+    buildDependencyGraph,
     async listDirectDependencies(
       context: AdapterContext,
       projects: ProjectRef[],
