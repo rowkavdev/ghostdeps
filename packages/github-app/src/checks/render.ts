@@ -8,11 +8,20 @@
  *   in a Notes section, not the title, count or confidence groups (#195).
  *   A run with notes but no findings is neutral ("Analysis incomplete"),
  *   never the quiet success: a note can mean an adapter failed.
+ * - Awareness notes (info findings about a dependency that suggest no
+ *   action, e.g. a cross-ecosystem overlap) never affect the conclusion,
+ *   title or count: they go in a collapsed Awareness notes section (#209).
  * - Annotate only high-confidence findings whose evidence points at a line the PR added.
  * - At most 50 annotations (one API request); everything else goes in the summary.
  * - Repository-derived text is data: annotation text is plain, summary text is Markdown-escaped.
  */
-import type { AnalysisResult, Evidence, Finding } from "@ghostdeps/core";
+import {
+  findingGroup,
+  type AnalysisResult,
+  type Evidence,
+  type Finding,
+  type FindingGroup,
+} from "@ghostdeps/core";
 import type { AddedLines } from "./diff.js";
 
 export const checkName = "ghostdeps";
@@ -100,19 +109,30 @@ function annotationFor(f: Finding, e: Evidence & { file: string; line: number })
   };
 }
 
-/** An info finding about the whole run rather than a dependency (#178, #154). */
-export function isRunNote(f: Finding): boolean {
-  return f.kind === "info" && f.dependency === undefined;
+function awarenessSection(awareness: readonly Finding[]): string[] {
+  if (awareness.length === 0) return [];
+  const n = awareness.length;
+  return [
+    "",
+    `<details><summary>${n} awareness note${n === 1 ? "" : "s"} (no action suggested)</summary>`,
+    "",
+    ...awareness.map(
+      (f) => `- ${f.dependency ? `**${md(f.dependency)}** - ` : ""}${md(f.summary)}`,
+    ),
+    "",
+    "</details>",
+  ];
 }
 
 function noteLine(f: Finding): string {
-  return `- ${md(f.summary)}`;
+  return `- ${f.dependency ? `**${md(f.dependency)}** - ` : ""}${md(f.summary)}`;
 }
 
 /**
- * Run-level notes from core (Findings) plus the app's own status notes: plain
- * text about a step the app itself skipped, e.g. an unreadable PR diff (#195).
- * Core's notes cover what core decided; the app never repeats them.
+ * Core's notes (findingGroup "incomplete" and "note") plus the app's own
+ * status notes: plain text about a step the app itself skipped, e.g. an
+ * unreadable PR diff (#195). Core's notes cover what core decided; the app
+ * never repeats them.
  */
 function notesSection(notes: readonly Finding[], appNotes: readonly string[]): string[] {
   const lines = [...appNotes.map((n) => `- ${md(n)}`), ...notes.map(noteLine)];
@@ -134,13 +154,26 @@ export function renderCheck(
   added: AddedLines,
   appNotes: readonly string[] = [],
 ): CheckOutput {
-  const notes = result.findings.filter(isRunNote);
-  const findings = result.findings.filter((f) => !isRunNote(f));
-  const noteCount = notes.length + appNotes.length;
-  if (findings.length === 0 && noteCount === 0) {
+  // Grouping is core's (#239): the app only formats. "incomplete" notes and
+  // the app's own notes make a finding-free run neutral; plain adapter
+  // "note"s are shown but keep success; "awareness" never counts.
+  const group = (g: FindingGroup) => result.findings.filter((f) => findingGroup(f) === g);
+  const findings = group("verdict");
+  const notes = [...group("incomplete"), ...group("note")];
+  const awareness = group("awareness");
+  const incomplete = group("incomplete").length + appNotes.length;
+  if (findings.length === 0 && incomplete === 0) {
     return {
       conclusion: "success",
-      output: { title: quietSummary, summary: quietSummary, annotations: [] },
+      output: {
+        title: quietSummary,
+        summary: truncateSummary(
+          [quietSummary, ...awarenessSection(awareness), ...notesSection(notes, appNotes)].join(
+            "\n",
+          ),
+        ),
+        annotations: [],
+      },
     };
   }
   if (findings.length === 0) {
@@ -150,7 +183,9 @@ export function renderCheck(
       conclusion: "neutral",
       output: {
         title: incompleteTitle,
-        summary: truncateSummary([intro, ...notesSection(notes, appNotes)].join("\n")),
+        summary: truncateSummary(
+          [intro, ...awarenessSection(awareness), ...notesSection(notes, appNotes)].join("\n"),
+        ),
         annotations: [],
       },
     };
@@ -198,7 +233,7 @@ export function renderCheck(
       "</details>",
     );
   }
-  parts.push(...notesSection(notes, appNotes));
+  parts.push(...awarenessSection(awareness), ...notesSection(notes, appNotes));
 
   const summary = truncateSummary(parts.join("\n"));
 
