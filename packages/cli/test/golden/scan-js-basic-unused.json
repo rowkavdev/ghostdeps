@@ -90,6 +90,16 @@
     "nodes": [],
     "truncated": false
   },
+  "impact": [
+    {
+      "ecosystem": "javascript-typescript",
+      "exclusive": null,
+      "graph": "none",
+      "name": "left-pad",
+      "project": ".",
+      "transitive": null
+    }
+  ],
   "projectTree": [
     {
       "ecosystem": "javascript-typescript",

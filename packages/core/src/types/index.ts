@@ -306,6 +306,36 @@ export interface UnifiedGraph {
   truncated: boolean;
 }
 
+/**
+ * Transitive impact of one direct dependency (#59), derived by the engine
+ * from lockfile graphs only (ADR 0004). A fact, never a verdict: it creates
+ * no finding and never changes severity, confidence or a check conclusion.
+ */
+export interface DependencyImpact {
+  ecosystem: string;
+  /** ProjectRef.path of the declaring project. */
+  project: string;
+  name: string;
+  /** Completeness of this project's lockfile graph (#114 meanings). */
+  graph: GraphCompleteness;
+  /**
+   * Unique packages in the dependency's closure, not counting itself.
+   * `null` when unknown (no graph, no closure entry, or `limited`), never 0
+   * for "unknown". A lower bound when `graph` is "partial".
+   */
+  transitive: number | null;
+  /**
+   * Closure packages no other direct dependency of the same project reaches
+   * and that aren't themselves declared directly: roughly what removing it
+   * would drop. Only when `graph` is "complete" and every direct dependency
+   * that is a graph node has a closure entry; otherwise `null`, because
+   * missing closures can overstate exclusivity.
+   */
+  exclusive: number | null;
+  /** True when the engine's impact work budget ran out before this project. */
+  limited?: true;
+}
+
 export interface AnalysisResult {
   schemaVersion: 1;
   projects: ProjectRef[];
@@ -317,6 +347,11 @@ export interface AnalysisResult {
   projectTree?: ProjectNode[];
   /** Repository-wide dependency graph (#55). Additive; the engine always sets it. */
   graph?: UnifiedGraph;
+  /**
+   * Transitive impact per direct dependency (#59). Additive; the engine
+   * always sets it (empty when there are no dependencies).
+   */
+  impact?: DependencyImpact[];
   dependencies: Dependency[];
   usages: Usage[];
   findings: Finding[];

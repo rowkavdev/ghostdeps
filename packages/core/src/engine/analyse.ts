@@ -15,6 +15,7 @@
  * - Recommendation policy lives in core and is injected here; adapters report facts.
  */
 import { adapterNoteFindings } from "./adapter-notes.js";
+import { computeImpact, impactLimitedNote } from "./impact.js";
 import { type EcosystemAdapter } from "../adapter.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
@@ -452,6 +453,14 @@ export async function assembleAnalysisResult(
   }
 
   // Declaration-anchored findings without a verified line (#198): one note.
+  // Transitive impact (#59): engine-derived facts from the full graphs,
+  // never a verdict. A budget cut adds one non-capping "note".
+  const { impact, limitedProjects, limitedDependencies } = computeImpact(graphs, dependencies);
+  if (limitedProjects > 0) {
+    const note = impactLimitedNote(limitedProjects, limitedDependencies);
+    findings.push({ ...note, severity: severityOf(note) });
+  }
+
   const lineNote = declarationLineNote(findings);
   if (lineNote) findings.push({ ...lineNote, severity: severityOf(lineNote) });
 
@@ -461,6 +470,7 @@ export async function assembleAnalysisResult(
     projects: [...projects.values()],
     projectTree: buildProjectTree([...projects.values()]),
     graph: unified,
+    impact,
     dependencies,
     usages,
     findings,
