@@ -1,0 +1,37 @@
+name: Bug report
+description: Something GhostDeps does is wrong.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did GhostDeps do, and what should it have done?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: A minimal repository or fixture that reproduces the problem. Link a repo or paste the manifest/lockfile/source snippets involved.
+    validations:
+      required: true
+  - type: dropdown
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      options:
+        - JavaScript/TypeScript
+        - Python
+        - Rust
+        - Go
+        - Multiple / cross-language
+        - Not ecosystem-specific
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: GhostDeps version or commit, CLI or GitHub App, OS, Node version, anything else relevant.

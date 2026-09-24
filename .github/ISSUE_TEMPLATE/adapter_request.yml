@@ -1,0 +1,31 @@
+name: Ecosystem adapter request
+description: Request support for a language or package manager.
+title: "adapter: "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: ecosystem
+    attributes:
+      label: Language / ecosystem
+      placeholder: e.g. Ruby, PHP, .NET
+    validations:
+      required: true
+  - type: input
+    id: managers
+    attributes:
+      label: Package manager(s) and manifest/lockfile formats
+      placeholder: e.g. Bundler (Gemfile, Gemfile.lock)
+    validations:
+      required: true
+  - type: textarea
+    id: usage
+    attributes:
+      label: How dependencies are declared and imported
+      description: How does code reference packages in this ecosystem? Include edge cases (import names differing from package names, workspaces, monorepos).
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example repositories
+      description: Links to real open-source repos using this ecosystem that would make good fixtures.
