@@ -1,0 +1,11 @@
+{
+  "description": "Hundreds of tiny entries (kept small on disk; tests re-run with a low maxEntries ceiling). Entry-count ceilings stop metadata-flood disk exhaustion.",
+  "archive": "archive.tar.gz",
+  "limits": {
+    "maxEntries": 100
+  },
+  "expect": {
+    "result": "reject",
+    "code": "TOO_MANY_ENTRIES"
+  }
+}

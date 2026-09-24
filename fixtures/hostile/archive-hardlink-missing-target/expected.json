@@ -1,0 +1,8 @@
+{
+  "description": "Hardlink to a path never extracted as a regular file. On-disk link creation must not reach outside the checkout.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "LINK_TARGET_MISSING"
+  }
+}

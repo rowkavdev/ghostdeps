@@ -1,0 +1,12 @@
+{
+  "description": "Many files each under the per-file ceiling, together over the total-bytes ceiling (run with low limits). Aggregate ceilings stop zip-bomb style exhaustion.",
+  "archive": "archive.tar.gz",
+  "limits": {
+    "maxFileBytes": 8192,
+    "maxTotalBytes": 16384
+  },
+  "expect": {
+    "result": "reject",
+    "code": "TOTAL_SIZE_EXCEEDED"
+  }
+}

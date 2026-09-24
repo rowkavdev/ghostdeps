@@ -1,0 +1,8 @@
+{
+  "description": "GNU base-256 binary size field. Parsers that misread the encoding compute wrong body offsets and desynchronise.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "MALFORMED_ARCHIVE"
+  }
+}

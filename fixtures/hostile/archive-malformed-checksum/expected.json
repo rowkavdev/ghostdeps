@@ -1,0 +1,8 @@
+{
+  "description": "Header with a corrupted checksum. Strict framing checks stop bit-flipped archives from being interpreted.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "MALFORMED_ARCHIVE"
+  }
+}

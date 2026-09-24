@@ -1,0 +1,8 @@
+{
+  "description": "Traversal hidden inside a plausible tree path: 'repo/src/../../../etc/cron.d/ghost'. Naive join-and-write extractors write outside the root.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "PATH_TRAVERSAL"
+  }
+}

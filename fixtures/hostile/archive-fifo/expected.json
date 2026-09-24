@@ -1,0 +1,8 @@
+{
+  "description": "FIFO entry (typeflag 6). Special files must never be materialised from an archive.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "UNSUPPORTED_ENTRY"
+  }
+}

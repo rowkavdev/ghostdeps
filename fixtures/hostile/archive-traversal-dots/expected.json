@@ -1,0 +1,8 @@
+{
+  "description": "Classic zip-slip: entries whose names contain '..' segments, escaping the extraction root on naive extractors.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "PATH_TRAVERSAL"
+  }
+}

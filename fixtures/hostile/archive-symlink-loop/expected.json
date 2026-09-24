@@ -1,0 +1,8 @@
+{
+  "description": "Symlink loop (a -> b, b -> a) plus a write through the loop. Resolvers must be loop-capped, not recursive-forever.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "LINK_LOOP"
+  }
+}

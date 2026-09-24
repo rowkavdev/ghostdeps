@@ -1,0 +1,8 @@
+{
+  "description": "Symlink whose relative target climbs out of the root ('../../../etc').",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "LINK_ESCAPE"
+  }
+}
