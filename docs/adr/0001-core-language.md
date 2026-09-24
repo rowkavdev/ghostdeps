@@ -47,3 +47,7 @@ Concretely:
 - tree-sitter native bindings must build on contributors' machines; prebuilt binaries cover the common platforms, and the JS/TS adapter (compiler API, pure JS) works without them.
 - pnpm is a contributor prerequisite; documented in CONTRIBUTING.md and enforced via `packageManager` in package.json (corepack).
 - Monorepo tooling stays minimal on purpose: pnpm workspaces + tsc project references, no Nx/Turborepo until there is demonstrable need.
+
+## Amendment (2026-09-24): test runner
+
+Vitest is replaced by Node's built-in `node:test` runner. pnpm 12 requires interactive approval for dependency build scripts, and Vitest's esbuild chain could not be approved non-interactively in our CI/dev environments. `node:test` needs zero additional dependencies, which also matches the project's own rule: don't take a dependency you don't need. If we outgrow it (snapshot testing, browser DOM), revisit with a dedicated ADR.
