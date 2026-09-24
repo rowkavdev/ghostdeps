@@ -34,12 +34,20 @@ function projectDependencies(pyproject: string): { name: string; constraint: str
   }));
 }
 
-export function createStubPythonAdapter(): EcosystemAdapter {
+/** Marks the stub so a test can prove it never reaches defaultAdapters(). */
+export const TEST_ONLY_STUB = Symbol("ghostdeps.test-only-stub");
+
+export function isTestOnlyStub(adapter: EcosystemAdapter): boolean {
+  return TEST_ONLY_STUB in adapter;
+}
+
+export function createStubPythonAdapter(): EcosystemAdapter & { [TEST_ONLY_STUB]: true } {
   const capabilities: ReadonlySet<AdapterCapability> = new Set([
     "dependencyGraph",
     "lockfileParsing",
   ]);
   return {
+    [TEST_ONLY_STUB]: true,
     ecosystem: ECOSYSTEM,
     capabilities,
     apiVersion: adapterApiVersion,

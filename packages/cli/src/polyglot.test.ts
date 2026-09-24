@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { analyseDirectory, createDefaultPolicy, renderJsonReport } from "@ghostdeps/core";
 import { defaultAdapters } from "./adapters.js";
-import { createStubPythonAdapter } from "./testing/stub-python-adapter.js";
+import { createStubPythonAdapter, isTestOnlyStub } from "./testing/stub-python-adapter.js";
 
 /** Tests run from packages/cli/dist. */
 const FIXTURE = "../../../fixtures/polyglot/js-app-python-service";
@@ -30,7 +30,10 @@ const analyse = () =>
 
 describe("polyglot fixture: one unified result (#55)", () => {
   it("the stub never ships", () => {
-    assert.ok(!defaultAdapters().some((a) => a.ecosystem === "python"));
+    // Marker-based, so this keeps passing once the real Python adapter is
+    // registered.
+    assert.ok(isTestOnlyStub(createStubPythonAdapter()));
+    assert.ok(!defaultAdapters().some(isTestOnlyStub));
   });
 
   it("yields one project tree, one graph and cross-ecosystem overlap notes", async () => {
