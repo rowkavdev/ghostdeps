@@ -154,7 +154,8 @@ export async function parseRequirementsFiles(
       declaredIn,
     };
     if (specifier !== undefined) dependency.specifier = specifier;
-    // Only a line core will keep (#280): it must show the normalised name.
+    // Only a line core will keep (#280): it must name the dependency, exactly
+    // or under PEP 503 (#286).
     if (lineNamesDependency(lineText, normalised)) dependency.declaredLine = line;
     const requirement: PythonRequirement = { dependency, extras: [...extras], groups: [] };
     if (marker !== undefined) requirement.marker = marker;

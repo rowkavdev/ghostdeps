@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { analyseDirectory, createDefaultPolicy, type ProjectRef } from "@ghostdeps/core";
 import { createPythonAdapter } from "./adapter.js";
+import { lineNamesDependency, pep503 } from "./declared-line.js";
 import { parsePyprojectText } from "./pyproject.js";
 import { parseRequirementsFiles } from "./requirements.js";
 import { memoryHandle } from "./testing/fs-handle.js";
@@ -41,10 +42,9 @@ describe("declaredLine (#280)", () => {
     assert.deepEqual(lines(result.requirements), {
       "gunicorn/runtime": 2,
       "flask/runtime": 3,
-      // Written names that do not show the normalised name get no line:
-      // core would drop them anyway.
-      "pyyaml/runtime": undefined,
-      "typing-extensions/runtime": undefined,
+      // Written names match under PEP 503 (#286), as core checks them.
+      "pyyaml/runtime": 5,
+      "typing-extensions/runtime": 6,
       "requests/runtime": 7,
     });
     const flask = result.requirements.find((r) => r.dependency.name === "flask")!;
@@ -88,7 +88,7 @@ describe("declaredLine (#280)", () => {
     const result = parsePyprojectText(text, project, "pyproject.toml");
     assert.deepEqual(lines(result.requirements), {
       "httpx/runtime": 7,
-      "rich/runtime": undefined, // written "Rich"
+      "rich/runtime": 8, // written "Rich", same name under PEP 503
       "orjson/optional": 12,
       "httpx/optional": 13,
       "pytest/dev": 16,
@@ -102,6 +102,23 @@ describe("declaredLine (#280)", () => {
       "pydantic/runtime": undefined,
       "mkdocs/dev": 28,
     });
+  });
+
+  it("PEP 503 token match (#286): same package only, never a longer name", () => {
+    assert.equal(lineNamesDependency('  "PyYAML>=6",', "pyyaml"), true);
+    assert.equal(lineNamesDependency("typing_extensions", "typing-extensions"), true);
+    assert.equal(
+      lineNamesDependency(
+        "  \"Ruamel.Yaml[jinja2]==0.18 ; python_version < '3.13'\",",
+        "ruamel-yaml",
+      ),
+      true,
+    );
+    assert.equal(lineNamesDependency("Typing__Extensions", "typing-extensions"), true);
+    assert.equal(lineNamesDependency('  "pyyaml-include",', "pyyaml"), false);
+    assert.equal(lineNamesDependency('  "PyYAML-Include",', "pyyaml"), false);
+    assert.equal(lineNamesDependency("[tool.poetry.dependencies.pydantic]", "pydantic"), false);
+    assert.equal(pep503("a-_.b"), "a-b");
   });
 
   it("strings in comments, keys of inline tables and multi-line strings are never matched", () => {

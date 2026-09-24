@@ -1,9 +1,10 @@
 /**
  * Declaration lines for Python manifests (#280). Core keeps an adapter's
- * declaredLine only if that manifest line contains the dependency name as a
- * whole token (#198), so a line is offered only when the written text passes
- * the same check: "PyYAML" or "typing_extensions" as written do not contain
- * the normalised names "pyyaml" / "typing-extensions", and get no line.
+ * declaredLine only if that manifest line names the dependency (#198): as a
+ * whole token, or for python as a name-like token that is the same package
+ * under PEP 503 (#286, #307). A line is offered only when the written text
+ * passes the same check, so "PyYAML>=6" and "typing_extensions" now get
+ * their lines for "pyyaml" / "typing-extensions".
  */
 
 /**
@@ -16,11 +17,21 @@ export const MAX_DECLARATION_LINE_CHARS = 4096;
 const BEFORE_NAME = /[A-Za-z0-9._/@-]/;
 const AFTER_NAME = /[A-Za-z0-9._/-]/;
 
+/** PEP 503 normalised name: lowercase, runs of `-`, `_` and `.` become one `-`. */
+export const pep503 = (name: string): string => name.toLowerCase().replace(/[-_.]+/g, "-");
+
+/** Name-like tokens, as core splits a line for the PEP 503 check (#307). */
+const NAME_TOKENS = /[A-Za-z0-9._-]+/g;
+
 /**
- * Mirrors core's verifyDeclaredLines token test: `name` appears with no
- * name character right before it (letters, digits, . _ / @ -) or right
- * after it (the same minus @). Done with indexOf, not a RegExp built per
- * dependency: it runs once per declaration on untrusted manifests.
+ * Mirrors core's verifyDeclaredLines test for python. First the exact
+ * token test: `name` appears with no name character right before it
+ * (letters, digits, . _ / @ -) or right after it (the same minus @); done
+ * with indexOf, not a RegExp built per dependency, because it runs once per
+ * declaration on untrusted manifests. Failing that, some name-like token on
+ * the line is `name` under PEP 503 (#286): `PyYAML` for "pyyaml",
+ * `typing_extensions` for "typing-extensions", but never `pyyaml-include`
+ * for "pyyaml".
  */
 export function lineNamesDependency(lineText: string, name: string): boolean {
   if (name.length === 0 || lineText.length > MAX_DECLARATION_LINE_CHARS) return false;
@@ -28,6 +39,10 @@ export function lineNamesDependency(lineText: string, name: string): boolean {
     const before = at === 0 ? "" : lineText[at - 1]!;
     const after = lineText[at + name.length] ?? "";
     if (!BEFORE_NAME.test(before) && !AFTER_NAME.test(after)) return true;
+  }
+  const wanted = pep503(name);
+  for (const token of lineText.match(NAME_TOKENS) ?? []) {
+    if (pep503(token) === wanted) return true;
   }
   return false;
 }

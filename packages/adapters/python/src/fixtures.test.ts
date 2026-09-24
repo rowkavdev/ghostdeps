@@ -25,6 +25,8 @@ interface ExpectedDependency {
   kind?: string;
   constraint?: string;
   declaredIn?: string;
+  /** The line the adapter offers (#280, #286); null means no line. */
+  declaredLine?: number | null;
 }
 
 interface ExpectedGraph {
@@ -161,6 +163,12 @@ describe("python fixtures (issue #48)", () => {
             assert.equal(found.constraint, want.constraint, `${scenario}: ${want.name} constraint`);
           if (want.declaredIn !== undefined)
             assert.equal(found.declaredIn, want.declaredIn, `${scenario}: ${want.name} declaredIn`);
+          if (want.declaredLine !== undefined)
+            assert.equal(
+              found.declaredLine,
+              want.declaredLine ?? undefined,
+              `${scenario}: ${want.name} declaredLine`,
+            );
         }
         if (expected.dependencies.length === 0) {
           assert.deepEqual(actual, [], `${scenario}: expected no parsed dependencies`);

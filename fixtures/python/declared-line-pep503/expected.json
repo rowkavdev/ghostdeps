@@ -1,0 +1,9 @@
+{
+  "description": "Declaration lines under PEP 503 (#286). Written names PyYAML, typing_extensions and Sphinx are the same packages as pyyaml, typing-extensions and sphinx, so the adapter offers their lines, matching core's python check (#307). pyyaml-include is a different package: its own line is offered for it, never for pyyaml.",
+  "dependencies": [
+    { "name": "pyyaml", "kind": "runtime", "declaredIn": "pyproject.toml", "declaredLine": 5 },
+    { "name": "typing-extensions", "kind": "runtime", "declaredIn": "pyproject.toml", "declaredLine": 6 },
+    { "name": "pyyaml-include", "kind": "runtime", "declaredIn": "pyproject.toml", "declaredLine": 7 },
+    { "name": "sphinx", "kind": "optional", "declaredIn": "pyproject.toml", "declaredLine": 11 }
+  ]
+}
