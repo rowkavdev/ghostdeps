@@ -1,0 +1,18 @@
+{
+  "description": "Vendored module. vendor/modules.txt lists both modules; only color is explicit. Files under vendor/ are third-party code: imports there (go-isatty from color) must never count as this project's usage, and vendor/ holds no projects.",
+  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "dependencies": [
+    { "name": "github.com/fatih/color", "kind": "runtime", "constraint": "v1.16.0", "declaredIn": "go.mod" }
+  ],
+  "graph": {
+    "incomplete": true,
+    "nodes": ["github.com/fatih/color", "github.com/mattn/go-isatty"],
+    "indirect": ["github.com/mattn/go-isatty"]
+  },
+  "usages": {
+    "github.com/fatih/color": [{ "file": "main.go", "line": 3, "symbols": ["Red"] }],
+    "github.com/mattn/go-isatty": []
+  },
+  "findings": [],
+  "mustNotFind": []
+}

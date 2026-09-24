@@ -1,0 +1,6 @@
+# github.com/fatih/color v1.16.0
+## explicit; go 1.17
+github.com/fatih/color
+# github.com/mattn/go-isatty v0.0.20
+## go 1.15
+github.com/mattn/go-isatty

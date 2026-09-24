@@ -1,0 +1,19 @@
+{
+  "description": "replace to another module keeps the required name (imports still use github.com/sirupsen/logrus); replace to a local directory is a file specifier; exclude drops nothing from the direct list. shared/ is a nested module (its own project) with no requires.",
+  "detection": { "minConfidence": 0.5, "projects": [".", "shared"] },
+  "dependencies": [
+    { "name": "github.com/sirupsen/logrus", "kind": "runtime", "constraint": "v1.9.3", "declaredIn": "go.mod", "specifier": { "type": "registry", "detail": "github.com/example-fork/logrus v1.9.4-fork" } },
+    { "name": "golang.org/x/text", "kind": "runtime", "constraint": "v0.14.0", "declaredIn": "go.mod" },
+    { "name": "example.com/internal/shared", "kind": "runtime", "constraint": "v0.0.0", "declaredIn": "go.mod", "specifier": { "type": "file", "detail": "./shared" } }
+  ],
+  "usages": {
+    "example.com/internal/shared": [{ "file": "main.go", "line": 4, "symbols": ["Name"] }],
+    "github.com/sirupsen/logrus": [{ "file": "main.go", "line": 5, "symbols": ["Info"] }],
+    "golang.org/x/text": [
+      { "file": "main.go", "line": 6, "symbols": ["Title"] },
+      { "file": "main.go", "line": 7, "symbols": ["English"] }
+    ]
+  },
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "golang.org/x/text" }]
+}
