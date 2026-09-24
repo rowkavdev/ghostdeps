@@ -1,0 +1,11 @@
+{
+  "name": "fixture-lockfile-npm-v3",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "express-lite": "^1.0.0"
+  },
+  "devDependencies": {
+    "tester": "^2.0.0"
+  }
+}

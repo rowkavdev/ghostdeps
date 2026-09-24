@@ -1,0 +1,22 @@
+{
+  "description": "pnpm lockfile v9 with a peer-suffixed snapshot key and an npm: alias. react-dom closure = loose-envify, react; strip (alias of strip-ansi@6.0.1) closure = ansi-regex. strip-ansi/ansi-regex are shared with a dev dependency and must stay prod.",
+  "graph": {
+    "transitive": {
+      "react-dom": [
+        "loose-envify",
+        "react"
+      ],
+      "strip": [
+        "ansi-regex"
+      ],
+      "vitest-lite": [
+        "ansi-regex",
+        "strip-ansi"
+      ]
+    },
+    "nodes": 6,
+    "devNodes": 1
+  },
+  "findings": [],
+  "mustNotFind": []
+}

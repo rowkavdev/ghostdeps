@@ -1,0 +1,10 @@
+{
+  "description": "npm lockfile v3 with a nested (hoisting-conflict) copy of debug/ms under a dev dependency. express-lite closure = debug, mime, ms; tester closure = debug, ms (its own nested 2.x copies).",
+  "graph": {
+    "transitive": { "express-lite": ["debug", "mime", "ms"], "tester": ["debug", "ms"] },
+    "nodes": 7,
+    "devNodes": 3
+  },
+  "findings": [],
+  "mustNotFind": []
+}
