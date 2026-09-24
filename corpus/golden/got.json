@@ -9,11 +9,6 @@
       "dependency": null
     },
     {
-      "kind": "info",
-      "severity": "info",
-      "dependency": null
-    },
-    {
       "kind": "type-only",
       "severity": "low",
       "dependency": "keyv"

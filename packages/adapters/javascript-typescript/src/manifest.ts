@@ -5,6 +5,7 @@
  * non-registry specifiers (git/file/link/workspace) are recorded, never
  * executed.
  */
+import { scanDeclaredLines } from "./declared-lines.js";
 import type {
   Dependency,
   DependencyKind,
@@ -88,6 +89,7 @@ export function parseManifestText(
   }
 
   const record = manifest as Record<string, unknown>;
+  const lines = scanDeclaredLines(manifestText, new Set(Object.keys(KIND_BY_FIELD)));
   for (const [field, kind] of Object.entries(KIND_BY_FIELD)) {
     const section = record[field];
     if (section === undefined) continue;
@@ -115,6 +117,8 @@ export function parseManifestText(
         project,
         declaredIn,
       };
+      const declaredLine = lines.get(field)?.get(name);
+      if (declaredLine !== undefined) dependency.declaredLine = declaredLine;
       const specifier = classifySpecifier(constraint);
       if (specifier !== undefined) dependency.specifier = specifier;
       dependencies.push(dependency);

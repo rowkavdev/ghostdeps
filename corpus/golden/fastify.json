@@ -17,11 +17,6 @@
       "kind": "info",
       "severity": "info",
       "dependency": "branch-comparer"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": null
     }
   ]
 }
