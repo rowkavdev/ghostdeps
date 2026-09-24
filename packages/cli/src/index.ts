@@ -17,4 +17,5 @@ export {
 } from "./errors.js";
 export { helpText, commandHelp } from "./help.js";
 export { printJson, errorJson } from "./output/json.js";
+export { renderRepositorySummary } from "./output/human.js";
 export { cliVersion } from "./version.js";
