@@ -7,6 +7,7 @@ import { adapterApiVersion } from "@ghostdeps/core";
 import type {
   AdapterCapability,
   AdapterContext,
+  AdapterNote,
   Dependency,
   EcosystemAdapter,
   ProjectRef,
@@ -16,7 +17,38 @@ import { detectRust } from "./detect.js";
 import { discoverCrates } from "./discover.js";
 import { buildDependencyGraph } from "./lockfile.js";
 import { parseCargoManifest } from "./manifest.js";
-import { findUsage } from "./usage.js";
+import { compareStrings } from "./paths.js";
+import { findUsage, parseErrorLimitations } from "./usage.js";
+
+/** Files named in the parse-error note; the rest are counted. */
+const MAX_NAMED_PARSE_ERROR_FILES = 5;
+
+/**
+ * One run-level note (#291, #205) naming .rs files tree-sitter could not
+ * parse cleanly. Awareness only: it never caps, and it does not claim any
+ * verdict changed, because rust usage is always read as incomplete.
+ */
+export async function parseErrorNotes(
+  context: AdapterContext,
+  projects: ProjectRef[],
+): Promise<AdapterNote[]> {
+  const files = new Set<string>();
+  for (const project of projects) {
+    for (const l of await parseErrorLimitations(context, project.path)) {
+      if (l.file !== undefined) files.add(l.file);
+    }
+  }
+  if (files.size === 0) return [];
+  const sorted = [...files].sort(compareStrings);
+  const named = sorted.slice(0, MAX_NAMED_PARSE_ERROR_FILES).join(", ");
+  const more = sorted.length - MAX_NAMED_PARSE_ERROR_FILES;
+  const count = sorted.length === 1 ? "1 Rust file has" : `${sorted.length} Rust files have`;
+  return [
+    {
+      statement: `${count} syntax errors, so crate references in them may be missed: ${named}${more > 0 ? ` and ${more} more` : ""}`,
+    },
+  ];
+}
 
 export function createRustAdapter(): EcosystemAdapter {
   return {
@@ -28,6 +60,7 @@ export function createRustAdapter(): EcosystemAdapter {
     detect: detectRust,
     buildDependencyGraph,
     findUsage,
+    notes: parseErrorNotes,
     async listDirectDependencies(
       context: AdapterContext,
       projects: ProjectRef[],
