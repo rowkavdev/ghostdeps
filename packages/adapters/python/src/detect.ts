@@ -148,6 +148,23 @@ function detectPackageManagers(
   return { managers, evidence };
 }
 
+/**
+ * Reason and 1-based line for a pyproject.toml that cannot be used. smol-toml
+ * errors carry the position; size-cap and read failures have none.
+ */
+export function describeTomlFailure(error: unknown): { reason: string; line?: number } {
+  if (error instanceof Error && /size cap/.test(error.message)) {
+    return { reason: `over the ${MAX_PYPROJECT_BYTES}-byte size cap, not parsed` };
+  }
+  const line = (error as { line?: unknown } | null)?.line;
+  if (typeof line === "number" && Number.isInteger(line) && line > 0) {
+    return { reason: "invalid TOML", line };
+  }
+  return {
+    reason: error instanceof Error && error.name === "TomlError" ? "invalid TOML" : "unreadable",
+  };
+}
+
 /** Every directory holding a Python manifest, shortest first (excluded paths already dropped). */
 export function candidateRoots(files: readonly string[]): string[] {
   return [
@@ -198,6 +215,8 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
     const pyprojectPath = joinPath(root, "pyproject.toml");
     let pyprojectText: string | undefined;
     let pyprojectValid = true;
+    /** Why the pyproject.toml is unusable, with the TOML error position when known. */
+    let pyprojectProblem: { reason: string; line?: number } | undefined;
     if (fileSet.has(pyprojectPath)) {
       try {
         pyprojectText = await repository.readFile(pyprojectPath);
@@ -205,8 +224,9 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
           throw new Error("pyproject.toml over the size cap");
         }
         parseToml(pyprojectText);
-      } catch {
+      } catch (error) {
         pyprojectValid = false;
+        pyprojectProblem = describeTomlFailure(error);
       }
     }
     const pm = detectPackageManagers(root, fileSet, manifests, pyprojectText);
@@ -228,10 +248,15 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
       // The ecosystem may still be present, but the manifest is untrusted
       // input the parser cannot use (#43): degrade, never crash.
       confidence = sourceCount > 0 ? DETECTION_CONFIDENCE_THRESHOLD : 0.2;
+      const where =
+        pyprojectProblem?.line !== undefined
+          ? `${pyprojectPath}:${pyprojectProblem.line}`
+          : pyprojectPath;
       evidence.push({
         kind: "manifest-malformed",
-        statement: `${pyprojectPath} could not be parsed (invalid TOML or over the size cap); degrading confidence instead of failing`,
+        statement: `${where}: ${pyprojectProblem?.reason ?? "could not be parsed"}; declared dependencies may be incomplete (degrading confidence instead of failing)`,
         file: pyprojectPath,
+        ...(pyprojectProblem?.line !== undefined ? { line: pyprojectProblem.line } : {}),
       });
       if (confidence >= DETECTION_CONFIDENCE_THRESHOLD) evidence.push(...pm.evidence);
     } else if (sourceCount === 0) {

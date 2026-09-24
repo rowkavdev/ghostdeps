@@ -119,7 +119,21 @@ describe("detectPython (issue #42)", () => {
     const huge = `[project]\nname = "x"\n# ${"x".repeat(MAX_PYPROJECT_BYTES)}\n`;
     const result = await detectPython(ctx({ "pyproject.toml": huge, "a.py": "" }));
     assert.equal(result.confidence, DETECTION_CONFIDENCE_THRESHOLD);
-    assert.ok(result.evidence.some((e) => e.kind === "manifest-malformed"));
+    const bad = result.evidence.find((e) => e.kind === "manifest-malformed");
+    assert.match(bad?.statement ?? "", /size cap/);
+    assert.equal(bad?.line, undefined);
+  });
+
+  it("gives file and line for invalid TOML (#269)", async () => {
+    const result = await detectPython(
+      ctx({ "pyproject.toml": '[project]\nname = "x"\n[broken\n', "a.py": "" }),
+    );
+    const bad = result.evidence.find((e) => e.kind === "manifest-malformed");
+    assert.deepEqual([bad?.file, bad?.line], ["pyproject.toml", 3]);
+    assert.match(
+      bad?.statement ?? "",
+      /^pyproject\.toml:3: invalid TOML; declared dependencies may be incomplete/,
+    );
   });
 
   it("tolerates an unreadable pyproject.toml", async () => {
