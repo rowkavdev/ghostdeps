@@ -195,6 +195,20 @@ describe("scanRepository ceilings", () => {
     assert.equal(scan.skipped.filter((s) => s.reason === "unsafe-name").length, 2);
   });
 
+  it("caps individual skip records but keeps complete per-reason counts", async () => {
+    const scan = await scanRepository(root, { limits: { maxSkippedRecords: 1 } });
+    assert.equal(scan.skipped.length, 1);
+    assert.equal(scan.skippedCounts["unsafe-name"], 2);
+  });
+
+  it("truncates to the same files regardless of readdir order", async () => {
+    const scan = await scanRepository(root, { limits: { maxFiles: 3 } });
+    assert.deepEqual(
+      scan.files.map((f) => f.path),
+      ["a/b/c/d/e/deep.txt", "big.txt", "yarn.lock"],
+    );
+  });
+
   it("validates limit overrides", () => {
     assert.throws(() => resolveLimits({ maxFiles: -1 }), RangeError);
     assert.throws(() => resolveLimits({ maxFiles: 1.5 }), RangeError);

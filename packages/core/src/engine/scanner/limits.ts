@@ -18,6 +18,8 @@ export interface ScanLimits {
   maxLockfileBytes: number;
   /** Maximum sum of listed file sizes. The walk stops (truncated) past this. */
   maxTotalBytes: number;
+  /** Maximum skipped entries recorded individually; past this only per-reason counts grow. */
+  maxSkippedRecords: number;
 }
 
 export const DEFAULT_SCAN_LIMITS: Readonly<ScanLimits> = Object.freeze({
@@ -28,6 +30,7 @@ export const DEFAULT_SCAN_LIMITS: Readonly<ScanLimits> = Object.freeze({
   maxFileBytes: 2 * 1024 * 1024,
   maxLockfileBytes: 32 * 1024 * 1024,
   maxTotalBytes: 512 * 1024 * 1024,
+  maxSkippedRecords: 10_000,
 });
 
 /** Merge caller overrides onto the defaults, rejecting nonsense values. */

@@ -78,15 +78,20 @@ export class FsRepositoryHandle implements RepositoryHandle {
       if (st === undefined || !st.isDirectory()) throw new RepositoryReadError("changed", rel);
     }
 
-    const handle = await open(
-      path.join(this.scan.root, rel),
-      constants.O_RDONLY | constants.O_NOFOLLOW,
-    ).catch(() => {
+    const full = path.join(this.scan.root, rel);
+    // O_NOFOLLOW is undefined on Windows. There (and everywhere, as a second
+    // check) the file is lstat'ed before open and the opened handle must be
+    // the same inode on the same device, so a swap to a symlink is caught.
+    const before = await lstat(full).catch(() => undefined);
+    if (before === undefined || !before.isFile()) throw new RepositoryReadError("changed", rel);
+    const handle = await open(full, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)).catch(() => {
       throw new RepositoryReadError("changed", rel);
     });
     try {
       const st = await handle.stat();
-      if (!st.isFile()) throw new RepositoryReadError("changed", rel);
+      if (!st.isFile() || st.ino !== before.ino || st.dev !== before.dev) {
+        throw new RepositoryReadError("changed", rel);
+      }
       if (st.size > ceiling) throw new RepositoryReadError("too-large", rel);
 
       // Read at most ceiling + 1 bytes so a file that grew after stat is still bounded.
