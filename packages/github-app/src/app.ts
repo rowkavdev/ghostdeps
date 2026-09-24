@@ -97,6 +97,7 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
           repository: decision.job.repository.id,
           trigger: decision.job.trigger.kind,
           dependencyFiles: decision.dependencyFiles.length,
+          sourceFiles: decision.sourceFiles.length,
           result,
         };
         if (result === "overloaded") {

@@ -190,9 +190,18 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(queue.jobs.length, 0);
   });
 
-  it("skips a pull request that touches no dependency files", async () => {
+  it("analyses a source-only pull request (#101)", async () => {
     mockInstallationToken();
     mockPrFiles(["src/index.js", "README.md"]);
+    const res = await deliver("pull_request", await fixture("pull_request.opened"));
+    assert.equal(res.status, 200);
+    assert.equal(queue.jobs.length, 1);
+    assert.equal(queue.jobs[0]?.trigger.kind, "pull_request");
+  });
+
+  it("skips a pull request that touches no dependency files or analysable source", async () => {
+    mockInstallationToken();
+    mockPrFiles(["README.md", "docs/guide.md", "dist/index.js"]);
     const res = await deliver("pull_request", await fixture("pull_request.opened"));
     assert.equal(res.status, 200);
     assert.equal(queue.jobs.length, 0);

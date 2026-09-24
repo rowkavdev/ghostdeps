@@ -8,7 +8,7 @@
  * repository id + head SHA), so this module does not track delivery GUIDs.
  */
 import { analysisJobKey, type AnalysisJob, type AnalysisTrigger } from "../jobs.js";
-import { dependencyFilesIn } from "./manifests.js";
+import { dependencyFilesIn, sourceFilesIn } from "./manifests.js";
 
 /** Event/action pairs that can lead to analysis. `push` has no action. */
 export const analysedEvents = {
@@ -34,6 +34,8 @@ export type Decision =
       readonly analyse: true;
       readonly job: AnalysisJob;
       readonly dependencyFiles: readonly string[];
+      /** Analysable source files among the changes (PRs only; #101). */
+      readonly sourceFiles: readonly string[];
     }
   | { readonly analyse: false; readonly reason: string };
 
@@ -141,7 +143,8 @@ export function preFilter(eventName: string, payload: unknown): PreFilterResult 
 /**
  * Stage 2: decide from the changed files. Uses the payload's list when it is
  * complete, otherwise the injected lookup. Quiet short-circuit when no
- * dependency manifest or lockfile changed.
+ * dependency manifest or lockfile changed and, for PRs, no analysable
+ * source file changed either (#101).
  *
  * When the file list is incomplete or the lookup fails, it analyses anyway:
  * a skipped relevant change is worse than one extra job for an irrelevant one.
@@ -163,12 +166,21 @@ export async function decide(
     try {
       changed = await lookup(pre.candidate);
     } catch {
-      return { analyse: true, job, dependencyFiles: [] };
+      return { analyse: true, job, dependencyFiles: [], sourceFiles: [] };
     }
   }
   const dependencyFiles = dependencyFilesIn(changed.files);
-  if (dependencyFiles.length === 0 && changed.complete) {
-    return { analyse: false, reason: "no dependency manifest or lockfile changed" };
+  // Source-only PRs are analysed too (#101): removing the last import of a
+  // dependency is what makes it unused. Pushes stay manifest-only.
+  const sourceFiles = eventName === "pull_request" ? sourceFilesIn(changed.files) : [];
+  if (dependencyFiles.length === 0 && sourceFiles.length === 0 && changed.complete) {
+    return {
+      analyse: false,
+      reason:
+        eventName === "pull_request"
+          ? "no dependency manifest, lockfile or analysable source changed"
+          : "no dependency manifest or lockfile changed",
+    };
   }
-  return { analyse: true, job, dependencyFiles };
+  return { analyse: true, job, dependencyFiles, sourceFiles };
 }

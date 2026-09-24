@@ -319,6 +319,25 @@ index 3333333..4444444 100644
     assert.equal(rec.updated[0]?.conclusion, "success");
   });
 
+  it("scopes a source-only PR with an empty change list, not a full analysis (#101)", async () => {
+    const sourceOnly = DIFF.slice(DIFF.indexOf("diff --git a/src/index.js"));
+    const { client, rec } = fakeClient({ diff: sourceOnly, files });
+    let seen: AnalyseRunOptions | undefined;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async (_dir, _mods, run) => {
+        seen = run;
+        return emptyResult;
+      },
+    });
+    await worker(prJob);
+    assert.deepEqual(seen?.pullRequestChanges, []);
+    assert.equal(rec.updated[0]?.conclusion, "success");
+  });
+
   it("analyses the full repository when the changes cannot be read in full", async () => {
     const { client, rec } = fakeClient({ diff: { status: 406 } });
     let seen: AnalyseRunOptions | undefined;

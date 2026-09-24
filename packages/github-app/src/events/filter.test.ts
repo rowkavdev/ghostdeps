@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { decide, preFilter, PUSH_PAYLOAD_COMMIT_CAP, type ChangedFilesLookup } from "./filter.js";
-import { isDependencyFile } from "./manifests.js";
+import { isAnalysableSource, isDependencyFile } from "./manifests.js";
 
 const repository = { id: 9, name: "demo", owner: { login: "acme" }, default_branch: "main" };
 const installation = { id: 42 };
@@ -74,6 +74,39 @@ describe("isDependencyFile", () => {
       "go.mod.orig",
     ]) {
       assert.equal(isDependencyFile(p), false, p);
+    }
+  });
+});
+
+describe("isAnalysableSource (#101)", () => {
+  it("matches JS/TS source at any depth, including declaration files", () => {
+    for (const p of [
+      "a.ts",
+      "src/a.tsx",
+      "lib/b.mjs",
+      "c.cjs",
+      "x/y.jsx",
+      "types/z.d.ts",
+      "m.mts",
+      "n.cts",
+      "k.js",
+    ]) {
+      assert.equal(isAnalysableSource(p), true, p);
+    }
+  });
+  it("ignores installs, build output, vendored code, bundles and non-source", () => {
+    for (const p of [
+      "node_modules/a/index.js",
+      "packages/x/dist/index.js",
+      "build/a.js",
+      "vendor/lib.js",
+      "public/app.min.js",
+      "a.js.map",
+      "README.md",
+      "src/a.py",
+      "styles.css",
+    ]) {
+      assert.equal(isAnalysableSource(p), false, p);
     }
   });
 });
@@ -154,8 +187,30 @@ describe("decide", () => {
     }
   });
 
-  it("skips a PR that touches no dependency files", async () => {
+  it("analyses a source-only PR (#101)", async () => {
     const d = await decide("pull_request", pr("opened"), "g1", files(["src/a.ts", "README.md"]));
+    assert.equal(d.analyse, true);
+    if (d.analyse) {
+      assert.deepEqual(d.dependencyFiles, []);
+      assert.deepEqual(d.sourceFiles, ["src/a.ts"]);
+    }
+  });
+
+  it("skips a PR that touches neither dependency files nor analysable source", async () => {
+    const d = await decide(
+      "pull_request",
+      pr("opened"),
+      "g1",
+      files(["README.md", "docs/x.md", "dist/index.js", "node_modules/a/index.js", "app.min.js"]),
+    );
+    assert.deepEqual(d, {
+      analyse: false,
+      reason: "no dependency manifest, lockfile or analysable source changed",
+    });
+  });
+
+  it("keeps pushes manifest-only: source-only pushes are skipped", async () => {
+    const d = await decide("push", push(), "g1", noLookup);
     assert.deepEqual(d, { analyse: false, reason: "no dependency manifest or lockfile changed" });
   });
 
