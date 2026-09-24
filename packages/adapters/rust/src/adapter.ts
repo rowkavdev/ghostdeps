@@ -45,7 +45,7 @@ export async function parseErrorNotes(
   const count = sorted.length === 1 ? "1 Rust file has" : `${sorted.length} Rust files have`;
   return [
     {
-      statement: `${count} syntax errors, so Rust usages found in them may be incomplete: ${named}${more > 0 ? ` and ${more} more` : ""}`,
+      statement: `${count} syntax errors, so crate references in them may be missed: ${named}${more > 0 ? ` and ${more} more` : ""}`,
     },
   ];
 }

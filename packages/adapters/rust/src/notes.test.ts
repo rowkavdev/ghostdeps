@@ -44,7 +44,7 @@ describe("rust parse-error notes (#291)", () => {
     assert.deepEqual(notes, [
       {
         statement:
-          "1 Rust file has syntax errors, so Rust usages found in them may be incomplete: src/main.rs",
+          "1 Rust file has syntax errors, so crate references in them may be missed: src/main.rs",
       },
     ]);
     assert.equal(notes[0]!.dependency, undefined, "run-level, not tied to a dependency");
@@ -74,7 +74,7 @@ describe("rust parse-error notes (#291)", () => {
     const [note] = await parseErrorNotes(ctx(files), [project(".")]);
     assert.equal(
       note?.statement,
-      "7 Rust files have syntax errors, so Rust usages found in them may be incomplete: src/m1.rs, src/m2.rs, src/m3.rs, src/m4.rs, src/m5.rs and 2 more",
+      "7 Rust files have syntax errors, so crate references in them may be missed: src/m1.rs, src/m2.rs, src/m3.rs, src/m4.rs, src/m5.rs and 2 more",
     );
   });
 });
