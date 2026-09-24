@@ -1,5 +1,5 @@
 {
-  "description": "Optional dependencies (#47). The 'fast' extra's orjson is used behind a try/except ImportError fallback, and the 'yaml' extra's PyYAML is used through a lazy import inside a function. Both are usage, flagged conditional by the scanner. The 'docs' extra's mkdocs is never imported, so it has no usage. Listing a package in several extras ('all') yields one optional dependency. No unused or no-imports finding is produced for any optional dependency in M2.",
+  "description": "Optional dependencies (#47). The 'fast' extra's orjson is used behind a try/except ImportError fallback, and the 'yaml' extra's PyYAML is used through a lazy import inside a function. Both count as ordinary usage at their import lines. The 'docs' extra's mkdocs is never imported, so it has no usage. Listing a package in several extras ('all') yields one optional dependency. No unused or no-imports finding is produced for any optional dependency in M2.",
   "detection": { "minConfidence": 0.8, "projects": ["."] },
   "dependencies": [
     { "name": "httpx", "kind": "runtime" },
