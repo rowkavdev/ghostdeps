@@ -9,6 +9,7 @@ describe("rust adapter contract", () => {
     "workspace",
     "feature-conditional",
     "malformed-manifest",
+    "workspace-auto-members",
   ]) {
     runAdapterContractTests(createRustAdapter(), {
       repository: fixtureHandle("rust", fixture),

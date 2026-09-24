@@ -18,6 +18,7 @@ import {
   hasExcludedSegment,
   type AdapterContext,
   type Dependency,
+  type Evidence,
   type Usage,
 } from "@ghostdeps/core";
 import { isTable, readManifest } from "./cargo-toml.js";
@@ -191,12 +192,16 @@ export function ownedSources(files: string[], root: string): string[] {
   });
 }
 
-const cache = new WeakMap<AdapterContext, Map<string, Promise<CrateReference[] | undefined>>>();
+/** One scanned .rs file: its crate references, and whether tree-sitter hit syntax errors. */
+interface FileScan {
+  refs: CrateReference[];
+  /** True when the parse tree has errors; refs may be missing (#291). */
+  parseError: boolean;
+}
 
-async function referencesIn(
-  context: AdapterContext,
-  file: string,
-): Promise<CrateReference[] | undefined> {
+const cache = new WeakMap<AdapterContext, Map<string, Promise<FileScan | undefined>>>();
+
+async function scanFile(context: AdapterContext, file: string): Promise<FileScan | undefined> {
   let perContext = cache.get(context);
   if (perContext === undefined) {
     perContext = new Map();
@@ -212,11 +217,42 @@ async function referencesIn(
         return undefined;
       }
       if (Buffer.byteLength(text, "utf8") > MAX_FILE_READ_BYTES) return undefined;
-      return withRustTree(text, collectReferences);
+      return withRustTree(text, (root) => ({
+        refs: collectReferences(root),
+        parseError: root.hasError,
+      }));
     })();
     perContext.set(file, pending);
   }
   return pending;
+}
+
+/**
+ * Parse-error limitations for one crate (#291), one per owned .rs file with
+ * syntax errors, in the same shape as the js adapter's `parse-error`
+ * limitations. Surfaced today as a run note (adapter notes()); kept
+ * per project so it can gate referenceAnalysisComplete if the adapter
+ * ever declares referenceAnalysis. Scans are cached, so this reuses the
+ * work findUsage already did.
+ */
+export async function parseErrorLimitations(
+  context: AdapterContext,
+  projectPath: string,
+): Promise<Evidence[]> {
+  const files = await context.repository.listFiles();
+  const out: Evidence[] = [];
+  for (const file of ownedSources(files, projectPath)) {
+    context.signal?.throwIfAborted();
+    const scan = await scanFile(context, file);
+    if (scan?.parseError) {
+      out.push({
+        kind: "parse-error",
+        statement: `${file} has syntax errors; usages found may be incomplete`,
+        file,
+      });
+    }
+  }
+  return out;
 }
 
 /** Head usages plus, in PR mode, usages on lines the pull request removed (#249). */
@@ -235,9 +271,9 @@ async function findHeadUsage(context: AdapterContext, dependency: Dependency): P
   const seen = new Set<string>();
   for (const file of ownedSources(files, dependency.project.path)) {
     context.signal?.throwIfAborted();
-    const refs = await referencesIn(context, file);
-    if (refs === undefined) continue;
-    for (const ref of refs) {
+    const scan = await scanFile(context, file);
+    if (scan === undefined) continue;
+    for (const ref of scan.refs) {
       if (!names.has(ref.crate)) continue;
       const k = `${file}:${ref.line}:${ref.symbol ?? ""}`;
       if (seen.has(k)) continue;
