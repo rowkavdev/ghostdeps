@@ -5,7 +5,7 @@
  * parsing only; setup.py is code and is never read here.
  *
  * Each entry keeps the facts the shared Dependency model has no field for
- * (requested extras, marker, the optional group that declares it) so #47
+ * (requested extras, marker, the extras/groups that declare it) so #47
  * can reason about extras without a contract change.
  */
 import { parse as parseToml } from "smol-toml";
@@ -18,8 +18,12 @@ export interface PythonRequirement {
   /** Extras requested of this package, e.g. ["socks"] for requests[socks]. */
   extras: string[];
   marker?: string;
-  /** Optional-dependency extra (PEP 621) or dependency group that declares it. */
-  group?: string;
+  /**
+   * Optional-dependency extras (PEP 621, Poetry extras) or dependency groups
+   * that declare it. One requirement per name and kind: a package listed in
+   * several extras is one Dependency with every extra named here.
+   */
+  groups: string[];
 }
 
 export interface PyprojectParseResult {
@@ -49,7 +53,7 @@ function strings(value: unknown): string[] {
 class Collector {
   readonly requirements: PythonRequirement[] = [];
   readonly evidence: Evidence[] = [];
-  private readonly seen = new Set<string>();
+  private readonly byKey = new Map<string, PythonRequirement>();
 
   constructor(
     private readonly project: ProjectRef,
@@ -64,9 +68,22 @@ class Collector {
     options: { marker?: string; group?: string; specifier?: Dependency["specifier"] } = {},
   ): void {
     const normalised = normaliseName(name);
-    const key = `${normalised}\0${kind}\0${options.group ?? ""}`;
-    if (this.seen.has(key)) return;
-    this.seen.add(key);
+    // One Dependency per name and kind (as every adapter emits): repeats
+    // merge their extras and groups instead of duplicating the entry.
+    const key = `${normalised}\0${kind}`;
+    const existing = this.byKey.get(key);
+    if (existing !== undefined) {
+      for (const extra of extras) if (!existing.extras.includes(extra)) existing.extras.push(extra);
+      if (options.group !== undefined && !existing.groups.includes(options.group)) {
+        existing.groups.push(options.group);
+      }
+      if (existing.dependency.constraint === "*" && constraint.length > 0) {
+        existing.dependency.constraint = constraint;
+      }
+      // Any unconditional declaration makes the merged requirement unconditional.
+      if (options.marker === undefined) delete existing.marker;
+      return;
+    }
     const dependency: Dependency = {
       name: normalised,
       constraint: constraint.length > 0 ? constraint : "*",
@@ -75,9 +92,13 @@ class Collector {
       declaredIn: this.declaredIn,
     };
     if (options.specifier !== undefined) dependency.specifier = options.specifier;
-    const requirement: PythonRequirement = { dependency, extras };
+    const requirement: PythonRequirement = {
+      dependency,
+      extras: [...extras],
+      groups: options.group !== undefined ? [options.group] : [],
+    };
     if (options.marker !== undefined) requirement.marker = options.marker;
-    if (options.group !== undefined) requirement.group = options.group;
+    this.byKey.set(key, requirement);
     this.requirements.push(requirement);
   }
 
@@ -132,8 +153,10 @@ function parsePep621(doc: Table, out: Collector, extras: Record<string, string[]
       extras[name] = members;
     }
   }
-  // PEP 735 dependency groups. `{include-group = "..."}` entries are tables
-  // and are skipped: their members are listed in the included group.
+  // PEP 735 dependency groups. Groups are not dev by definition, but in
+  // practice they hold test/lint/docs tooling, so they are reported as dev
+  // (documented default). `{include-group = "..."}` entries are tables and
+  // are skipped: their members are listed in the included group.
   const groups = table(doc, "dependency-groups") ?? {};
   for (const [group, list] of Object.entries(groups)) {
     for (const text of strings(list)) out.addPep508(text, "dev", normaliseName(group));
@@ -220,9 +243,15 @@ function parsePoetry(
     parsePoetryEntry(name, value, "dev", out, "dev", declaredIn);
   }
   for (const [group, body] of Object.entries(table(poetry, "group") ?? {})) {
+    // group.main is Poetry's name for [tool.poetry.dependencies]: runtime.
+    const main = normaliseName(group) === "main";
     for (const [name, value] of Object.entries(table(body, "dependencies") ?? {})) {
       if (name.toLowerCase() === "python") continue;
-      parsePoetryEntry(name, value, "dev", out, normaliseName(group), declaredIn);
+      if (main) {
+        parsePoetryEntry(name, value, "runtime", out, extraOf.get(normaliseName(name)), declaredIn);
+      } else {
+        parsePoetryEntry(name, value, "dev", out, normaliseName(group), declaredIn);
+      }
     }
   }
 }

@@ -10,7 +10,7 @@ const summary = (text: string) =>
     name: r.dependency.name,
     kind: r.dependency.kind,
     constraint: r.dependency.constraint,
-    ...(r.group !== undefined ? { group: r.group } : {}),
+    ...(r.groups.length > 0 ? { groups: r.groups } : {}),
     ...(r.extras.length > 0 ? { extras: r.extras } : {}),
   }));
 
@@ -37,9 +37,9 @@ dev-dependencies = ["mypy"]
     assert.deepEqual(summary(text), [
       { name: "httpx", kind: "runtime", constraint: ">=0.27" },
       { name: "rich", kind: "runtime", constraint: "*" },
-      { name: "typer", kind: "optional", constraint: ">=0.12", group: "cli", extras: ["all"] },
-      { name: "pytest", kind: "dev", constraint: ">=8", group: "test" },
-      { name: "ruff", kind: "dev", constraint: "*", group: "lint" },
+      { name: "typer", kind: "optional", constraint: ">=0.12", groups: ["cli"], extras: ["all"] },
+      { name: "pytest", kind: "dev", constraint: ">=8", groups: ["test"] },
+      { name: "ruff", kind: "dev", constraint: "*", groups: ["lint"] },
       { name: "hatchling", kind: "build", constraint: "*" },
       { name: "mypy", kind: "dev", constraint: "*" },
     ]);
@@ -76,7 +76,59 @@ dependencies = ['tomli>=2; python_version < "3.11"', "lib @ git+https://example.
   });
 });
 
+describe("parsePyprojectText: one entry per name and kind (#235 review)", () => {
+  it("merges a package listed in several extras into one Dependency", () => {
+    const text = `
+[project]
+dependencies = ["requests>=2"]
+[project.optional-dependencies]
+socks = ["requests[socks]"]
+all = ["requests", "rich"]
+[build-system]
+requires = ["hatchling"]
+[tool.poetry.group.main.dependencies]
+httpx = "^0.27"
+`;
+    assert.deepEqual(summary(text), [
+      { name: "requests", kind: "runtime", constraint: ">=2" },
+      {
+        name: "requests",
+        kind: "optional",
+        constraint: "*",
+        groups: ["socks", "all"],
+        extras: ["socks"],
+      },
+      { name: "rich", kind: "optional", constraint: "*", groups: ["all"] },
+      { name: "hatchling", kind: "build", constraint: "*" },
+      { name: "httpx", kind: "runtime", constraint: "^0.27" },
+    ]);
+  });
+
+  it("drops the marker when any declaration is unconditional", () => {
+    const result = parse(`[project.optional-dependencies]
+a = ['tomli; python_version < "3.11"']
+b = ["tomli>=2"]
+`);
+    assert.equal(result.requirements.length, 1);
+    assert.equal(result.requirements[0]?.marker, undefined);
+    assert.equal(result.requirements[0]?.dependency.constraint, ">=2");
+  });
+});
+
 describe("parsePyprojectText: Poetry (issue #43)", () => {
+  it("treats group.main as runtime, including optional entries", () => {
+    assert.deepEqual(
+      summary(`[tool.poetry.group.main.dependencies]
+httpx = "^0.27"
+psycopg = { version = "^3", optional = true }
+`),
+      [
+        { name: "httpx", kind: "runtime", constraint: "^0.27" },
+        { name: "psycopg", kind: "optional", constraint: "^3" },
+      ],
+    );
+  });
+
   it("reads dependencies, groups, legacy dev deps and extras", () => {
     const text = `
 [tool.poetry.dependencies]
@@ -101,12 +153,12 @@ pytest = "^8"
 `;
     assert.deepEqual(summary(text), [
       { name: "requests", kind: "runtime", constraint: "^2.31", extras: ["socks"] },
-      { name: "psycopg", kind: "optional", constraint: "^3.1", group: "postgres" },
+      { name: "psycopg", kind: "optional", constraint: "^3.1", groups: ["postgres"] },
       { name: "mylib", kind: "runtime", constraint: "https://example.com/mylib.git" },
       { name: "local", kind: "runtime", constraint: "../local" },
       { name: "numpy", kind: "runtime", constraint: "<2 || >=2" },
-      { name: "black", kind: "dev", constraint: "^24", group: "dev" },
-      { name: "pytest", kind: "dev", constraint: "^8", group: "test" },
+      { name: "black", kind: "dev", constraint: "^24", groups: ["dev"] },
+      { name: "pytest", kind: "dev", constraint: "^8", groups: ["test"] },
     ]);
     const result = parse(text);
     assert.deepEqual(result.extras, { postgres: ["psycopg"] });
@@ -125,7 +177,7 @@ ruff = "*"
 `;
     assert.deepEqual(summary(text), [
       { name: "httpx", kind: "runtime", constraint: "*" },
-      { name: "ruff", kind: "dev", constraint: "*", group: "dev" },
+      { name: "ruff", kind: "dev", constraint: "*", groups: ["dev"] },
     ]);
   });
 });
