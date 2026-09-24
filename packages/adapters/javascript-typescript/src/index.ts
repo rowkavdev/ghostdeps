@@ -10,3 +10,5 @@ export {
 } from "./detect.js";
 export { detectPackageManagers } from "./package-managers.js";
 export type { PackageManagerDetection } from "./package-managers.js";
+export { classifySpecifier, parseManifest, parseManifestText } from "./manifest.js";
+export type { ManifestParseResult } from "./manifest.js";
