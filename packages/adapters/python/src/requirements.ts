@@ -10,6 +10,7 @@ import type {
   ProjectRef,
   RepositoryHandle,
 } from "@ghostdeps/core";
+import { lineNamesDependency } from "./declared-line.js";
 import { normaliseName, parseRequirement } from "./pep508.js";
 import { baseName, dirName, joinPath } from "./paths.js";
 import { classifyUrl, mergeMarkers, type PythonRequirement } from "./pyproject.js";
@@ -129,6 +130,8 @@ export async function parseRequirementsFiles(
     extras: string[],
     marker: string | undefined,
     specifier: Dependency["specifier"] | undefined,
+    line: number,
+    lineText: string,
   ): void => {
     const normalised = normaliseName(name);
     const key = `${normalised}\0${kind}`;
@@ -151,6 +154,8 @@ export async function parseRequirementsFiles(
       declaredIn,
     };
     if (specifier !== undefined) dependency.specifier = specifier;
+    // Only a line core will keep (#280): it must show the normalised name.
+    if (lineNamesDependency(lineText, normalised)) dependency.declaredLine = line;
     const requirement: PythonRequirement = { dependency, extras: [...extras], groups: [] };
     if (marker !== undefined) requirement.marker = marker;
     byKey.set(key, requirement);
@@ -194,6 +199,7 @@ export async function parseRequirementsFiles(
       );
       return;
     }
+    const physical = text.split(/\r?\n/);
     for (const { line, text: entry } of logicalLines(text)) {
       const option = /^(-r|--requirement|-c|--constraint)(?:\s+|=)(.+)$/.exec(entry);
       if (option) {
@@ -241,7 +247,7 @@ export async function parseRequirementsFiles(
           const specifier = /^(?:\.|\/|file:)/.test(url)
             ? { type: "file" as const, detail: url }
             : classifyUrl(url);
-          add(name, url, kind, file, [], undefined, specifier);
+          add(name, url, kind, file, [], undefined, specifier, line, physical[line - 1] ?? "");
         }
         continue;
       }
@@ -270,7 +276,17 @@ export async function parseRequirementsFiles(
         continue;
       }
       const specifier = req.url !== undefined ? classifyUrl(req.url) : undefined;
-      add(req.rawName, req.url ?? req.specifier, kind, file, req.extras, req.marker, specifier);
+      add(
+        req.rawName,
+        req.url ?? req.specifier,
+        kind,
+        file,
+        req.extras,
+        req.marker,
+        specifier,
+        line,
+        physical[line - 1] ?? "",
+      );
     }
   }
 

@@ -1,5 +1,5 @@
 {
-  "description": "Malformed pyproject.toml next to real source (#43): detection degrades to the threshold instead of failing, and no dependencies are read from the broken file.",
+  "description": "Malformed pyproject.toml next to real source (#43): detection degrades to the threshold instead of failing, and no dependencies are read from the broken file. Core reports a manifest-malformed note pointing at the TOML error line, plus a scan-incomplete run note because the manifest went unparsed (#281).",
   "detection": { "minConfidence": 0.5, "maxConfidence": 0.5, "projects": ["."] },
   "dependencies": [],
   "findings": [

@@ -21,6 +21,7 @@
     {
       "constraint": ">=2.31",
       "declaredIn": "services/api/pyproject.toml",
+      "declaredLine": 5,
       "kind": "runtime",
       "name": "requests",
       "project": {
