@@ -359,10 +359,12 @@ export async function analyseRepositoryIsolated(
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
   const heapMb = options.adapterHeapMb ?? DEFAULT_ADAPTER_HEAP_MB;
-  const maxParallel = Math.max(
-    1,
-    Math.floor(options.maxParallelAdapters ?? DEFAULT_MAX_PARALLEL_ADAPTERS),
-  );
+  // Guard non-numeric input: Math.max(1, Math.floor(NaN)) is NaN, which
+  // would start zero lanes and leave every outcome silently undefined.
+  const requestedParallel = options.maxParallelAdapters ?? DEFAULT_MAX_PARALLEL_ADAPTERS;
+  const maxParallel = Number.isFinite(requestedParallel)
+    ? Math.max(1, Math.floor(requestedParallel))
+    : DEFAULT_MAX_PARALLEL_ADAPTERS;
 
   // Wave-pooled so total adapter heap stays at maxParallel x heapMb (#125).
   const outcomes: AdapterOutcome[] = new Array<AdapterOutcome>(options.adapters.length);

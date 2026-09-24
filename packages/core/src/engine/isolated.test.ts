@@ -173,6 +173,21 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("a non-numeric maxParallelAdapters falls back to the default instead of zero lanes", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("good.mjs")],
+        adapterTimeoutMs: 30_000,
+        maxParallelAdapters: Number.NaN,
+      });
+      // Zero lanes would leave the outcome undefined and no facts at all.
+      assert.equal(result.detected.length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("a module without an adapter export becomes an info finding, not a crash", async () => {
     const { dir, handle } = await fixtureRepo();
     try {
