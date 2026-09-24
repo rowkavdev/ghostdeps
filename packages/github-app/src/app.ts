@@ -1,4 +1,6 @@
 import type { ApplicationFunction, Probot } from "probot";
+import { BusyLimiter } from "./checks/busy-limiter.js";
+import { CheckReporter } from "./checks/reporter.js";
 import { changedFiles } from "./events/changed-files.js";
 import { checkName } from "./checks/render.js";
 import { analysedEvents, decide, type ChangedFilesLookup } from "./events/filter.js";
@@ -10,10 +12,22 @@ export const HEALTH_PATH = "/healthz";
 export interface GhostDepsAppOptions {
   /** Job boundary. Defaults to an in-process queue whose worker only logs (the analysis worker lands separately). */
   readonly queue?: JobQueue;
+  /**
+   * This GitHub App's id, used to recognise our own check runs. Defaults to
+   * the APP_ID environment variable that `probot run` also reads. Without it,
+   * no check runs are written.
+   */
+  readonly appId?: number;
+  /** Limits "busy" check runs when the queue is full. Defaults to one per repository per minute. */
+  readonly busyLimiter?: BusyLimiter;
 }
 
 export function createGhostDepsApp(options: GhostDepsAppOptions = {}): ApplicationFunction {
   return (app: Probot, { addHandler }) => {
+    const envAppId = Number(process.env.APP_ID);
+    const appId =
+      options.appId ?? (Number.isInteger(envAppId) && envAppId > 0 ? envAppId : undefined);
+    const busyLimiter = options.busyLimiter ?? new BusyLimiter();
     const queue =
       options.queue ??
       new InProcessJobQueue({
@@ -80,6 +94,23 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
         };
         if (result === "overloaded") {
           context.log.warn(fields, "analysis queue full; job dropped");
+          // GitHub won't redeliver, so leave a neutral run saying so instead of silence.
+          const job = decision.job;
+          if (appId === undefined) {
+            context.log.warn(fields, "APP_ID not configured; no busy check run written");
+          } else if (busyLimiter.allow(job.repository.id)) {
+            try {
+              await new CheckReporter(context.octokit.rest).busy({
+                owner: job.repository.owner,
+                repo: job.repository.name,
+                headSha: job.headSha,
+                externalId: job.key,
+                appId,
+              });
+            } catch (error) {
+              context.log.warn({ ...fields, err: error }, "busy check run failed");
+            }
+          }
         } else {
           context.log.info(fields, "analysis job");
         }

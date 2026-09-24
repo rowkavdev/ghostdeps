@@ -7,6 +7,7 @@ import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import nock from "nock";
 import { createNodeMiddleware, Probot } from "probot";
 import { createGhostDepsApp, HEALTH_PATH } from "./app.js";
+import { BusyLimiter } from "./checks/busy-limiter.js";
 import type { AnalysisJob, EnqueueResult, JobQueue } from "./jobs.js";
 
 const SECRET = "test-only-webhook-secret";
@@ -284,5 +285,99 @@ describe("GhostDeps GitHub App", () => {
     const res = await deliver("check_run", JSON.stringify({ ...body, action: "completed" }));
     assert.equal(res.status, 200);
     assert.equal(queue.jobs.length, 0);
+  });
+});
+
+describe("GhostDeps GitHub App when the queue is full", () => {
+  const overloaded: JobQueue = { enqueue: () => "overloaded" };
+
+  async function start(options: { appId?: number }) {
+    const probot = new Probot({ appId: 123, privateKey, secret: SECRET, logLevel: "fatal" });
+    const middleware = await createNodeMiddleware(
+      createGhostDepsApp({ queue: overloaded, busyLimiter: new BusyLimiter(), ...options }),
+      { probot },
+    );
+    const server = createServer((req, res) => {
+      void middleware(req, res, () => {
+        res.writeHead(404).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/github/webhooks`;
+    const deliver = async (event: string, body: string) =>
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-github-event": event,
+          "x-github-delivery": randomUUID(),
+          "x-hub-signature-256": sign(body),
+        },
+        body,
+      });
+    const close = () => new Promise<void>((resolve) => server.close(() => resolve()));
+    return { deliver, close };
+  }
+
+  let unmatched = 0;
+  const onNoMatch = (req: { hostname?: string; host?: string }) => {
+    if ((req.hostname ?? req.host ?? "").includes("api.github.com")) unmatched++;
+  };
+
+  before(() => {
+    nock.disableNetConnect();
+    nock.enableNetConnect("127.0.0.1");
+    nock.emitter.on("no match", onNoMatch);
+  });
+
+  after(() => {
+    nock.emitter.removeListener("no match", onNoMatch);
+    nock.enableNetConnect();
+  });
+
+  beforeEach(() => {
+    unmatched = 0;
+  });
+
+  afterEach(() => {
+    assert.deepEqual(nock.pendingMocks(), []);
+    nock.cleanAll();
+  });
+
+  it("writes one neutral busy check run per repository per minute", async () => {
+    const created: Record<string, unknown>[] = [];
+    mockInstallationToken();
+    nock(API)
+      .post(`${REPO_PATH}/check-runs`, (b: Record<string, unknown>) => {
+        created.push(b);
+        return true;
+      })
+      .reply(201, { id: 1 });
+    const app = await start({ appId: 123 });
+    try {
+      const body = await fixture("push.default-branch");
+      assert.equal((await app.deliver("push", body)).status, 200);
+      assert.equal((await app.deliver("push", body)).status, 200);
+    } finally {
+      await app.close();
+    }
+    assert.equal(unmatched, 0, "a second busy run was attempted inside the window");
+    assert.equal(created.length, 1);
+    assert.equal(created[0]?.status, "completed");
+    assert.equal(created[0]?.conclusion, "neutral");
+    assert.equal(created[0]?.external_id, "busy:872001:0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c");
+  });
+
+  it("writes nothing without an app id", async () => {
+    const saved = process.env.APP_ID;
+    delete process.env.APP_ID;
+    const app = await start({});
+    try {
+      assert.equal((await app.deliver("push", await fixture("push.default-branch"))).status, 200);
+    } finally {
+      await app.close();
+      if (saved !== undefined) process.env.APP_ID = saved;
+    }
+    assert.equal(unmatched, 0);
   });
 });
