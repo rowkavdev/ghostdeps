@@ -188,6 +188,31 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("a specifier resolving inside the analysed repository is rejected before a worker starts (#150)", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      // An adapter module inside the analysed tree: repository content must
+      // never choose what code the engine loads.
+      await writeFile(join(dir, "evil-adapter.mjs"), "export default {};");
+      const inside = new URL(`file://${join(dir, "evil-adapter.mjs")}`).href;
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [inside, fixture("good.mjs")],
+        adapterTimeoutMs: 30_000,
+      });
+      const finding = result.findings.find((f) =>
+        f.summary.includes("inside the analysed repository"),
+      );
+      assert.ok(
+        finding,
+        `expected a specifier-rejection finding, got ${JSON.stringify(result.findings)}`,
+      );
+      // The trusted adapter still ran.
+      assert.equal(result.detected.length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("a module without an adapter export becomes an info finding, not a crash", async () => {
     const { dir, handle } = await fixtureRepo();
     try {

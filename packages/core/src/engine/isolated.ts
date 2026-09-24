@@ -14,6 +14,8 @@
  * the scan - cheap while adapter count is small, and it keeps untrusted
  * parsing out of the main thread entirely.
  */
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { AnalysisResult, NetworkPolicy } from "../types/index.js";
 import {
@@ -69,6 +71,8 @@ export interface IsolatedAnalyseOptions {
    * adapter. TRUSTED CONFIGURATION ONLY: every specifier goes to import()
    * inside the worker, so specifiers must come from CLI flags or project
    * config, never from repository content (manifests, lockfiles, source).
+   * A specifier that resolves inside the analysed repository root is
+   * rejected with an info finding before a worker starts (#150).
    */
   adapters: readonly string[];
   /**
@@ -207,6 +211,35 @@ function emptyOutcome(
   };
 }
 
+/**
+ * Enforce the trusted-config rule (#126/#150): adapter specifiers go to
+ * import() in the worker, so they must be CLI/project config, never
+ * repository content. A specifier that is a file URL or filesystem path
+ * resolving inside the analysed repository root is rejected before a
+ * worker starts. Bare package specifiers are left to module resolution
+ * (they come from the consumer's own dependencies, not the analysed repo).
+ */
+export function specifierInsideRoot(specifier: string, root: string): boolean {
+  let candidate: string;
+  if (specifier.startsWith("file:")) {
+    try {
+      candidate = fileURLToPath(specifier);
+    } catch {
+      return false;
+    }
+  } else if (
+    path.isAbsolute(specifier) ||
+    specifier.startsWith("./") ||
+    specifier.startsWith("../")
+  ) {
+    candidate = path.resolve(specifier);
+  } else {
+    return false;
+  }
+  const resolvedRoot = path.resolve(root);
+  return candidate === resolvedRoot || candidate.startsWith(resolvedRoot + path.sep);
+}
+
 /** Run one adapter module in a worker and resolve its outcome; never rejects. */
 export function runAdapterIsolated(
   specifier: string,
@@ -218,6 +251,22 @@ export function runAdapterIsolated(
   heapMb: number,
   debugLog?: (line: string) => void,
 ): Promise<AdapterOutcome> {
+  // Trusted-config rule: never import() code from inside the analysed
+  // repository (#150). Reject before a worker even starts.
+  if (specifierInsideRoot(specifier, repository.scan.root)) {
+    return Promise.resolve(
+      emptyOutcome(
+        specifier,
+        adapterFailure(
+          { ecosystem: specifier },
+          "load",
+          new Error(
+            "adapter specifier resolves inside the analysed repository; specifiers are trusted configuration only",
+          ),
+        ),
+      ),
+    );
+  }
   return new Promise((resolve) => {
     // The name shown in findings before the worker tells us the ecosystem.
     let ecosystem = specifier;
