@@ -1,3 +1,4 @@
+import { findingGroup } from "@ghostdeps/core";
 import type { AnalysisResult, Finding, FindingKind, SurfaceEntry } from "@ghostdeps/core";
 import { escapeTerminal } from "./escape.js";
 
@@ -78,14 +79,15 @@ function renderVerdict(finding: Finding): string[] {
 }
 
 /**
- * Verdicts are the non-info findings, grouped by kind in canonical order.
+ * Verdicts are the findings core's findingGroup (#239) classifies as
+ * "verdict" - every non-info finding, grouped by kind in canonical order.
  * Info findings (scan completeness, coverage gaps, awareness-only notes)
  * are caveats about the analysis, not verdicts on dependencies - they
  * render as Notes and Awareness notes below. The section is omitted when
  * there is nothing to say.
  */
 function renderVerdicts(findings: readonly Finding[]): string[] {
-  const verdicts = findings.filter((finding) => finding.kind !== "info");
+  const verdicts = findings.filter((finding) => findingGroup(finding) === "verdict");
   if (verdicts.length === 0) return [];
   const lines = ["Verdicts:"];
   for (const kind of findingOrder) {
@@ -101,27 +103,30 @@ function renderVerdicts(findings: readonly Finding[]): string[] {
 }
 
 /**
- * Notes are the info findings that say the analysis itself was incomplete -
- * run-level gaps (partial scans, adapter failures, cap notices) and
- * manual-review notes such as unverified-no-imports. They are always
- * visible (same analysis, same picture on every surface) and keep their
- * neutral meaning: they never change the verdict lines or the exit code.
- * Omitted when there are none.
+ * Notes are the info findings findingGroup (#239) calls "incomplete" or
+ * "note": engine cap and incompleteness notes (partial scans, adapter
+ * failures, cap notices, manual-review notes such as unverified-no-imports)
+ * plus non-capping run-level adapter notes. They are always visible (same
+ * analysis, same picture on every surface) and they never change the
+ * verdict lines or the exit code. Omitted when there are none.
  */
 function renderNotes(findings: readonly Finding[]): string[] {
-  const notes = findings.filter((finding) => finding.kind === "info" && finding.awareness !== true);
+  const notes = findings.filter((finding) => {
+    const group = findingGroup(finding);
+    return group === "incomplete" || group === "note";
+  });
   if (notes.length === 0) return [];
   return ["", "Notes:", ...notes.flatMap((note) => renderVerdict(note))];
 }
 
 /**
- * Awareness notes are the no-action info findings core explicitly flags
- * with `awareness: true` (#234, fail-closed: absent means NOT awareness).
- * They are always visible and never affect the verdicts, the counts or the
+ * Awareness notes are the no-action info findings findingGroup (#239)
+ * calls "awareness" (core's `awareness: true`, #234, fail-closed). They
+ * are always visible and never affect the verdicts, the counts or the
  * exit code. Omitted when there are none.
  */
 function renderAwarenessNotes(findings: readonly Finding[]): string[] {
-  const notes = findings.filter((finding) => finding.kind === "info" && finding.awareness === true);
+  const notes = findings.filter((finding) => findingGroup(finding) === "awareness");
   if (notes.length === 0) return [];
   return ["", "Awareness notes:", ...notes.flatMap((note) => renderVerdict(note))];
 }
