@@ -1,8 +1,8 @@
 /**
  * @ghostdeps/core — shared types, dependency model, adapter interface,
  * analysis engine and reporting for GhostDeps.
- *
- * Contracts land here first (see docs/adr/0002-adapter-interface.md);
- * implementations follow from the project board.
  */
-export {};
+export * from "./types/index.js";
+export * from "./adapter.js";
+export * from "./native-rules/index.js";
+export { runAdapterContractTests } from "./contract-tests/index.js";

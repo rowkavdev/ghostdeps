@@ -1,0 +1,153 @@
+/**
+ * Shared GhostDeps contracts. ADR 0002 is the authority; these types are
+ * its executable form. Everything a finding claims must be backed by
+ * evidence, a confidence level, and stated limitations.
+ */
+
+/** Where a dependency was declared. */
+export type DependencyKind = "runtime" | "dev" | "peer" | "optional" | "build";
+
+/** Confidence is computed from evidence, never asserted without it. */
+export type Confidence = "high" | "medium" | "low";
+
+/** A package manager instance detected in a project. */
+export interface PackageManager {
+  /** e.g. "npm", "pnpm", "yarn", "bun", "pip", "poetry", "uv", "pipenv", "cargo", "go-modules" */
+  name: string;
+  /** Lockfile that identified it, relative to the project root, if any. */
+  lockfile?: string;
+}
+
+/** A project root inside a repository (repo root or a workspace member). */
+export interface ProjectRef {
+  /** Path relative to the repository root; "." for the root itself. */
+  path: string;
+  ecosystem: string;
+  packageManagers: PackageManager[];
+}
+
+/** A declared direct dependency, normalised across ecosystems. */
+export interface Dependency {
+  name: string;
+  /** Version constraint as declared (semver range, PEP 440 specifier, etc.). */
+  constraint: string;
+  kind: DependencyKind;
+  /** The project that declares it. */
+  project: ProjectRef;
+  /** Manifest file it came from, relative to the repository root. */
+  declaredIn: string;
+  /** Non-registry specifiers (git, file, link, workspace) recorded, never executed. */
+  specifier?: { type: "registry" | "git" | "file" | "link" | "workspace"; detail?: string };
+}
+
+/** A node in the resolved dependency graph. */
+export interface GraphNode {
+  name: string;
+  version: string;
+  /** Names of this node's own dependencies (edges). */
+  dependencies: string[];
+  dev: boolean;
+}
+
+/** The transitive graph for one project, built from lockfiles only. */
+export interface DependencyGraph {
+  project: ProjectRef;
+  nodes: GraphNode[];
+  /** Direct dependency name -> full transitive closure (names). */
+  transitiveClosure: Record<string, string[]>;
+  /** True when no lockfile existed and the graph is incomplete. */
+  incomplete: boolean;
+}
+
+/** One observed use of a dependency, with location evidence. */
+export interface Usage {
+  dependency: string;
+  file: string;
+  line: number;
+  /** Import form: static import, require, dynamic import, etc. */
+  form: "static" | "require" | "dynamic" | "unknown";
+  /** The API surface observed, e.g. ["get", "post"] for axios.get/axios.post. */
+  symbols: string[];
+}
+
+/** A piece of evidence supporting (or weakening) a finding. */
+export interface Evidence {
+  /** Machine-checkable kind, e.g. "import-found", "native-api-available", "interceptor-detected". */
+  kind: string;
+  /** Human-readable statement, e.g. "only axios.get() is used". */
+  statement: string;
+  file?: string;
+  line?: number;
+}
+
+export type FindingKind =
+  | "unused"
+  | "potentially-unnecessary"
+  | "duplicate-capability"
+  | "maintenance-risk"
+  | "footprint"
+  | "info";
+
+/** A finding. If confidence cannot be established, GhostDeps says so. */
+export interface Finding {
+  kind: FindingKind;
+  dependency?: string;
+  summary: string;
+  recommendation: string;
+  evidence: Evidence[];
+  confidence: Confidence;
+  /** Why this finding might be wrong; empty only when evidence is complete. */
+  limitations: string[];
+  /** Files likely affected by acting on the recommendation. */
+  affectedFiles: string[];
+}
+
+/** Factual health signals only; never subjective judgements. */
+export interface PackageHealth {
+  name: string;
+  deprecated?: string;
+  repositoryArchived?: boolean;
+  lastReleaseDate?: string;
+  /** Source of each signal, e.g. "npm registry", "github". */
+  sources: string[];
+}
+
+/** A native/runtime alternative for observed usage. */
+export interface Alternative {
+  /** What replaces it, e.g. "fetch()" or "crypto.randomUUID()". */
+  nativeCapability: string;
+  /** Minimum runtime version required, e.g. { "node": "18.0.0" }. */
+  minimumRuntime: Record<string, string>;
+  /** Usage APIs this alternative covers. */
+  coveredApis: string[];
+  /** Observed usage that would break the replacement. */
+  incompatibilities: Evidence[];
+  confidence: Confidence;
+}
+
+/** Read-only view of a repository handed to adapters. Adapters get no other I/O. */
+export interface RepositoryHandle {
+  /** List files relative to the repository root (after exclusion rules). */
+  listFiles(): Promise<string[]>;
+  /** Read a file as UTF-8 text. Throws for missing/binary-oversized files. */
+  readFile(path: string): Promise<string>;
+  exists(path: string): Promise<boolean>;
+}
+
+/** What network access, if any, an analysis run permits. Adapters never fetch directly. */
+export interface NetworkPolicy {
+  mode: "offline" | "metadata-only";
+}
+
+/** The full result of analysing a repository. Schema-versioned for JSON output. */
+export interface AnalysisResult {
+  schemaVersion: 1;
+  projects: ProjectRef[];
+  dependencies: Dependency[];
+  usages: Usage[];
+  findings: Finding[];
+  /** Languages and package managers detected, with detection evidence. */
+  detected: { ecosystem: string; confidence: Confidence; evidence: Evidence[] }[];
+  /** Per-ecosystem dependency surface totals. */
+  surface: { ecosystem: string; direct: number; transitive: number }[];
+}
