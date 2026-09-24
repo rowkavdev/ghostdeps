@@ -9,8 +9,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { analyseRepository } from "./analyse.js";
-import { analyseRepositoryIsolated } from "./isolated.js";
+import { analyseRepository, assembleAnalysisResult } from "./analyse.js";
+import { analyseRepositoryIsolated, capOutcome, OUTCOME_CAPS } from "./isolated.js";
+import type { AdapterOutcome } from "./run-adapter.js";
+import type { ProjectRef } from "../types/index.js";
 import { FsRepositoryHandle } from "./scanner/handle.js";
 
 const fixture = (name: string): string =>
@@ -130,6 +132,28 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("caps an oversized worker-posted outcome and reports the truncation", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("over-poster.mjs")],
+        adapterTimeoutMs: 30_000,
+      });
+      // 12,000 posted, capped at 10,000 main-side (#123).
+      assert.equal(result.dependencies.length, 10_000);
+      const finding = result.findings.find(
+        (f) => f.kind === "info" && f.summary.includes("truncated to size ceilings"),
+      );
+      assert.ok(
+        finding,
+        `expected a truncation finding, got ${JSON.stringify(result.findings.map((f) => f.summary))}`,
+      );
+      assert.ok(finding.limitations.some((l) => l.includes("12") && l.includes("dependencies")));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("a module without an adapter export becomes an info finding, not a crash", async () => {
     const { dir, handle } = await fixtureRepo();
     try {
@@ -147,5 +171,147 @@ describe("worker-thread adapter isolation (#90)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("capOutcome (#123 review)", () => {
+  const project: ProjectRef = { path: ".", ecosystem: "x", packageManagers: [] };
+  const baseOutcome = (): AdapterOutcome => ({
+    ecosystem: "x",
+    dependencies: [],
+    usages: [],
+    graphs: [],
+    usageAnalysed: true,
+    findings: [],
+  });
+
+  it("marks usage analysis incomplete when usages are capped", () => {
+    const outcome = baseOutcome();
+    outcome.dependencies = [
+      { name: "late-dep", constraint: "^1.0.0", kind: "runtime", project, declaredIn: "m" },
+    ];
+    for (let i = 0; i < OUTCOME_CAPS.maxUsages; i++) {
+      outcome.usages.push({
+        dependency: `dep-${i}`,
+        file: "a.ts",
+        line: 1,
+        form: "static",
+        symbols: [],
+      });
+    }
+    // late-dep's only usage sits past the cap.
+    outcome.usages.push({
+      dependency: "late-dep",
+      file: "b.ts",
+      line: 1,
+      form: "static",
+      symbols: [],
+    });
+    const capped = capOutcome(outcome);
+    assert.equal(capped.usages.length, OUTCOME_CAPS.maxUsages);
+    assert.equal(
+      capped.usageAnalysed,
+      false,
+      "a capped usage list must not read as a complete usage analysis",
+    );
+  });
+
+  it("a dependency whose only usage is past the cap gets no unused finding", async () => {
+    const outcome = baseOutcome();
+    outcome.dependencies = [
+      { name: "late-dep", constraint: "^1.0.0", kind: "runtime", project, declaredIn: "m" },
+    ];
+    for (let i = 0; i < OUTCOME_CAPS.maxUsages; i++) {
+      outcome.usages.push({
+        dependency: `dep-${i}`,
+        file: "a.ts",
+        line: 1,
+        form: "static",
+        symbols: [],
+      });
+    }
+    outcome.usages.push({
+      dependency: "late-dep",
+      file: "b.ts",
+      line: 1,
+      form: "static",
+      symbols: [],
+    });
+    const capped = capOutcome(outcome);
+    const result = await assembleAnalysisResult(
+      [capped],
+      ({ dependencies, usages, usageAnalysedEcosystems }) =>
+        dependencies
+          .filter((d) => usageAnalysedEcosystems.has(d.project.ecosystem))
+          .filter((d) => !usages.some((u) => u.dependency === d.name))
+          .map((d) => ({
+            kind: "unused" as const,
+            dependency: d.name,
+            summary: `${d.name} is never imported`,
+            recommendation: "Remove it.",
+            evidence: [{ kind: "no-import-found", statement: "no imports" }],
+            confidence: "high" as const,
+            limitations: [],
+            affectedFiles: [d.declaredIn],
+          })),
+    );
+    assert.equal(
+      result.findings.some((f) => f.kind === "unused" && f.dependency === "late-dep"),
+      false,
+      "capped usage analysis must not produce a false unused finding",
+    );
+  });
+
+  it("counts closure entries against the graph budget and drops oversized graphs whole", () => {
+    const outcome = baseOutcome();
+    const small = {
+      project,
+      nodes: [{ name: "a", version: "1.0.0", dependencies: [], dev: false }],
+      transitiveClosure: { a: [] },
+      incomplete: false,
+    };
+    // Few nodes, huge closure: the reviewer's unbounded case.
+    const fat = {
+      project,
+      nodes: [{ name: "b", version: "1.0.0", dependencies: [], dev: false }],
+      transitiveClosure: {
+        b: Array.from({ length: OUTCOME_CAPS.maxGraphNodes }, (_, i) => `n-${i}`),
+      },
+      incomplete: false,
+    };
+    outcome.graphs = [small, fat];
+    const capped = capOutcome(outcome);
+    assert.deepEqual(capped.graphs, [small]);
+    const limitation = capped.findings
+      .flatMap((f) => f.limitations)
+      .find((l) => l.includes("Dropped 1 graph"));
+    assert.ok(
+      limitation,
+      `expected a dropped-graph limitation, got ${JSON.stringify(capped.findings)}`,
+    );
+    // The kept graph is untouched - no truncated nodes or pruned closure.
+    assert.equal(capped.graphs[0], small);
+  });
+
+  it("caps the findings count", () => {
+    const outcome = baseOutcome();
+    for (let i = 0; i < OUTCOME_CAPS.maxFindings + 5; i++) {
+      outcome.findings.push({
+        kind: "info",
+        summary: `f-${i}`,
+        recommendation: "r",
+        evidence: [],
+        confidence: "low",
+        limitations: [],
+        affectedFiles: [],
+      });
+    }
+    const capped = capOutcome(outcome);
+    assert.equal(
+      capped.findings.length,
+      OUTCOME_CAPS.maxFindings + 1,
+      "capped findings plus the truncation finding",
+    );
+    assert.ok(capped.findings.some((f) => f.summary.includes("truncated to size ceilings")));
   });
 });
