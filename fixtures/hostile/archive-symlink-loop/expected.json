@@ -1,8 +1,19 @@
 {
-  "description": "Symlink loop (a -> b, b -> a) plus a write through the loop. Resolvers must be loop-capped, not recursive-forever.",
+  "description": "Symlink loop (a -> b, b -> a) plus an entry under the loop. A materialising extractor needs loop-capped resolution; a recording extractor is immune by construction.",
   "archive": "archive.tar.gz",
   "expect": {
-    "result": "reject",
-    "code": "LINK_LOOP"
+    "result": "extract",
+    "files": 1,
+    "symlinks": 2,
+    "links": [
+      {
+        "path": "repo/a",
+        "target": "b"
+      },
+      {
+        "path": "repo/b",
+        "target": "a"
+      }
+    ]
   }
 }

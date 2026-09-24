@@ -1,7 +1,7 @@
 # archive-symlink-absolute
 
-**Attacks:** Symlink entry pointing at an absolute target ('/etc'). A following consumer that reads through the link escapes the checkout.
+**Attacks:** Symlink entry pointing at an absolute target ('/etc/passwd'). Extraction must record it as metadata and never materialise it, so nothing can ever be followed out of the checkout.
 
-**Expected:** extraction is rejected with `ABSOLUTE_PATH` and nothing is left on disk.
+**Expected:** extraction succeeds (undefined files, 1 symlink).
 
 Regenerate with `node fixtures/hostile/generate.mjs`.

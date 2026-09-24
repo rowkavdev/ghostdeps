@@ -24,7 +24,13 @@ interface Expected {
   limits?: Partial<ExtractionLimits>;
   expect:
     | { result: "reject"; code: ExtractionErrorCode }
-    | { result: "extract"; files?: number; symlinks?: number; directories?: number };
+    | {
+        result: "extract";
+        files?: number;
+        symlinks?: number;
+        directories?: number;
+        links?: { path: string; target: string }[];
+      };
 }
 
 const fixtures = (await readdir(hostileDir, { withFileTypes: true }))
@@ -73,6 +79,8 @@ describe("hostile archive fixtures", () => {
         assert.equal(summary.symlinks, expected.expect.symlinks);
       if (expected.expect.directories !== undefined)
         assert.equal(summary.directories, expected.expect.directories);
+      if (expected.expect.links !== undefined)
+        assert.deepEqual(summary.links, expected.expect.links, `${fixture} recorded links`);
       await rm(dest, { recursive: true, force: true });
     });
   }

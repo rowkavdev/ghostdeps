@@ -1,7 +1,7 @@
 # archive-symlink-relative-escape
 
-**Attacks:** Symlink whose relative target climbs out of the root ('../../../etc').
+**Attacks:** Symlink whose relative target climbs out of the root ('../../../etc'). Recorded, never created - the escape only exists if links are materialised.
 
-**Expected:** extraction is rejected with `LINK_ESCAPE` and nothing is left on disk.
+**Expected:** extraction succeeds (undefined files, 1 symlink).
 
 Regenerate with `node fixtures/hostile/generate.mjs`.
