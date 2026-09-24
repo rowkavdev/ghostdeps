@@ -1,0 +1,69 @@
+diff --git "a/caf\303\251.txt" "b/caf\303\251.txt"
+new file mode 100644
+index 0000000..c1b0730
+--- /dev/null
++++ "b/caf\303\251.txt"
+@@ -0,0 +1 @@
++x
+\ No newline at end of file
+diff --git a/gone.js b/gone.js
+deleted file mode 100644
+index b023018..0000000
+--- a/gone.js
++++ /dev/null
+@@ -1 +0,0 @@
+-bye
+diff --git a/logo.png b/logo.png
+index 8352675..95d586e 100644
+Binary files a/logo.png and b/logo.png differ
+diff --git a/old name.txt b/new name.txt
+similarity index 100%
+rename from old name.txt
+rename to new name.txt
+diff --git a/package.json b/package.json
+index 4923fc3..56b0a90 100644
+--- a/package.json
++++ b/package.json
+@@ -2,10 +2,9 @@
+   "name": "demo",
+   "version": "1.0.0",
+   "dependencies": {
++    "axios": "^1.7.0",
+     "left-pad": "^1.3.0",
+-    "lodash": "^4.17.20"
++    "lodash": "^4.17.21"
+   },
+-  "devDependencies": {
+-    "vitest": "^2.0.0"
+-  }
++  "devDependencies": {}
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 8e41c39..a2ed58f 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -3,5 +3,7 @@ lockfileVersion: 9.0
+ importers:
+   .:
+     dependencies:
++      axios:
++        specifier: ^1.7.0
+       left-pad:
+         specifier: ^1.3.0
+diff --git a/src/index.js b/src/index.js
+index ede9370..9bb7308 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,2 +1,4 @@
+ import pad from "left-pad";
++import axios from "axios";
+ export const f = (s) => pad(s, 4);
++export const get = (u) => axios.get(u);
+diff --git a/src/nonl.js b/src/nonl.js
+new file mode 100644
+index 0000000..20cbb4d
+--- /dev/null
++++ b/src/nonl.js
+@@ -0,0 +1 @@
++no newline
+\ No newline at end of file
