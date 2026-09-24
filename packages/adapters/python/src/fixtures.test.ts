@@ -8,7 +8,12 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it } from "node:test";
-import type { AdapterContext } from "@ghostdeps/core";
+import {
+  analyseDirectory,
+  createDefaultPolicy,
+  normaliseUsageResult,
+  type AdapterContext,
+} from "@ghostdeps/core";
 import { createPythonAdapter } from "./adapter.js";
 import { detectPython } from "./detect.js";
 import { ImportResolver, firstPartyModules, readTopLevelMetadata } from "./import-map.js";
@@ -36,6 +41,10 @@ type ExpectedImports = Record<string, Record<string, string>>;
 
 interface ExpectedFixture {
   dependencies?: ExpectedDependency[];
+  /** Dependency name -> exactly the "file:line" usages findUsage reports (#47). */
+  usage?: Record<string, string[]>;
+  /** Core analysis with the default policy (#47): no findings on these deps, none with these rules. */
+  policy?: { noFindingsFor?: string[]; noRules?: string[] };
   /** Project root -> import path -> expected resolution (#46). */
   imports?: ExpectedImports;
   graph?: Record<string, ExpectedGraph>;
@@ -140,6 +149,44 @@ describe("python fixtures (issue #48)", () => {
             const actual = got.kind === "dependency" ? got.distributions.join(",") : got.kind;
             assert.equal(actual, want, `${scenario}: ${root} import ${importPath}`);
           }
+        }
+      }
+
+      if (expected.usage !== undefined) {
+        const adapter = createPythonAdapter();
+        const detection = await adapter.detect(context);
+        const deps = await adapter.listDirectDependencies(context, detection.projects);
+        for (const [name, want] of Object.entries(expected.usage)) {
+          const dep = deps.find((candidate) => candidate.name === name);
+          assert.ok(dep, `${scenario}: no dependency ${name} for usage`);
+          const { usages } = normaliseUsageResult(await adapter.findUsage!(context, dep));
+          assert.deepEqual(
+            usages.map((u) => `${u.file}:${u.line}`).sort(),
+            [...want].sort(),
+            `${scenario}: usage of ${name}`,
+          );
+        }
+      }
+
+      if (expected.policy !== undefined) {
+        const result = await analyseDirectory(path.join(PY_FIXTURES, scenario), {
+          adapters: [createPythonAdapter()],
+          network: { mode: "offline" },
+          recommend: createDefaultPolicy({}),
+        });
+        for (const name of expected.policy.noFindingsFor ?? []) {
+          const hits = result.findings.filter((f) => f.dependency === name);
+          assert.deepEqual(
+            hits.map((f) => f.rule),
+            [],
+            `${scenario}: unexpected findings on ${name}`,
+          );
+        }
+        for (const rule of expected.policy.noRules ?? []) {
+          assert.ok(
+            !result.findings.some((f) => f.rule === rule),
+            `${scenario}: unexpected ${rule}`,
+          );
         }
       }
 
