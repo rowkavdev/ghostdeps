@@ -23,7 +23,13 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
   return {
     ecosystem: JS_ECOSYSTEM,
     apiVersion: adapterApiVersion,
-    capabilities: new Set<AdapterCapability>(["dependencyGraph", "usageAnalysis"]),
+    // referenceAnalysis (#132): findUsage reports referenceAnalysisComplete,
+    // true only when imports, scripts and configs were all fully read.
+    capabilities: new Set<AdapterCapability>([
+      "dependencyGraph",
+      "usageAnalysis",
+      "referenceAnalysis",
+    ]),
     detect: detectJavaScriptTypeScript,
     buildDependencyGraph,
     /**

@@ -706,11 +706,13 @@ async function unmatchedCommands(
         if (!resolved.fromLock) allFromLock = false;
       }
       if (allFromLock) return [];
+      // `yarn lint` / `pnpm test:unit` run the manifest's own scripts, not bins.
+      const scriptNames = new Set(readable.flatMap((m) => m.scripts.map(([name]) => name)));
       const gaps: string[] = [];
       for (const manifest of readable) {
         for (const [name, command] of manifest.scripts) {
           for (const word of new Set(analyseScript(command).words)) {
-            if (known.has(word) || SYSTEM_COMMANDS.has(word)) continue;
+            if (known.has(word) || SYSTEM_COMMANDS.has(word) || scriptNames.has(word)) continue;
             gaps.push(
               `${manifest.file} script "${name}": command ${JSON.stringify(word)} is not matched to a declared dependency's bin`,
             );
