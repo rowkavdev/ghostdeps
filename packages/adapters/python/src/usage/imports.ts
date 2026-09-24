@@ -11,6 +11,8 @@ export interface PythonImport {
   /** Absolute dotted module path as written, e.g. "google.protobuf.message". */
   module: string;
   line: number;
+  /** Last line of the import statement (multi-line `from m import (...)`). */
+  endLine: number;
   /** "static" for import statements, "dynamic" for importlib/__import__ literals. */
   form: "static" | "dynamic";
   /** Names imported with `from m import a, b` ("*" for star imports). */
@@ -63,7 +65,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       text = text.slice(header[0].length);
       conditional = true;
     }
-    const base = { line: stmt.line, conditional, typeOnly };
+    const base = { line: stmt.line, endLine: stmt.endLine, conditional, typeOnly };
 
     const plain = /^import\s+(.+)$/s.exec(text);
     if (plain) {

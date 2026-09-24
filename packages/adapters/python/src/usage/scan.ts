@@ -17,8 +17,8 @@
  * as script/config references, #132), so no-imports notes never fire for
  * them (lead ruling on #268).
  *
- * PR-mode removed-line evidence (removedInPr) is not produced yet; it waits
- * on the shared base-reconstruction helper (#259).
+ * PR mode (#287): imports on lines the pull request removed come from
+ * removed.ts, marked removedInPr and resolved with this project's resolver.
  */
 import { MAX_FILE_READ_BYTES, hasExcludedSegment } from "@ghostdeps/core";
 import type {
@@ -33,6 +33,7 @@ import { ImportResolver, firstPartyModules, readTopLevelMetadata } from "../impo
 import { parseManifests } from "../manifest.js";
 import { normaliseName } from "../pep508.js";
 import { extractPythonImports, type PythonFileImports } from "./imports.js";
+import { findRemovedPythonUsages } from "./removed.js";
 
 /**
  * .py files larger than this are skipped, not scanned (security model:
@@ -186,5 +187,9 @@ export async function findPythonUsage(
       });
     }
   }
-  return usages;
+  const removed = await findRemovedPythonUsages(context, dependency, (module) => {
+    const resolved = scan.resolver.resolve(module);
+    return resolved.kind === "dependency" && resolved.distributions.includes(target);
+  });
+  return [...usages, ...removed];
 }

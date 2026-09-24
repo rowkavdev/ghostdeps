@@ -16,6 +16,8 @@ export interface PythonStatement {
   text: string;
   /** 1-based line where the statement starts. */
   line: number;
+  /** 1-based line of the statement's last code character (PR mode, #287). */
+  endLine: number;
   /** Column of the first code character on the starting physical line. */
   indent: number;
 }
@@ -37,11 +39,14 @@ export function splitPythonStatements(source: string): LexedPython {
   let depth = 0;
   let atLineStart = true;
   let column = 0;
+  let lastLine = 1;
   const n = source.length;
 
   const flush = () => {
     const trimmed = text.trim();
-    if (trimmed !== "") statements.push({ text: trimmed, line: startLine, indent });
+    if (trimmed !== "") {
+      statements.push({ text: trimmed, line: startLine, endLine: lastLine, indent });
+    }
     text = "";
   };
 
@@ -119,6 +124,7 @@ export function splitPythonStatements(source: string): LexedPython {
         content += source[i];
         i++;
       }
+      lastLine = line;
       text += ` __S${strings.length}__ `;
       strings.push(content);
       continue;
@@ -134,6 +140,7 @@ export function splitPythonStatements(source: string): LexedPython {
       continue;
     }
     text += c;
+    if (c !== " " && c !== "\t") lastLine = line;
     i++;
   }
   flush();
