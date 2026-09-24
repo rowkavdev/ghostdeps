@@ -14,6 +14,7 @@ import {
   type ProjectRef,
 } from "@ghostdeps/core";
 import { parse as parseToml } from "smol-toml";
+import { analysePythonLocks } from "./lockfile.js";
 import { baseName, dirName, displayRoot, joinPath } from "./paths.js";
 
 export const PYTHON_ECOSYSTEM = "python";
@@ -260,5 +261,9 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
     }
   }
 
+  // Lockfile evidence (missing, unreadable, too large, malformed, stale)
+  // explains incomplete graphs; DependencyGraph has no evidence field, so
+  // detection carries it, as in the rust adapter (#225).
+  if (projects.length > 0) evidence.push(...(await analysePythonLocks(context, projects)).evidence);
   return { confidence: best, projects, evidence };
 }

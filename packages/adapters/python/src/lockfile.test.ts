@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext, ProjectRef } from "@ghostdeps/core";
+import { detectPython } from "./detect.js";
 import { buildProjectGraph, parsePoetryLock, parseUvLock } from "./lockfile.js";
 import { memoryHandle } from "./testing/fs-handle.js";
 
@@ -130,6 +131,78 @@ describe("buildProjectGraph (issue #45)", () => {
     assert.ok(evidence.some((e) => e.kind === "lockfile-inherited"));
   });
 
+  it("scopes each workspace member to what its own dependencies reach", async () => {
+    const lock = `version = 1
+
+[manifest]
+members = ["api", "core", "worker"]
+
+[[package]]
+name = "api"
+version = "0.1.0"
+source = { editable = "packages/api" }
+dependencies = [{ name = "click" }, { name = "core" }]
+
+[[package]]
+name = "click"
+version = "8.1.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [{ name = "colorama" }]
+
+[[package]]
+name = "colorama"
+version = "0.4.6"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "core"
+version = "0.1.0"
+source = { editable = "packages/core" }
+dependencies = [{ name = "attrs" }]
+
+[[package]]
+name = "attrs"
+version = "24.2.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "worker"
+version = "0.1.0"
+source = { editable = "packages/worker" }
+dependencies = [{ name = "celery" }]
+
+[[package]]
+name = "celery"
+version = "5.4.0"
+source = { registry = "https://pypi.org/simple" }
+`;
+    const files = {
+      "packages/api/pyproject.toml": '[project]\nname = "api"\ndependencies = ["click", "core"]\n',
+      "packages/core/pyproject.toml": '[project]\nname = "core"\ndependencies = ["attrs"]\n',
+      "packages/worker/pyproject.toml": '[project]\nname = "worker"\n',
+      "uv.lock": lock,
+    };
+    const at = (path: string): ProjectRef => ({ path, ecosystem: "python", packageManagers: [] });
+    const api = (await buildProjectGraph(ctx(files), at("packages/api"))).graph;
+    // core's own dependency is reached through it; core itself is first-party.
+    assert.deepEqual(api.nodes.map((n) => n.name).sort(), ["attrs", "click", "colorama"]);
+    assert.ok(api.nodes.every((n) => !n.dev));
+    assert.deepEqual(api.transitiveClosure, { click: ["colorama"], core: ["attrs"] });
+    assert.equal(api.incomplete, false);
+
+    const core = (await buildProjectGraph(ctx(files), at("packages/core"))).graph;
+    assert.deepEqual(
+      core.nodes.map((n) => n.name),
+      ["attrs"],
+    );
+    assert.deepEqual(core.transitiveClosure, { attrs: [] });
+
+    // A member that declares nothing gets an empty graph, not the whole lock.
+    const worker = (await buildProjectGraph(ctx(files), at("packages/worker"))).graph;
+    assert.deepEqual(worker.nodes, []);
+    assert.deepEqual(worker.transitiveClosure, {});
+  });
+
   it("marks the graph incomplete without a lockfile", async () => {
     const { graph, evidence } = await buildProjectGraph(
       ctx({ "pyproject.toml": PYPROJECT }),
@@ -159,5 +232,26 @@ describe("buildProjectGraph (issue #45)", () => {
     );
     assert.equal(graph.incomplete, true);
     assert.ok(evidence.some((e) => e.kind === "lockfile-mismatch"));
+  });
+});
+
+describe("lockfile evidence in detection (#45 review)", () => {
+  it("explains an incomplete graph through detection evidence", async () => {
+    const result = await detectPython(
+      ctx({ "pyproject.toml": PYPROJECT, "uv.lock": "[[package]\n", "app/__init__.py": "" }),
+    );
+    assert.ok(result.projects.length > 0);
+    assert.ok(result.evidence.some((e) => e.kind === "lockfile-malformed"));
+  });
+
+  it("names stale declared dependencies", async () => {
+    const { evidence } = await buildProjectGraph(
+      ctx({
+        "pyproject.toml": PYPROJECT.replace('"httpx>=0.27"', '"httpx>=0.27", "rich"'),
+        "uv.lock": UV_LOCK,
+      }),
+      project,
+    );
+    assert.match(evidence.find((e) => e.kind === "lockfile-mismatch")?.statement ?? "", /\(rich\)/);
   });
 });

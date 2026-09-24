@@ -26,6 +26,8 @@ interface ExpectedGraph {
   transitiveCounts?: Record<string, number>;
   /** Exactly the nodes flagged dev, sorted. */
   devNodes?: string[];
+  /** Exactly the graph's nodes, sorted. */
+  nodes?: string[];
 }
 
 interface ExpectedFixture {
@@ -129,6 +131,13 @@ describe("python fixtures (issue #48)", () => {
               graph.transitiveClosure[dep]?.length,
               count,
               `${scenario}: ${root} transitive count for ${dep}`,
+            );
+          }
+          if (want.nodes !== undefined) {
+            assert.deepEqual(
+              graph.nodes.map((node) => node.name).sort(),
+              want.nodes,
+              `${scenario}: ${root} nodes`,
             );
           }
           if (want.devNodes !== undefined) {

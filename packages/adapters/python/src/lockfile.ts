@@ -27,6 +27,11 @@ export interface ParsedPythonLockfile {
   packages: LockedPackage[];
   /** uv only: the project's own entry, whose edges are the direct dependencies. */
   root?: LockedPackage;
+  /**
+   * uv only: workspace members and other local projects (editable or
+   * virtual sources). They are first-party code, never graph nodes.
+   */
+  members?: ReadonlySet<string>;
 }
 
 type Table = Record<string, unknown>;
@@ -52,6 +57,7 @@ export function parseUvLock(text: string, projectName?: string): ParsedPythonLoc
   const doc: unknown = parseToml(text);
   const packages: LockedPackage[] = [];
   let root: LockedPackage | undefined;
+  const members = new Set<string>();
   const list = isTable(doc) && Array.isArray(doc.package) ? doc.package.filter(isTable) : [];
   for (const entry of list) {
     if (typeof entry.name !== "string") continue;
@@ -70,10 +76,13 @@ export function parseUvLock(text: string, projectName?: string): ParsedPythonLoc
     const isProject =
       (projectName !== undefined && locked.name === normaliseName(projectName)) ||
       (projectName === undefined && (source.editable === "." || source.virtual === "."));
+    if (typeof source.editable === "string" || typeof source.virtual === "string") {
+      members.add(locked.name);
+    }
     if (isProject) root = locked;
     else packages.push(locked);
   }
-  return root === undefined ? { packages } : { packages, root };
+  return root === undefined ? { packages, members } : { packages, root, members };
 }
 
 /** poetry.lock: [[package]] with a `dependencies` table of name -> constraint. */
@@ -200,42 +209,79 @@ export async function buildProjectGraph(
     return empty();
   }
 
+  // Traversal walks through workspace members (their dependencies are
+  // pulled in), but members themselves are first-party and never become
+  // nodes or closure entries. Nodes are limited to what this project's own
+  // direct dependencies reach: a workspace lockfile covers every member.
   const byName = new Map(parsed.packages.map((p) => [p.name, p]));
-  const runtimeDirect = direct.filter((d) => d.kind !== "dev").map((d) => d.name);
-  const runtimeReach = new Set<string>(runtimeDirect);
-  for (const name of runtimeDirect)
-    for (const dep of closureOf(name, byName)) runtimeReach.add(dep);
+  const members = new Set(parsed.members ?? []);
+  if (parsed.root !== undefined) members.add(parsed.root.name);
+  const thirdParty = (names: Iterable<string>): string[] =>
+    [...names].filter((name) => !members.has(name));
+  const reachFrom = (names: readonly string[]): Set<string> => {
+    const reach = new Set<string>(names);
+    for (const name of names) for (const dep of closureOf(name, byName)) reach.add(dep);
+    return reach;
+  };
+  const runtimeReach = reachFrom(direct.filter((d) => d.kind !== "dev").map((d) => d.name));
+  const allReach = reachFrom(direct.map((d) => d.name));
 
-  const nodes: GraphNode[] = parsed.packages.map((p) => ({
-    name: p.name,
-    version: p.version,
-    dependencies: p.dependencies,
-    dev: !runtimeReach.has(p.name),
-  }));
+  const nodes: GraphNode[] = parsed.packages
+    .filter((p) => allReach.has(p.name) && !members.has(p.name))
+    .map((p) => ({
+      name: p.name,
+      version: p.version,
+      dependencies: thirdParty(p.dependencies),
+      dev: !runtimeReach.has(p.name),
+    }));
   const transitiveClosure: Record<string, string[]> = {};
-  let missing = 0;
+  const missingNames: string[] = [];
   for (const dep of direct) {
     if (!byName.has(dep.name)) {
-      missing++;
+      missingNames.push(dep.name);
       continue;
     }
-    transitiveClosure[dep.name] = closureOf(dep.name, byName);
+    transitiveClosure[dep.name] = thirdParty(closureOf(dep.name, byName));
   }
+  const missing = missingNames.length;
   if (missing > 0 && lockPath !== undefined) {
     evidence.push({
       kind: "lockfile-mismatch",
-      statement: `${missing} declared dependenc${missing === 1 ? "y is" : "ies are"} missing from ${lockPath}; the lockfile may be stale`,
+      statement: `${missing} declared dependenc${missing === 1 ? "y is" : "ies are"} missing from ${lockPath} (${missingNames.join(", ")}); the lockfile may be stale`,
       file: lockPath,
     });
   }
   return { graph: { project, nodes, transitiveClosure, incomplete: missing > 0 }, evidence };
 }
 
+export interface PythonLockAnalysis {
+  graphs: DependencyGraph[];
+  /** Why each incomplete graph is incomplete (and inherited-lockfile notes). */
+  evidence: Evidence[];
+}
+
+/**
+ * Graphs plus the lockfile evidence behind them. DependencyGraph has no
+ * evidence field, so detection carries this evidence (same approach as the
+ * rust adapter, #225/#228).
+ */
+export async function analysePythonLocks(
+  context: AdapterContext,
+  projects: ProjectRef[],
+): Promise<PythonLockAnalysis> {
+  const graphs: DependencyGraph[] = [];
+  const evidence: Evidence[] = [];
+  for (const project of projects) {
+    const result = await buildProjectGraph(context, project);
+    graphs.push(result.graph);
+    evidence.push(...result.evidence);
+  }
+  return { graphs, evidence };
+}
+
 export async function buildDependencyGraph(
   context: AdapterContext,
   projects: ProjectRef[],
 ): Promise<DependencyGraph[]> {
-  const graphs: DependencyGraph[] = [];
-  for (const project of projects) graphs.push((await buildProjectGraph(context, project)).graph);
-  return graphs;
+  return (await analysePythonLocks(context, projects)).graphs;
 }
