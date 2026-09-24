@@ -69,6 +69,18 @@ describe("renderRepositorySummary", () => {
         ...makeFindings("unused", 5),
         ...makeFindings("potentially-unnecessary", 8),
         ...makeFindings("duplicate-capability", 2),
+        {
+          kind: "info",
+          rule: "unverified-no-imports",
+          dependency: "eslint",
+          summary: "no imports of eslint found; scripts and config were not checked",
+          recommendation: "review",
+          evidence: [{ kind: "no-usage-found", statement: "no import of eslint found" }],
+          confidence: "low",
+          limitations: [],
+          affectedFiles: [],
+        },
+        ...makeFindings("info", 1),
       ],
       detected: [
         { ecosystem: "javascript-typescript", confidence: "high", evidence: [] },
@@ -105,6 +117,7 @@ describe("renderRepositorySummary", () => {
       "  5 unused",
       "  8 potentially unnecessary",
       "  2 duplicate capabilities",
+      "  2 info",
       "",
       "Verdicts:",
       "  unused:",
@@ -139,6 +152,12 @@ describe("renderRepositorySummary", () => {
       "    (repository-wide) - duplicate-capability finding 0 (high confidence)",
       "      - test evidence",
       "    (repository-wide) - duplicate-capability finding 1 (high confidence)",
+      "      - test evidence",
+      "",
+      "Awareness notes:",
+      "    eslint - no imports of eslint found; scripts and config were not checked (low confidence, rule: unverified-no-imports)",
+      "      - no import of eslint found",
+      "    (repository-wide) - info finding 0 (high confidence)",
       "      - test evidence",
     ].join("\n");
 
@@ -289,7 +308,7 @@ describe("renderRepositorySummary", () => {
     assert.ok(text.includes("Evi\uFFFDl"), text);
   });
 
-  it("renders verdicts grouped by kind with evidence, info stays in counts", () => {
+  it("renders verdicts grouped by kind, info as awareness notes", () => {
     const result: AnalysisResult = {
       ...emptyResult(),
       findings: [
@@ -334,13 +353,29 @@ describe("renderRepositorySummary", () => {
       ),
       text,
     );
-    // Info findings never get verdict lines.
-    assert.ok(!text.includes("info finding 0 -"), text);
+    // Info findings render as awareness notes, never as verdict lines.
+    const verdictsEnd = text.indexOf("Awareness notes:");
+    assert.ok(verdictsEnd > 0, text);
+    assert.ok(!text.slice(0, verdictsEnd).includes("info finding 0 -"), text);
+    assert.ok(
+      text.includes(
+        [
+          "Awareness notes:",
+          "    (repository-wide) - info finding 0 (high confidence)",
+          "      - test evidence",
+          "    (repository-wide) - info finding 1 (high confidence)",
+          "      - test evidence",
+        ].join("\n"),
+      ),
+      text,
+    );
   });
 
   it("omits the Verdicts section when every finding is info", () => {
     const result: AnalysisResult = { ...emptyResult(), findings: makeFindings("info", 2) };
-    assert.ok(!renderRepositorySummary(result).includes("Verdicts:"));
+    const text = renderRepositorySummary(result);
+    assert.ok(!text.includes("Verdicts:"));
+    assert.ok(text.includes("Awareness notes:"));
   });
 
   it("caps long evidence lists with a +N more line and escapes verdict text", () => {

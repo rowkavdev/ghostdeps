@@ -40,6 +40,11 @@ Verdicts:
   should be dev dependencies:
     typescript - imported only from tests and build config (high confidence, rule: should-be-dev)
       - imports found only under test/ and build/
+
+Awareness notes:
+    eslint - no imports of eslint found; scripts and config were not checked (low confidence, rule: unverified-no-imports)
+      - no import of eslint found
+    (repository-wide) - unused confidence capped pending corpus validation (high confidence)
 ```
 
 `Transitive dependencies` reads the per-ecosystem graph completeness
@@ -51,10 +56,15 @@ graph was built at all. It never prints `0` for "we could not see".
 `Verdicts` expands the non-info findings from the counts: one group per
 kind in canonical order, each verdict with its dependency, summary,
 confidence and rule id, then evidence lines (capped, with a "+N more" note
-when truncated). Info findings are caveats about the analysis itself (scan
-completeness, coverage gaps) and stay in the `Findings` counts only. The
-section is omitted when there are no verdicts. Everything verdict-derived
-is terminal-escaped.
+when truncated). The section is omitted when there are no verdicts.
+Everything verdict-derived is terminal-escaped.
+
+`Awareness notes` lists the info findings - caveats about the analysis
+itself (scan completeness, coverage gaps, cap notices) - in the same line
+shape as verdicts. One presentation rule across surfaces (#206 review):
+they are always visible, and they never affect the verdicts, the counts'
+meaning, or the exit code. The section is omitted when there are no info
+findings.
 
 ## Per-dependency report (CLI `inspect`/`explain`, check annotations)
 

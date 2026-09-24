@@ -79,9 +79,9 @@ function renderVerdict(finding: Finding): string[] {
 
 /**
  * Verdicts are the non-info findings, grouped by kind in canonical order.
- * Info findings (scan completeness, coverage gaps) stay in the Findings
- * counts only - they are caveats about the analysis, not verdicts on
- * dependencies. The section is omitted when there is nothing to say.
+ * Info findings (scan completeness, coverage gaps) are caveats about the
+ * analysis, not verdicts on dependencies - they render as Awareness notes
+ * below. The section is omitted when there is nothing to say.
  */
 function renderVerdicts(findings: readonly Finding[]): string[] {
   const verdicts = findings.filter((finding) => finding.kind !== "info");
@@ -97,6 +97,18 @@ function renderVerdicts(findings: readonly Finding[]): string[] {
     }
   }
   return ["", ...lines];
+}
+
+/**
+ * Awareness notes are the info findings, one line each with evidence. They
+ * are always visible (same analysis, same picture on every surface) and
+ * never affect the verdict, the counts or the exit code. Omitted when there
+ * are no info findings.
+ */
+function renderAwarenessNotes(findings: readonly Finding[]): string[] {
+  const notes = findings.filter((finding) => finding.kind === "info");
+  if (notes.length === 0) return [];
+  return ["", "Awareness notes:", ...notes.flatMap((note) => renderVerdict(note))];
 }
 
 /**
@@ -156,5 +168,6 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     "Findings:",
     ...(findingLines.length > 0 ? findingLines : ["  none"]),
     ...renderVerdicts(result.findings),
+    ...renderAwarenessNotes(result.findings),
   ].join("\n");
 }

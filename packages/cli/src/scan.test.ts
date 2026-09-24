@@ -79,8 +79,10 @@ describe("ghostdeps scan --json", () => {
     assert.match(text, /Transitive dependencies:\n {2}unknown/);
     // The unused verdict must be visible in the summary: "Findings: none"
     // would read as an all-clear.
-    assert.match(text, /Findings:\n {2}1 unused\n/);
+    assert.match(text, /Findings:\n {2}1 unused\n {2}1 info\n/);
     assert.match(text, /Verdicts:\n {2}unused:\n {4}left-pad - /);
+    // Info findings stay visible as awareness notes (#210), never hidden.
+    assert.match(text, /Awareness notes:\n {4}\(repository-wide\) - /);
   });
 
   it("reports a missing path as one clear error line, exit 2", async () => {
