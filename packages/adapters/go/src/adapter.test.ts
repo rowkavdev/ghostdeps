@@ -150,3 +150,68 @@ describe("Go adapter against fixtures/go", () => {
 });
 
 for (const name of FIXTURES) runAdapterContractTests(createGoAdapter(), ctx(name));
+
+describe("Go declaration lines (#198)", () => {
+  const adapter = createGoAdapter();
+  // Same whole-token check core applies before keeping a declaredLine.
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const onLine = (text: string, name: string): boolean =>
+    new RegExp(`(^|[^A-Za-z0-9._/@-])${escape(name)}([^A-Za-z0-9._/-]|$)`).test(text);
+
+  for (const name of FIXTURES) {
+    it(`${name}: every declaredLine is a go.mod line naming the dependency`, async () => {
+      const context = ctx(name);
+      const detection = await adapter.detect(context);
+      const deps = await adapter.listDirectDependencies(context, detection.projects);
+      for (const d of deps) {
+        assert.ok(d.declaredLine !== undefined, `${d.name} has a line`);
+        const text = (await context.repository.readFile(d.declaredIn)).split(/\r?\n/);
+        assert.ok(
+          onLine(text[d.declaredLine - 1] ?? "", d.name),
+          `${d.name} line ${d.declaredLine}`,
+        );
+      }
+    });
+  }
+
+  it("reports the line for single-line and block requires", async () => {
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "go.mod": [
+          "module example.com/m",
+          "",
+          "require example.com/one v1.0.0",
+          "",
+          "require (",
+          "\texample.com/two v1.0.0",
+          '\t"example.com/three" v1.0.0',
+          "\t`example.com/four` v1.0.0",
+          ")",
+          "",
+        ].join("\n"),
+      }),
+      network: { mode: "offline" },
+    };
+    const detection = await adapter.detect(context);
+    const deps = await adapter.listDirectDependencies(context, detection.projects);
+    assert.deepEqual(Object.fromEntries(deps.map((d) => [d.name, d.declaredLine])), {
+      "example.com/one": 3,
+      "example.com/two": 6,
+      "example.com/three": 7,
+      "example.com/four": 8,
+    });
+  });
+
+  it("gives no line when an escaped path does not appear as written", async () => {
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "go.mod": 'module example.com/m\n\nrequire "example.com/\\esc" v1.0.0\n',
+      }),
+      network: { mode: "offline" },
+    };
+    const detection = await adapter.detect(context);
+    const [dep] = await adapter.listDirectDependencies(context, detection.projects);
+    assert.equal(dep?.name, "example.com/esc");
+    assert.ok(!("declaredLine" in dep!));
+  });
+});
