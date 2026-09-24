@@ -1,0 +1,8 @@
+{
+  "description": "A link sitting deeper than its target (a/b/c/L points at the root) lets a later target 'L/../..' climb out of the root when '..' is applied lexically instead of physically. This bypassed the first version of the extractor (independent-review PoC on PR #81).",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "LINK_ESCAPE"
+  }
+}

@@ -184,6 +184,33 @@ const FIXTURES = [
     expect: { result: "reject", code: "LINK_ESCAPE" },
   },
   {
+    dir: "archive-symlink-shallow-target-escape",
+    attacks: "A link sitting deeper than its target (a/b/c/L points at the root) lets a later target 'L/../..' climb out of the root when '..' is applied lexically instead of physically. This bypassed the first version of the extractor (independent-review PoC on PR #81).",
+    entries: [
+      { name: "a/b/c/L", typeflag: "2".charCodeAt(0), linkName: "../../.." },
+      { name: "a/b/c/M", typeflag: "2".charCodeAt(0), linkName: "L/../.." },
+    ],
+    expect: { result: "reject", code: "LINK_ESCAPE" },
+  },
+  {
+    dir: "archive-case-collision",
+    attacks: "Two entries differing only by case ('A.txt' vs 'a.txt'). On case-insensitive filesystems the second overwrites the first; validators must be at least as strict as the most lenient consumer FS.",
+    entries: [
+      { name: "repo/A.txt", body: text("first") },
+      { name: "repo/a.txt", body: text("second") },
+    ],
+    expect: { result: "reject", code: "DUPLICATE_PATH" },
+  },
+  {
+    dir: "archive-nfc-collision",
+    attacks: "Same filename in NFC and NFD Unicode normalisation. Normalising filesystems (APFS) see one file; byte-wise validators see two and miss the collision.",
+    entries: [
+      { name: "repo/caf\u00e9.txt", body: text("nfc") },
+      { name: "repo/cafe\u0301.txt", body: text("nfd") },
+    ],
+    expect: { result: "reject", code: "DUPLICATE_PATH" },
+  },
+  {
     dir: "archive-symlink-loop",
     attacks: "Symlink loop (a -> b, b -> a) plus a write through the loop. Resolvers must be loop-capped, not recursive-forever.",
     entries: [
