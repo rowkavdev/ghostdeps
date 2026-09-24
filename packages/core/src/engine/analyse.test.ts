@@ -218,6 +218,67 @@ describe("analyseRepository", () => {
     assert.ok(result.findings.some((f) => f.summary.includes("timed out during detection")));
   });
 
+  it("does not preempt synchronous adapter work (pins current behaviour, see #90)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const busy: EcosystemAdapter = {
+      ...mockAdapter({ ecosystem: "busy", confidence: 1 }),
+      async detect() {
+        const end = Date.now() + 100;
+        while (Date.now() < end) {
+          // synchronous busy loop: never yields to the event loop
+        }
+        return { confidence: 1, projects: [], evidence: [{ kind: "k", statement: "s" }] };
+      },
+    };
+    const started = Date.now();
+    const result = await analyseRepository(repo, { adapters: [busy], adapterTimeoutMs: 10 });
+    assert.ok(Date.now() - started >= 100, "the run waits for sync work to finish");
+    assert.deepEqual(
+      result.detected.map((d) => d.ecosystem),
+      ["busy"],
+      "sync work that returns is not reported as timed out",
+    );
+  });
+
+  it("aborts the adapter's signal on timeout so cooperative adapters can stop", async () => {
+    const repo = await fixtureHandle(fixture);
+    let observed: AbortSignal | undefined;
+    const cooperative: EcosystemAdapter = {
+      ...mockAdapter({ ecosystem: "coop" }),
+      async detect(ctx) {
+        observed = ctx.signal;
+        await new Promise((resolve) => ctx.signal?.addEventListener("abort", resolve));
+        return { confidence: 0, projects: [], evidence: [] };
+      },
+    };
+    const result = await analyseRepository(repo, { adapters: [cooperative], adapterTimeoutMs: 10 });
+    assert.equal(observed?.aborted, true);
+    assert.ok(result.findings.some((f) => f.summary.includes("timed out during detection")));
+  });
+
+  it("bounds concurrent usage analysis", async () => {
+    const repo = await fixtureHandle(fixture);
+    const names = Array.from({ length: 20 }, (_, i) => `dep${String(i).padStart(2, "0")}`);
+    const base = mockAdapter({
+      ecosystem: "js",
+      confidence: 1,
+      deps: names,
+      capabilities: ["usageAnalysis"],
+    });
+    let inFlight = 0;
+    let peak = 0;
+    base.findUsage = async (_ctx, dep) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight -= 1;
+      return [{ dependency: dep.name, file: "src/index.js", line: 1, form: "static", symbols: [] }];
+    };
+    const result = await analyseRepository(repo, { adapters: [base], usageConcurrency: 3 });
+    assert.equal(peak, 3);
+    assert.equal(result.usages.length, 20);
+  });
+
   it("skips adapters built for an incompatible API version", async () => {
     const repo = await fixtureHandle(fixture);
     const old = mockAdapter({ ecosystem: "old", confidence: 1, apiVersion: "9.0.0" });

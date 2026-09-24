@@ -9,6 +9,7 @@
  * - Missing capabilities are skipped, never assumed.
  * - Adapters run in parallel. One adapter failing or timing out becomes an
  *   "info" finding with stated limitations; it never crashes the run.
+ *   Timeouts bound async waits only (see DEFAULT_ADAPTER_TIMEOUT_MS, #90).
  * - Output is deterministic: the same facts always produce the same result.
  * - Recommendation policy lives in core and is injected here; adapters report facts.
  */
@@ -29,8 +30,16 @@ import type {
 /** Detection confidence an adapter must reach to run. Shared across adapters. */
 export const DEFAULT_DETECTION_THRESHOLD = 0.5;
 
-/** Per-adapter stage timeout. A slow adapter is cut off and reported, not awaited forever. */
+/**
+ * Per-adapter stage timeout. Bounds async waits only: synchronous CPU work
+ * inside an adapter cannot be preempted in-process, and timed-out work is
+ * asked to stop via AdapterContext.signal rather than killed. Preemptive
+ * worker isolation is tracked in #90.
+ */
 export const DEFAULT_ADAPTER_TIMEOUT_MS = 60_000;
+
+/** Maximum concurrent findUsage calls per adapter. */
+export const DEFAULT_USAGE_CONCURRENCY = 8;
 
 /** Facts collected from adapters, handed to recommendation policy. */
 export interface RecommendationInput {
@@ -50,6 +59,8 @@ export interface AnalyseOptions {
   network?: NetworkPolicy;
   detectionThreshold?: number;
   adapterTimeoutMs?: number;
+  /** Maximum concurrent findUsage calls per adapter. */
+  usageConcurrency?: number;
   /** Omit to emit facts only (no recommendation findings). */
   recommend?: RecommendationPolicy;
 }
@@ -60,16 +71,45 @@ class StageTimeout extends Error {
   }
 }
 
-async function withTimeout<T>(work: () => Promise<T>, ms: number, stage: string): Promise<T> {
+async function withTimeout<T>(
+  work: () => Promise<T>,
+  ms: number,
+  stage: string,
+  controller: AbortController,
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new StageTimeout(stage)), ms);
+    timer = setTimeout(() => {
+      const error = new StageTimeout(stage);
+      controller.abort(error);
+      reject(error);
+    }, ms);
   });
   try {
     return await Promise.race([work(), timeout]);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Map with at most `limit` calls in flight; stops starting new work once aborted. */
+async function mapBounded<T, R>(
+  items: readonly T[],
+  limit: number,
+  signal: AbortSignal,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      if (signal.aborted) throw signal.reason;
+      const index = next++;
+      results[index] = await fn(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function majorOf(version: string): string | undefined {
@@ -127,6 +167,7 @@ async function runAdapter(
   network: NetworkPolicy,
   threshold: number,
   timeoutMs: number,
+  usageConcurrency: number,
 ): Promise<AdapterOutcome> {
   const outcome: AdapterOutcome = {
     ecosystem: adapter.ecosystem,
@@ -136,7 +177,8 @@ async function runAdapter(
     usageAnalysed: false,
     findings: [],
   };
-  const context = { repository, network };
+  const controller = new AbortController();
+  const context = { repository, network, signal: controller.signal };
 
   if (!apiCompatible(adapter.apiVersion)) {
     outcome.findings.push({
@@ -153,7 +195,12 @@ async function runAdapter(
 
   let detection;
   try {
-    detection = await withTimeout(() => adapter.detect(context), timeoutMs, "detection");
+    detection = await withTimeout(
+      () => adapter.detect(context),
+      timeoutMs,
+      "detection",
+      controller,
+    );
   } catch (error) {
     outcome.findings.push(adapterFailure(adapter, "detection", error));
     return outcome;
@@ -172,6 +219,7 @@ async function runAdapter(
       () => adapter.listDirectDependencies(context, detection.projects),
       timeoutMs,
       "dependency listing",
+      controller,
     );
   } catch (error) {
     outcome.findings.push(adapterFailure(adapter, "dependency listing", error));
@@ -184,6 +232,7 @@ async function runAdapter(
           () => adapter.buildDependencyGraph!(context, detection.projects),
           timeoutMs,
           "dependency graph",
+          controller,
         ).then(
           (graphs) => {
             outcome.graphs = graphs;
@@ -198,13 +247,17 @@ async function runAdapter(
     adapter.capabilities.has("usageAnalysis") && adapter.findUsage
       ? withTimeout(
           async () => {
-            const perDependency = await Promise.all(
-              outcome.dependencies.map((dep) => adapter.findUsage!(context, dep)),
+            const perDependency = await mapBounded(
+              outcome.dependencies,
+              usageConcurrency,
+              controller.signal,
+              (dep) => adapter.findUsage!(context, dep),
             );
             return perDependency.flat();
           },
           timeoutMs,
           "usage analysis",
+          controller,
         ).then(
           (usages) => {
             outcome.usages = usages;
@@ -256,7 +309,11 @@ const byUsage = compareBy<Usage>(
 const byFinding = compareBy<Finding>(
   (f) => f.kind,
   (f) => f.dependency ?? "",
+  (f) => f.evidence[0]?.file ?? "",
+  (f) => f.evidence[0]?.line ?? 0,
   (f) => f.summary,
+  (f) => f.affectedFiles.join("\0"),
+  (f) => f.recommendation,
 );
 
 /** Analyse a repository through the given adapters and return one AnalysisResult. */
@@ -267,10 +324,11 @@ export async function analyseRepository(
   const network = options.network ?? { mode: "offline" };
   const threshold = options.detectionThreshold ?? DEFAULT_DETECTION_THRESHOLD;
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
+  const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
 
   const outcomes = await Promise.all(
     options.adapters.map((adapter) =>
-      runAdapter(adapter, repository, network, threshold, timeoutMs).catch(
+      runAdapter(adapter, repository, network, threshold, timeoutMs, usageConcurrency).catch(
         (error: unknown): AdapterOutcome => ({
           ecosystem: adapter.ecosystem,
           dependencies: [],

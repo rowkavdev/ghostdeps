@@ -39,6 +39,12 @@ export interface DetectionResult {
 export interface AdapterContext {
   repository: RepositoryHandle;
   network: NetworkPolicy;
+  /**
+   * Aborted when the engine gives up on this adapter (stage timeout).
+   * Cooperative adapters should check it between files and stop early;
+   * the engine cannot preempt synchronous work (see #90).
+   */
+  signal?: AbortSignal;
 }
 
 /**
