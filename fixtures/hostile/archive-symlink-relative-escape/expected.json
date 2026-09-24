@@ -1,8 +1,14 @@
 {
-  "description": "Symlink whose relative target climbs out of the root ('../../../etc').",
+  "description": "Symlink whose relative target climbs out of the root ('../../../etc'). Recorded, never created - the escape only exists if links are materialised.",
   "archive": "archive.tar.gz",
   "expect": {
-    "result": "reject",
-    "code": "LINK_ESCAPE"
+    "result": "extract",
+    "symlinks": 1,
+    "links": [
+      {
+        "path": "repo/deep/link",
+        "target": "../../../etc"
+      }
+    ]
   }
 }

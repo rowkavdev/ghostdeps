@@ -173,24 +173,24 @@ const FIXTURES = [
   },
   {
     dir: "archive-symlink-absolute",
-    attacks: "Symlink entry pointing at an absolute target ('/etc'). A following consumer that reads through the link escapes the checkout.",
+    attacks: "Symlink entry pointing at an absolute target ('/etc/passwd'). Extraction must record it as metadata and never materialise it, so nothing can ever be followed out of the checkout.",
     entries: [{ name: "repo/passwd", typeflag: "2".charCodeAt(0), linkName: "/etc/passwd" }],
-    expect: { result: "reject", code: "ABSOLUTE_PATH" },
+    expect: { result: "extract", symlinks: 1, links: [{ path: "repo/passwd", target: "/etc/passwd" }] },
   },
   {
     dir: "archive-symlink-relative-escape",
-    attacks: "Symlink whose relative target climbs out of the root ('../../../etc').",
+    attacks: "Symlink whose relative target climbs out of the root ('../../../etc'). Recorded, never created - the escape only exists if links are materialised.",
     entries: [{ name: "repo/deep/link", typeflag: "2".charCodeAt(0), linkName: "../../../etc" }],
-    expect: { result: "reject", code: "LINK_ESCAPE" },
+    expect: { result: "extract", symlinks: 1, links: [{ path: "repo/deep/link", target: "../../../etc" }] },
   },
   {
     dir: "archive-symlink-shallow-target-escape",
-    attacks: "A link sitting deeper than its target (a/b/c/L points at the root) lets a later target 'L/../..' climb out of the root when '..' is applied lexically instead of physically. This bypassed the first version of the extractor (independent-review PoC on PR #81).",
+    attacks: "A link sitting deeper than its target (a/b/c/L points at the root) lets a later target 'L/../..' climb out of the root when '..' is applied lexically instead of physically. This escaped the first, materialising extractor (independent-review PoC on PR #81); with links recorded as metadata there is nothing to follow.",
     entries: [
       { name: "a/b/c/L", typeflag: "2".charCodeAt(0), linkName: "../../.." },
       { name: "a/b/c/M", typeflag: "2".charCodeAt(0), linkName: "L/../.." },
     ],
-    expect: { result: "reject", code: "LINK_ESCAPE" },
+    expect: { result: "extract", symlinks: 2, links: [{ path: "a/b/c/L", target: "../../.." }, { path: "a/b/c/M", target: "L/../.." }] },
   },
   {
     dir: "archive-case-collision",
@@ -212,13 +212,13 @@ const FIXTURES = [
   },
   {
     dir: "archive-symlink-loop",
-    attacks: "Symlink loop (a -> b, b -> a) plus a write through the loop. Resolvers must be loop-capped, not recursive-forever.",
+    attacks: "Symlink loop (a -> b, b -> a) plus an entry under the loop. A materialising extractor needs loop-capped resolution; a recording extractor is immune by construction.",
     entries: [
       { name: "repo/a", typeflag: "2".charCodeAt(0), linkName: "b" },
       { name: "repo/b", typeflag: "2".charCodeAt(0), linkName: "a" },
       { name: "repo/a/pwn.txt", body: text("x") },
     ],
-    expect: { result: "reject", code: "LINK_LOOP" },
+    expect: { result: "extract", files: 1, symlinks: 2, links: [{ path: "repo/a", target: "b" }, { path: "repo/b", target: "a" }] },
   },
   {
     dir: "archive-hardlink-missing-target",

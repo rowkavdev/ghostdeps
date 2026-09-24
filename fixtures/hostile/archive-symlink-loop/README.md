@@ -1,7 +1,7 @@
 # archive-symlink-loop
 
-**Attacks:** Symlink loop (a -> b, b -> a) plus a write through the loop. Resolvers must be loop-capped, not recursive-forever.
+**Attacks:** Symlink loop (a -> b, b -> a) plus an entry under the loop. A materialising extractor needs loop-capped resolution; a recording extractor is immune by construction.
 
-**Expected:** extraction is rejected with `LINK_LOOP` and nothing is left on disk.
+**Expected:** extraction succeeds (1 files, 2 symlink).
 
 Regenerate with `node fixtures/hostile/generate.mjs`.
