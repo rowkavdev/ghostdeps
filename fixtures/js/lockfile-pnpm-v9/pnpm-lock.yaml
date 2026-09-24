@@ -1,0 +1,65 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.2.0(react@18.2.0)
+      strip:
+        specifier: npm:strip-ansi@^6.0.1
+        version: strip-ansi@6.0.1
+    devDependencies:
+      vitest-lite:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+
+  ansi-regex@5.0.1:
+    resolution: {integrity: sha512-x}
+
+  loose-envify@1.4.0:
+    resolution: {integrity: sha512-x}
+
+  react-dom@18.2.0:
+    resolution: {integrity: sha512-x}
+    peerDependencies:
+      react: ^18.2.0
+
+  react@18.2.0:
+    resolution: {integrity: sha512-x}
+
+  strip-ansi@6.0.1:
+    resolution: {integrity: sha512-x}
+
+  vitest-lite@1.0.0:
+    resolution: {integrity: sha512-x}
+
+snapshots:
+
+  ansi-regex@5.0.1: {}
+
+  loose-envify@1.4.0: {}
+
+  react-dom@18.2.0(react@18.2.0):
+    dependencies:
+      loose-envify: 1.4.0
+      react: 18.2.0
+
+  react@18.2.0:
+    dependencies:
+      loose-envify: 1.4.0
+
+  strip-ansi@6.0.1:
+    dependencies:
+      ansi-regex: 5.0.1
+
+  vitest-lite@1.0.0:
+    dependencies:
+      strip-ansi: 6.0.1

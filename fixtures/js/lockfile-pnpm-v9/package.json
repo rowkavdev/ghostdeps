@@ -1,0 +1,12 @@
+{
+  "name": "fixture-lockfile-pnpm-v9",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "react-dom": "^18.2.0",
+    "strip": "npm:strip-ansi@^6.0.1"
+  },
+  "devDependencies": {
+    "vitest-lite": "^1.0.0"
+  }
+}
