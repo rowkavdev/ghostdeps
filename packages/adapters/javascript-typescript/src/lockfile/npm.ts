@@ -5,6 +5,7 @@
  */
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
+import { tarballOrigin } from "./origin.js";
 import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
 
 interface NpmEntry {
@@ -21,6 +22,7 @@ interface NpmEntry {
 
 interface V1Entry {
   version?: string;
+  resolved?: string;
   requires?: Record<string, string>;
   dependencies?: Record<string, V1Entry>;
 }
@@ -102,10 +104,13 @@ export function parseNpmLockfile(
         const id = lookup(key, d);
         if (id !== undefined) deps.push(id);
       }
+      const name = typeof e.name === "string" ? e.name : nameFromPath(key);
+      const registryOrigin = tarballOrigin(e.resolved, name);
       packages.set(key, {
-        name: typeof e.name === "string" ? e.name : nameFromPath(key),
+        name,
         version: typeof e.version === "string" ? e.version : "0.0.0",
         dependencies: deps,
+        ...(registryOrigin === undefined ? {} : { registryOrigin }),
       });
     }
     const direct = declared.map((d) => ({
@@ -138,7 +143,13 @@ export function parseNpmLockfile(
         if (!isObject(e)) continue;
         const id = `${prefix}node_modules/${name}`;
         const childScopes = [`${id}/`, ...scopes];
-        packages.set(id, { name, version: String(e.version ?? "0.0.0"), dependencies: [] });
+        const registryOrigin = tarballOrigin(e.resolved, name);
+        packages.set(id, {
+          name,
+          version: String(e.version ?? "0.0.0"),
+          dependencies: [],
+          ...(registryOrigin === undefined ? {} : { registryOrigin }),
+        });
         pending.set(id, {
           requires: isObject(e.requires) ? Object.keys(e.requires) : [],
           scopes: childScopes,

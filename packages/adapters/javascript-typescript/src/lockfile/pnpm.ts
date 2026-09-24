@@ -6,6 +6,7 @@
 import { parse } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
+import { scopedOrigin, tarballOrigin } from "./origin.js";
 import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
@@ -35,6 +36,8 @@ export function parsePnpmLockfile(
   lockfile: string,
   importerPath: string,
   declared: { name: string; dev: boolean }[],
+  /** Scoped registry bindings from .npmrc (origin.ts); absent means none are trusted. */
+  scopes?: ReadonlyMap<string, string | null>,
 ): ParsedLockfile {
   const evidence: Evidence[] = [];
   const { doc } = typeof source === "string" ? loadPnpmLockfile(source) : source;
@@ -82,10 +85,16 @@ export function parsePnpmLockfile(
         }
       }
     }
+    const version = baseVersion(parts.version);
+    // v9 keeps resolutions in `packages` keyed without the peer suffix; v6 on the entry itself.
+    const meta =
+      major === 9 && isObject(doc.packages) ? own(doc.packages, `${parts.name}@${version}`) : entry;
+    const registryOrigin = pnpmOrigin(parts.name, version, meta, scopes);
     packages.set(key, {
       name: parts.name,
-      version: baseVersion(parts.version),
+      version,
       dependencies: deps,
+      ...(registryOrigin === undefined ? {} : { registryOrigin }),
     });
   }
 
@@ -128,4 +137,33 @@ export function parsePnpmLockfile(
     }
   }
   return { packages, direct, evidence };
+}
+
+/**
+ * registryOrigin for one pnpm package (#174 step 3). pnpm records no URL for
+ * packages from the configured registry (integrity only), so:
+ * - an explicit http(s) registry tarball in `resolution.tarball` is used;
+ * - an integrity-only registry resolution takes the origin of the .npmrc
+ *   binding for the package's scope, when that binding is unambiguous;
+ * - anything else (git, directory, URL tarballs, unscoped packages, a bare
+ *   `registry=` default, conflicting bindings) stays absent.
+ */
+function pnpmOrigin(
+  name: string,
+  version: string,
+  meta: unknown,
+  scopes: ReadonlyMap<string, string | null> | undefined,
+): string | undefined {
+  if (!isObject(meta)) return undefined;
+  const resolution = own(meta, "resolution");
+  if (!isObject(resolution)) return undefined;
+  const tarball = own(resolution, "tarball");
+  if (tarball !== undefined) return tarballOrigin(tarball, name);
+  const keys = Object.keys(resolution);
+  const integrityOnly =
+    keys.length === 1 &&
+    keys[0] === "integrity" &&
+    typeof own(resolution, "integrity") === "string";
+  if (!integrityOnly || !/^\d/.test(version)) return undefined;
+  return scopedOrigin(name, scopes);
 }

@@ -5,6 +5,7 @@
 import { parse } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
+import { tarballOrigin } from "./origin.js";
 import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
@@ -134,10 +135,17 @@ export function parseYarnLockfile(
         if (dep) deps.push(dep);
       }
     }
+    const name = patternName(resolution);
+    // Classic entries record the tarball as `resolved "<url>#<sha1>"`. Berry
+    // records no URL (its registries live in .yarnrc.yml), so it stays absent.
+    const registryOrigin = berry
+      ? undefined
+      : tarballOrigin(own(entry, "resolved"), name, { allowFragment: true });
     packages.set(id, {
-      name: patternName(resolution),
+      name,
       version: String(own(entry, "version") ?? "0.0.0"),
       dependencies: deps,
+      ...(registryOrigin === undefined ? {} : { registryOrigin }),
     });
   }
 
