@@ -64,6 +64,10 @@ vocabulary:
 - `limitations.includes "<text>"` - the analysis must say what it could not do
 - `confidence.atMost <level>` - verdict confidence ceiling
 
+A scenario may set `"posixOnly": true` when its tree relies on real
+symlinks or other POSIX filesystem semantics that do not survive a
+default Windows checkout; suites must skip such fixtures there.
+
 Adapter lanes wire these into their test suites as their parsers land;
 an expectation that cannot be checked yet is still the documented
 contract.
