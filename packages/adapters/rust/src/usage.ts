@@ -24,6 +24,7 @@ import { isTable, readManifest } from "./cargo-toml.js";
 import { isManifestPath } from "./discover.js";
 import { withRustTree, type SyntaxNode } from "./parser.js";
 import { dirOf } from "./paths.js";
+import { findRemovedUsages } from "./removed.js";
 
 const PATH_ROOT_EXCLUDED = new Set(["crate", "self", "super", "Self", "std", "core", "alloc"]);
 
@@ -31,6 +32,12 @@ const PATH_ROOT_EXCLUDED = new Set(["crate", "self", "super", "Self", "std", "co
 export interface CrateReference {
   crate: string;
   line: number;
+  /**
+   * Line span of the enclosing `use` / `extern crate` statement when it
+   * covers more than one line, so PR mode can tell a removed multi-line
+   * use tree apart from an untouched one (#249).
+   */
+  statement?: { start: number; end: number };
   symbol?: string;
 }
 
@@ -84,13 +91,17 @@ function useTreeRoots(node: SyntaxNode, out: SyntaxNode[]): void {
 /** Collect crate-root references from a parsed file. */
 export function collectReferences(root: SyntaxNode): CrateReference[] {
   const refs: CrateReference[] = [];
-  const push = (node: SyntaxNode, symbol?: string) => {
+  const push = (node: SyntaxNode, symbol?: string, statement?: SyntaxNode) => {
     if (PATH_ROOT_EXCLUDED.has(node.text)) return;
-    refs.push({
-      crate: node.text,
-      line: node.startPosition.row + 1,
-      ...(symbol ? { symbol } : {}),
-    });
+    const ref: CrateReference = { crate: node.text, line: node.startPosition.row + 1 };
+    if (symbol) ref.symbol = symbol;
+    if (statement !== undefined && statement.endPosition.row > statement.startPosition.row) {
+      ref.statement = {
+        start: statement.startPosition.row + 1,
+        end: statement.endPosition.row + 1,
+      };
+    }
+    refs.push(ref);
   };
   const stack: SyntaxNode[] = [root];
   while (stack.length > 0) {
@@ -100,12 +111,12 @@ export function collectReferences(root: SyntaxNode): CrateReference[] {
         const argument = node.childForFieldName("argument");
         const roots: SyntaxNode[] = [];
         if (argument !== null) useTreeRoots(argument, roots);
-        for (const r of roots) push(r);
+        for (const r of roots) push(r, undefined, node);
         continue; // nothing further inside a use tree
       }
       case "extern_crate_declaration": {
         const name = node.childForFieldName("name");
-        if (name !== null) push(name);
+        if (name !== null) push(name, undefined, node);
         continue;
       }
       case "scoped_identifier":
@@ -137,7 +148,10 @@ export function collectReferences(root: SyntaxNode): CrateReference[] {
 }
 
 /** The manifest key(s) a dependency is declared under, normalised to the Rust crate name. */
-async function crateNames(context: AdapterContext, dependency: Dependency): Promise<Set<string>> {
+export async function crateNames(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<Set<string>> {
   const names = new Set<string>();
   const manifest = await readManifest(context.repository, dependency.declaredIn);
   const doc = manifest.document;
@@ -165,7 +179,7 @@ async function crateNames(context: AdapterContext, dependency: Dependency): Prom
 }
 
 /** .rs files owned by a crate root: under it and not under a nested crate. */
-function ownedSources(files: string[], root: string): string[] {
+export function ownedSources(files: string[], root: string): string[] {
   const nested = files
     .filter(isManifestPath)
     .map(dirOf)
@@ -205,7 +219,16 @@ async function referencesIn(
   return pending;
 }
 
+/** Head usages plus, in PR mode, usages on lines the pull request removed (#249). */
 export async function findUsage(context: AdapterContext, dependency: Dependency): Promise<Usage[]> {
+  const [head, removed] = await Promise.all([
+    findHeadUsage(context, dependency),
+    findRemovedUsages(context, dependency),
+  ]);
+  return [...head, ...removed];
+}
+
+async function findHeadUsage(context: AdapterContext, dependency: Dependency): Promise<Usage[]> {
   const names = await crateNames(context, dependency);
   const files = await context.repository.listFiles();
   const usages: Usage[] = [];
