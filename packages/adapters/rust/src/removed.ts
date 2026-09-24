@@ -3,15 +3,19 @@
  * lines the pull request removed, reported as Usage with `removedInPr: true`.
  *
  * Each changed .rs file's base version is rebuilt from the head file and
- * the diff, then parsed whole with the same tree-sitter seam and reference
- * collector as head usage, so crate names inside comments or strings never
- * count. A reference counts when its line, or any line of its multi-line
- * use statement, was removed; it is cited at its base-side line. Diff text is data: parsed, never
- * evaluated, and already bounded by core (PR_SOURCE_CHANGE_LIMITS).
+ * the diff with core's reconstructBase (#259); when the diff lines do not
+ * fit together it returns undefined and the file is skipped. The base is
+ * parsed whole with the same tree-sitter seam and reference collector as
+ * head usage, so crate names inside comments or strings never count. A
+ * reference counts when its line, or any line of its multi-line use
+ * statement, was removed; it is cited at its base-side line. Diff text is
+ * data: parsed, never evaluated, and already bounded by core
+ * (PR_SOURCE_CHANGE_LIMITS).
  */
 import {
   MAX_FILE_READ_BYTES,
   hasExcludedSegment,
+  reconstructBase,
   type AdapterContext,
   type Dependency,
   type SourceLineChanges,
@@ -21,37 +25,6 @@ import { isManifestPath } from "./discover.js";
 import { withRustTree } from "./parser.js";
 import { compareStrings, dirOf } from "./paths.js";
 import { collectReferences, crateNames, type CrateReference } from "./usage.js";
-
-/**
- * The file as it was at the PR's base, rebuilt from head and the diff:
- * removed lines go back at their base line numbers, added lines come out,
- * everything else is shared. Undefined when the lines do not fit together
- * (a capped or malformed diff), so the caller records nothing rather than
- * guessing. Same algorithm as the js adapter's reconstructBase; a shared
- * helper can replace both.
- */
-export function reconstructBase(
-  head: readonly string[],
-  change: SourceLineChanges,
-): string[] | undefined {
-  const removed = new Map<number, string>();
-  for (const l of change.removedLines) removed.set(l.line, l.text);
-  const added = new Set(change.addedLines.map((l) => l.line));
-  for (const n of added) if (n > head.length) return undefined;
-  const lastRemoved = Math.max(0, ...removed.keys());
-  const base: string[] = [];
-  let h = 0;
-  for (let n = 1; ; n++) {
-    if (removed.has(n)) {
-      base.push(removed.get(n)!);
-      continue;
-    }
-    while (h < head.length && added.has(h + 1)) h++;
-    if (h >= head.length) return n > lastRemoved ? base : undefined;
-    base.push(head[h]!);
-    h++;
-  }
-}
 
 interface RemovedReference {
   file: string;
