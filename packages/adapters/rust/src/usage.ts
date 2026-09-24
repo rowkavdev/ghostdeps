@@ -22,7 +22,7 @@ import {
 } from "@ghostdeps/core";
 import { isTable, readManifest } from "./cargo-toml.js";
 import { isManifestPath } from "./discover.js";
-import { parseRust, type SyntaxNode } from "./parser.js";
+import { withRustTree, type SyntaxNode } from "./parser.js";
 import { dirOf } from "./paths.js";
 
 const PATH_ROOT_EXCLUDED = new Set(["crate", "self", "super", "Self", "std", "core", "alloc"]);
@@ -198,8 +198,7 @@ async function referencesIn(
         return undefined;
       }
       if (Buffer.byteLength(text, "utf8") > MAX_FILE_READ_BYTES) return undefined;
-      const tree = await parseRust(text);
-      return tree === undefined ? undefined : collectReferences(tree);
+      return withRustTree(text, collectReferences);
     })();
     perContext.set(file, pending);
   }

@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { createRustAdapter } from "./adapter.js";
 import { detectRust } from "./detect.js";
-import { parseRust } from "./parser.js";
+import { liveTreeCount, withRustTree } from "./parser.js";
 import { collectReferences, findUsage } from "./usage.js";
 import { fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
 
@@ -28,10 +28,8 @@ async function usagesByDep(context: AdapterContext): Promise<Map<string, string[
 }
 
 async function refs(source: string): Promise<string[]> {
-  const tree = await parseRust(source);
-  return collectReferences(tree!).map(
-    (r) => `${r.crate}:${r.line}${r.symbol ? `:${r.symbol}` : ""}`,
-  );
+  const found = await withRustTree(source, collectReferences);
+  return found!.map((r) => `${r.crate}:${r.line}${r.symbol ? `:${r.symbol}` : ""}`);
 }
 
 describe("rust usage scanning (#50)", () => {
@@ -118,5 +116,28 @@ describe("rust usage scanning (#50)", () => {
       declaredIn: "Cargo.toml",
     };
     assert.deepEqual(await findUsage(context, dep), []);
+  });
+
+  it("frees every parsed tree, even when the visitor throws", async () => {
+    await refs("use serde::Serialize;\n");
+    await assert.rejects(
+      withRustTree("fn main() {}\n", () => {
+        throw new Error("visitor failed");
+      }),
+      /visitor failed/,
+    );
+    assert.equal(liveTreeCount(), 0);
+  });
+
+  it("keeps memory flat across repeated parses of a large file", async () => {
+    const line = "fn f() { let _x = serde_json::to_string(&vec![1, 2, 3]).unwrap(); }\n";
+    const big = `use serde::Serialize;\n${line.repeat(2600)}`; // ~180 KB
+    await refs(big);
+    const before = process.memoryUsage().rss;
+    for (let i = 0; i < 40; i++) await withRustTree(big, collectReferences);
+    const grownMb = (process.memoryUsage().rss - before) / 1024 / 1024;
+    // Leaking trees grew RSS by ~340 MB here; freed trees stay near flat.
+    assert.ok(grownMb < 150, `RSS grew ${grownMb.toFixed(0)} MB over 40 parses`);
+    assert.equal(liveTreeCount(), 0);
   });
 });
