@@ -5,6 +5,7 @@
  * reduced confidence - GhostDeps never guesses a package manager.
  */
 import type { Evidence, PackageManager, RepositoryHandle } from "@ghostdeps/core";
+import { displayRoot, joinPath } from "./paths.js";
 
 export interface PackageManagerDetection {
   managers: PackageManager[];
@@ -45,8 +46,9 @@ function readPackageManagerPin(manifestText: string): string | undefined {
 export async function detectPackageManagers(
   repository: RepositoryHandle,
   root: string,
+  knownFiles?: ReadonlySet<string>,
 ): Promise<PackageManagerDetection> {
-  const at = (name: string): string => (root === "." ? name : `${root}/${name}`);
+  const at = (name: string): string => joinPath(root, name);
   const evidence: Evidence[] = [];
   const lockfileByManager = new Map<string, string>();
 
@@ -62,17 +64,35 @@ export async function detectPackageManagers(
     });
   }
 
-  // Yarn classic vs berry: berry ships .yarnrc.yml and usually .yarn/releases.
+  // Yarn classic vs berry. The lockfile itself is the strongest signal:
+  // berry lockfiles open with a "__metadata:" block, classic v1 lockfiles
+  // with a "# yarn lockfile v1" header. Marker files (.yarnrc.yml, .yarn/)
+  // are only a fallback - classic setups can have .yarn/ too.
   if (lockfileByManager.has("yarn")) {
-    const files = await repository.listFiles();
-    const berry =
-      (await repository.exists(at(".yarnrc.yml"))) ||
-      files.some((file) => file.startsWith(`${at(".yarn")}/`));
+    let head: string;
+    try {
+      head = (await repository.readFile(at("yarn.lock"))).slice(0, 512);
+    } catch {
+      head = "";
+    }
+    let berry: boolean;
+    let basis: string;
+    if (head.startsWith("__metadata:")) {
+      berry = true;
+      basis = "lockfile __metadata block";
+    } else if (head.includes("yarn lockfile v1")) {
+      berry = false;
+      basis = "lockfile v1 header";
+    } else {
+      const files = knownFiles ?? new Set(await repository.listFiles());
+      berry =
+        files.has(at(".yarnrc.yml")) ||
+        [...files].some((file) => file.startsWith(`${at(".yarn")}/`));
+      basis = ".yarnrc.yml/.yarn markers";
+    }
     evidence.push({
       kind: "package-manager-variant",
-      statement: berry
-        ? `yarn berry at ${root} (.yarnrc.yml or .yarn/ present)`
-        : `yarn classic at ${root} (yarn.lock without berry markers)`,
+      statement: `yarn ${berry ? "berry" : "classic"} at ${displayRoot(root)} (${basis})`,
     });
   }
 

@@ -14,6 +14,7 @@ import {
   type ProjectRef,
 } from "@ghostdeps/core";
 import { detectPackageManagers, type PackageManagerDetection } from "./package-managers.js";
+import { displayRoot, joinPath } from "./paths.js";
 
 export const JS_ECOSYSTEM = "javascript-typescript";
 
@@ -63,14 +64,6 @@ function nearestRoot(file: string, rootSet: ReadonlySet<string>): string | undef
     dir = dir.slice(0, slash);
     if (rootSet.has(dir)) return dir;
   }
-}
-
-function joinPath(root: string, name: string): string {
-  return root === "." ? name : `${root}/${name}`;
-}
-
-function displayRoot(root: string): string {
-  return root === "." ? "repository root" : root;
 }
 
 export async function detectJavaScriptTypeScript(
@@ -162,11 +155,13 @@ export async function detectJavaScriptTypeScript(
       confidence = Math.min(confidence, 1);
     }
 
-    // Package-manager detection (issue #25) runs for would-be projects;
-    // conflicting signals lower confidence rather than forcing a guess.
-    let pm: PackageManagerDetection | undefined;
+    // Package-manager detection (issue #25) runs for every root, including
+    // below-threshold ones: a skipped workspace root still owns the lockfile
+    // its members inherit. Conflicting signals lower confidence rather than
+    // forcing a guess.
+    const pm = await detectPackageManagers(repository, root, fileSet);
+    pmByRoot.set(root, pm);
     if (confidence >= DETECTION_CONFIDENCE_THRESHOLD) {
-      pm = await detectPackageManagers(repository, root);
       evidence.push(...pm.evidence);
       if (pm.conflict) confidence = Math.max(0, confidence - 0.1);
     }
@@ -178,9 +173,8 @@ export async function detectJavaScriptTypeScript(
       projects.push({
         path: root,
         ecosystem: JS_ECOSYSTEM,
-        packageManagers: pm?.managers ?? [],
+        packageManagers: pm.managers,
       });
-      if (pm !== undefined) pmByRoot.set(root, pm);
     } else {
       evidence.push({
         kind: "project-skipped",
@@ -190,19 +184,21 @@ export async function detectJavaScriptTypeScript(
   }
 
   // Workspace members without their own lockfile inherit the nearest
-  // ancestor project's single, unconflicted package manager (issue #25).
+  // ancestor ROOT's single, unconflicted package manager (issue #25). The
+  // ancestor need not be a detected project itself: a sourceless workspace
+  // root still owns the lockfile its members install with.
   for (const project of projects) {
     if (project.packageManagers.length > 0) continue;
-    const ancestors = projects
+    const ancestors = roots
       .filter(
         (candidate) =>
-          candidate.path !== project.path &&
-          (candidate.path === "." || project.path.startsWith(`${candidate.path}/`)),
+          candidate !== project.path &&
+          (candidate === "." || project.path.startsWith(`${candidate}/`)),
       )
-      .sort((a, b) => b.path.length - a.path.length);
+      .sort((a, b) => b.length - a.length);
     const ancestor = ancestors[0];
     if (ancestor === undefined) continue;
-    const ancestorPm = pmByRoot.get(ancestor.path);
+    const ancestorPm = pmByRoot.get(ancestor);
     const only =
       ancestorPm !== undefined && !ancestorPm.conflict && ancestorPm.managers.length === 1
         ? ancestorPm.managers[0]
@@ -211,7 +207,7 @@ export async function detectJavaScriptTypeScript(
       project.packageManagers.push(only);
       evidence.push({
         kind: "package-manager-inherited",
-        statement: `${displayRoot(project.path)} inherits ${only.name} from ${displayRoot(ancestor.path)}${only.lockfile !== undefined ? ` (${only.lockfile})` : ""}`,
+        statement: `${displayRoot(project.path)} inherits ${only.name} from ${displayRoot(ancestor)}${only.lockfile !== undefined ? ` (${only.lockfile})` : ""}`,
       });
     }
   }

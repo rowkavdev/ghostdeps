@@ -29,6 +29,35 @@ describe("package-manager detection (issue #25)", () => {
     assert.equal(result.conflict, false);
   });
 
+  it("reads the yarn variant from the lockfile content first", async () => {
+    const berry = await detectPackageManagers(
+      memoryHandle({
+        "package.json": "{}",
+        "yarn.lock": "__metadata:\n  version: 8\n  cacheKey: 10\n",
+      }),
+      ".",
+    );
+    assert.ok(
+      berry.evidence.some(
+        (entry) => entry.kind === "package-manager-variant" && entry.statement.includes("berry"),
+      ),
+    );
+    const classic = await detectPackageManagers(
+      memoryHandle({
+        "package.json": "{}",
+        "yarn.lock": "# yarn lockfile v1\n",
+        // classic can still have .yarn/ (offline mirror) - content wins
+        ".yarn/releases/keep": "",
+      }),
+      ".",
+    );
+    assert.ok(
+      classic.evidence.some(
+        (entry) => entry.kind === "package-manager-variant" && entry.statement.includes("classic"),
+      ),
+    );
+  });
+
   it("detects yarn classic from yarn.lock without berry markers", async () => {
     const result = await detectPackageManagers(fixtureHandle("js", "pm-yarn-classic"), ".");
     assert.deepEqual(
@@ -156,5 +185,49 @@ describe("detection integration (issues #24 + #25)", () => {
       ["pnpm"],
     );
     assert.ok(result.evidence.some((entry) => entry.kind === "package-manager-inherited"));
+  });
+
+  it("inherits from a sourceless workspace root that detection skipped", async () => {
+    // The usual monorepo shape: the root carries manifest + lockfile but no
+    // source of its own, so it falls below threshold - members must still
+    // inherit its package manager (review regression on #96).
+    const result = await detectJavaScriptTypeScript(
+      contextFor(
+        memoryHandle({
+          "package.json": '{ "private": true, "workspaces": ["packages/*"] }',
+          "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+          "pnpm-workspace.yaml": 'packages:\n  - "packages/*"\n',
+          "packages/app/package.json": "{}",
+          "packages/app/src/index.ts": "export {};",
+        }),
+      ),
+    );
+    const member = result.projects.find((candidate) => candidate.path === "packages/app");
+    assert.ok(member, "packages/app must be detected");
+    assert.deepEqual(
+      member?.packageManagers.map((manager) => manager.name),
+      ["pnpm"],
+    );
+    const inherited = result.evidence.find((entry) => entry.kind === "package-manager-inherited");
+    assert.ok(inherited, "inheritance must be recorded as evidence");
+    assert.match(inherited.statement, /repository root/);
+  });
+
+  it("does not inherit through an ancestor with conflicting lockfiles", async () => {
+    const result = await detectJavaScriptTypeScript(
+      contextFor(
+        memoryHandle({
+          "package.json": "{}",
+          "package-lock.json": '{ "lockfileVersion": 3 }',
+          "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+          "src/root.js": "export {};",
+          "packages/app/package.json": "{}",
+          "packages/app/src/index.ts": "export {};",
+        }),
+      ),
+    );
+    const member = result.projects.find((candidate) => candidate.path === "packages/app");
+    assert.deepEqual(member?.packageManagers, []);
+    assert.ok(!result.evidence.some((entry) => entry.kind === "package-manager-inherited"));
   });
 });
