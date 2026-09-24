@@ -40,13 +40,93 @@ export const KNOWN_BINS: Readonly<Record<string, readonly string[]>> = Object.fr
   "webpack-cli": ["webpack-cli", "webpack"],
 });
 
-/** Runners whose next command word is the bin (they are not dependencies themselves). */
-const RUNNERS = new Set(["npx", "pnpx", "bunx", "env", "time", "nice", "exec"]);
-/** Wrapper CLIs that are dependencies themselves and also run the next command word. */
-const WRAPPERS = new Set(["cross-env", "cross-env-shell", "dotenv", "nodemon"]);
+/**
+ * How a wrapper takes its own flags. `value` flags consume the next word,
+ * `exec` flags take a command string, `bool` flags stand alone. A flag not
+ * listed makes the script "not fully analysed" (we can't know whether it
+ * swallows the next word).
+ */
+interface WrapperSpec {
+  /** true when the wrapper is itself a dependency (credited as a word). */
+  isPackage: boolean;
+  value?: readonly string[];
+  exec?: readonly string[];
+  bool?: readonly string[];
+}
+
+/** Runners and wrapper CLIs whose next command word is the bin. */
+const WRAPPER_SPECS: Readonly<Record<string, WrapperSpec>> = Object.freeze({
+  npx: {
+    isPackage: false,
+    value: ["-p", "--package"],
+    exec: ["-c", "--call"],
+    bool: ["-y", "--yes", "--no", "-q", "--quiet", "--no-install", "--ignore-existing"],
+  },
+  pnpx: { isPackage: false, value: ["-p", "--package"], bool: ["-y", "--yes"] },
+  bunx: { isPackage: false, value: ["-p", "--package"], bool: ["--bun", "--silent"] },
+  env: {
+    isPackage: false,
+    value: ["-u", "--unset", "-C", "--chdir"],
+    exec: ["-S", "--split-string"],
+    bool: ["-i", "--ignore-environment", "-0", "--null"],
+  },
+  time: { isPackage: false, value: ["-f", "--format", "-o", "--output"], bool: ["-p", "-v"] },
+  nice: { isPackage: false, value: ["-n", "--adjustment"] },
+  exec: { isPackage: false, value: ["-a"], bool: ["-c", "-l"] },
+  "cross-env": { isPackage: true },
+  "cross-env-shell": { isPackage: true },
+  dotenv: { isPackage: true, value: ["-e", "-v", "-c", "-p"], bool: ["-o", "--debug"] },
+  nodemon: {
+    isPackage: true,
+    value: [
+      "-w",
+      "--watch",
+      "-e",
+      "--ext",
+      "-i",
+      "--ignore",
+      "-d",
+      "--delay",
+      "-s",
+      "--signal",
+      "--config",
+      "--cwd",
+    ],
+    exec: ["-x", "--exec"],
+    bool: [
+      "-q",
+      "--quiet",
+      "-V",
+      "--verbose",
+      "-L",
+      "--legacy-watch",
+      "-I",
+      "--no-stdin",
+      "--no-colors",
+      "--spawn",
+      "-C",
+      "--on-change-only",
+      "--dump",
+    ],
+  },
+});
+/** Shells: `sh -c "<command>"` is analysed; `sh file.sh` runs a file we don't read. */
+const SHELLS = new Set(["sh", "bash", "zsh", "dash"]);
 /** Package-manager subcommands that run a bin: `pnpm exec x`, `yarn dlx x`, `bun x x`, `npm exec x`. */
 const PM_EXEC = new Set(["exec", "dlx", "x"]);
 const PMS = new Set(["npm", "pnpm", "yarn", "bun"]);
+/** Package-manager global flags that take a value (`pnpm --filter web exec tsc`). */
+const PM_VALUE_FLAGS = new Set([
+  "--filter",
+  "-F",
+  "-C",
+  "--dir",
+  "--prefix",
+  "--cwd",
+  "--workspace",
+]);
+/** Nested `sh -c` / `--exec` command strings analysed before giving up. */
+const MAX_NESTING = 3;
 /** Package-manager subcommands that are not bins (`yarn install`, `pnpm run build`). */
 const PM_BUILTINS = new Set([
   "run",
@@ -106,45 +186,175 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 const unscoped = (name: string) => (name.startsWith("@") ? (name.split("/")[1] ?? name) : name);
 
-/** Words in command position across one script, e.g. "tsc -p . && vitest run" -> ["tsc", "vitest"]. */
-export function commandWords(script: string): string[] {
-  const out: string[] = [];
-  const text = script.slice(0, MAX_SCRIPT_LENGTH);
-  for (const segment of text.split(/&&|\|\||[;|&\n()]/)) {
-    const words = segment.trim().split(/\s+/).filter(Boolean);
-    let i = 0;
-    for (;;) {
-      // Skip env assignments (FOO=bar) and flags before the command.
-      while (
-        i < words.length &&
-        (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!) || words[i]!.startsWith("-"))
-      )
-        i++;
-      const word = words[i];
-      if (word === undefined) break;
-      const bare = word.replace(/^["']|["']$/g, "").replace(/^(\.\/)?node_modules\/\.bin\//, "");
-      if (RUNNERS.has(bare) || WRAPPERS.has(bare)) {
-        if (WRAPPERS.has(bare)) out.push(bare);
-        i++;
-        continue;
-      }
-      if (PMS.has(bare)) {
-        const sub = words[i + 1];
-        if (sub !== undefined && PM_EXEC.has(sub)) {
-          i += 2;
-          continue;
-        }
-        // `yarn tsc` / `pnpm vitest` run a bin directly; `npm` never does.
-        if (bare !== "npm" && sub !== undefined && !sub.startsWith("-") && !PM_BUILTINS.has(sub)) {
-          out.push(sub);
-        }
+/** Result of reading one script as text. */
+export interface ScriptAnalysis {
+  /** Words in command position, e.g. "tsc -p . && vitest run" -> ["tsc", "vitest"]. */
+  words: string[];
+  /** Why some of the script could not be read; empty means every command was analysed. */
+  gaps: string[];
+}
+
+/** Split a script into command segments of words, honouring quotes. Never evaluates anything. */
+function tokenise(text: string, gaps: string[]): string[][] {
+  const segments: string[][] = [];
+  let words: string[] = [];
+  let word = "";
+  let inWord = false;
+  const endWord = () => {
+    if (inWord) words.push(word);
+    word = "";
+    inWord = false;
+  };
+  const endSegment = () => {
+    endWord();
+    if (words.length) segments.push(words);
+    words = [];
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === "'" || c === '"') {
+      const close = c === "'" ? text.indexOf("'", i + 1) : closingDoubleQuote(text, i + 1);
+      if (close < 0) {
+        gaps.push("unbalanced quote");
         break;
       }
-      out.push(bare);
-      break;
+      const inner = text.slice(i + 1, close);
+      word += c === '"' ? inner.replace(/\\(["\\$`])/g, "$1") : inner;
+      inWord = true;
+      if (c === '"' && /\$\(|`/.test(inner)) gaps.push("command substitution");
+      i = close;
+    } else if (c === "\\") {
+      word += text[i + 1] ?? "";
+      inWord = true;
+      i++;
+    } else if (c === "$" && text[i + 1] === "(") {
+      gaps.push("command substitution");
+      endSegment();
+      i++;
+    } else if (c === "`") {
+      gaps.push("command substitution");
+      endSegment();
+    } else if (/[;|&\n()]/.test(c)) {
+      endSegment();
+    } else if (/\s/.test(c)) {
+      endWord();
+    } else {
+      word += c;
+      inWord = true;
     }
   }
+  endSegment();
+  return segments;
+}
+
+function closingDoubleQuote(text: string, from: number): number {
+  for (let i = from; i < text.length; i++) {
+    if (text[i] === "\\") i++;
+    else if (text[i] === '"') return i;
+  }
+  return -1;
+}
+
+const isAssignment = (w: string) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w);
+const bareCommand = (w: string) => w.replace(/^(\.\/)?node_modules\/\.bin\//, "");
+
+function analyseInto(script: string, depth: number, out: ScriptAnalysis): void {
+  if (script.length > MAX_SCRIPT_LENGTH) out.gaps.push("script too long");
+  for (const words of tokenise(script.slice(0, MAX_SCRIPT_LENGTH), out.gaps)) {
+    analyseSegment(words, depth, out);
+  }
+}
+
+function analyseNested(command: string | undefined, depth: number, out: ScriptAnalysis): void {
+  if (command === undefined) return;
+  if (depth >= MAX_NESTING) out.gaps.push("nested command too deep");
+  else analyseInto(command, depth + 1, out);
+}
+
+function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): void {
+  let i = 0;
+  for (;;) {
+    while (i < words.length && (isAssignment(words[i]!) || words[i] === "--")) i++;
+    // Flags before any command (rare) are skipped.
+    while (i < words.length && words[i]!.startsWith("-")) i++;
+    const word = words[i];
+    if (word === undefined) return;
+    const bare = bareCommand(word);
+    const spec = Object.hasOwn(WRAPPER_SPECS, bare) ? WRAPPER_SPECS[bare] : undefined;
+    if (spec) {
+      if (spec.isPackage) out.words.push(bare);
+      i++;
+      while (i < words.length && words[i]!.startsWith("-")) {
+        const raw = words[i]!;
+        if (raw === "--") {
+          i++;
+          break;
+        }
+        const eq = raw.indexOf("=");
+        const flag = eq > 0 ? raw.slice(0, eq) : raw;
+        const inline = eq > 0 ? raw.slice(eq + 1) : undefined;
+        if (spec.exec?.includes(flag)) {
+          analyseNested(inline ?? words[i + 1], depth, out);
+          return;
+        }
+        if (spec.value?.includes(flag)) i += inline === undefined ? 2 : 1;
+        else {
+          if (!spec.bool?.includes(flag)) out.gaps.push(`${bare}: unrecognised flag ${flag}`);
+          i++;
+        }
+      }
+      continue;
+    }
+    if (SHELLS.has(bare)) {
+      let j = i + 1;
+      while (j < words.length && words[j]!.startsWith("-") && words[j] !== "-c") j++;
+      if (words[j] === "-c") analyseNested(words[j + 1], depth, out);
+      else if (words[j] !== undefined) out.gaps.push(`${bare} runs ${words[j]}, which is not read`);
+      return;
+    }
+    if (bare === "eval") {
+      out.gaps.push("eval");
+      return;
+    }
+    if (bare === "node" || (bare === "bun" && words[i + 1] === "-e")) {
+      if (
+        words
+          .slice(i + 1)
+          .some((w) => w === "-e" || w === "--eval" || w === "-p" || w === "--print")
+      ) {
+        out.gaps.push(`${bare} evaluates inline code`);
+      }
+      if (bare === "node") return;
+    }
+    if (PMS.has(bare)) {
+      let j = i + 1;
+      while (j < words.length && words[j]!.startsWith("-")) {
+        j += PM_VALUE_FLAGS.has(words[j]!) ? 2 : 1;
+      }
+      const sub = words[j];
+      if (sub !== undefined && PM_EXEC.has(sub)) {
+        i = j + 1;
+        continue;
+      }
+      // `yarn tsc` / `pnpm vitest` run a bin directly; `npm` never does.
+      if (bare !== "npm" && sub !== undefined && !PM_BUILTINS.has(sub)) out.words.push(sub);
+      return;
+    }
+    out.words.push(bare);
+    return;
+  }
+}
+
+/** Read one script as text: command words plus anything that could not be analysed. */
+export function analyseScript(script: string): ScriptAnalysis {
+  const out: ScriptAnalysis = { words: [], gaps: [] };
+  analyseInto(script, 0, out);
   return out;
+}
+
+/** Words in command position across one script, e.g. "tsc -p . && vitest run" -> ["tsc", "vitest"]. */
+export function commandWords(script: string): string[] {
+  return analyseScript(script).words;
 }
 
 /** 1-based line of `"name":` inside the "scripts" object, falling back to the "scripts" key line. */
@@ -163,34 +373,62 @@ interface ManifestScripts {
   file: string;
   text: string;
   scripts: [string, string][];
+  /** More than MAX_SCRIPTS scripts: the rest were not read. */
+  truncated: boolean;
 }
+
+type ManifestRead = ManifestScripts | { file: string; problem: string } | undefined;
 
 async function readScripts(
   repository: RepositoryHandle,
   projectDir: string,
-): Promise<ManifestScripts | undefined> {
+): Promise<ManifestRead> {
   const file = projectDir === "." ? "package.json" : `${projectDir}/package.json`;
+  if (!(await repository.exists(file))) return undefined;
   let text: string;
   try {
     text = await repository.readFile(file);
   } catch {
-    return undefined;
+    return { file, problem: "unreadable" };
   }
-  if (Buffer.byteLength(text, "utf8") > MAX_FILE_READ_BYTES) return undefined;
+  if (Buffer.byteLength(text, "utf8") > MAX_FILE_READ_BYTES) return { file, problem: "oversized" };
   let doc: unknown;
   try {
     doc = JSON.parse(text);
   } catch {
-    return undefined;
+    return { file, problem: "malformed" };
   }
-  if (!isRecord(doc) || !Object.hasOwn(doc, "scripts") || !isRecord(doc.scripts)) {
-    return { file, text, scripts: [] };
+  if (!isRecord(doc)) return { file, problem: "malformed" };
+  if (!Object.hasOwn(doc, "scripts") || !isRecord(doc.scripts)) {
+    return { file, text, scripts: [], truncated: false };
   }
+  const entries = Object.entries(doc.scripts);
   const scripts: [string, string][] = [];
-  for (const [name, value] of Object.entries(doc.scripts).slice(0, MAX_SCRIPTS)) {
+  for (const [name, value] of entries.slice(0, MAX_SCRIPTS)) {
     if (typeof value === "string") scripts.push([name, value]);
   }
-  return { file, text, scripts };
+  return { file, text, scripts, truncated: entries.length > MAX_SCRIPTS };
+}
+
+const manifestCaches = new WeakMap<AdapterContext, Map<string, Promise<ManifestRead>>>();
+
+function projectDirOf(dependency: Dependency): string {
+  return dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
+}
+
+/** The project's package.json scripts, read once per analysis run. */
+function manifestFor(context: AdapterContext, projectDir: string): Promise<ManifestRead> {
+  let cache = manifestCaches.get(context);
+  if (!cache) {
+    cache = new Map();
+    manifestCaches.set(context, cache);
+  }
+  let pending = cache.get(projectDir);
+  if (!pending) {
+    pending = readScripts(context.repository, projectDir);
+    cache.set(projectDir, pending);
+  }
+  return pending;
 }
 
 /** Bin names npm's lockfile records for `name` as seen from `projectDir`, or undefined when unknown. */
@@ -256,7 +494,7 @@ export async function binNames(
     cache = new Map();
     lockCaches.set(context, cache);
   }
-  const projectDir = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
+  const projectDir = projectDirOf(dependency);
   const names = new Set<string>();
   const fromLock = await lockfileBins(context.repository, projectDir, dependency.name, cache);
   for (const n of fromLock ?? []) names.add(n);
@@ -274,9 +512,8 @@ export async function findScriptUsages(
   context: AdapterContext,
   dependency: Dependency,
 ): Promise<Usage[]> {
-  const projectDir = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
-  const manifest = await readScripts(context.repository, projectDir);
-  if (!manifest || manifest.scripts.length === 0) return [];
+  const manifest = await manifestFor(context, projectDirOf(dependency));
+  if (!manifest || !("scripts" in manifest) || manifest.scripts.length === 0) return [];
   const bins = await binNames(context, dependency);
   if (bins.size === 0) return [];
   const usages: Usage[] = [];
@@ -293,4 +530,26 @@ export async function findScriptUsages(
     });
   }
   return usages;
+}
+
+/**
+ * Why the project's scripts were not fully analysed (unreadable manifest,
+ * too many scripts, an unrecognised wrapper flag, a shell file, eval, ...).
+ * Empty means every script was read. Feeds referenceAnalysisComplete (#132).
+ */
+export async function scriptGaps(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<string[]> {
+  const manifest = await manifestFor(context, projectDirOf(dependency));
+  if (!manifest) return [];
+  if (!("scripts" in manifest)) return [`${manifest.file}: ${manifest.problem}`];
+  const gaps: string[] = [];
+  if (manifest.truncated) gaps.push(`${manifest.file}: more than ${MAX_SCRIPTS} scripts`);
+  for (const [name, command] of manifest.scripts) {
+    for (const gap of new Set(analyseScript(command).gaps)) {
+      gaps.push(`${manifest.file} script "${name}": ${gap}`);
+    }
+  }
+  return gaps;
 }
