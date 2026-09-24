@@ -1,0 +1,37 @@
+name: Corpus
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    # Nightly, off the top of the hour. This is the clock the #173/#178 cap
+    # lift criterion counts: 14 consecutive green runs.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    # Informational on PRs that touch the corpus itself (config, goldens,
+    # harness, this workflow) - validates golden updates like the #182 one.
+    paths:
+      - "corpus/**"
+      - "scripts/corpus.mjs"
+      - ".github/workflows/corpus.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node scripts/corpus.mjs

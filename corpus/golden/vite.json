@@ -1,0 +1,147 @@
+{
+  "repo": "vite",
+  "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@tailwindcss/postcss"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "autoprefixer"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-fake-client"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-fake-server"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "regenerator-runtime"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sugarss"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sugarss"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "systemjs"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "unrun"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "unrun"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "url"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "url"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "vue34"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@tailwindcss/vite"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@vite/test-config-plugin-module-condition"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@vitejs/child"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@vitejs/cjs-external"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@vitejs/esm-external"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@vitejs/parent"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@vitejs/test-dep-conditions"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@vitejs/test-dep-nested-license-isc"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "birpc"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "oxc-parser"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "tailwindcss"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "tailwindcss"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "tailwindcss"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "test-dep-invalid-exports"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "tinyspy"
+    }
+  ]
+}
