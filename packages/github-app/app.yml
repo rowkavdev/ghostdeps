@@ -13,10 +13,13 @@ hook_attributes:
   active: true
 
 # installation and installation_repositories are delivered to every app and
-# cannot be listed here. checks:write also delivers check_suite and check_run.
+# cannot be listed here. checks:write already subscribes the app to check_run
+# and check_suite; check_run is listed explicitly because the re-run button
+# (check_run.rerequested) is a behaviour we rely on.
 default_events:
   - pull_request
   - push
+  - check_run
 
 default_permissions:
   contents: read

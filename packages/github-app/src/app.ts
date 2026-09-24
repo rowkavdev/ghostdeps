@@ -1,6 +1,8 @@
 import type { ApplicationFunction, Probot } from "probot";
 import { changedFiles } from "./events/changed-files.js";
+import { checkName } from "./checks/render.js";
 import { analysedEvents, decide, type ChangedFilesLookup } from "./events/filter.js";
+import { decideRerequest } from "./events/rerequested.js";
 import { InProcessJobQueue, type JobQueue } from "./jobs.js";
 
 export const HEALTH_PATH = "/healthz";
@@ -83,5 +85,27 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
         }
       },
     );
+
+    // Re-run button (#97). Other check_run actions (created, completed,
+    // requested_action) are ignored.
+    app.on("check_run.rerequested", async (context) => {
+      const decision = decideRerequest(context.payload, context.id, checkName);
+      if (!decision.analyse) {
+        context.log.debug({ delivery: context.id, reason: decision.reason }, "re-run skipped");
+        return;
+      }
+      const result = queue.enqueue(decision.job);
+      const fields = {
+        delivery: context.id,
+        repository: decision.job.repository.id,
+        trigger: decision.job.trigger.kind,
+        result,
+      };
+      if (result === "overloaded") {
+        context.log.warn(fields, "analysis queue full; re-run dropped");
+      } else {
+        context.log.info(fields, "analysis re-run");
+      }
+    });
   };
 }

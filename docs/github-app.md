@@ -17,9 +17,10 @@ Explicitly **not** requested: `issues`, `actions`, `contents: write`, `pull_requ
 
 - `pull_request` (opened, synchronize, reopened)
 - `push` (configured branches)
+- `check_run` (rerequested: the re-run button on the GhostDeps check)
 - `installation`, `installation_repositories` (setup and initial scan)
 
-No other events are subscribed. The manifest ([`packages/github-app/app.yml`](../packages/github-app/app.yml)) lists only `pull_request` and `push`: GitHub delivers `installation` and `installation_repositories` to every app automatically, and `checks: write` also delivers `check_suite` and `check_run`. A test in `packages/github-app` fails if the manifest and the permissions table above drift apart.
+No other events are subscribed. The manifest ([`packages/github-app/app.yml`](../packages/github-app/app.yml)) lists `pull_request`, `push` and `check_run`. GitHub delivers `installation` and `installation_repositories` to every app automatically, so they cannot be listed. `checks: write` already subscribes the app to `check_run` and `check_suite`; `check_run` is listed anyway because re-runs depend on it, and GitHub sends `rerequested` only to the app that created the run ([GitHub docs](https://docs.github.com/en/webhooks/webhook-events-and-payloads#check_run)). `check_suite` is not used: `push` is the push trigger, and using both would double up jobs. A test in `packages/github-app` fails if the manifest and this page drift apart.
 
 ## Behaviour
 
@@ -30,12 +31,13 @@ No other events are subscribed. The manifest ([`packages/github-app/app.yml`](..
 
 ## Triggers for analysis
 
-Event filtering lives in `packages/github-app/src/events/`. The rules are default-deny: anything not listed here short-circuits quietly with no job and no API calls beyond the changed-file lookup.
+Event filtering lives in `packages/github-app/src/events/`. Re-runs bypass the queue's per-SHA duplicate collapse (each click gets its own job key); the reporter still updates the one check run for that SHA. The rules are default-deny: anything not listed here short-circuits quietly with no job and no API calls beyond the changed-file lookup.
 
 | Event                                       | Accepted when                                                                        | Changed files from                                                                   | Result                                |
 | ------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------- |
 | `pull_request`                              | action is `opened`, `synchronize` or `reopened`                                      | PR files API (first 5 pages / 500 files inside the delivery)                         | job if a manifest/lockfile changed    |
 | `push`                                      | branch push to the default branch; not a tag, not a deletion, not a brand-new branch | payload `commits[]` when under 20 commits, otherwise the compare API (capped at 300) | job if a manifest/lockfile changed    |
+| `check_run`                                 | action is `rerequested` on the `ghostdeps` check run (the re-run button)             | n/a                                                                                  | job for that head SHA, always         |
 | `installation`, `installation_repositories` | always (handled separately)                                                          | n/a                                                                                  | logged no-op in v0.1; full scan later |
 | anything else                               | never                                                                                | n/a                                                                                  | skipped                               |
 

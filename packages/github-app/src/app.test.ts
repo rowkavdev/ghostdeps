@@ -265,4 +265,24 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(unmatched, 0, "a sixth page was requested");
     assert.equal(queue.jobs.length, 1);
   });
+
+  it("re-runs analysis on check_run.rerequested even after the SHA was analysed", async () => {
+    mockInstallationToken();
+    mockPrFiles(["package.json"], 1);
+    await deliver("pull_request", await fixture("pull_request.opened"));
+    const res = await deliver("check_run", await fixture("check_run.rerequested"));
+    assert.equal(res.status, 200);
+    assert.deepEqual(
+      queue.jobs.map((j) => j.trigger.kind),
+      ["pull_request", "rerequested"],
+    );
+    assert.equal(queue.jobs[1]?.headSha, queue.jobs[0]?.headSha);
+  });
+
+  it("ignores check_run actions other than rerequested", async () => {
+    const body = JSON.parse(await fixture("check_run.rerequested")) as Record<string, unknown>;
+    const res = await deliver("check_run", JSON.stringify({ ...body, action: "completed" }));
+    assert.equal(res.status, 200);
+    assert.equal(queue.jobs.length, 0);
+  });
 });
