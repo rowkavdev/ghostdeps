@@ -20,6 +20,7 @@ import { normaliseAnalysisResult } from "../report/json.js";
 import { UNUSED_CONFIDENCE_CAP, capConfidence, severityOf } from "../report/severity.js";
 import { buildProjectTree } from "./project-tree.js";
 import { buildUnifiedGraph } from "./unified-graph.js";
+import { declarationLineNote } from "./declared-lines.js";
 import { crossEcosystemOverlaps } from "./capability-overlap.js";
 import { boundSourceChanges } from "./source-changes.js";
 import type {
@@ -431,6 +432,10 @@ export async function assembleAnalysisResult(
       affectedFiles: [],
     });
   }
+
+  // Declaration-anchored findings without a verified line (#198): one note.
+  const lineNote = declarationLineNote(findings);
+  if (lineNote) findings.push({ ...lineNote, severity: severityOf(lineNote) });
 
   // One canonical ordering for the engine and the JSON reporter (#71).
   return normaliseAnalysisResult({

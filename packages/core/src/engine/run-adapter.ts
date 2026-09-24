@@ -4,6 +4,7 @@
  * logic must not fork: both isolation tiers run adapters through the same
  * stage sequence, error-isolation contract and timeout shape.
  */
+import { verifyDeclaredLines } from "./declared-lines.js";
 import {
   adapterApiVersion,
   normaliseUsageResult,
@@ -277,7 +278,12 @@ export async function runAdapter(
   try {
     onStage?.("dependency listing");
     outcome.dependencies = await withTimeout(
-      () => adapter.listDirectDependencies(context, detection.projects),
+      async () =>
+        // Keep only declaration lines the manifest confirms (#198).
+        verifyDeclaredLines(
+          context.repository,
+          await adapter.listDirectDependencies(context, detection.projects),
+        ),
       timeoutMs,
       "dependency listing",
       controller,

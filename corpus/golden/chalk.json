@@ -9,6 +9,11 @@
       "dependency": null
     },
     {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
       "kind": "unused",
       "severity": "medium",
       "dependency": "yoctodelay"
