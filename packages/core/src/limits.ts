@@ -124,3 +124,11 @@ export const PR_SOURCE_CHANGE_LIMITS = {
  * sniff needs (the berry check reads 512 bytes).
  */
 export const MAX_HEAD_READ_BYTES = 64 * 1024;
+
+/**
+ * Most packages the emitted unified graph carries (#55). The cap applies to
+ * the output only: findings are computed from the full in-memory graphs
+ * before emission, so it can never change a verdict. When it bites, the
+ * result carries one info note and per-ecosystem emitted/total counts.
+ */
+export const MAX_EMITTED_GRAPH_NODES = 5_000;

@@ -76,6 +76,18 @@
       "summary": "left-pad is declared but never used"
     }
   ],
+  "graph": {
+    "ecosystems": [
+      {
+        "ecosystem": "javascript-typescript",
+        "emitted": 0,
+        "graphs": "none",
+        "nodes": 0
+      }
+    ],
+    "nodes": [],
+    "truncated": false
+  },
   "projectTree": [
     {
       "ecosystem": "javascript-typescript",

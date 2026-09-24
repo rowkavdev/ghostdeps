@@ -19,6 +19,7 @@ export {
   type IsolatedAnalyseOptions,
 } from "./isolated.js";
 export { buildProjectTree, projectId } from "./project-tree.js";
+export { buildUnifiedGraph } from "./unified-graph.js";
 export {
   analyseDirectory,
   scanCompletenessFindings,
