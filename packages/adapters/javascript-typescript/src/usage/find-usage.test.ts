@@ -127,16 +127,43 @@ describe("findUsage", () => {
     });
     const kinds = async (p: string) =>
       (await usageLimitations(context, p)).map((e) => `${e.kind}:${e.file}`);
-    assert.deepEqual(await kinds("."), ["dynamic-import-unresolved:packages/a/x.js"]);
+    assert.deepEqual(await kinds("."), ["nested-project-import-gaps:packages/a/package.json"]);
     assert.deepEqual(await kinds("packages/a"), ["dynamic-import-unresolved:packages/a/x.js"]);
     assert.deepEqual(await kinds("packages/b"), []);
     const [propagated] = await usageLimitations(context, ".");
-    assert.match(
+    assert.equal(
       propagated!.statement,
-      /import gap in nested project packages\/a; it can fall through to the root project/,
+      "import gaps in 1 nested project (packages/a (1); 1 in total) can fall through to the root project",
     );
     const [own] = await usageLimitations(context, "packages/a");
     assert.doesNotMatch(own!.statement, /nested project/);
+  });
+
+  it("aggregates many nested gaps into one capped summary per ancestor; propagation is never capped (#185)", async () => {
+    const files: Record<string, string> = { "package.json": "{}" };
+    for (let i = 0; i < 25; i++) {
+      const p = `packages/p${String(i).padStart(2, "0")}`;
+      files[`${p}/package.json`] = "{}";
+      files[`${p}/a.js`] = `require(a); require(b);`;
+    }
+    files["packages/p00/nested/package.json"] = "{}";
+    files["packages/p00/nested/x.js"] = `require(c);`;
+    const context = ctx(files);
+    const root = await usageLimitations(context, ".");
+    assert.equal(root.length, 1);
+    assert.equal(root[0]!.kind, "nested-project-import-gaps");
+    assert.match(
+      root[0]!.statement,
+      /^import gaps in 26 nested projects \(packages\/p00 \(2\), packages\/p00\/nested \(1\), packages\/p01 \(2\),.*, \+ 16 more; 51 in total\) can fall through to the root project$/,
+    );
+    assert.equal((root[0]!.statement.match(/packages\//g) ?? []).length, 10);
+    // An intermediate ancestor gets its own summary for its own nested projects.
+    const p00 = await usageLimitations(context, "packages/p00");
+    assert.deepEqual(
+      p00.map((e) => e.kind),
+      ["dynamic-import-unresolved", "dynamic-import-unresolved", "nested-project-import-gaps"],
+    );
+    assert.match(p00[2]!.statement, /1 nested project \(packages\/p00\/nested \(1\)/);
   });
 
   it("a gap in a project never reaches its nested projects (no downward propagation)", async () => {
