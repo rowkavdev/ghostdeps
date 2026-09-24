@@ -176,4 +176,35 @@ version = "1.0.0"
       ["Zed", "_u", "a-lib"],
     );
   });
+
+  it("reads and parses each Cargo.lock once per run (#246)", async () => {
+    const files = {
+      "Cargo.toml": `[workspace]\nmembers = ["a", "b"]\n`,
+      "Cargo.lock": `version = 4\n[[package]]\nname = "a"\nversion = "0.1.0"\n[[package]]\nname = "b"\nversion = "0.1.0"\n`,
+      "a/Cargo.toml": `[package]\nname = "a"\nversion = "0.1.0"\n`,
+      "a/src/lib.rs": "",
+      "b/Cargo.toml": `[package]\nname = "b"\nversion = "0.1.0"\n`,
+      "b/src/lib.rs": "",
+    };
+    const base = memoryHandle(files);
+    const reads = new Map<string, number>();
+    const context: AdapterContext = {
+      repository: {
+        ...base,
+        readFile: (path: string) => {
+          reads.set(path, (reads.get(path) ?? 0) + 1);
+          return base.readFile(path);
+        },
+      },
+      network: { mode: "offline" },
+    };
+    const detection = await detectRust(context);
+    const graphs = await buildDependencyGraph(context, detection.projects);
+    assert.equal(graphs.length, 2);
+    assert.ok(graphs.every((g) => !g.incomplete));
+    assert.equal(reads.get("Cargo.lock"), 1);
+    // A new run (new context) reads it again.
+    await buildDependencyGraph({ ...context }, detection.projects);
+    assert.equal(reads.get("Cargo.lock"), 2);
+  });
 });
