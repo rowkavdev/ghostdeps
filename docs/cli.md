@@ -16,7 +16,13 @@ no separate CLI implementation of any analysis (ADR 0001, ADR 0002).
 | `ghostdeps explain <pkg> [path]` | Explain the findings and recommendation for a dependency |
 
 Shorthands: `ghostdeps <path>` means `ghostdeps scan <path>`, and
-`ghostdeps --json` means `ghostdeps scan --json`.
+`ghostdeps --json` means `ghostdeps scan --json`. A bare first word counts
+as a path only when it contains `/` or `.` or exists on disk; anything else
+is reported as an unknown command with a suggestion. To scan a directory
+that shares a name with a command, say `ghostdeps scan <dir>`.
+
+`--` ends option parsing, so paths starting with `-` can be scanned:
+`ghostdeps scan -- -strange-dir`.
 
 `ghostdeps fix <pkg>` (patch generation) is planned for a later milestone and
 is not in the router yet.
@@ -26,10 +32,22 @@ is not in the router yet.
 Human output follows the canonical formats in
 [output-formats.md](output-formats.md).
 
-`--json` is a global flag and emits the schema-versioned `AnalysisResult`
-from `@ghostdeps/core` (`schemaVersion: 1`). Commands that are not
-implemented yet still emit a schema-shaped empty result under `--json`, so
-tooling can be built against the contract today.
+`--json` is a global flag. On success it emits the schema-versioned
+`AnalysisResult` from `@ghostdeps/core`, serialised by core's stable JSON
+reporter (canonical ordering, escaping) - the CLI has no second JSON writer.
+
+On failure, `--json` emits an error object instead, and never an
+`AnalysisResult`:
+
+```json
+{
+  "error": { "code": "not-implemented", "message": "..." }
+}
+```
+
+`code` is one of `usage`, `not-implemented`, `error`; the exit code carries
+the same information (`2`, `3`, `1`). A clean-looking empty result would be
+a false all-clear, which is worse than no output.
 
 Analysis is static and works fully offline; registry metadata (when wired
 up) flows only through the core metadata service, never from the CLI.

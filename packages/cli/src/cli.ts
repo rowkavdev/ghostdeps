@@ -1,4 +1,5 @@
-import { findCommand } from "./commands.js";
+import { existsSync } from "node:fs";
+import { findCommand, suggestCommand } from "./commands.js";
 import type { CliConfig } from "./config.js";
 import {
   EXIT_ERROR,
@@ -9,7 +10,7 @@ import {
   UsageError,
 } from "./errors.js";
 import { commandHelp, helpText } from "./help.js";
-import { emptyAnalysisResult, printJson } from "./output/json.js";
+import { errorJson } from "./output/json.js";
 import { cliVersion } from "./version.js";
 
 /** Output sinks, injected so tests can capture instead of touching process. */
@@ -23,15 +24,25 @@ interface ParsedArgs {
   help: boolean;
   version: boolean;
   positionals: string[];
+  /** `--` was used: every positional is explicitly a path/argument, never a command typo. */
+  sawDoubleDash: boolean;
 }
 
+/** Options before `--`; after it everything is positional (e.g. paths starting with `-`). */
 export function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];
   let json = false;
   let help = false;
   let version = false;
+  let positionalOnly = false;
+  let sawDoubleDash = false;
   for (const arg of argv) {
-    if (arg === "--json") {
+    if (positionalOnly) {
+      positionals.push(arg);
+    } else if (arg === "--") {
+      positionalOnly = true;
+      sawDoubleDash = true;
+    } else if (arg === "--json") {
       json = true;
     } else if (arg === "--help" || arg === "-h") {
       help = true;
@@ -43,13 +54,34 @@ export function parseArgs(argv: string[]): ParsedArgs {
       positionals.push(arg);
     }
   }
-  return { json, help, version, positionals };
+  return { json, help, version, positionals, sawDoubleDash };
+}
+
+/** Does the erroring invocation ask for JSON? (Options after `--` don't count.) */
+function wantsJson(argv: string[]): boolean {
+  const end = argv.indexOf("--");
+  return (end === -1 ? argv : argv.slice(0, end)).includes("--json");
 }
 
 /** Commands that analyse a repository path: scan, languages, packages. */
 const repoCommands = new Set(["scan", "languages", "packages"]);
 /** Commands scoped to one dependency: inspect, graph, explain. */
 const packageCommands = new Set(["inspect", "graph", "explain"]);
+
+/**
+ * A bare first word is only a path shorthand (`ghostdeps .`) when it looks
+ * like one: contains a separator or dot, or exists on disk. Anything else is
+ * a mistyped command, and saying so beats scanning the wrong directory.
+ */
+function looksLikePath(word: string): boolean {
+  return word.includes("/") || word.includes(".") || existsSync(word);
+}
+
+function unknownCommand(word: string): UsageError {
+  const suggestion = suggestCommand(word);
+  const hint = suggestion === undefined ? "" : ` (did you mean '${suggestion}'?)`;
+  return new UsageError(`unknown command: ${word}${hint}`);
+}
 
 function buildConfig(command: string, args: string[], json: boolean): CliConfig {
   if (repoCommands.has(command)) {
@@ -68,10 +100,11 @@ function buildConfig(command: string, args: string[], json: boolean): CliConfig 
     }
     return { command, json, path: args[1] ?? ".", packageName };
   }
-  throw new UsageError(`unknown command: ${command}`);
+  throw unknownCommand(command);
 }
 
 export async function run(argv: string[], io: Io): Promise<number> {
+  const json = wantsJson(argv);
   try {
     const parsed = parseArgs(argv);
     const [first, ...rest] = parsed.positionals;
@@ -84,7 +117,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       const topic = parsed.help ? first : rest[0];
       const command = topic === undefined ? undefined : findCommand(topic);
       if (topic !== undefined && command === undefined && !parsed.help) {
-        throw new UsageError(`unknown command: ${topic}`);
+        throw unknownCommand(topic);
       }
       io.stdout(command ? commandHelp(command) : helpText());
       return EXIT_OK;
@@ -96,10 +129,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
     if (known !== undefined) {
       command = known.name;
       args = rest;
-    } else if (first !== undefined) {
+    } else if (first !== undefined && (parsed.sawDoubleDash || looksLikePath(first))) {
       // `ghostdeps .` is shorthand for `ghostdeps scan .`
       command = "scan";
       args = parsed.positionals;
+    } else if (first !== undefined) {
+      throw unknownCommand(first);
     } else if (parsed.json) {
       // `ghostdeps --json` is shorthand for `ghostdeps scan --json`
       command = "scan";
@@ -112,24 +147,30 @@ export async function run(argv: string[], io: Io): Promise<number> {
     const config = buildConfig(command, args, parsed.json);
     const entry = findCommand(command);
     if (entry === undefined) {
-      throw new UsageError(`unknown command: ${command}`);
+      throw unknownCommand(command);
     }
     return await entry.run(config);
   } catch (error) {
     if (error instanceof NotImplementedError) {
-      // --json still emits a schema-shaped result so consumers can build
-      // against the contract before the command is implemented.
-      if (argv.includes("--json")) {
-        printJson(emptyAnalysisResult(), io);
+      // --json emits an error object, never an AnalysisResult-shaped body:
+      // a clean-looking result would be a false all-clear.
+      if (json) {
+        io.stdout(errorJson("not-implemented", error.message));
       }
       io.stderr(`${error.message}. Tracked on the GhostDeps roadmap.`);
       return EXIT_NOT_IMPLEMENTED;
     }
     if (error instanceof UsageError) {
+      if (json) {
+        io.stdout(errorJson("usage", error.message));
+      }
       io.stderr(`error: ${error.message}\nRun 'ghostdeps --help' for usage.`);
       return EXIT_USAGE;
     }
     const message = error instanceof Error ? error.message : String(error);
+    if (json) {
+      io.stdout(errorJson("error", message));
+    }
     io.stderr(`error: ${message}`);
     return EXIT_ERROR;
   }

@@ -4,7 +4,7 @@
  * analysis lives in @ghostdeps/core; the CLI only routes and renders.
  */
 export { run, parseArgs, type Io } from "./cli.js";
-export { commands, findCommand, type Command } from "./commands.js";
+export { commands, findCommand, suggestCommand, type Command } from "./commands.js";
 export type { CliConfig } from "./config.js";
 export {
   EXIT_OK,
@@ -16,5 +16,5 @@ export {
   NotImplementedError,
 } from "./errors.js";
 export { helpText, commandHelp } from "./help.js";
-export { emptyAnalysisResult, printJson } from "./output/json.js";
+export { printJson, errorJson } from "./output/json.js";
 export { cliVersion } from "./version.js";

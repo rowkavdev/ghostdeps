@@ -59,12 +59,28 @@ describe("ghostdeps cli", () => {
     assert.ok(err.join(" ").includes("ghostdeps scan"));
   });
 
+  it("routes a bare existing directory to scan", async () => {
+    const { io, err } = capture();
+    const code = await run(["src"], io);
+    assert.equal(code, 3);
+    assert.ok(err.join(" ").includes("ghostdeps scan"));
+  });
+
+  it("rejects a mistyped command with a suggestion", async () => {
+    const { io, err } = capture();
+    const code = await run(["langauges"], io);
+    assert.equal(code, 2);
+    const text = err.join(" ");
+    assert.ok(text.includes("unknown command: langauges"), text);
+    assert.ok(text.includes("did you mean 'languages'?"), text);
+  });
+
   it("treats `ghostdeps --json` as scan with JSON output", async () => {
     const { io, out } = capture();
     const code = await run(["--json"], io);
     assert.equal(code, 3);
     const result = jsonOut(out);
-    assert.equal(result["schemaVersion"], 1);
+    assert.equal((result["error"] as Record<string, unknown>)["code"], "not-implemented");
   });
 
   it("stub commands exit non-zero with a clear message", async () => {
@@ -74,16 +90,22 @@ describe("ghostdeps cli", () => {
     assert.match(err.join(" "), /ghostdeps packages is not implemented yet/);
   });
 
-  it("--json stubs emit a schema-shaped empty result on stdout", async () => {
+  it("--json stubs emit an error object, never an AnalysisResult", async () => {
     const { io, out, err } = capture();
     const code = await run(["scan", "--json"], io);
     assert.equal(code, 3);
     assert.match(err.join(" "), /not implemented/);
     const result = jsonOut(out);
-    assert.equal(result["schemaVersion"], 1);
-    for (const key of ["projects", "dependencies", "usages", "findings", "detected", "surface"]) {
-      assert.deepEqual(result[key], [], `${key} should be an empty array`);
-    }
+    assert.equal((result["error"] as Record<string, unknown>)["code"], "not-implemented");
+    assert.equal(result["schemaVersion"], undefined, "must not look like an AnalysisResult");
+    assert.equal(result["findings"], undefined);
+  });
+
+  it("--json usage errors emit an error object", async () => {
+    const { io, out } = capture();
+    const code = await run(["inspect", "--json"], io);
+    assert.equal(code, 2);
+    assert.equal((jsonOut(out)["error"] as Record<string, unknown>)["code"], "usage");
   });
 
   it("inspect requires a package name", async () => {
@@ -96,6 +118,13 @@ describe("ghostdeps cli", () => {
   it("rejects extra positional arguments", async () => {
     const { io } = capture();
     assert.equal(await run(["scan", "a", "b"], io), 2);
+  });
+
+  it("treats everything after -- as positional", async () => {
+    const { io, err } = capture();
+    const code = await run(["--", "-odd-dir"], io);
+    assert.equal(code, 3);
+    assert.ok(err.join(" ").includes("ghostdeps scan"), "-odd-dir should route to scan");
   });
 
   it("help <command> shows command-specific help", async () => {

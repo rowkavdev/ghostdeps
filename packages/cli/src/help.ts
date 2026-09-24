@@ -5,6 +5,7 @@ const optionLines = [
   "  --json        Machine-readable JSON output (schema-versioned)",
   "  -h, --help    Show help",
   "  -V, --version Show the version",
+  "  --            Treat everything after it as positional (paths starting with -)",
 ];
 
 const exitCodeLines = [
@@ -35,6 +36,10 @@ export function helpText(): string {
     ...optionLines,
     "",
     ...exitCodeLines,
+    "",
+    "A bare first word is treated as a path only when it contains '/' or '.'",
+    "or exists on disk; anything else is reported as an unknown command.",
+    "To scan a directory that shares a name with a command, use: ghostdeps scan <dir>",
     "",
     ...footer,
   ].join("\n");
