@@ -385,11 +385,13 @@ export async function assembleAnalysisResult(
   // the confidence cap below, so the cap limits only the displayed
   // confidence and severity keeps the computed value (#188). Whatever an
   // adapter or policy put in `severity` is overwritten.
-  // `awareness` (#234) is core's call, made by the rule that emits the
-  // finding. Adapters and policies can't set it: strip it here (fail-closed).
+  // `awareness` (#234) and `adapterNote` (#239) are core's call, made by
+  // the rule or engine step that emits the finding. Adapters and policies
+  // can't set them: strip them here (fail-closed).
   for (let i = 0; i < findings.length; i++) {
     const finding: Finding = { ...findings[i]! };
     delete finding.awareness;
+    delete finding.adapterNote;
     findings[i] = { ...finding, severity: severityOf(finding) };
   }
 
