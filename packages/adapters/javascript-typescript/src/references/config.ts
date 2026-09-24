@@ -386,6 +386,9 @@ export const CONVENTIONS: readonly Convention[] = [
     packageJsonKey: "knip",
   },
   { package: "tsd", files: [], packageJsonKey: "tsd" },
+  // tsdown loads a TypeScript config with unrun (optional peer) when the
+  // runtime cannot import TypeScript natively, or with --config-loader unrun.
+  { package: "unrun", files: rc("tsdown.config", [".ts", ".mts", ".cts"]) },
 ];
 
 /** Tool config basenames (JS/TS) that are never evaluated, recognised at any depth. */
