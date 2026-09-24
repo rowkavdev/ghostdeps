@@ -166,4 +166,42 @@ describe("renderJsonReport", () => {
       TypeError,
     );
   });
+
+  it("rejects Map, Date and class instances instead of dropping their data", () => {
+    const withMap = {
+      ...basicUnused,
+      surface: [new Map([["x", 1]])],
+    } as unknown as AnalysisResult;
+    assert.throws(() => renderJsonReport(withMap), /cannot serialise Map/);
+    const withDate = {
+      ...basicUnused,
+      detected: [{ ecosystem: "x", confidence: "high", evidence: [], at: new Date(0) }],
+    } as unknown as AnalysisResult;
+    assert.throws(() => renderJsonReport(withDate), /cannot serialise Date/);
+  });
+
+  it("orders look-alike findings by location, then by content", () => {
+    const at = (file: string, line: number, extra = "") => ({
+      ...basicUnused.findings[0]!,
+      evidence: [{ kind: "import-found", statement: `seen${extra}`, file, line }],
+    });
+    const findings = [at("b.ts", 1), at("a.ts", 9), at("a.ts", 2), at("a.ts", 2, "!")];
+    const render = (list: typeof findings) => renderJsonReport({ ...basicUnused, findings: list });
+    const forward = render(findings);
+    assert.equal(render([...findings].reverse()), forward);
+    const order = (JSON.parse(forward) as AnalysisResult).findings.map(
+      (f) => `${f.evidence[0]!.file}:${f.evidence[0]!.line}:${f.evidence[0]!.statement}`,
+    );
+    assert.deepEqual(order, ["a.ts:2:seen!", "a.ts:2:seen", "a.ts:9:seen", "b.ts:1:seen"]);
+  });
+
+  it("escapes soft hyphen, Arabic letter mark and Mongolian vowel separator", () => {
+    const name = "left\u00adpad\u061c\u180e";
+    const out = renderJsonReport({
+      ...basicUnused,
+      findings: [{ ...basicUnused.findings[0]!, dependency: name }],
+    });
+    assert.match(out, /left\\u00adpad\\u061c\\u180e/);
+    assert.equal((JSON.parse(out) as AnalysisResult).findings[0]!.dependency, name);
+  });
 });
