@@ -1,0 +1,160 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { AdapterContext, RepositoryHandle } from "@ghostdeps/core";
+import { DETECTION_CONFIDENCE_THRESHOLD, detectJavaScriptTypeScript } from "./detect.js";
+import { detectPackageManagers } from "./package-managers.js";
+import { fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
+
+function contextFor(repository: RepositoryHandle): AdapterContext {
+  return { repository, network: { mode: "offline" } };
+}
+
+describe("package-manager detection (issue #25)", () => {
+  it("detects npm from package-lock.json", async () => {
+    const result = await detectPackageManagers(fixtureHandle("js", "pm-npm"), ".");
+    assert.deepEqual(
+      result.managers.map((manager) => manager.name),
+      ["npm"],
+    );
+    assert.equal(result.managers[0]?.lockfile, "package-lock.json");
+    assert.equal(result.conflict, false);
+  });
+
+  it("detects pnpm from pnpm-lock.yaml and notes the workspace file", async () => {
+    const result = await detectPackageManagers(fixtureHandle("js", "pm-pnpm"), ".");
+    assert.deepEqual(
+      result.managers.map((manager) => manager.name),
+      ["pnpm"],
+    );
+    assert.equal(result.conflict, false);
+  });
+
+  it("detects yarn classic from yarn.lock without berry markers", async () => {
+    const result = await detectPackageManagers(fixtureHandle("js", "pm-yarn-classic"), ".");
+    assert.deepEqual(
+      result.managers.map((manager) => manager.name),
+      ["yarn"],
+    );
+    assert.ok(
+      result.evidence.some(
+        (entry) => entry.kind === "package-manager-variant" && entry.statement.includes("classic"),
+      ),
+    );
+  });
+
+  it("detects yarn berry from yarn.lock plus .yarnrc.yml", async () => {
+    const result = await detectPackageManagers(fixtureHandle("js", "pm-yarn-berry"), ".");
+    assert.deepEqual(
+      result.managers.map((manager) => manager.name),
+      ["yarn"],
+    );
+    assert.ok(
+      result.evidence.some(
+        (entry) => entry.kind === "package-manager-variant" && entry.statement.includes("berry"),
+      ),
+    );
+  });
+
+  it("detects bun from bun.lockb", async () => {
+    const result = await detectPackageManagers(fixtureHandle("js", "pm-bun"), ".");
+    assert.deepEqual(
+      result.managers.map((manager) => manager.name),
+      ["bun"],
+    );
+  });
+
+  it("reports conflicting lockfiles as evidence and never guesses", async () => {
+    const result = await detectPackageManagers(fixtureHandle("js", "pm-conflicting"), ".");
+    assert.equal(result.conflict, true);
+    assert.deepEqual(result.managers.map((manager) => manager.name).sort(), ["npm", "pnpm"]);
+    const conflict = result.evidence.find((entry) => entry.kind === "lockfile-conflict");
+    assert.ok(conflict, "a conflict must be reported as evidence");
+    assert.match(conflict.statement, /not guessing/);
+  });
+
+  it("flags a packageManager pin that disagrees with the lockfile", async () => {
+    const result = await detectPackageManagers(
+      memoryHandle({
+        "package.json": '{ "packageManager": "yarn@4.5.0" }',
+        "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      }),
+      ".",
+    );
+    assert.equal(result.conflict, true);
+    assert.ok(
+      result.evidence.some(
+        (entry) => entry.kind === "lockfile-conflict" && entry.statement.includes("disagrees"),
+      ),
+    );
+  });
+
+  it("falls back to the packageManager pin when no lockfile exists", async () => {
+    const result = await detectPackageManagers(
+      memoryHandle({ "package.json": '{ "packageManager": "bun@1.2.0" }' }),
+      ".",
+    );
+    assert.deepEqual(result.managers, [{ name: "bun" }]);
+    assert.equal(result.conflict, false);
+    assert.ok(result.evidence.some((entry) => entry.kind === "package-manager-no-lockfile"));
+  });
+
+  it("detects per project root, not just at the repository root", async () => {
+    const handle = memoryHandle({
+      "package.json": "{}",
+      "package-lock.json": '{ "lockfileVersion": 3 }',
+      "packages/cli/package.json": "{}",
+      "packages/cli/pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+    });
+    const rootResult = await detectPackageManagers(handle, ".");
+    const memberResult = await detectPackageManagers(handle, "packages/cli");
+    assert.deepEqual(
+      rootResult.managers.map((manager) => manager.name),
+      ["npm"],
+    );
+    assert.deepEqual(
+      memberResult.managers.map((manager) => manager.name),
+      ["pnpm"],
+    );
+  });
+});
+
+describe("detection integration (issues #24 + #25)", () => {
+  it("attaches package managers to detected projects", async () => {
+    const result = await detectJavaScriptTypeScript(contextFor(fixtureHandle("js", "pm-pnpm")));
+    const project = result.projects.find((candidate) => candidate.path === ".");
+    assert.deepEqual(
+      project?.packageManagers.map((manager) => manager.name),
+      ["pnpm"],
+    );
+  });
+
+  it("lowers detection confidence on conflicting lockfiles", async () => {
+    const conflicted = await detectJavaScriptTypeScript(
+      contextFor(fixtureHandle("js", "pm-conflicting")),
+    );
+    const clean = await detectJavaScriptTypeScript(contextFor(fixtureHandle("js", "pm-npm")));
+    assert.ok(conflicted.confidence < clean.confidence);
+    assert.ok(conflicted.confidence >= DETECTION_CONFIDENCE_THRESHOLD);
+    assert.ok(conflicted.evidence.some((entry) => entry.kind === "lockfile-conflict"));
+  });
+
+  it("lets workspace members inherit the root package manager", async () => {
+    const result = await detectJavaScriptTypeScript(
+      contextFor(
+        memoryHandle({
+          "package.json": '{ "workspaces": ["packages/*"] }',
+          "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+          "src/root.js": "export {};",
+          "packages/app/package.json": "{}",
+          "packages/app/src/index.ts": "export {};",
+        }),
+      ),
+    );
+    const member = result.projects.find((candidate) => candidate.path === "packages/app");
+    assert.deepEqual(
+      member?.packageManagers.map((manager) => manager.name),
+      ["pnpm"],
+    );
+    assert.ok(result.evidence.some((entry) => entry.kind === "package-manager-inherited"));
+  });
+});

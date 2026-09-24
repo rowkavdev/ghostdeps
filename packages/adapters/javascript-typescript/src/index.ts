@@ -8,3 +8,5 @@ export {
   JS_ECOSYSTEM,
   detectJavaScriptTypeScript,
 } from "./detect.js";
+export { detectPackageManagers } from "./package-managers.js";
+export type { PackageManagerDetection } from "./package-managers.js";

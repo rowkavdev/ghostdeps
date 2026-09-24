@@ -1,0 +1,5 @@
+{
+  "description": "yarn berry project: yarn.lock plus .yarnrc.yml means berry; detection must report packageManagers [yarn] with a berry variant note.",
+  "findings": [],
+  "mustNotFind": []
+}

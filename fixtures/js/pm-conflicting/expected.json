@@ -1,0 +1,5 @@
+{
+  "description": "conflicting lockfiles: package-lock.json and pnpm-lock.yaml coexist; detection must report both managers as evidence with reduced confidence and never pick one.",
+  "findings": [],
+  "mustNotFind": []
+}
