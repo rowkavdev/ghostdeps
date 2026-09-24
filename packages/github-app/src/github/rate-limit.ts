@@ -90,3 +90,23 @@ export async function withDeadline<T>(work: Promise<T>, ms: number, what: string
     work.catch(() => undefined);
   }
 }
+
+/**
+ * Throttle handlers that never wait (webhook lookups, #255 follow-up): a
+ * rate-limited lookup fails at once instead of leaving a request asleep
+ * until the reset, which would fire together with every other one and feed
+ * the secondary limit. The lookup is best-effort; a failure means "analyse
+ * anyway".
+ */
+export function noWaitThrottle(log: Log): { onRateLimit: Handler; onSecondaryRateLimit: Handler } {
+  const handler =
+    (kind: "primary" | "secondary"): Handler =>
+    (retryAfter, options) => {
+      log.warn(
+        { kind, method: options.method, url: options.url, retryAfter },
+        "GitHub rate limit hit in the webhook; not waiting",
+      );
+      return false;
+    };
+  return { onRateLimit: handler("primary"), onSecondaryRateLimit: handler("secondary") };
+}
