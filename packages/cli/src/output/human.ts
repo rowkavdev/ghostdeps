@@ -159,8 +159,11 @@ export function renderRepositorySummary(result: AnalysisResult): string {
   const direct = result.dependencies.length;
   const transitive = transitiveSummary(result.surface);
 
+  // Awareness findings never count (#234): they are for awareness only,
+  // so the tally covers findings that carry a recommendation or a caveat.
   const counts = new Map<FindingKind, number>();
   for (const finding of result.findings) {
+    if (findingGroup(finding) === "awareness") continue;
     counts.set(finding.kind, (counts.get(finding.kind) ?? 0) + 1);
   }
   const findingLines = findingOrder

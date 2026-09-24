@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { analyseDirectory, createDefaultPolicy } from "@ghostdeps/core";
+import { defaultAdapters } from "./adapters.js";
 import { run, type Io } from "./cli.js";
+import { runScan } from "./scan.js";
+import { createStubPythonAdapter } from "./testing/stub-python-adapter.js";
 
 /** Tests run from packages/cli/dist. */
 const fixture = (name: string): string =>
@@ -79,7 +83,7 @@ describe("ghostdeps scan --json", () => {
     assert.match(text, /Transitive dependencies:\n {2}unknown/);
     // The unused verdict must be visible in the summary: "Findings: none"
     // would read as an all-clear.
-    assert.match(text, /Findings:\n {2}1 unused\n {2}1 info\n/);
+    assert.match(text, /Findings:\n {2}1 unused\n {2}2 info\n/);
     assert.match(text, /Verdicts:\n {2}unused:\n {4}left-pad - /);
     // Info findings stay visible as notes (#210), never hidden.
     assert.match(text, /Notes:\n {4}\(repository-wide\) - /);
@@ -133,6 +137,44 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     // The unused verdict plus the #178 confidence-cap note. The JS adapter
     // reports declaration lines (#198), so no declaration-line note.
     assert.match(text, /\(2 findings below the --severity critical filter hidden\)/);
+  });
+
+  // The polyglot fixture only yields awareness findings with the test-only
+  // stub Python adapter in, so these call runScan with it injected.
+  const polyglot = fileURLToPath(
+    new URL("../../../fixtures/polyglot/js-app-python-service", import.meta.url),
+  );
+  const analyseWithStubPython = (path: string) =>
+    analyseDirectory(path, {
+      adapters: [...defaultAdapters(), createStubPythonAdapter()],
+      network: { mode: "offline" },
+      recommend: createDefaultPolicy({}),
+    });
+
+  it("exits 0 on --fail-on info when every finding is awareness-only (#234)", async () => {
+    const { io, out } = capture();
+    const code = await runScan(
+      { command: "scan", json: false, path: polyglot, failOn: "info" },
+      io,
+      analyseWithStubPython,
+    );
+    assert.equal(code, 0);
+    const text = out.join("\n");
+    // Awareness findings never count: the tally is empty, the section shows.
+    assert.match(text, /Findings:\n {2}none/);
+    assert.match(text, /Awareness notes:\n {4}\S/);
+  });
+
+  it("--severity never counts awareness findings as hidden (#234)", async () => {
+    const { io, out } = capture();
+    const code = await runScan(
+      { command: "scan", json: false, path: polyglot, severity: "critical" },
+      io,
+      analyseWithStubPython,
+    );
+    assert.equal(code, 0);
+    const text = out.join("\n");
+    assert.ok(!text.includes("hidden"), text);
   });
 
   it("--json always prints the complete result; --severity with it is a usage error", async () => {

@@ -129,7 +129,7 @@ describe("renderRepositorySummary", () => {
       "  5 unused",
       "  8 potentially unnecessary",
       "  2 duplicate capabilities",
-      "  3 info",
+      "  2 info",
       "",
       "Verdicts:",
       "  unused:",
@@ -420,6 +420,35 @@ describe("renderRepositorySummary", () => {
       text,
     );
     assert.ok(!text.slice(0, awarenessAt).includes("cross-ecosystem-capability-overlap"), text);
+  });
+
+  it("prints Findings: none for an awareness-only result, keeping the section (#234)", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      findings: [
+        {
+          kind: "info",
+          rule: "cross-ecosystem-capability-overlap",
+          dependency: "axios",
+          summary: "axios overlaps requests",
+          recommendation: "No action suggested.",
+          evidence: [{ kind: "capability-overlap", statement: "same capability in npm and pip" }],
+          confidence: "high",
+          awareness: true,
+          limitations: [],
+          affectedFiles: [],
+        },
+      ],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(text.includes("Findings:\n  none"), text);
+    assert.ok(!text.includes("1 info"), text);
+    assert.ok(
+      text.includes(
+        "Awareness notes:\n    axios - axios overlaps requests (high confidence, rule: cross-ecosystem-capability-overlap)",
+      ),
+      text,
+    );
   });
 
   it("omits the Verdicts section when every finding is info", () => {

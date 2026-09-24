@@ -67,10 +67,13 @@ Everything verdict-derived is terminal-escaped.
 incomplete - run-level gaps (partial scans, adapter failures, cap notices)
 and manual-review notes such as `unverified-no-imports` - in the same line
 shape as verdicts. `Awareness notes` lists the no-action info findings core
-explicitly flags with `awareness: true` (#234; absent means not awareness).
-One presentation rule across surfaces (#206 review): both sections are
-always visible, and neither affects the verdicts, the counts' meaning, or
-the exit code. Each section is omitted when it has nothing to show.
+explicitly flags with `awareness: true` (#234; absent means not awareness),
+classified through core's `findingGroup` (#239) like every presenter. One
+presentation rule across surfaces (#206 review): both sections are always
+visible, and neither affects the verdict lines or the exit code. Awareness
+findings never count (#234): they are excluded from the `Findings` tally,
+from the `--fail-on` threshold and from the `--severity` hidden count. Each
+section is omitted when it has nothing to show.
 
 ## Per-dependency report (CLI `inspect`/`explain`, check annotations)
 
