@@ -173,6 +173,9 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       );
       let added: AddedLines = new Map();
       const run: { pullRequestChanges?: readonly DependencyChange[] } = {};
+      // baseSha is from the payload at enqueue time. If the base branch has
+      // moved since, base...head still diffs from the merge base, so the
+      // change list is still the PR's own.
       const baseSha = pullRequestBase(job);
       if (baseSha !== undefined) {
         const pr = await pullRequestContext(client, {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { pullRequestContext, type PullRequestClient } from "./changes.js";
+import {
+  GITHUB_COMPARE_FILE_LIMIT,
+  pullRequestContext,
+  type PullRequestClient,
+} from "./changes.js";
 
 const BASE = "a".repeat(40);
 const HEAD = "b".repeat(40);
@@ -143,5 +147,49 @@ index 1111111..2222222 100644
     const result = ctx.dependencyChanges;
     assert.deepEqual(result.changes, []);
     assert.match(result.limitations.join("\n"), /package\.json \(head\)/);
+  });
+
+  it("treats a modified file with no hunks as a silently cut diff", async () => {
+    const diff = `${DIFF}diff --git a/src/huge.ts b/src/huge.ts
+index 5555555..6666666 100644
+`;
+    const client = fakeClient({
+      diff,
+      files: {
+        [`${BASE}:package.json`]: manifest({ "left-pad": "^1.0.0" }),
+        [`${HEAD}:package.json`]: manifest({ "left-pad": "^1.3.0", axios: "^1.7.0" }),
+      },
+    });
+    const ctx = await pullRequestContext(client, PR);
+    assert.equal(ctx.complete, false);
+    assert.match(ctx.dependencyChanges.limitations.join("\n"), /may be incomplete/);
+  });
+
+  it("treats a diff at GitHub's file limit as possibly cut", async () => {
+    let diff = "";
+    for (let i = 0; i < GITHUB_COMPARE_FILE_LIMIT; i++) {
+      diff += `diff --git a/src/f${i}.ts b/src/f${i}.ts
+index 1111111..2222222 100644
+--- a/src/f${i}.ts
++++ b/src/f${i}.ts
+@@ -1 +1 @@
+-a
++b
+`;
+    }
+    const ctx = await pullRequestContext(fakeClient({ diff }), PR);
+    assert.equal(ctx.complete, false);
+    assert.match(ctx.dependencyChanges.limitations.join("\n"), /GitHub's limit/);
+  });
+
+  it("does not flag a pure rename as cut", async () => {
+    const diff = `diff --git a/src/a.ts b/src/b.ts
+similarity index 100%
+rename from src/a.ts
+rename to src/b.ts
+`;
+    const ctx = await pullRequestContext(fakeClient({ diff }), PR);
+    assert.deepEqual(ctx.dependencyChanges.limitations, []);
+    assert.equal(ctx.complete, true);
   });
 });

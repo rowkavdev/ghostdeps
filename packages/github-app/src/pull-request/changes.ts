@@ -15,6 +15,7 @@ import {
   isSafeRepositoryPath,
   parseUnifiedDiff,
   type Dependency,
+  type FileDiff,
   type PullRequestDependencyChanges,
   type ReadDeclaredDependencies,
 } from "@ghostdeps/core";
@@ -44,6 +45,27 @@ export interface PullRequestTarget {
   readonly repo: string;
   readonly baseSha: string;
   readonly headSha: string;
+}
+
+/**
+ * GitHub stops listing files in a compare at this many; a diff that reaches
+ * it may be cut short without an error.
+ */
+export const GITHUB_COMPARE_FILE_LIMIT = 300;
+
+/**
+ * Signs that GitHub cut the diff without saying so (#158 review): the file
+ * count hit the compare limit, or a modified text file came back with no
+ * hunks (its patch was dropped). Pure renames legitimately have no hunks.
+ * A false positive only costs a full analysis instead of a scoped one.
+ */
+export function silentTruncation(files: readonly FileDiff[]): string | undefined {
+  if (files.length >= GITHUB_COMPARE_FILE_LIMIT) {
+    return `The diff lists ${files.length} files, GitHub's limit, so it may be incomplete.`;
+  }
+  const cut = files.find((f) => f.status === "modified" && !f.binary && f.hunks.length === 0);
+  if (cut) return "A changed file in the diff had no changes shown, so the diff may be incomplete.";
+  return undefined;
 }
 
 /** A manifest bigger than this is not read; its changes are reported as unknown. */
@@ -141,5 +163,7 @@ export async function pullRequestContext(
     const lines = new Set(addedLines(file).map((l) => l.line));
     if (lines.size > 0) added.set(file.newPath, lines);
   }
+  const truncated = silentTruncation(diff.files);
+  if (truncated !== undefined) dependencyChanges.limitations.push(truncated);
   return { dependencyChanges, added, complete: dependencyChanges.limitations.length === 0 };
 }
