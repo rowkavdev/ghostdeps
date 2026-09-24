@@ -24,6 +24,7 @@
     "@ghostdeps/core": "workspace:*",
     "@ghostdeps/go": "workspace:*",
     "@ghostdeps/javascript-typescript": "workspace:*",
+    "@ghostdeps/python": "workspace:*",
     "@ghostdeps/rust": "workspace:*"
   },
   "devDependencies": {

@@ -36,6 +36,7 @@ export const DEFAULT_ADAPTER_MODULES: readonly string[] = [
   new URL("./adapters/javascript-typescript.js", import.meta.url).href,
   new URL("./adapters/rust.js", import.meta.url).href,
   new URL("./adapters/go.js", import.meta.url).href,
+  new URL("./adapters/python.js", import.meta.url).href,
 ];
 
 /** Everything the worker needs from GitHub, scoped to one repository. */

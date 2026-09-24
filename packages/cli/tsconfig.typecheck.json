@@ -6,7 +6,8 @@
       "@ghostdeps/core": ["../core/src/index.ts"],
       "@ghostdeps/javascript-typescript": ["../adapters/javascript-typescript/src/index.ts"],
       "@ghostdeps/rust": ["../adapters/rust/src/index.ts"],
-      "@ghostdeps/go": ["../adapters/go/src/index.ts"]
+      "@ghostdeps/go": ["../adapters/go/src/index.ts"],
+      "@ghostdeps/python": ["../adapters/python/src/index.ts"]
     }
   },
   "include": ["src"]
