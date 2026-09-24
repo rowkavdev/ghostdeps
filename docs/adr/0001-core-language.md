@@ -39,7 +39,7 @@ Concretely:
 
 **Python.** Natural for the Python adapter and rich parsing (ast, importlib). Rejected: weak GitHub App ecosystem compared to Octokit/Probot, painful CLI distribution, and no meaningful static typing story for contracts shared across many contributors without significant discipline.
 
-**Polyglot core (each adapter in its own language).** Rejected explicitly by the product spec: one analysis engine, one shared contract, no per-language reimplementation of the core. Adapter *analysis helpers* may still shell out to ecosystem tools later inside sandboxing (ADR 0004), but the contract boundary stays TypeScript.
+**Polyglot core (each adapter in its own language).** Rejected explicitly by the product spec: one analysis engine, one shared contract, no per-language reimplementation of the core. Adapter _analysis helpers_ may still shell out to ecosystem tools later inside sandboxing (ADR 0004), but the contract boundary stays TypeScript.
 
 ## Consequences
 
@@ -47,3 +47,7 @@ Concretely:
 - tree-sitter native bindings must build on contributors' machines; prebuilt binaries cover the common platforms, and the JS/TS adapter (compiler API, pure JS) works without them.
 - pnpm is a contributor prerequisite; documented in CONTRIBUTING.md and enforced via `packageManager` in package.json (corepack).
 - Monorepo tooling stays minimal on purpose: pnpm workspaces + tsc project references, no Nx/Turborepo until there is demonstrable need.
+
+## Amendment (2026-09-24): test runner
+
+Vitest is replaced by Node's built-in `node:test` runner. pnpm 12 requires interactive approval for dependency build scripts, and Vitest's esbuild chain could not be approved non-interactively in our CI/dev environments. `node:test` needs zero additional dependencies, which also matches the project's own rule: don't take a dependency you don't need. If we outgrow it (snapshot testing, browser DOM), revisit with a dedicated ADR.

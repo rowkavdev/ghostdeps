@@ -4,12 +4,12 @@ The GitHub App is the primary interface. Architecture decision: [ADR 0003](adr/0
 
 ## Permissions (least privilege)
 
-| Permission | Access | Why |
-| --- | --- | --- |
-| Repository contents | Read | Read manifests, lockfiles and source (codeload tarball + API) |
-| Pull requests | Read | Diffs, to analyse dependency changes in the context of the PR |
-| Checks | Write | Create check runs and code annotations — the reporting surface |
-| Metadata | Read | Implicit, granted to every app |
+| Permission          | Access | Why                                                            |
+| ------------------- | ------ | -------------------------------------------------------------- |
+| Repository contents | Read   | Read manifests, lockfiles and source (codeload tarball + API)  |
+| Pull requests       | Read   | Diffs, to analyse dependency changes in the context of the PR  |
+| Checks              | Write  | Create check runs and code annotations — the reporting surface |
+| Metadata            | Read   | Implicit, granted to every app                                 |
 
 Explicitly **not** requested: `issues`, `actions`, `contents: write`, `pull_requests: write`, administration, secrets, or anything else. M4 remediation PRs will require a deliberate, separately-communicated permission change.
 
