@@ -126,6 +126,14 @@ describe("reference analysis completeness (#132)", () => {
     assert.equal(yarn.referenceAnalysisComplete, false);
   });
 
+  it("tsdown.config.ts credits unrun, the config loader tsdown falls back to", async () => {
+    const r = await report("convention-tsdown-unrun", "unrun");
+    assert.ok(
+      r.usages.some((u) => u.via === "convention" && u.file === "tsdown.config.ts"),
+      JSON.stringify(r.usages),
+    );
+  });
+
   it("pnpm: a script bin whose name differs from its package is a gap, never complete", async () => {
     const r = await report("refs-pnpm-bin-mismatch", "npm-check-updates");
     assert.equal(r.referenceAnalysisComplete, false);

@@ -1,0 +1,5 @@
+{
+  "description": "Convention regression from vite (create-vite, plugin-legacy): tsdown loads tsdown.config.ts with unrun, an optional peer, when the runtime cannot import TypeScript natively or with --config-loader unrun. unrun is used via=convention and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "unrun" }]
+}
