@@ -4,6 +4,7 @@ import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
 import {
   MAX_SOURCE_BYTES,
+  MAX_OUTSIDE_PROJECT_RECORDS,
   MAX_UNRESOLVED_PER_FILE,
   findUsage,
   usageLimitations,
@@ -203,5 +204,37 @@ describe("findUsage", () => {
     const job2: AdapterContext = { repository, network: { mode: "offline" } };
     assert.equal((await findUsage(job2, dep("second"))).length, 1);
     assert.equal((await findUsage(job2, dep("first"))).length, 0);
+  });
+
+  it("bounds outside-project limitations: 1,000 unowned files x 5 projects", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 1000; i++) files[`generated/f${i}.js`] = `require("x");`;
+    const projects = ["a", "b", "c", "d", "e"].map((p) => `packages/${p}`);
+    for (const p of projects) {
+      files[`${p}/package.json`] = "{}";
+      files[`${p}/index.js`] = `require("y");`;
+    }
+    const context = ctx(files);
+    for (const p of projects) {
+      const limits = await usageLimitations(context, p);
+      const outside = limits.filter((e) => e.kind === "file-outside-project");
+      assert.equal(outside.length, MAX_OUTSIDE_PROJECT_RECORDS, p);
+      const summary = limits.filter((e) => e.kind === "file-outside-project-summary");
+      assert.equal(summary.length, 1, p);
+      assert.match(summary[0]!.statement, /^1000 source files/);
+      assert.ok(limits.length <= MAX_OUTSIDE_PROJECT_RECORDS + 1, p);
+    }
+  });
+
+  it("attributes unreadable and oversized files to their owning project only", async () => {
+    const context = ctx({
+      "packages/a/package.json": "{}",
+      "packages/a/big.js": " ".repeat(MAX_SOURCE_BYTES + 1),
+      "packages/b/package.json": "{}",
+    });
+    assert.ok(
+      (await usageLimitations(context, "packages/a")).some((e) => e.kind === "file-too-large"),
+    );
+    assert.deepEqual(await usageLimitations(context, "packages/b"), []);
   });
 });

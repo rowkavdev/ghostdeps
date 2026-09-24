@@ -20,6 +20,9 @@ export const MAX_SOURCE_BYTES = 1_000_000;
 /** Unresolved dynamic-import limitations recorded individually per file; the rest are summarised. */
 export const MAX_UNRESOLVED_PER_FILE = 20;
 
+/** Files outside every project recorded individually per scan; the rest are counted in one summary. */
+export const MAX_OUTSIDE_PROJECT_RECORDS = 20;
+
 export interface RepositoryScan {
   /** Parsed files keyed by repository-relative path. */
   files: Map<string, FileScanResult>;
@@ -27,6 +30,10 @@ export interface RepositoryScan {
   owner: Map<string, string>;
   /** Evidence that weakens completeness: unresolvable dynamic imports, skipped files, parse errors. */
   limitations: Evidence[];
+  /** The same limitations grouped by owning project root. */
+  byProject: Map<string, Evidence[]>;
+  /** Bounded limitations that apply to every project (files outside all projects). */
+  shared: Evidence[];
 }
 
 function dirname(path: string): string {
@@ -71,7 +78,10 @@ export function scanForContext(context: AdapterContext): Promise<RepositoryScan>
   return pending;
 }
 
-/** Scan every JS/TS source file in `repository`. Not memoised. */
+/**
+ * Scan every JS/TS source file in `repository`. Not memoised: adapter code
+ * paths (findUsage, usageLimitations) go through scanForContext.
+ */
 export function scanRepository(repository: RepositoryHandle): Promise<RepositoryScan> {
   return doScan(repository);
 }
@@ -84,29 +94,42 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     if (f === "package.json") roots.add(".");
     else if (f.endsWith("/package.json")) roots.add(dirname(f));
   }
-  const scan: RepositoryScan = { files: new Map(), owner: new Map(), limitations: [] };
+  const scan: RepositoryScan = {
+    files: new Map(),
+    owner: new Map(),
+    limitations: [],
+    byProject: new Map(),
+    shared: [],
+  };
+  let outside = 0;
   for (const file of all) {
     if (isSkipped(file) || !scriptKindFor(file)) continue;
     const root = owningRoot(file, roots);
     if (root === undefined) {
       // No package.json above it: no project declares its imports, so it is
-      // attributed to nobody rather than guessed into the root.
-      scan.limitations.push({
-        kind: "file-outside-project",
-        statement: `${file} is not inside any package.json project and was not attributed`,
-        file,
-      });
+      // attributed to nobody rather than guessed into the root. Bounded: a
+      // large unowned area must not flood every project's evidence.
+      outside += 1;
+      if (outside <= MAX_OUTSIDE_PROJECT_RECORDS) {
+        scan.shared.push({
+          kind: "file-outside-project",
+          statement: `${file} is not inside any package.json project and was not attributed`,
+          file,
+        });
+      }
       continue;
     }
+    const limitations = scan.byProject.get(root) ?? [];
+    scan.byProject.set(root, limitations);
     let text: string;
     try {
       text = await repository.readFile(file);
     } catch {
-      scan.limitations.push({ kind: "file-unreadable", statement: `could not read ${file}`, file });
+      limitations.push({ kind: "file-unreadable", statement: `could not read ${file}`, file });
       continue;
     }
     if (Buffer.byteLength(text, "utf8") > MAX_SOURCE_BYTES) {
-      scan.limitations.push({
+      limitations.push({
         kind: "file-too-large",
         statement: `${file} exceeds ${MAX_SOURCE_BYTES} bytes and was not scanned`,
         file,
@@ -117,7 +140,7 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     scan.files.set(file, result);
     scan.owner.set(file, root);
     if (result.parseErrors) {
-      scan.limitations.push({
+      limitations.push({
         kind: "parse-error",
         statement: `${file} has syntax errors; imports found may be incomplete`,
         file,
@@ -128,7 +151,7 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
       if (ref.specifier === undefined) {
         unresolved += 1;
         if (unresolved > MAX_UNRESOLVED_PER_FILE) continue;
-        scan.limitations.push({
+        limitations.push({
           kind: "dynamic-import-unresolved",
           statement:
             `${ref.form === "unknown" ? "non-literal" : ""} import/require target in ${file}:${ref.line} cannot be resolved statically`.trim(),
@@ -138,13 +161,20 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
       }
     }
     if (unresolved > MAX_UNRESOLVED_PER_FILE) {
-      scan.limitations.push({
+      limitations.push({
         kind: "dynamic-import-unresolved-summary",
         statement: `${unresolved - MAX_UNRESOLVED_PER_FILE} more unresolvable import/require targets in ${file} were not listed individually`,
         file,
       });
     }
   }
+  if (outside > MAX_OUTSIDE_PROJECT_RECORDS) {
+    scan.shared.push({
+      kind: "file-outside-project-summary",
+      statement: `${outside} source files are outside every package.json project and were not attributed; ${MAX_OUTSIDE_PROJECT_RECORDS} are listed individually`,
+    });
+  }
+  scan.limitations = [...[...scan.byProject.values()].flat(), ...scan.shared];
   return scan;
 }
 
@@ -177,9 +207,8 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
 
 /**
  * Limitations relevant to one project (unresolved dynamic imports, skipped
- * or broken files). Files with no owner (skipped before attribution, or
- * outside every project) weaken every project's completeness, so they are
- * reported to all of them.
+ * or broken files), plus the bounded shared set for files outside every
+ * project, which weakens every project's completeness. O(1) lookup per call.
  */
 export async function usageLimitations(
   context: AdapterContext,
@@ -187,5 +216,5 @@ export async function usageLimitations(
 ): Promise<Evidence[]> {
   const scan = await scanForContext(context);
   const project = projectPath.replace(/^\.\//, "").replace(/\/$/, "") || ".";
-  return scan.limitations.filter((e) => !e.file || (scan.owner.get(e.file) ?? project) === project);
+  return [...(scan.byProject.get(project) ?? []), ...scan.shared];
 }
