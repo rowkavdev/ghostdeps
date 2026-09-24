@@ -1,0 +1,27 @@
+{
+  "repo": "uuid",
+  "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "commander"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "globals"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "jest-environment-jsdom"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "neostandard"
+    }
+  ]
+}

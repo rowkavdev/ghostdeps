@@ -1,0 +1,17 @@
+{
+  "repo": "chalk",
+  "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "unused",
+      "severity": "low",
+      "dependency": "yoctodelay"
+    }
+  ]
+}
