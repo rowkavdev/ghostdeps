@@ -200,6 +200,23 @@ function crateName(crate: Crate): string | undefined {
   return isTable(pkg) && typeof pkg.name === "string" ? pkg.name : undefined;
 }
 
+/**
+ * Parsed lockfiles per analysis run (#246): detect() and
+ * buildDependencyGraph() both need them, and the engine passes the same
+ * AdapterContext to every stage of one run, so each Cargo.lock is read and
+ * parsed once. Keyed weakly, so nothing outlives the run.
+ */
+const lockCaches = new WeakMap<AdapterContext, Map<string, ParsedCargoLock | Evidence>>();
+
+function lockCache(context: AdapterContext): Map<string, ParsedCargoLock | Evidence> {
+  let cache = lockCaches.get(context);
+  if (cache === undefined) {
+    cache = new Map();
+    lockCaches.set(context, cache);
+  }
+  return cache;
+}
+
 export interface LockAnalysis {
   graphs: DependencyGraph[];
   /** Why graphs are incomplete: missing, oversized, malformed, stale or ambiguous lockfiles. */
@@ -212,7 +229,7 @@ export async function analyseCargoLocks(
   projects: ProjectRef[],
 ): Promise<LockAnalysis> {
   const { crates } = await discoverCrates(context);
-  const locks = new Map<string, ParsedCargoLock | Evidence>();
+  const locks = lockCache(context);
   const graphs: DependencyGraph[] = [];
   const evidence: Evidence[] = [];
   const reported = new Set<string>();
