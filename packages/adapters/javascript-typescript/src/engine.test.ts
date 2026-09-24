@@ -66,6 +66,12 @@ describe("JS adapter through the engine and default policy (#138)", () => {
     ["usage-dynamic", "plugin-a"],
     ["refs-partial-js-config", "eslint-plugin-foo"],
     ["refs-pnpm-bin-mismatch", "npm-check-updates"],
+    ["refs-shared-config-no-lockfile", "globals"],
+    ["refs-shared-config-no-lockfile", "eslint-import-resolver-typescript"],
+    ["refs-shared-config-lockfile", "globals"],
+    ["refs-shared-config-lockfile", "eslint-import-resolver-typescript"],
+    ["refs-shared-config-yarn-classic", "globals"],
+    ["refs-shared-config-yarn-classic", "eslint-import-resolver-typescript"],
   ] as const) {
     it(`partial analysis (${fixture}): ${dependency} is not reported unused`, async () => {
       assert.deepEqual(unused(await findings(fixture), dependency), []);

@@ -4,17 +4,19 @@
  * Tooling is often referenced only by name inside a config file: tsconfig
  * `types`, ESLint `extends`/`plugins`, Babel presets, a Jest `preset`, a
  * Prettier plugin. Declarative configs (JSON, JSONC, YAML, and the matching
- * package.json keys) are parsed as data. JS/TS config files are not
- * evaluated. They're source files, so the import scanner already sees their
- * import/require calls. "Convention" usage is a tool whose own config file
+ * package.json keys) are parsed as data. JS/TS config files are parsed,
+ * never evaluated (#149): their string literals are credited and the import
+ * scanner sees their import/require calls. "Convention" usage is a tool whose own config file
  * or directory exists (for example `.husky/` means husky).
  *
  * Every reference only ever adds usage. That's the safe direction for an
  * "unused" verdict, so name normalisation errs towards more candidates.
  */
+import { isBuiltin } from "node:module";
 import ts from "typescript";
 import { parse as parseYaml } from "yaml";
 import type { AdapterContext, Dependency, RepositoryHandle, Usage } from "@ghostdeps/core";
+import { buildLockfileGraph } from "../lockfile/build.js";
 
 /** Config files larger than this are not parsed. */
 export const MAX_CONFIG_BYTES = 256 * 1024;
@@ -430,7 +432,15 @@ async function readText(repository: RepositoryHandle, file: string): Promise<Rea
 /** A config file that exists but whose references could not be read. */
 export interface UnreadConfig {
   file: string;
-  reason: "unreadable" | "oversized" | "malformed" | "not evaluated" | "over limit";
+  reason:
+    | "unreadable"
+    | "oversized"
+    | "malformed"
+    | "not evaluated"
+    | "over limit"
+    | "computed specifier"
+    | "imports local module"
+    | "imports shared config package";
 }
 
 /** Everything the config scan found for one project, plus what it could not read. */
@@ -438,10 +448,160 @@ export interface ConfigScan {
   refs: ConfigReference[];
   /** Non-empty means config coverage is incomplete: no "unused" verdict may rely on it. */
   unread: UnreadConfig[];
+  /**
+   * JS/TS configs that import a package (a shared config such as
+   * "@acme/eslint-config"). That package's own references (its peers) are
+   * not read, so these count as unread unless the project has a complete
+   * dependency graph whose edges show those peers (#201 review).
+   */
+  sharedImports: string[];
 }
 
 /** JS/TS tool configs are source files and are never evaluated. */
 const EXECUTABLE_CONFIG = /^(?:[^/]+\.config|\.[a-z-]+rc)\.(?:c|m)?[jt]s$/;
+
+/** String literals credited per executable config. */
+const MAX_CONFIG_STRINGS = 5_000;
+
+/** Shorthand prefixes a tool applies to names in its own config, by config basename. */
+function toolExpander(base: string): (n: string) => string[] {
+  const tool = /^\.?([a-z-]+?)(?:rc|\.config)?\.(?:c|m)?[jt]s$/.exec(base)?.[1] ?? "";
+  const both =
+    (a: string, b: string) =>
+    (n: string): string[] => {
+      const m = /^plugin:((?:@[^/]+\/)?[^/]+)/.exec(n);
+      const name = m ? m[1]! : n.replace(/^module:/, "");
+      // Only whole names ("airbnb", "@scope", "@scope/foo"): a rule id or a
+      // path ("import/no-cycle", "react/jsx-key") is not a package reference.
+      if (!PACKAGE_NAME.test(name) && !/^@[a-z0-9-~][a-z0-9-._~]*$/i.test(name)) return [];
+      return [
+        ...new Set([...exactName(n), ...expandShorthand(name, a), ...expandShorthand(name, b)]),
+      ];
+    };
+  switch (tool) {
+    case "eslint":
+      return both("eslint-plugin", "eslint-config");
+    case "babel":
+      return both("babel-preset", "babel-plugin");
+    case "stylelint":
+      return both("stylelint-plugin", "stylelint-config");
+    case "commitlint":
+      return both("commitlint-plugin", "commitlint-config");
+    case "jest":
+      return both("jest-environment", "jest-runner");
+    default:
+      return exactName;
+  }
+}
+
+/** A whole string that is a valid npm package name. */
+const PACKAGE_NAME = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+
+/** The string itself, when it is a package name: exact matching, no subpath or prefix. */
+const exactName = (n: string): string[] => (PACKAGE_NAME.test(n) ? [n] : []);
+
+/** Text a string-building expression starts with, when it starts with a literal. */
+function leadingLiteral(node: ts.Expression): string | undefined {
+  if (ts.isTemplateExpression(node)) return node.head.text;
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    let left: ts.Expression = node;
+    for (let i = 0; i < 1_000 && ts.isBinaryExpression(left); i++) left = left.left;
+    return ts.isStringLiteralLike(left) ? left.text : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * A string built at runtime that may be a package name: its literal start is
+ * itself a bare or scoped name fragment ("eslint-plugin-" + x, `@scope/${x}`).
+ * Paths (`${__dirname}/src`) and prose ("Hello " + x) are not.
+ */
+const NAME_FRAGMENT =
+  /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*[-/]?$|^@[a-z0-9-~][a-z0-9-._~]*\/?$/i;
+
+/**
+ * Statically read one JS/TS tool config (#149). It is parsed with the
+ * TypeScript parser and never evaluated. Every string literal in it becomes
+ * a config reference (with the tool's shorthand expansion), since plugins and
+ * presets are usually named by string. The config stays unread (coverage
+ * incomplete) if it does not parse, loads a module by a non-literal
+ * specifier, builds a string that may be a package name at runtime, or
+ * imports a local module whose strings are not read here. Its import/require
+ * calls are credited by the source scan, as before.
+ */
+export function readExecutableConfig(
+  file: string,
+  base: string,
+  text: string,
+): { refs: ConfigReference[]; importsPackage: boolean } | { reason: UnreadConfig["reason"] } {
+  const kind = /\.(?:c|m)?ts$/.test(base) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+  const diagnostics = (sf as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
+  if (diagnostics && diagnostics.length > 0) return { reason: "malformed" };
+  const expand = toolExpander(base);
+  const tool = base.replace(/\.(?:c|m)?[jt]s$/, "");
+  const refs: ConfigReference[] = [];
+  let problem: UnreadConfig["reason"] | undefined;
+  let importsPackage = false;
+  let strings = 0;
+  let visited = 0;
+
+  const moduleSpecifier = (spec: ts.Expression | undefined): void => {
+    if (spec === undefined) return;
+    if (!ts.isStringLiteralLike(spec)) {
+      problem ??= "computed specifier";
+      return;
+    }
+    const s = spec.text;
+    if (packageOf(s) !== undefined && !isBuiltin(s)) importsPackage = true;
+    if (s.startsWith(".") || s.startsWith("/")) {
+      const target = s.slice(s.lastIndexOf("/") + 1);
+      if (!(EXECUTABLE_CONFIG.test(target) || KNOWN_EXECUTABLE_CONFIGS.has(target))) {
+        problem ??= "imports local module";
+      }
+    }
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (problem || ++visited > 200_000) {
+      problem ??= "over limit";
+      return;
+    }
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      moduleSpecifier(node.moduleSpecifier);
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const loads =
+        callee.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(callee) && callee.text === "require") ||
+        (ts.isPropertyAccessExpression(callee) &&
+          ts.isIdentifier(callee.expression) &&
+          callee.expression.text === "require" &&
+          callee.name.text === "resolve");
+      if (loads) moduleSpecifier(node.arguments[0] ?? node);
+    } else if (ts.isTemplateExpression(node) || ts.isBinaryExpression(node)) {
+      const lead = leadingLiteral(node);
+      if (lead !== undefined && NAME_FRAGMENT.test(lead)) problem ??= "computed specifier";
+    }
+    if (ts.isStringLiteralLike(node) && strings < MAX_CONFIG_STRINGS) {
+      strings += 1;
+      const packages = expand(node.text);
+      if (packages.length) {
+        refs.push({
+          packages,
+          file,
+          line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+          via: "config",
+          source: `${tool} string`,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  if (strings >= MAX_CONFIG_STRINGS) problem ??= "over limit";
+  return problem ? { reason: problem } : { refs, importsPackage };
+}
 
 /** Every config/convention reference directly inside one directory. */
 async function collectDirectory(
@@ -455,6 +615,7 @@ async function collectDirectory(
   );
   const refs: ConfigReference[] = [];
   const unread: UnreadConfig[] = [];
+  const sharedImports: string[] = [];
   const collector =
     (file: string, text: string): Collector =>
     (source, rawNames, expand) => {
@@ -477,7 +638,23 @@ async function collectDirectory(
     const base = f.slice(f.lastIndexOf("/") + 1);
     const nested = f.includes("/");
     if (nested ? KNOWN_EXECUTABLE_CONFIGS.has(base) : EXECUTABLE_CONFIG.test(base)) {
-      unread.push({ file: `${prefix}${f}`, reason: "not evaluated" });
+      // Parsed, never evaluated (#149).
+      const file = `${prefix}${f}`;
+      if (++configFiles > MAX_CONFIG_FILES) {
+        unread.push({ file, reason: "over limit" });
+        continue;
+      }
+      const read = await readText(repository, file);
+      if (!("text" in read)) {
+        unread.push({ file, reason: read.reason as UnreadConfig["reason"] });
+        continue;
+      }
+      const result = readExecutableConfig(file, base, read.text);
+      if ("reason" in result) unread.push({ file, reason: result.reason });
+      else {
+        refs.push(...result.refs);
+        if (result.importsPackage) sharedImports.push(file);
+      }
       continue;
     }
     const handler = handlerFor(base);
@@ -568,7 +745,7 @@ async function collectDirectory(
       });
     }
   }
-  return { refs, unread };
+  return { refs, unread, sharedImports };
 }
 
 /**
@@ -588,7 +765,11 @@ export async function collectConfigReferences(
 }
 
 function mergeScans(own: ConfigScan, root: ConfigScan): ConfigScan {
-  return { refs: [...own.refs, ...root.refs], unread: [...own.unread, ...root.unread] };
+  return {
+    refs: [...own.refs, ...root.refs],
+    unread: [...own.unread, ...root.unread],
+    sharedImports: [...own.sharedImports, ...root.sharedImports],
+  };
 }
 
 /** One scan per directory per analysis run; the root is scanned once, not once per member. */
@@ -644,5 +825,51 @@ export async function unreadConfigs(
   context: AdapterContext,
   dependency: Dependency,
 ): Promise<UnreadConfig[]> {
-  return (await scanFor(context, dependency)).unread;
+  const scan = await scanFor(context, dependency);
+  if (scan.sharedImports.length === 0 || (await graphComplete(context, dependency))) {
+    return scan.unread;
+  }
+  return [
+    ...scan.unread,
+    ...scan.sharedImports.map((file) => ({
+      file,
+      reason: "imports shared config package" as const,
+    })),
+  ];
+}
+
+/**
+ * Lockfiles whose parsed graph includes peer edges (npm packages[].peerDependencies,
+ * pnpm resolved peers in snapshots, bun.lock peerDependencies). yarn.lock is
+ * excluded: classic does not record peers and Berry's are not parsed yet.
+ */
+const PEER_RECORDING_LOCKFILES: ReadonlySet<string> = new Set([
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "bun.lock",
+]);
+
+/** Whether the dependency's project has a lockfile graph with peer edges, cached per project per run. */
+const graphCaches = new WeakMap<AdapterContext, Map<string, Promise<boolean>>>();
+
+function graphComplete(context: AdapterContext, dependency: Dependency): Promise<boolean> {
+  let perProject = graphCaches.get(context);
+  if (!perProject) {
+    perProject = new Map();
+    graphCaches.set(context, perProject);
+  }
+  const key = dependency.project.path;
+  let pending = perProject.get(key);
+  if (!pending) {
+    pending = buildLockfileGraph(context, dependency.project).then(
+      (r) =>
+        !r.graph.incomplete &&
+        r.lockfile !== undefined &&
+        PEER_RECORDING_LOCKFILES.has(r.lockfile.slice(r.lockfile.lastIndexOf("/") + 1)),
+      () => false,
+    );
+    perProject.set(key, pending);
+  }
+  return pending;
 }

@@ -29,16 +29,6 @@
       "dependency": "unrun"
     },
     {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "url"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "url"
-    },
-    {
       "kind": "should-be-dev",
       "severity": "low",
       "dependency": "@tailwindcss/vite"
