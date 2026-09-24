@@ -7,9 +7,9 @@ import {
   LOCKFILE,
   MANIFEST,
   RUST_ECOSYSTEM,
-  findWorkspaceRoot,
   hasPackage,
   readManifest,
+  resolveWorkspaces,
   type CargoManifest,
 } from "./cargo-toml.js";
 import { compareStrings, joinPath, relativePath } from "./paths.js";
@@ -43,10 +43,11 @@ export async function discoverCrates(context: AdapterContext): Promise<Discovery
     manifests.push(await readManifest(context.repository, path));
   }
   const byRoot = new Map(manifests.map((m) => [m.root, m]));
+  const workspaces = resolveWorkspaces(manifests, byRoot);
   const crates: Crate[] = [];
   for (const manifest of manifests) {
     if (!hasPackage(manifest)) continue;
-    const workspaceRoot = findWorkspaceRoot(manifest, byRoot);
+    const workspaceRoot = workspaces.get(manifest.root);
     // The lockfile lives next to the workspace root (or the crate itself).
     const lockDir = workspaceRoot?.root ?? manifest.root;
     const lockPath = joinPath(lockDir, LOCKFILE);

@@ -1,0 +1,10 @@
+[package]
+name = "helper"
+version = "0.1.0"
+edition = "2021"
+
+# Not listed in workspace.members: a path dependency of a member inside
+# the workspace directory, so Cargo makes it a member automatically.
+[dependencies]
+serde = { workspace = true }
+gen = { path = "../gen" }

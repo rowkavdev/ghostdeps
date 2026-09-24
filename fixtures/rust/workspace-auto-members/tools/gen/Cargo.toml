@@ -1,0 +1,8 @@
+[package]
+name = "gen"
+version = "0.1.0"
+edition = "2021"
+
+# Auto-member transitively (path dependency of an auto-member).
+[dependencies]
+log.workspace = true
