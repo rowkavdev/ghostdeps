@@ -7,6 +7,7 @@ import {
   declarationLineNote,
   MAX_VERIFIED_MANIFEST_CHARS,
   MAX_VERIFIED_MANIFESTS,
+  pep503,
   verifyDeclaredLines,
 } from "./declared-lines.js";
 import type { AdapterOutcome } from "./run-adapter.js";
@@ -138,5 +139,69 @@ describe("declaration line on findings (#198)", () => {
     assert.equal(notes[0]!.kind, "info");
     assert.equal(notes[0]!.dependency, undefined);
     assert.match(notes[0]!.summary, /for 2 finding\(s\)/);
+  });
+});
+
+describe("python declared lines under PEP 503 (#286)", () => {
+  const PYPROJECT = [
+    "[project]",
+    "dependencies = [",
+    '  "pyyaml>=6",',
+    '  "typing-extensions",',
+    "  \"Ruamel.Yaml[jinja2]==0.18 ; python_version < '3.13'\",",
+    '  "pyyaml-include",',
+    "]",
+  ].join("\n");
+  const pyRepo = {
+    async readFile(path: string) {
+      if (path !== "pyproject.toml") throw new Error("missing");
+      return PYPROJECT;
+    },
+  } as RepositoryHandle;
+  const py: ProjectRef = { ecosystem: "python", path: ".", packageManagers: [] };
+  const pyDep = (name: string, declaredLine: number, p: ProjectRef = py): Dependency =>
+    ({
+      name,
+      constraint: "*",
+      kind: "runtime",
+      project: p,
+      declaredIn: "pyproject.toml",
+      declaredLine,
+    }) as Dependency;
+
+  it("keeps a python line that names the dependency under PEP 503", async () => {
+    const out = await verifyDeclaredLines(pyRepo, [
+      pyDep("PyYAML", 3),
+      pyDep("typing_extensions", 4),
+      pyDep("ruamel-yaml", 5),
+      pyDep("pyyaml", 6), // "pyyaml-include" is a different package
+      pyDep("PyYAML", 4), // wrong line
+    ]);
+    assert.deepEqual(
+      out.map((d) => d.declaredLine),
+      [3, 4, 5, undefined, undefined],
+    );
+  });
+
+  it("keeps the exact comparison for other ecosystems", async () => {
+    const other: ProjectRef = {
+      ecosystem: "javascript-typescript",
+      path: ".",
+      packageManagers: [],
+    };
+    const out = await verifyDeclaredLines(pyRepo, [
+      pyDep("PyYAML", 3, other),
+      pyDep("pyyaml", 3, other),
+    ]);
+    assert.deepEqual(
+      out.map((d) => d.declaredLine),
+      [undefined, 3],
+    );
+  });
+
+  it("normalises like PEP 503", () => {
+    assert.equal(pep503("Typing__Extensions"), "typing-extensions");
+    assert.equal(pep503("ruamel.yaml"), "ruamel-yaml");
+    assert.equal(pep503("a-_.b"), "a-b");
   });
 });

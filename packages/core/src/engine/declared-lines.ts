@@ -8,9 +8,27 @@ export const MAX_VERIFIED_MANIFEST_CHARS = 2_000_000;
 
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** PEP 503 normalised name: lowercase, runs of `-`, `_` and `.` become one `-`. */
+export const pep503 = (name: string): string => name.toLowerCase().replace(/[-_.]+/g, "-");
+
+/**
+ * Python (#286): the line has a name-like token that is the same package
+ * under PEP 503, e.g. `PyYAML` declared and `pyyaml>=6` on the line, or
+ * `typing_extensions` and `typing-extensions`. Only adds line precision;
+ * never changes a verdict (ADR 0004).
+ */
+function hasPep503Token(text: string, name: string): boolean {
+  const wanted = pep503(name);
+  for (const token of text.match(/[A-Za-z0-9._-]+/g) ?? []) {
+    if (pep503(token) === wanted) return true;
+  }
+  return false;
+}
+
 /**
  * Keep an adapter's `declaredLine` (#198) only if that line of the manifest
- * contains the dependency name as a whole token. Adapter output is
+ * contains the dependency name as a whole token (for python, the same name
+ * under PEP 503 normalisation, #286). Adapter output is
  * untrusted: a non-integer, out-of-range or mismatched line is dropped,
  * never guessed or corrected. Each manifest is read once, and reads are
  * capped (MAX_VERIFIED_MANIFESTS, MAX_VERIFIED_MANIFEST_CHARS): past a cap
@@ -45,7 +63,8 @@ export async function verifyDeclaredLines(
       const text = (await linesOf(dep.declaredIn))?.[line - 1];
       if (text === undefined) return without;
       const token = new RegExp(`(^|[^A-Za-z0-9._/@-])${escape(dep.name)}([^A-Za-z0-9._/-]|$)`);
-      return token.test(text) ? dep : without;
+      if (token.test(text)) return dep;
+      return dep.project?.ecosystem === "python" && hasPep503Token(text, dep.name) ? dep : without;
     }),
   );
 }
