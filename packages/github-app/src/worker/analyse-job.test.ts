@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { AnalysisResult } from "@ghostdeps/core";
 import type { AnalysisJob } from "../jobs.js";
 import {
+  analyseCheckout,
   createAnalysisWorker,
   type AnalyseRunOptions,
   type RepositoryClient,
@@ -374,5 +375,48 @@ index 3333333..4444444 100644
       (rec.updated[0]?.output as { title?: string }).title,
       "GhostDeps could not run",
     );
+  });
+});
+
+describe("analyseCheckout: scan completeness (#136)", () => {
+  async function checkout(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "ghostdeps-checkout-test-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "x", dependencies: { a: "1" } }),
+    );
+    await mkdir(join(dir, "src"));
+    await writeFile(join(dir, "src/index.js"), 'import a from "a";\n');
+    return dir;
+  }
+  const capture = () => {
+    const seen: { options?: Record<string, unknown> } = {};
+    const engine = (async (_handle: unknown, options: Record<string, unknown>) => {
+      seen.options = options;
+      return emptyResult;
+    }) as unknown as Parameters<typeof analyseCheckout>[4];
+    return { seen, engine };
+  };
+
+  it("sets scanIncomplete when the scan was truncated", async () => {
+    const { seen, engine } = capture();
+    await analyseCheckout(await checkout(), ["m"], {}, { limits: { maxFiles: 1 } }, engine);
+    assert.equal(seen.options?.scanIncomplete, true);
+  });
+
+  it("leaves scanIncomplete unset for a complete scan", async () => {
+    const { seen, engine } = capture();
+    await analyseCheckout(await checkout(), ["m"], {}, {}, engine);
+    assert.equal(seen.options?.scanIncomplete, undefined);
+    assert.deepEqual(seen.options?.adapters, ["m"]);
+  });
+
+  it("passes PR changes alongside", async () => {
+    const { seen, engine } = capture();
+    const changes = [
+      { change: "added", name: "a", ecosystem: "javascript-typescript", manifest: "package.json" },
+    ] as const;
+    await analyseCheckout(await checkout(), ["m"], { pullRequestChanges: changes }, {}, engine);
+    assert.deepEqual(seen.options?.pullRequestChanges, changes);
   });
 });

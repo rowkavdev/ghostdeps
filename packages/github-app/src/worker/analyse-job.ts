@@ -18,6 +18,7 @@ import {
   extractTarball,
   ExtractionError,
   FsRepositoryHandle,
+  scanCompletenessFindings,
   type AnalysisResult,
   type DependencyChange,
 } from "@ghostdeps/core";
@@ -53,6 +54,8 @@ export interface AnalysisWorkerOptions {
   /** Wall-clock budget for download + extraction. Default 5 minutes. */
   readonly downloadTimeoutMs?: number;
   readonly fetch?: typeof fetch;
+  /** Checkout scan limits/exclusions. Defaults to core's. */
+  readonly scan?: CheckoutScanOptions;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
   readonly analyse?: (
     root: string,
@@ -65,15 +68,29 @@ export interface AnalysisWorkerOptions {
   };
 }
 
-async function analyseIsolated(
+/** Scan options for the checkout (limits, exclusions); core defaults otherwise. */
+export type CheckoutScanOptions = NonNullable<Parameters<typeof FsRepositoryHandle.open>[1]>;
+
+/**
+ * Scan the checkout and run core's isolated engine. A truncated scan or
+ * skipped paths set AnalyseOptions.scanIncomplete, so policy never calls a
+ * dependency "unused" on a partial checkout (#136). Interim, boolean only:
+ * the completeness notes themselves follow when core takes
+ * scanCompleteness (Arch Lead decision).
+ */
+export async function analyseCheckout(
   root: string,
   adapterModules: readonly string[],
   run: AnalyseRunOptions,
-) {
-  const handle = await FsRepositoryHandle.open(root);
-  return analyseRepositoryIsolated(handle, {
+  scan: CheckoutScanOptions = {},
+  engine: typeof analyseRepositoryIsolated = analyseRepositoryIsolated,
+): Promise<AnalysisResult> {
+  const handle = await FsRepositoryHandle.open(root, scan);
+  const scanIncomplete = scanCompletenessFindings(handle.scan).length > 0;
+  return engine(handle, {
     adapters: adapterModules,
     ...(run.pullRequestChanges ? { pullRequestChanges: run.pullRequestChanges } : {}),
+    ...(scanIncomplete ? { scanIncomplete: true } : {}),
   });
 }
 
@@ -109,7 +126,10 @@ export function failureReason(error: unknown): string {
 
 export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker {
   const adapterModules = options.adapterModules ?? DEFAULT_ADAPTER_MODULES;
-  const analyse = options.analyse ?? analyseIsolated;
+  const analyse =
+    options.analyse ??
+    ((root: string, modules: readonly string[], run: AnalyseRunOptions) =>
+      analyseCheckout(root, modules, run, options.scan));
   const timeoutMs = options.downloadTimeoutMs ?? 5 * 60 * 1000;
 
   return async (job) => {
