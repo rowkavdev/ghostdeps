@@ -1,11 +1,32 @@
 {
   "$comment": "Pinned real-repo corpus (#172). Each repo is pinned by full commit SHA - never a branch - so the nightly check is hermetic and a golden diff is actionable. Add repos in small PRs; golden updates ride normal review.",
+  "$invariants": "mustNotBeUnused / mustBeUnused are adjudicated, not aspirational: every name was hand-checked statically at the repo's pinned SHA. vite's 18 names come from the table in https://github.com/rowkavdev/ghostdeps/issues/172#issuecomment-5820228034; chalk's and got's true positives were hand-verified in #171. scripts/corpus.mjs enforces them in check AND --update mode, so a golden refresh can never bless a false 'unused' (ADR-0004). Change a list only with the same static evidence, cited in the PR.",
   "repos": [
     {
       "name": "vite",
       "url": "https://github.com/vitejs/vite.git",
       "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e",
-      "covers": "pnpm monorepo (273 workspace projects), HTML/SFC references, nested-member usage; the 18-name watchlist from #172 - no 'unused' finding for any of those names at this pin"
+      "covers": "pnpm monorepo (273 workspace projects), HTML/SFC references, nested-member usage; the 18-name watchlist from #172 - no 'unused' finding for any of those names at this pin",
+      "mustNotBeUnused": [
+        "@iconify/vue",
+        "@tailwindcss/postcss",
+        "@type-challenges/utils",
+        "@types/pnpapi",
+        "autoprefixer",
+        "core-js",
+        "execa",
+        "kill-port",
+        "normalize.css",
+        "react-fake-client",
+        "react-fake-server",
+        "regenerator-runtime",
+        "sugarss",
+        "systemjs",
+        "unrun",
+        "url",
+        "vue34",
+        "vuex"
+      ]
     },
     {
       "name": "fastify",
@@ -23,7 +44,8 @@
       "name": "chalk",
       "url": "https://github.com/chalk/chalk.git",
       "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee",
-      "covers": "npm; true-positive unused (yoctodelay, hand-verified in #171) - proves the unused path keeps firing, not just staying silent"
+      "covers": "npm; true-positive unused (yoctodelay, hand-verified in #171) - proves the unused path keeps firing, not just staying silent",
+      "mustBeUnused": ["yoctodelay"]
     },
     {
       "name": "nanoid",
@@ -35,7 +57,8 @@
       "name": "got",
       "url": "https://github.com/sindresorhus/got.git",
       "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4",
-      "covers": "npm; true positives in two more shapes: axios referenced only in commented-out code, bluebird only in docs (hand-verified in #171)"
+      "covers": "npm; true positives in two more shapes: axios referenced only in commented-out code, bluebird only in docs (hand-verified in #171)",
+      "mustBeUnused": ["axios", "bluebird"]
     }
   ]
 }
