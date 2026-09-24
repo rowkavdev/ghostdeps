@@ -371,12 +371,96 @@ function scriptLine(text: string, name: string): number {
   return line;
 }
 
+const DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
+/** Declared names read per section when matching script commands to dependencies. */
+const MAX_DECLARED = 2_000;
+
+/**
+ * Commands that are shell builtins or system tools, never npm dependencies.
+ * A script word outside this list that no declared dependency's bin
+ * explains is a coverage gap (it may be a bin with an unexpected name).
+ */
+const SYSTEM_COMMANDS = new Set([
+  "echo",
+  "printf",
+  "cd",
+  "pwd",
+  "exit",
+  "true",
+  "false",
+  "test",
+  "[",
+  "export",
+  "set",
+  "unset",
+  "source",
+  ".",
+  "sleep",
+  "wait",
+  "kill",
+  "read",
+  "rm",
+  "rmdir",
+  "cp",
+  "mv",
+  "mkdir",
+  "touch",
+  "cat",
+  "ls",
+  "ln",
+  "chmod",
+  "chown",
+  "tee",
+  "grep",
+  "egrep",
+  "sed",
+  "awk",
+  "find",
+  "xargs",
+  "sort",
+  "uniq",
+  "head",
+  "tail",
+  "wc",
+  "cut",
+  "tr",
+  "diff",
+  "patch",
+  "tar",
+  "gzip",
+  "gunzip",
+  "zip",
+  "unzip",
+  "curl",
+  "wget",
+  "git",
+  "open",
+  "xdg-open",
+  "make",
+  "docker",
+  "docker-compose",
+  "python",
+  "python3",
+  "pip",
+  "go",
+  "cargo",
+  "deno",
+  "node",
+]);
+
 interface ManifestScripts {
   file: string;
   text: string;
   scripts: [string, string][];
   /** More than MAX_SCRIPTS scripts: the rest were not read. */
   truncated: boolean;
+  /** Package names this manifest declares (all dependency sections). */
+  declared: string[];
 }
 
 type ManifestRead = ManifestScripts | { file: string; problem: string } | undefined;
@@ -401,15 +485,20 @@ async function readScripts(
     return { file, problem: "malformed" };
   }
   if (!isRecord(doc)) return { file, problem: "malformed" };
+  const declared: string[] = [];
+  for (const section of DEPENDENCY_SECTIONS) {
+    const deps = Object.hasOwn(doc, section) ? doc[section] : undefined;
+    if (isRecord(deps)) declared.push(...Object.keys(deps).slice(0, MAX_DECLARED));
+  }
   if (!Object.hasOwn(doc, "scripts") || !isRecord(doc.scripts)) {
-    return { file, text, scripts: [], truncated: false };
+    return { file, text, scripts: [], truncated: false, declared };
   }
   const entries = Object.entries(doc.scripts);
   const scripts: [string, string][] = [];
   for (const [name, value] of entries.slice(0, MAX_SCRIPTS)) {
     if (typeof value === "string") scripts.push([name, value]);
   }
-  return { file, text, scripts, truncated: entries.length > MAX_SCRIPTS };
+  return { file, text, scripts, truncated: entries.length > MAX_SCRIPTS, declared };
 }
 
 const manifestCaches = new WeakMap<AdapterContext, Map<string, Promise<ManifestRead>>>();
@@ -481,32 +570,47 @@ async function lockfileBins(
   }
 }
 
-const lockCaches = new WeakMap<
-  AdapterContext,
-  Map<string, Promise<Record<string, unknown> | undefined>>
->();
+type LockCache = Map<string, Promise<Record<string, unknown> | undefined>>;
+const lockCaches = new WeakMap<AdapterContext, LockCache>();
+
+function lockCacheFor(context: AdapterContext): LockCache {
+  let cache = lockCaches.get(context);
+  if (!cache) {
+    cache = new Map();
+    lockCaches.set(context, cache);
+  }
+  return cache;
+}
+
+/** Bin names for `name`, and whether they came from a lockfile (exact) or were guessed. */
+async function resolveBins(
+  repository: RepositoryHandle,
+  projectDir: string,
+  name: string,
+  cache: LockCache,
+): Promise<{ names: Set<string>; fromLock: boolean }> {
+  const names = new Set<string>();
+  const fromLock = await lockfileBins(repository, projectDir, name, cache);
+  for (const n of fromLock ?? []) names.add(n);
+  const known = Object.hasOwn(KNOWN_BINS, name) ? KNOWN_BINS[name] : undefined;
+  for (const n of known ?? []) names.add(n);
+  // Most CLIs are named after their package. Only fall back to that when the lockfile doesn't say otherwise.
+  if (fromLock === undefined) names.add(unscoped(name));
+  return { names, fromLock: fromLock !== undefined };
+}
 
 /** Candidate bin names for a dependency: lockfile `bin` when recorded, else the known table and its own name. */
 export async function binNames(
   context: AdapterContext,
   dependency: Dependency,
 ): Promise<Set<string>> {
-  let cache = lockCaches.get(context);
-  if (!cache) {
-    cache = new Map();
-    lockCaches.set(context, cache);
-  }
-  const projectDir = projectDirOf(dependency);
-  const names = new Set<string>();
-  const fromLock = await lockfileBins(context.repository, projectDir, dependency.name, cache);
-  for (const n of fromLock ?? []) names.add(n);
-  const known = Object.hasOwn(KNOWN_BINS, dependency.name)
-    ? KNOWN_BINS[dependency.name]
-    : undefined;
-  for (const n of known ?? []) names.add(n);
-  // Most CLIs are named after their package. Only fall back to that when the lockfile doesn't say otherwise.
-  if (fromLock === undefined) names.add(unscoped(dependency.name));
-  return names;
+  const resolved = await resolveBins(
+    context.repository,
+    projectDirOf(dependency),
+    dependency.name,
+    lockCacheFor(context),
+  );
+  return resolved.names;
 }
 
 /** The dependency's own manifest, then (for workspace members) the root's, which runs member tooling too. */
@@ -566,15 +670,74 @@ function manifestGaps(manifest: ManifestRead): string[] {
   return gaps;
 }
 
+const unmatchedCaches = new WeakMap<AdapterContext, Map<string, Promise<string[]>>>();
+
+/**
+ * Script commands no declared dependency explains. When a lockfile records
+ * `bin` for every declared dependency the bin names are exact, and an
+ * unmatched word is a global tool, not a dependency. Otherwise bin names
+ * are guessed (package name + KNOWN_BINS), so an unmatched word may be a
+ * dependency's bin under another name (npm-check-updates -> ncu): a gap.
+ */
+async function unmatchedCommands(
+  context: AdapterContext,
+  projectDir: string,
+  manifests: ManifestRead[],
+): Promise<string[]> {
+  let cache = unmatchedCaches.get(context);
+  if (!cache) {
+    cache = new Map();
+    unmatchedCaches.set(context, cache);
+  }
+  let pending = cache.get(projectDir);
+  if (!pending) {
+    pending = (async () => {
+      const readable = manifests.filter(
+        (m): m is ManifestScripts => m !== undefined && "scripts" in m,
+      );
+      if (!readable.some((m) => m.scripts.length > 0)) return [];
+      const lockCache = lockCacheFor(context);
+      const known = new Set<string>();
+      const declared = new Set(readable.flatMap((m) => m.declared));
+      let allFromLock = declared.size > 0;
+      for (const name of declared) {
+        const resolved = await resolveBins(context.repository, projectDir, name, lockCache);
+        for (const bin of resolved.names) known.add(bin);
+        if (!resolved.fromLock) allFromLock = false;
+      }
+      if (allFromLock) return [];
+      const gaps: string[] = [];
+      for (const manifest of readable) {
+        for (const [name, command] of manifest.scripts) {
+          for (const word of new Set(analyseScript(command).words)) {
+            if (known.has(word) || SYSTEM_COMMANDS.has(word)) continue;
+            gaps.push(
+              `${manifest.file} script "${name}": command ${JSON.stringify(word)} is not matched to a declared dependency's bin`,
+            );
+          }
+        }
+      }
+      return gaps;
+    })();
+    cache.set(projectDir, pending);
+  }
+  return pending;
+}
+
 /**
  * Why the project's scripts (and, for workspace members, the root's) were
  * not fully analysed: unreadable manifest, too many scripts, an unrecognised
- * wrapper flag, a shell or node file, eval, ... Empty means every script was
- * read. Feeds referenceAnalysisComplete (#132).
+ * wrapper flag, a shell or node file, eval, a command no declared
+ * dependency's bin explains, ... Empty means every script was read. Feeds
+ * referenceAnalysisComplete (#132).
  */
 export async function scriptGaps(
   context: AdapterContext,
   dependency: Dependency,
 ): Promise<string[]> {
-  return (await manifestsFor(context, dependency)).flatMap(manifestGaps);
+  const manifests = await manifestsFor(context, dependency);
+  return [
+    ...manifests.flatMap(manifestGaps),
+    ...(await unmatchedCommands(context, projectDirOf(dependency), manifests)),
+  ];
 }

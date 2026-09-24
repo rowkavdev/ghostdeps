@@ -1,0 +1,5 @@
+{
+  "description": "npm-check-updates is only run from a script through its bin \"ncu\". The pnpm lockfile does not record bin names, so the match can't be proven: reference analysis is incomplete and the dependency must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "npm-check-updates" }]
+}
