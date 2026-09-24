@@ -1,0 +1,9 @@
+{
+  "description": "TS path aliases: @app/* maps to src/* via tsconfig paths. lodash-es is imported directly; the alias import must NOT be mistaken for a package named '@app/helper'. Usage analysis (#28) consumes this fixture.",
+  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "dependencies": [{ "name": "lodash-es", "kind": "runtime" }],
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "lodash-es" }
+  ]
+}

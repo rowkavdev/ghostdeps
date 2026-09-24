@@ -1,5 +1,18 @@
 {
   "description": "yarn berry project: yarn.lock plus .yarnrc.yml means berry; detection must report packageManagers [yarn] with a berry variant note.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
+  "dependencies": [
+    {
+      "name": "left-pad",
+      "kind": "runtime",
+      "constraint": "^1.3.0"
+    }
+  ],
   "findings": [],
   "mustNotFind": []
 }

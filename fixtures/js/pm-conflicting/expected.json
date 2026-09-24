@@ -1,5 +1,18 @@
 {
   "description": "conflicting lockfiles: package-lock.json and pnpm-lock.yaml coexist; detection must report both managers as evidence with reduced confidence and never pick one.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
+  "dependencies": [
+    {
+      "name": "left-pad",
+      "kind": "runtime",
+      "constraint": "^1.3.0"
+    }
+  ],
   "findings": [],
   "mustNotFind": []
 }
