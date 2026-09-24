@@ -120,6 +120,8 @@ export interface AdapterOutcome {
   usages: Usage[];
   graphs: DependencyGraph[];
   usageAnalysed: boolean;
+  /** Usage analysis completed and the adapter declares "referenceAnalysis". */
+  referenceAnalysed?: boolean;
   findings: Finding[];
 }
 
@@ -241,6 +243,7 @@ export async function runAdapter(
             (usages) => {
               outcome.usages = usages;
               outcome.usageAnalysed = true;
+              outcome.referenceAnalysed = adapter.capabilities.has("referenceAnalysis");
             },
             (error: unknown) => {
               outcome.findings.push(adapterFailure(adapter, "usage analysis", error));

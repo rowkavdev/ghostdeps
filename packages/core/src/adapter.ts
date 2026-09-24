@@ -21,9 +21,21 @@ import type {
 /** Bump the major version on any breaking change to this contract. */
 export const adapterApiVersion = "0.1.0";
 
-/** Capabilities an adapter may implement. Core degrades gracefully when absent. */
+/**
+ * Capabilities an adapter may implement. Core degrades gracefully when absent.
+ *
+ * "referenceAnalysis" has no method: it declares that findUsage also reports
+ * script, bin and config-file references (Usage.via "script" | "config" |
+ * "convention"). Without it, "no usages" is ambiguous and the policy never
+ * emits an "unused" verdict (#121).
+ */
 export type AdapterCapability =
-  "dependencyGraph" | "usageAnalysis" | "nativeAlternatives" | "health" | "lockfileParsing";
+  | "dependencyGraph"
+  | "usageAnalysis"
+  | "nativeAlternatives"
+  | "health"
+  | "lockfileParsing"
+  | "referenceAnalysis";
 
 /** Result of two-phase detection: does this ecosystem meaningfully exist here? */
 export interface DetectionResult {

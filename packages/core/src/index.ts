@@ -16,3 +16,4 @@ export {
 } from "./contract-tests/policy.js";
 export * from "./engine/scanner/index.js";
 export * from "./engine/index.js";
+export * from "./recommend/index.js";
