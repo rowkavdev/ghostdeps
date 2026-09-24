@@ -7,6 +7,7 @@ import { assembleGraph, emptyGraph } from "./model.js";
 import type { LockfileGraphResult, ParsedLockfile } from "./model.js";
 import { parseNpmLockfile } from "./npm.js";
 import { parsePnpmLockfile } from "./pnpm.js";
+import { parseYarnLockfile } from "./yarn.js";
 
 /**
  * Lockfiles above this size are not parsed (security-model: parser input
@@ -15,11 +16,12 @@ import { parsePnpmLockfile } from "./pnpm.js";
  */
 export const MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
 
-type Format = "npm" | "pnpm";
+type Format = "npm" | "pnpm" | "yarn";
 const LOCKFILES: [string, Format][] = [
   ["npm-shrinkwrap.json", "npm"],
   ["package-lock.json", "npm"],
   ["pnpm-lock.yaml", "pnpm"],
+  ["yarn.lock", "yarn"],
 ];
 
 const join = (dir: string, file: string) => (dir === "." || dir === "" ? file : `${dir}/${file}`);
@@ -40,6 +42,7 @@ function relative(from: string, to: string): string {
 interface Declared {
   name: string;
   dev: boolean;
+  constraint: string;
 }
 
 async function readDeclared(context: AdapterContext, project: string, evidence: Evidence[]) {
@@ -57,10 +60,10 @@ async function readDeclared(context: AdapterContext, project: string, evidence: 
     ] as const) {
       const map = rec[field];
       if (typeof map !== "object" || map === null || Array.isArray(map)) continue;
-      for (const name of Object.keys(map)) {
+      for (const [name, constraint] of Object.entries(map)) {
         if (seen.has(name)) continue;
         seen.add(name);
-        out.push({ name, dev });
+        out.push({ name, dev, constraint: String(constraint) });
       }
     }
   } catch {
@@ -116,7 +119,7 @@ export async function buildLockfileGraph(
   if (!lock) {
     evidence.push({
       kind: "lockfile-missing",
-      statement: `no npm or pnpm lockfile found for ${projectDir}; transitive graph unknown`,
+      statement: `no npm, pnpm or Yarn lockfile found for ${projectDir}; transitive graph unknown`,
     });
     return { graph: emptyGraph(project), evidence };
   }
@@ -145,7 +148,9 @@ export async function buildLockfileGraph(
     parsed =
       lock.format === "npm"
         ? parseNpmLockfile(text, lock.path, rel === "." ? "" : rel, declared)
-        : parsePnpmLockfile(text, lock.path, rel, declared);
+        : lock.format === "pnpm"
+          ? parsePnpmLockfile(text, lock.path, rel, declared)
+          : parseYarnLockfile(text, lock.path, rel, declared);
   } catch (err) {
     evidence.push({
       kind: "lockfile-malformed",

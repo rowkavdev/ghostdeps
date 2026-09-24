@@ -1,0 +1,10 @@
+{
+  "description": "Yarn Berry lockfile (__metadata v8) with the project's own workspace entry. debug closure = ms; typanion is a dev leaf.",
+  "graph": {
+    "transitive": { "debug": ["ms"], "typanion": [] },
+    "nodes": 3,
+    "devNodes": 1
+  },
+  "findings": [],
+  "mustNotFind": []
+}

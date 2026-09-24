@@ -1,0 +1,14 @@
+{
+  "description": "Yarn classic lockfile: multi-pattern entry shared by a transitive range and an npm: alias, two versions of chalk and ansi-styles. chalk@2.4.2 is reachable from a prod dependency (via @babel/highlight) so it stays prod even though the alias is dev.",
+  "graph": {
+    "transitive": {
+      "@babel/code-frame": ["@babel/highlight", "ansi-styles", "chalk"],
+      "chalk": ["ansi-styles"],
+      "old-chalk": ["ansi-styles"]
+    },
+    "nodes": 6,
+    "devNodes": 0
+  },
+  "findings": [],
+  "mustNotFind": []
+}
