@@ -1,0 +1,11 @@
+{
+  "description": "left-pad is declared but never imported; analysis must report it unused with high confidence.",
+  "findings": [
+    {
+      "kind": "unused",
+      "dependency": "left-pad",
+      "minConfidence": "high"
+    }
+  ],
+  "mustNotFind": []
+}
