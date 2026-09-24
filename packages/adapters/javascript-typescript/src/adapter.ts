@@ -40,6 +40,43 @@ async function listDirectDependencies(
   return all;
 }
 
+/** findUsage reports per analysis run (keyed by context). */
+const usageCache = new WeakMap<AdapterContext, Map<string, Promise<UsageAnalysisReport>>>();
+
+/**
+ * Source imports plus script (via="script") and config/convention
+ * (via="config"/"convention") references (#132). referenceAnalysisComplete
+ * is true only when nothing in the dependency's project (or, for a
+ * workspace member, the root) went unread: no import-scan limitation, no
+ * script gap and no unread config. Anything else stays incomplete, so the
+ * policy reports "manual review" rather than "unused".
+ */
+async function computeUsage(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<UsageAnalysisReport> {
+  const [imports, scripts, configs, importGaps, scriptProblems, unread, ci, removed, styles] =
+    await Promise.all([
+      findUsage(context, dependency),
+      findScriptUsages(context, dependency),
+      findConfigUsages(context, dependency),
+      usageLimitations(context, dependency.project.path),
+      scriptGaps(context, dependency),
+      unreadConfigs(context, dependency),
+      // CI workflow run steps only add usage; they never create gaps.
+      findWorkflowUsages(context, dependency),
+      // PR mode (#101): imports on lines the PR removed, marked removedInPr.
+      findRemovedUsages(context, dependency),
+      // Stylesheet preprocessors loaded by file extension (.scss -> sass).
+      findPreprocessorUsages(context, dependency),
+    ]);
+  return {
+    usages: [...imports, ...scripts, ...configs, ...ci, ...removed, ...styles],
+    referenceAnalysisComplete:
+      importGaps.length === 0 && scriptProblems.length === 0 && unread.length === 0,
+  };
+}
+
 export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
   const adapter: EcosystemAdapter = {
     ecosystem: JS_ECOSYSTEM,
@@ -53,35 +90,27 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
     ]),
     detect: detectJavaScriptTypeScript,
     buildDependencyGraph,
-    /**
-     * Source imports plus script (via="script") and config/convention
-     * (via="config"/"convention") references (#132). referenceAnalysisComplete
-     * is true only when nothing in the dependency's project (or, for a
-     * workspace member, the root) went unread: no import-scan limitation, no
-     * script gap and no unread config. Anything else stays incomplete, so the
-     * policy reports "manual review" rather than "unused".
-     */
-    async findUsage(context: AdapterContext, dependency: Dependency): Promise<UsageAnalysisReport> {
-      const [imports, scripts, configs, importGaps, scriptProblems, unread, ci, removed, styles] =
-        await Promise.all([
-          findUsage(context, dependency),
-          findScriptUsages(context, dependency),
-          findConfigUsages(context, dependency),
-          usageLimitations(context, dependency.project.path),
-          scriptGaps(context, dependency),
-          unreadConfigs(context, dependency),
-          // CI workflow run steps only add usage; they never create gaps.
-          findWorkflowUsages(context, dependency),
-          // PR mode (#101): imports on lines the PR removed, marked removedInPr.
-          findRemovedUsages(context, dependency),
-          // Stylesheet preprocessors loaded by file extension (.scss -> sass).
-          findPreprocessorUsages(context, dependency),
-        ]);
-      return {
-        usages: [...imports, ...scripts, ...configs, ...ci, ...removed, ...styles],
-        referenceAnalysisComplete:
-          importGaps.length === 0 && scriptProblems.length === 0 && unread.length === 0,
-      };
+    /** computeUsage, cached per run; each caller gets its own copy of the usages. */
+    findUsage(context: AdapterContext, dependency: Dependency): Promise<UsageAnalysisReport> {
+      // One report per dependency per run: notes() asks again for its
+      // candidates and must not redo the work (#267 review).
+      let perRun = usageCache.get(context);
+      if (!perRun) usageCache.set(context, (perRun = new Map()));
+      const key = JSON.stringify([
+        dependency.declaredIn,
+        dependency.project.path,
+        dependency.name,
+        dependency.kind,
+      ]);
+      let pending = perRun.get(key);
+      if (!pending) {
+        pending = computeUsage(context, dependency);
+        const cached = perRun;
+        // A failed attempt is not kept, so a retry runs the scan again.
+        pending.catch(() => cached.delete(key));
+        cached.set(key, pending);
+      }
+      return pending.then((report) => ({ ...report, usages: [...report.usages] }));
     },
     listDirectDependencies,
     /**

@@ -410,31 +410,54 @@ describe("config-string capability notes (#205, #201 follow-up)", () => {
     );
   });
 
-  it("no note when the dependency is used some other way in any project", async () => {
+  it("judged per declaring project: strings from a project with other usage are not cited", async () => {
     const context = ctx({
       "package.json": "{}",
-      "vite.config.ts": `export default { include: ["both", "only"] };`,
       "packages/a/package.json": "{}",
+      "packages/a/vite.config.ts": `export default { include: ["both"] };`,
+      "packages/b/package.json": "{}",
+      "packages/b/vite.config.ts": `export default { include: ["both", "used"] };`,
     });
     const seen: string[][] = [];
     const notes = await configStringNotes(
       context,
-      [dep("only"), dep("both", "packages/a"), dep("both")],
+      [dep("both", "packages/a"), dep("both", "packages/b"), dep("used", "packages/b")],
       async (d, strings) => {
         seen.push([d.name, d.project.path, [...strings].join(",")]);
-        return d.name === "both" && d.project.path === "packages/a";
+        return d.project.path === "packages/b";
       },
+    );
+    assert.deepEqual(notes, [
+      {
+        dependency: "both",
+        statement:
+          "credited by a string in packages/a/vite.config.ts:1; JS/TS config files are read statically for package names, never run",
+      },
+    ]);
+    // Each project is checked with its own credited strings.
+    assert.deepEqual(seen, [
+      ["both", "packages/a", "packages/a/vite.config.ts:1"],
+      ["both", "packages/b", "packages/b/vite.config.ts:1"],
+      ["used", "packages/b", "packages/b/vite.config.ts:1"],
+    ]);
+  });
+
+  it("an import in a config is real usage: credited, but never a string-only note", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "vite.config.ts": `import { URL } from "url";\nconst r = require("req-pkg");\nexport default { alias: { x: "str-pkg" } };`,
+    });
+    assert.deepEqual(await via(context, "url"), [["config", "vite.config.ts", 1]]);
+    assert.deepEqual(await via(context, "req-pkg"), [["config", "vite.config.ts", 2]]);
+    const notes = await configStringNotes(
+      context,
+      [dep("url"), dep("req-pkg"), dep("str-pkg")],
+      none,
     );
     assert.deepEqual(
       notes.map((n) => n.dependency),
-      ["only"],
+      ["str-pkg"],
     );
-    // The strings passed are the dependency's own credited strings; a name
-    // already known to be used elsewhere is not checked again.
-    assert.deepEqual(seen, [
-      ["only", ".", "vite.config.ts:1"],
-      ["both", "packages/a", "vite.config.ts:1"],
-    ]);
   });
 
   it("bounded per run", async () => {
