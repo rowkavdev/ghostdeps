@@ -121,6 +121,9 @@ describe("reference analysis completeness (#132)", () => {
     const locked = await report("refs-shared-config-lockfile", "globals");
     assert.deepEqual(locked.usages, []);
     assert.equal(locked.referenceAnalysisComplete, true);
+    // yarn.lock records no peer edges: still incomplete.
+    const yarn = await report("refs-shared-config-yarn-classic", "globals");
+    assert.equal(yarn.referenceAnalysisComplete, false);
   });
 
   it("pnpm: a script bin whose name differs from its package is a gap, never complete", async () => {

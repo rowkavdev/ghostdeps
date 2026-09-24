@@ -288,6 +288,20 @@ describe("JS/TS config string contract (#149, lead guardrails)", () => {
       },
     });
     assert.deepEqual(await unread(ctx({ ...files, "package-lock.json": lock })), []);
+    // yarn.lock graphs carry no peer edges (classic never records them).
+    const yarnLock = [
+      "# yarn lockfile v1",
+      "",
+      '"@acme/eslint-config@1.0.0":',
+      '  version "1.0.0"',
+      "",
+      "globals@1.0.0:",
+      '  version "1.0.0"',
+      "",
+    ].join("\n");
+    assert.deepEqual(await unread(ctx({ ...files, "yarn.lock": yarnLock })), [
+      "eslint.config.js:imports shared config package",
+    ]);
     // Only builtins and local configs imported: read regardless of a lockfile.
     assert.deepEqual(
       await unread(

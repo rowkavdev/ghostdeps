@@ -838,7 +838,19 @@ export async function unreadConfigs(
   ];
 }
 
-/** Whether the dependency's project has a lockfile graph, cached per project per run. */
+/**
+ * Lockfiles whose parsed graph includes peer edges (npm packages[].peerDependencies,
+ * pnpm resolved peers in snapshots, bun.lock peerDependencies). yarn.lock is
+ * excluded: classic does not record peers and Berry's are not parsed yet.
+ */
+const PEER_RECORDING_LOCKFILES: ReadonlySet<string> = new Set([
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "bun.lock",
+]);
+
+/** Whether the dependency's project has a lockfile graph with peer edges, cached per project per run. */
 const graphCaches = new WeakMap<AdapterContext, Map<string, Promise<boolean>>>();
 
 function graphComplete(context: AdapterContext, dependency: Dependency): Promise<boolean> {
@@ -851,7 +863,10 @@ function graphComplete(context: AdapterContext, dependency: Dependency): Promise
   let pending = perProject.get(key);
   if (!pending) {
     pending = buildLockfileGraph(context, dependency.project).then(
-      (r) => !r.graph.incomplete,
+      (r) =>
+        !r.graph.incomplete &&
+        r.lockfile !== undefined &&
+        PEER_RECORDING_LOCKFILES.has(r.lockfile.slice(r.lockfile.lastIndexOf("/") + 1)),
       () => false,
     );
     perProject.set(key, pending);

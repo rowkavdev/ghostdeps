@@ -1,0 +1,8 @@
+{
+  "description": "#201 re-review repro: the shared-config case with a Yarn classic lockfile. yarn.lock v1 does not record peer dependencies, so the graph has no peer edges; eslint.config.js stays unread (imports shared config package) and the peers must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "eslint-import-resolver-typescript" },
+    { "kind": "unused", "dependency": "globals" }
+  ]
+}
