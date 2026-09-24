@@ -72,7 +72,7 @@ describe("addFootprints (#59 slice B)", () => {
     assert.ok(out.every((i) => !("footprint" in i)));
   });
 
-  it("sums the dependency and every locked closure version, with coverage", async () => {
+  it("charges each name at its smallest locked version, with name coverage", async () => {
     const provider = sizes({ "a@1.0.0": 100, "x@1.0.0": 10, "x@2.0.0": 20 });
     const out = Object.fromEntries(
       (await addFootprints(impact, [g], provider)).map((i) => [i.name, i]),
@@ -80,8 +80,8 @@ describe("addFootprints (#59 slice B)", () => {
     assert.deepEqual(out.a!.footprint, {
       approximate: true,
       basis: "npm unpackedSize",
-      bytes: 130,
-      coverage: { sized: 3, total: 3 },
+      bytes: 110,
+      coverage: { sized: 2, total: 2 },
     });
     // b is known but nothing about it was sized; c has no closure.
     assert.equal(out.b!.footprint, undefined);
@@ -92,8 +92,35 @@ describe("addFootprints (#59 slice B)", () => {
 
   it("reports partial coverage as a lower bound", async () => {
     const out = await addFootprints([entry("a", 1)], [g], sizes({ "a@1.0.0": 100 }));
-    assert.deepEqual(out[0]!.footprint?.coverage, { sized: 1, total: 3 });
+    assert.deepEqual(out[0]!.footprint?.coverage, { sized: 1, total: 2 });
     assert.equal(out[0]!.footprint?.bytes, 100);
+  });
+
+  it("leaves out a name with any unsized locked version", async () => {
+    const out = await addFootprints([entry("a", 1)], [g], sizes({ "a@1.0.0": 100, "x@2.0.0": 5 }));
+    assert.deepEqual(out[0]!.footprint?.coverage, { sized: 1, total: 2 });
+    assert.equal(out[0]!.footprint?.bytes, 100);
+  });
+
+  it("never charges a shared member for versions only another dependency pulls in (#288)", async () => {
+    // The #283 review repro: a -> c, b -> c, c@1 and c@2 locked.
+    const shared = graph([node("a"), node("b"), node("c", "1"), node("c", "2")], {
+      a: ["a", "c"],
+      b: ["b", "c"],
+    });
+    const out = await addFootprints(
+      [entry("a", 1), entry("b", 1)],
+      [shared],
+      sizes({ "a@1.0.0": 1, "b@1.0.0": 1, "c@1": 1000, "c@2": 1000 }),
+    );
+    // Truth for a is at least 1001; never 2001.
+    assert.deepEqual(
+      out.map((i) => [i.name, i.footprint?.bytes, i.footprint?.coverage]),
+      [
+        ["a", 1001, { sized: 2, total: 2 }],
+        ["b", 1001, { sized: 2, total: 2 }],
+      ],
+    );
   });
 
   it("asks once per ecosystem with deduplicated, sorted versions", async () => {
