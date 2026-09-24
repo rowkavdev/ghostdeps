@@ -1,0 +1,17 @@
+{
+  "repo": "nanoid",
+  "sha": "bb68abcd59ebb86a849d634320726add6be54d47",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "better-node-test"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "oxlint-tsgolint"
+    }
+  ]
+}

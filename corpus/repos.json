@@ -24,6 +24,18 @@
       "url": "https://github.com/chalk/chalk.git",
       "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee",
       "covers": "npm; true-positive unused (yoctodelay, hand-verified in #171) - proves the unused path keeps firing, not just staying silent"
+    },
+    {
+      "name": "nanoid",
+      "url": "https://github.com/ai/nanoid.git",
+      "sha": "bb68abcd59ebb86a849d634320726add6be54d47",
+      "covers": "pnpm; convention hole classes: size-limit creditPrefix (@size-limit/*) and simple-git-hooks package.json key (#171)"
+    },
+    {
+      "name": "got",
+      "url": "https://github.com/sindresorhus/got.git",
+      "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4",
+      "covers": "npm; true positives in two more shapes: axios referenced only in commented-out code, bluebird only in docs (hand-verified in #171)"
     }
   ]
 }

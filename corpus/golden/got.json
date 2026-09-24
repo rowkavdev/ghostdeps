@@ -1,0 +1,32 @@
+{
+  "repo": "got",
+  "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "type-only",
+      "severity": "low",
+      "dependency": "keyv"
+    },
+    {
+      "kind": "type-only",
+      "severity": "low",
+      "dependency": "type-fest"
+    },
+    {
+      "kind": "unused",
+      "severity": "medium",
+      "dependency": "axios"
+    },
+    {
+      "kind": "unused",
+      "severity": "medium",
+      "dependency": "bluebird"
+    }
+  ]
+}
