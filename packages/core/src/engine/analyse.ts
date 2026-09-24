@@ -14,6 +14,7 @@
  * - Recommendation policy lives in core and is injected here; adapters report facts.
  */
 import { adapterApiVersion, type EcosystemAdapter } from "../adapter.js";
+import { normaliseAnalysisResult } from "../report/json.js";
 import type {
   AnalysisResult,
   Confidence,
@@ -273,49 +274,6 @@ async function runAdapter(
   return outcome;
 }
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-function compareBy<T>(...keys: ((item: T) => string | number)[]) {
-  return (a: T, b: T): number => {
-    for (const key of keys) {
-      const x = key(a);
-      const y = key(b);
-      if (x !== y)
-        return typeof x === "number" && typeof y === "number"
-          ? x - y
-          : compare(String(x), String(y));
-    }
-    return 0;
-  };
-}
-
-const byProject = compareBy<ProjectRef>(
-  (p) => p.path,
-  (p) => p.ecosystem,
-);
-const byDependency = compareBy<Dependency>(
-  (d) => d.project.path,
-  (d) => d.project.ecosystem,
-  (d) => d.name,
-  (d) => d.kind,
-  (d) => d.declaredIn,
-);
-const byUsage = compareBy<Usage>(
-  (u) => u.file,
-  (u) => u.line,
-  (u) => u.dependency,
-  (u) => u.form,
-);
-const byFinding = compareBy<Finding>(
-  (f) => f.kind,
-  (f) => f.dependency ?? "",
-  (f) => f.evidence[0]?.file ?? "",
-  (f) => f.evidence[0]?.line ?? 0,
-  (f) => f.summary,
-  (f) => f.affectedFiles.join("\0"),
-  (f) => f.recommendation,
-);
-
 /** Analyse a repository through the given adapters and return one AnalysisResult. */
 export async function analyseRepository(
   repository: RepositoryHandle,
@@ -391,13 +349,14 @@ export async function analyseRepository(
     }
   }
 
-  return {
+  // One canonical ordering for the engine and the JSON reporter (#71).
+  return normaliseAnalysisResult({
     schemaVersion: 1,
-    projects: [...projects.values()].sort(byProject),
-    dependencies: dependencies.sort(byDependency),
-    usages: usages.sort(byUsage),
-    findings: findings.sort(byFinding),
-    detected: detected.sort(compareBy((d) => d.ecosystem)),
-    surface: surface.sort(compareBy((s) => s.ecosystem)),
-  };
+    projects: [...projects.values()],
+    dependencies,
+    usages,
+    findings,
+    detected,
+    surface,
+  });
 }
