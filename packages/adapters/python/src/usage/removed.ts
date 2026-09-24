@@ -26,6 +26,24 @@ export interface RemovedImport {
 
 const isPythonSource = (path: string) => path.endsWith(".py") || path.endsWith(".pyw");
 const cache = new WeakMap<AdapterContext, Promise<RemovedImport[]>>();
+const rootsCache = new WeakMap<AdapterContext, Promise<readonly string[]>>();
+
+/**
+ * Candidate Python project roots at head, once per run: findUsage runs per
+ * dependency, and listing the repository each time is wasted work.
+ */
+function headRoots(context: AdapterContext): Promise<readonly string[]> {
+  let pending = rootsCache.get(context);
+  if (pending === undefined) {
+    pending = context.repository
+      .listFiles()
+      .then((files) => candidateRoots(files.filter((f) => !hasExcludedSegment(f))));
+    rootsCache.set(context, pending);
+    // Never cache a failed listing.
+    pending.catch(() => rootsCache.delete(context));
+  }
+  return pending;
+}
 
 /** Every import on a removed line, across all changed Python files, once per run. */
 export function removedPythonImports(context: AdapterContext): Promise<RemovedImport[]> {
@@ -91,8 +109,7 @@ export async function findRemovedPythonUsages(
   if ((context.pullRequestSourceChanges ?? []).length === 0) return [];
   const removed = await removedPythonImports(context);
   if (removed.length === 0) return [];
-  const all = (await context.repository.listFiles()).filter((f) => !hasExcludedSegment(f));
-  const roots = new Set(candidateRoots(all));
+  const roots = new Set(await headRoots(context));
   roots.add(dependency.project.path);
   const byLine = new Map<string, Usage>();
   for (const { file, imp, symbols } of removed) {
