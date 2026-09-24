@@ -54,6 +54,23 @@ const fixtures = (await readdir(hostileDir, { withFileTypes: true }))
 
 assert.ok(fixtures.length > 0, "repo-* fixtures are missing");
 
+describe("vocabulary/README sync (#104)", () => {
+  it("every VOCABULARY key and required field is documented in fixtures/hostile/README.md", async () => {
+    const readme = await readFile(join(hostileDir, "README.md"), "utf8");
+    const lines = readme.split("\n");
+    for (const [key, spec] of Object.entries(VOCABULARY)) {
+      const line = lines.find((l) => l.includes(`\`${key}\``));
+      assert.ok(line, `assert '${key}' is not documented in fixtures/hostile/README.md`);
+      for (const field of spec.required) {
+        assert.ok(
+          line.includes(`\`${field}\``),
+          `required field '${field}' of assert '${key}' is not named on its README line`,
+        );
+      }
+    }
+  });
+});
+
 describe("repo fixture contracts", () => {
   for (const fixture of fixtures) {
     it(fixture, async () => {
