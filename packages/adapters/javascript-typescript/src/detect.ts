@@ -13,6 +13,8 @@ import {
   type Evidence,
   type ProjectRef,
 } from "@ghostdeps/core";
+import { detectPackageManagers, type PackageManagerDetection } from "./package-managers.js";
+import { displayRoot, joinPath } from "./paths.js";
 
 export const JS_ECOSYSTEM = "javascript-typescript";
 
@@ -54,21 +56,14 @@ function manifestRoot(manifestPath: string): string {
 }
 
 /** The deepest root containing the file wins, so monorepo members own their source. */
-function nearestRoot(file: string, roots: string[]): string | undefined {
-  let best: string | undefined;
-  for (const root of roots) {
-    const inside = root === "." || file.startsWith(`${root}/`);
-    if (inside && (best === undefined || root.length > best.length)) best = root;
+function nearestRoot(file: string, rootSet: ReadonlySet<string>): string | undefined {
+  let dir = file;
+  for (;;) {
+    const slash = dir.lastIndexOf("/");
+    if (slash === -1) return rootSet.has(".") ? "." : undefined;
+    dir = dir.slice(0, slash);
+    if (rootSet.has(dir)) return dir;
   }
-  return best;
-}
-
-function joinPath(root: string, name: string): string {
-  return root === "." ? name : `${root}/${name}`;
-}
-
-function displayRoot(root: string): string {
-  return root === "." ? "repository root" : root;
 }
 
 export async function detectJavaScriptTypeScript(
@@ -76,6 +71,7 @@ export async function detectJavaScriptTypeScript(
 ): Promise<DetectionResult> {
   const { repository } = context;
   const files = (await repository.listFiles()).filter((file) => !isExcluded(file));
+  const fileSet = new Set(files);
   const roots = files
     .filter((file) => file === "package.json" || file.endsWith("/package.json"))
     .map(manifestRoot)
@@ -85,14 +81,16 @@ export async function detectJavaScriptTypeScript(
     return { confidence: 0, projects: [], evidence: [] };
   }
 
+  const rootSet = new Set(roots);
   const sourceCountByRoot = new Map<string, number>(roots.map((root) => [root, 0]));
   for (const file of files.filter(isSourceFile)) {
-    const root = nearestRoot(file, roots);
+    const root = nearestRoot(file, rootSet);
     if (root !== undefined) sourceCountByRoot.set(root, (sourceCountByRoot.get(root) ?? 0) + 1);
   }
 
   const evidence: Evidence[] = [];
   const projects: ProjectRef[] = [];
+  const pmByRoot = new Map<string, PackageManagerDetection>();
   let best = 0;
 
   for (const root of roots) {
@@ -135,17 +133,17 @@ export async function detectJavaScriptTypeScript(
         kind: "source-files",
         statement: `${sourceCount} JS/TS source file(s) under ${displayRoot(root)}`,
       });
-      const lockfile = LOCKFILES.find((name) => files.includes(joinPath(root, name)));
+      const lockfile = LOCKFILES.find((name) => fileSet.has(joinPath(root, name)));
       if (lockfile !== undefined) {
         confidence += 0.1;
         evidence.push({
           kind: "lockfile-found",
-          statement: `found ${joinPath(root, lockfile)}`,
+          statement: `a JS/TS lockfile is present at ${displayRoot(root)}`,
           file: joinPath(root, lockfile),
         });
       }
       const tsconfigPath = joinPath(root, "tsconfig.json");
-      if (files.includes(tsconfigPath)) {
+      if (fileSet.has(tsconfigPath)) {
         confidence += 0.1;
         evidence.push({
           kind: "tsconfig-found",
@@ -157,13 +155,59 @@ export async function detectJavaScriptTypeScript(
       confidence = Math.min(confidence, 1);
     }
 
+    // Package-manager detection (issue #25) runs for every root, including
+    // below-threshold ones: a skipped workspace root still owns the lockfile
+    // its members inherit. Conflicting signals lower confidence rather than
+    // forcing a guess.
+    const pm = await detectPackageManagers(repository, root, fileSet);
+    pmByRoot.set(root, pm);
+    if (confidence >= DETECTION_CONFIDENCE_THRESHOLD) {
+      evidence.push(...pm.evidence);
+      if (pm.conflict) confidence = Math.max(0, confidence - 0.1);
+    }
+
+    // Round to 2dp: float arithmetic makes 0.7+0.1+0.1+0.1 == 0.9999...
+    confidence = Math.round(confidence * 100) / 100;
     best = Math.max(best, confidence);
     if (confidence >= DETECTION_CONFIDENCE_THRESHOLD) {
-      projects.push({ path: root, ecosystem: JS_ECOSYSTEM, packageManagers: [] });
+      projects.push({
+        path: root,
+        ecosystem: JS_ECOSYSTEM,
+        packageManagers: pm.managers,
+      });
     } else {
       evidence.push({
         kind: "project-skipped",
         statement: `skipped ${displayRoot(root)}: confidence ${confidence.toFixed(2)} is below the detection threshold ${DETECTION_CONFIDENCE_THRESHOLD}`,
+      });
+    }
+  }
+
+  // Workspace members without their own lockfile inherit the nearest
+  // ancestor ROOT's single, unconflicted package manager (issue #25). The
+  // ancestor need not be a detected project itself: a sourceless workspace
+  // root still owns the lockfile its members install with.
+  for (const project of projects) {
+    if (project.packageManagers.length > 0) continue;
+    const ancestors = roots
+      .filter(
+        (candidate) =>
+          candidate !== project.path &&
+          (candidate === "." || project.path.startsWith(`${candidate}/`)),
+      )
+      .sort((a, b) => b.length - a.length);
+    const ancestor = ancestors[0];
+    if (ancestor === undefined) continue;
+    const ancestorPm = pmByRoot.get(ancestor);
+    const only =
+      ancestorPm !== undefined && !ancestorPm.conflict && ancestorPm.managers.length === 1
+        ? ancestorPm.managers[0]
+        : undefined;
+    if (only !== undefined) {
+      project.packageManagers.push(only);
+      evidence.push({
+        kind: "package-manager-inherited",
+        statement: `${displayRoot(project.path)} inherits ${only.name} from ${displayRoot(ancestor)}${only.lockfile !== undefined ? ` (${only.lockfile})` : ""}`,
       });
     }
   }

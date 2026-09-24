@@ -1,0 +1,5 @@
+{
+  "description": "pnpm project: pnpm-lock.yaml plus a packageManager pin identify pnpm; detection must report packageManagers [pnpm].",
+  "findings": [],
+  "mustNotFind": []
+}

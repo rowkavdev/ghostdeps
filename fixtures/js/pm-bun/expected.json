@@ -1,0 +1,5 @@
+{
+  "description": "bun project: bun.lockb identifies bun; detection must report packageManagers [bun].",
+  "findings": [],
+  "mustNotFind": []
+}

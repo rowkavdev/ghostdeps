@@ -1,0 +1,5 @@
+{
+  "description": "yarn classic project: yarn.lock without .yarnrc.yml or .yarn/ means classic; detection must report packageManagers [yarn] with a classic variant note.",
+  "findings": [],
+  "mustNotFind": []
+}

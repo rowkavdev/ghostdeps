@@ -1,0 +1,5 @@
+{
+  "description": "npm project: package-lock.json identifies npm; detection must report packageManagers [npm] for the root project.",
+  "findings": [],
+  "mustNotFind": []
+}
