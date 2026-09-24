@@ -154,6 +154,25 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("maxParallelAdapters serialises workers, bounding total heap (#125)", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const started = Date.now();
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("busy-loop.mjs"), fixture("busy-loop.mjs")],
+        adapterTimeoutMs: 400,
+        maxParallelAdapters: 1,
+      });
+      const elapsed = Date.now() - started;
+      // Two busy loops run one after another (~1.4s each with grace), not
+      // side by side; parallel would finish in roughly one budget.
+      assert.ok(elapsed > 2_400, `workers overlapped: ${elapsed}ms`);
+      assert.equal(result.findings.filter((f) => f.summary.includes("timed out")).length, 2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("a module without an adapter export becomes an info finding, not a crash", async () => {
     const { dir, handle } = await fixtureRepo();
     try {
