@@ -44,3 +44,55 @@ describe("createJavaScriptTypeScriptAdapter wiring", () => {
 
 runAdapterContractTests(createJavaScriptTypeScriptAdapter(), ctx("lockfile-npm-v3"));
 runAdapterContractTests(createJavaScriptTypeScriptAdapter(), ctx("usage-static-and-require"));
+
+describe("reference analysis completeness (#132)", () => {
+  const adapter = createJavaScriptTypeScriptAdapter();
+  const dev = (name: string): Dependency => ({
+    name,
+    constraint: "*",
+    kind: "dev",
+    project: root,
+    declaredIn: "package.json",
+  });
+  const report = async (fixture: string, name: string) =>
+    normaliseUsageResult(await adapter.findUsage!(ctx(fixture), dev(name)));
+
+  it("script-only dependency: via=script usage, analysis complete", async () => {
+    const r = await report("refs-script-only", "typescript");
+    assert.deepEqual(
+      r.usages.map((u) => [u.via, u.file, u.symbols]),
+      [["script", "package.json", ["tsc"]]],
+    );
+    assert.equal(r.referenceAnalysisComplete, true);
+  });
+
+  it("config-only dependencies: via=config usage, analysis complete", async () => {
+    for (const [name, file] of [
+      ["eslint-plugin-import", ".eslintrc.json"],
+      ["@types/node", "tsconfig.json"],
+    ] as const) {
+      const r = await report("refs-config-only", name);
+      assert.deepEqual(
+        r.usages.map((u) => [u.via, u.file]),
+        [["config", file]],
+        name,
+      );
+      assert.equal(r.referenceAnalysisComplete, true, name);
+    }
+  });
+
+  it("no evidence anywhere: no usage and complete, so the policy may say unused", async () => {
+    const r = await report("basic-unused", "left-pad");
+    assert.deepEqual(r.usages, []);
+    assert.equal(r.referenceAnalysisComplete, true);
+  });
+
+  it("partial scans are never complete", async () => {
+    // Non-literal dynamic import in the source scan.
+    assert.equal((await report("usage-dynamic", "plugin-a")).referenceAnalysisComplete, false);
+    // A JS config that is never evaluated.
+    const js = await report("refs-partial-js-config", "eslint-plugin-foo");
+    assert.deepEqual(js.usages, []);
+    assert.equal(js.referenceAnalysisComplete, false);
+  });
+});

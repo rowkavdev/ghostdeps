@@ -1,0 +1,5 @@
+{
+  "description": "typescript is only referenced from a package.json script (tsc). It is used via=script and must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "typescript" }]
+}

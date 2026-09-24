@@ -10,12 +10,14 @@ import type {
   Dependency,
   EcosystemAdapter,
   ProjectRef,
+  UsageAnalysisReport,
 } from "@ghostdeps/core";
 import { JS_ECOSYSTEM, detectJavaScriptTypeScript } from "./detect.js";
 import { buildDependencyGraph } from "./lockfile/index.js";
 import { parseManifest } from "./manifest.js";
-import { findScriptUsages } from "./references/scripts.js";
-import { findUsage } from "./usage/index.js";
+import { findConfigUsages, unreadConfigs } from "./references/config.js";
+import { findScriptUsages, scriptGaps } from "./references/scripts.js";
+import { findUsage, usageLimitations } from "./usage/index.js";
 
 export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
   return {
@@ -24,13 +26,28 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
     capabilities: new Set<AdapterCapability>(["dependencyGraph", "usageAnalysis"]),
     detect: detectJavaScriptTypeScript,
     buildDependencyGraph,
-    // Source imports plus package.json script references (via="script", #132).
-    async findUsage(context: AdapterContext, dependency: Dependency) {
-      const [imports, scripts] = await Promise.all([
+    /**
+     * Source imports plus script (via="script") and config/convention
+     * (via="config"/"convention") references (#132). referenceAnalysisComplete
+     * is true only when nothing in the dependency's project (or, for a
+     * workspace member, the root) went unread: no import-scan limitation, no
+     * script gap and no unread config. Anything else stays incomplete, so the
+     * policy reports "manual review" rather than "unused".
+     */
+    async findUsage(context: AdapterContext, dependency: Dependency): Promise<UsageAnalysisReport> {
+      const [imports, scripts, configs, importGaps, scriptProblems, unread] = await Promise.all([
         findUsage(context, dependency),
         findScriptUsages(context, dependency),
+        findConfigUsages(context, dependency),
+        usageLimitations(context, dependency.project.path),
+        scriptGaps(context, dependency),
+        unreadConfigs(context, dependency),
       ]);
-      return [...imports, ...scripts];
+      return {
+        usages: [...imports, ...scripts, ...configs],
+        referenceAnalysisComplete:
+          importGaps.length === 0 && scriptProblems.length === 0 && unread.length === 0,
+      };
     },
     async listDirectDependencies(
       context: AdapterContext,

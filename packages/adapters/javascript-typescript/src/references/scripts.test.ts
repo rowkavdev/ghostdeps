@@ -74,8 +74,11 @@ describe("commandWords", () => {
     assert.deepEqual(analyseScript("eval $CMD").gaps, ["eval"]);
     assert.deepEqual(analyseScript("echo 'open").gaps, ["unbalanced quote"]);
     assert.deepEqual(analyseScript("x".repeat(9_000)).gaps, ["script too long"]);
-    // node running a repo file is source the import scanner reads.
-    assert.deepEqual(analyseScript("node scripts/gen.js").gaps, []);
+    // The file's imports are scanned, but commands it spawns are not.
+    assert.deepEqual(analyseScript("node scripts/gen.js").gaps, [
+      "node runs scripts/gen.js; commands it spawns are not read",
+    ]);
+    assert.deepEqual(analyseScript("node --version").gaps, []);
   });
 });
 
@@ -89,6 +92,22 @@ describe("scriptGaps", () => {
     assert.deepEqual(await scriptGaps(gappy, dep("typescript")), [
       'package.json script "ci": sh runs ci.sh, which is not read',
     ]);
+  });
+
+  it("workspace members inherit root scripts: usages and gaps", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({ scripts: { lint: "eslint .", gen: "sh gen.sh" } }),
+      "packages/a/package.json": JSON.stringify({ scripts: { t: "vitest" } }),
+    });
+    assert.deepEqual(
+      (await findScriptUsages(context, dep("eslint", "packages/a"))).map((u) => u.file),
+      ["package.json"],
+    );
+    assert.deepEqual(await scriptGaps(context, dep("vitest", "packages/a")), [
+      'package.json script "gen": sh runs gen.sh, which is not read',
+    ]);
+    // The root does not inherit from members.
+    assert.deepEqual(await findScriptUsages(context, dep("vitest")), []);
   });
 
   it("an unreadable or malformed manifest is a gap", async () => {

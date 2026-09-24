@@ -1,0 +1,11 @@
+{
+  "name": "fixture-refs-script-only",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

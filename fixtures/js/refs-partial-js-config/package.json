@@ -1,0 +1,8 @@
+{
+  "name": "fixture-refs-partial-js-config",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "eslint-plugin-foo": "^1.0.0"
+  }
+}

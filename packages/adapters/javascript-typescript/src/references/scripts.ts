@@ -316,15 +316,17 @@ function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): vo
       out.gaps.push("eval");
       return;
     }
-    if (bare === "node" || (bare === "bun" && words[i + 1] === "-e")) {
-      if (
-        words
-          .slice(i + 1)
-          .some((w) => w === "-e" || w === "--eval" || w === "-p" || w === "--print")
-      ) {
-        out.gaps.push(`${bare} evaluates inline code`);
+    if (bare === "node") {
+      const rest = words.slice(i + 1);
+      if (rest.some((w) => w === "-e" || w === "--eval" || w === "-p" || w === "--print")) {
+        out.gaps.push("node evaluates inline code");
+      } else {
+        // The file's imports are in the source scan, but bins it spawns
+        // (execSync("tsc")) are not, so a node script is a coverage gap.
+        const file = rest.find((w) => !w.startsWith("-"));
+        if (file !== undefined) out.gaps.push(`node runs ${file}; commands it spawns are not read`);
       }
-      if (bare === "node") return;
+      return;
     }
     if (PMS.has(bare)) {
       let j = i + 1;
@@ -507,43 +509,52 @@ export async function binNames(
   return names;
 }
 
-/** via="script" usages of `dependency` in its project's package.json scripts. */
+/** The dependency's own manifest, then (for workspace members) the root's, which runs member tooling too. */
+async function manifestsFor(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<ManifestRead[]> {
+  const projectDir = projectDirOf(dependency);
+  const own = await manifestFor(context, projectDir);
+  return projectDir === "." ? [own] : [own, await manifestFor(context, ".")];
+}
+
+/** via="script" usages of `dependency` in its project's (and the root's) package.json scripts. */
 export async function findScriptUsages(
   context: AdapterContext,
   dependency: Dependency,
 ): Promise<Usage[]> {
-  const manifest = await manifestFor(context, projectDirOf(dependency));
-  if (!manifest || !("scripts" in manifest) || manifest.scripts.length === 0) return [];
+  const manifests = (await manifestsFor(context, dependency)).filter(
+    (m): m is ManifestScripts => m !== undefined && "scripts" in m && m.scripts.length > 0,
+  );
+  if (manifests.length === 0) return [];
   const bins = await binNames(context, dependency);
   if (bins.size === 0) return [];
   const usages: Usage[] = [];
-  for (const [name, command] of manifest.scripts) {
-    const hits = [...new Set(commandWords(command).filter((w) => bins.has(w)))];
-    if (hits.length === 0) continue;
-    usages.push({
-      dependency: dependency.name,
-      file: manifest.file,
-      line: scriptLine(manifest.text, name),
-      form: "unknown",
-      via: "script",
-      symbols: hits,
-    });
+  for (const manifest of manifests) {
+    for (const [name, command] of manifest.scripts) {
+      const hits = [...new Set(commandWords(command).filter((w) => bins.has(w)))];
+      if (hits.length === 0) continue;
+      usages.push({
+        dependency: dependency.name,
+        file: manifest.file,
+        line: scriptLine(manifest.text, name),
+        form: "unknown",
+        via: "script",
+        symbols: hits,
+      });
+    }
   }
   return usages;
 }
 
-/**
- * Why the project's scripts were not fully analysed (unreadable manifest,
- * too many scripts, an unrecognised wrapper flag, a shell file, eval, ...).
- * Empty means every script was read. Feeds referenceAnalysisComplete (#132).
- */
-export async function scriptGaps(
-  context: AdapterContext,
-  dependency: Dependency,
-): Promise<string[]> {
-  const manifest = await manifestFor(context, projectDirOf(dependency));
+const gapCaches = new WeakMap<ManifestScripts, string[]>();
+
+function manifestGaps(manifest: ManifestRead): string[] {
   if (!manifest) return [];
   if (!("scripts" in manifest)) return [`${manifest.file}: ${manifest.problem}`];
+  const cached = gapCaches.get(manifest);
+  if (cached) return cached;
   const gaps: string[] = [];
   if (manifest.truncated) gaps.push(`${manifest.file}: more than ${MAX_SCRIPTS} scripts`);
   for (const [name, command] of manifest.scripts) {
@@ -551,5 +562,19 @@ export async function scriptGaps(
       gaps.push(`${manifest.file} script "${name}": ${gap}`);
     }
   }
+  gapCaches.set(manifest, gaps);
   return gaps;
+}
+
+/**
+ * Why the project's scripts (and, for workspace members, the root's) were
+ * not fully analysed: unreadable manifest, too many scripts, an unrecognised
+ * wrapper flag, a shell or node file, eval, ... Empty means every script was
+ * read. Feeds referenceAnalysisComplete (#132).
+ */
+export async function scriptGaps(
+  context: AdapterContext,
+  dependency: Dependency,
+): Promise<string[]> {
+  return (await manifestsFor(context, dependency)).flatMap(manifestGaps);
 }
