@@ -23,6 +23,12 @@ export type AnalysisTrigger =
        * the worker stays PR-scoped instead of analysing the whole repository.
        */
       readonly sourceOnly?: true;
+      /**
+       * For synchronize: the PR's head before this push (the payload's
+       * `before`). Only a queued job for exactly this head is superseded
+       * (#257), so a late or redelivered event never drops a newer head.
+       */
+      readonly beforeSha?: string;
     }
   | { readonly kind: "push"; readonly ref: string; readonly beforeSha: string }
   | { readonly kind: "full_scan"; readonly reason: "installation" | "explicit" }
@@ -81,15 +87,8 @@ export interface InProcessJobQueueOptions {
   /** Maximum jobs waiting to run. Beyond this, enqueue returns "overloaded". Default 500. */
   readonly maxPending?: number;
   readonly onError?: (job: AnalysisJob, error: unknown) => void;
-  /** Called for each queued job dropped because a newer head of its PR arrived (#257). */
+  /** Called for each queued job dropped because its PR's head moved past it (#257). */
   readonly onSuperseded?: (dropped: AnalysisJob, by: AnalysisJob) => void;
-}
-
-/** The PR a job belongs to, when it has one. */
-function pullRequestOf(job: AnalysisJob): number | undefined {
-  if (job.trigger.kind === "pull_request") return job.trigger.number;
-  if (job.trigger.kind === "rerequested") return job.trigger.pullRequest?.number;
-  return undefined;
 }
 
 /** v0.1 queue: in memory, bounded concurrency, duplicate keys collapse. */
@@ -139,21 +138,26 @@ export class InProcessJobQueue implements JobQueue {
   }
 
   /**
-   * A new head for a PR (#257): queued jobs for an older head of the same PR
-   * would analyse a commit whose check is already superseded, so drop them.
-   * Only pull_request events supersede; a re-run the user asked for never
-   * drops other work. Running jobs are left to finish. A dropped job never
-   * created its check run, so nothing needs cleaning up, and its key is
-   * forgotten so the old head can be queued again later.
+   * A new head for a PR (#257): a synchronize event says which head it
+   * replaced (`beforeSha`). A queued pull_request job for exactly that head
+   * of the same PR would analyse a commit whose check is already superseded,
+   * so drop it. Matching on `beforeSha`, not just "a different head", keeps
+   * a late or redelivered older event from dropping the current head's job.
+   * Re-runs the user asked for are never dropped and never supersede.
+   * Running jobs are left to finish. A dropped job never created its check
+   * run, so nothing needs cleaning up, and its key is forgotten so that head
+   * can be queued again later.
    */
   #dropSuperseded(job: AnalysisJob): void {
-    if (job.trigger.kind !== "pull_request") return;
-    const pr = job.trigger.number;
+    const t = job.trigger;
+    if (t.kind !== "pull_request" || t.beforeSha === undefined) return;
     for (let i = this.#pending.length - 1; i >= 0; i--) {
       const queued = this.#pending[i]!;
       if (
+        queued.trigger.kind === "pull_request" &&
+        queued.trigger.number === t.number &&
         queued.repository.id === job.repository.id &&
-        pullRequestOf(queued) === pr &&
+        queued.headSha === t.beforeSha &&
         queued.headSha !== job.headSha
       ) {
         this.#pending.splice(i, 1);

@@ -104,7 +104,15 @@ export function preFilter(eventName: string, payload: unknown): PreFilterResult 
     if (!headSha || !baseSha || number === undefined) {
       return { skip: "pull_request payload missing number or SHAs" };
     }
-    const trigger: AnalysisTrigger = { kind: "pull_request", number, action: p.action, baseSha };
+    const beforeSha =
+      p.action === "synchronize" && p.before && !ZERO_SHA.test(p.before) ? p.before : undefined;
+    const trigger: AnalysisTrigger = {
+      kind: "pull_request",
+      number,
+      action: p.action,
+      baseSha,
+      ...(beforeSha ? { beforeSha } : {}),
+    };
     return { candidate: { ...b, key: analysisJobKey(b.repository.id, headSha), headSha, trigger } };
   }
 
