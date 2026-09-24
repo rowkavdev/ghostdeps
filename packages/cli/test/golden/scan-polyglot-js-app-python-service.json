@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "constraint": "^1.6.0",
+      "declaredIn": "package.json",
+      "kind": "runtime",
+      "name": "axios",
+      "project": {
+        "ecosystem": "javascript-typescript",
+        "packageManagers": [
+          {
+            "lockfile": "package-lock.json",
+            "name": "npm"
+          }
+        ],
+        "path": "."
+      }
+    },
+    {
+      "constraint": ">=2.31",
+      "declaredIn": "services/api/pyproject.toml",
+      "kind": "runtime",
+      "name": "requests",
+      "project": {
+        "ecosystem": "python",
+        "packageManagers": [],
+        "path": "services/api"
+      }
+    }
+  ],
+  "detected": [
+    {
+      "confidence": "high",
+      "ecosystem": "javascript-typescript",
+      "evidence": [
+        {
+          "file": "package.json",
+          "kind": "manifest-found",
+          "statement": "found package.json"
+        },
+        {
+          "kind": "source-files",
+          "statement": "1 JS/TS source file(s) under repository root"
+        },
+        {
+          "file": "package-lock.json",
+          "kind": "lockfile-found",
+          "statement": "a JS/TS lockfile is present at repository root"
+        },
+        {
+          "file": "package-lock.json",
+          "kind": "lockfile-found",
+          "statement": "found package-lock.json (npm)"
+        }
+      ]
+    },
+    {
+      "confidence": "high",
+      "ecosystem": "python",
+      "evidence": [
+        {
+          "file": "services/api/pyproject.toml",
+          "kind": "manifest",
+          "statement": "found services/api/pyproject.toml"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "affectedFiles": [
+        "package.json"
+      ],
+      "confidence": "high",
+      "dependency": "axios",
+      "evidence": [
+        {
+          "kind": "capability-cluster",
+          "statement": "axios and requests (python) are listed under \"http-client\" in the capability catalogue (version 1)"
+        }
+      ],
+      "kind": "info",
+      "limitations": [
+        "Based on declared dependencies and the catalogue, not on how each package is used."
+      ],
+      "recommendation": "For awareness only. Packages in different ecosystems can't replace each other; no change is suggested.",
+      "rule": "cross-ecosystem-capability-overlap",
+      "severity": "info",
+      "summary": "axios (javascript-typescript) covers the same capability (HTTP client) as requests (python)"
+    },
+    {
+      "affectedFiles": [
+        "services/api/pyproject.toml"
+      ],
+      "confidence": "high",
+      "dependency": "requests",
+      "evidence": [
+        {
+          "kind": "capability-cluster",
+          "statement": "requests and axios (javascript-typescript) are listed under \"http-client\" in the capability catalogue (version 1)"
+        }
+      ],
+      "kind": "info",
+      "limitations": [
+        "Based on declared dependencies and the catalogue, not on how each package is used."
+      ],
+      "recommendation": "For awareness only. Packages in different ecosystems can't replace each other; no change is suggested.",
+      "rule": "cross-ecosystem-capability-overlap",
+      "severity": "info",
+      "summary": "requests (python) covers the same capability (HTTP client) as axios (javascript-typescript)"
+    }
+  ],
+  "graph": {
+    "ecosystems": [
+      {
+        "ecosystem": "javascript-typescript",
+        "emitted": 2,
+        "graphs": "complete",
+        "nodes": 2
+      },
+      {
+        "ecosystem": "python",
+        "emitted": 2,
+        "graphs": "complete",
+        "nodes": 2
+      }
+    ],
+    "nodes": [
+      {
+        "dependencies": [
+          "follow-redirects"
+        ],
+        "dev": false,
+        "directIn": [
+          "javascript-typescript:."
+        ],
+        "ecosystem": "javascript-typescript",
+        "id": "javascript-typescript:axios@1.6.8",
+        "name": "axios",
+        "projects": [
+          "javascript-typescript:."
+        ],
+        "version": "1.6.8"
+      },
+      {
+        "dependencies": [],
+        "dev": false,
+        "directIn": [],
+        "ecosystem": "javascript-typescript",
+        "id": "javascript-typescript:follow-redirects@1.15.6",
+        "name": "follow-redirects",
+        "projects": [
+          "javascript-typescript:."
+        ],
+        "version": "1.15.6"
+      },
+      {
+        "dependencies": [],
+        "dev": false,
+        "directIn": [
+          "python:services/api"
+        ],
+        "ecosystem": "python",
+        "id": "python:requests@2.31.0",
+        "name": "requests",
+        "projects": [
+          "python:services/api"
+        ],
+        "version": "2.31.0"
+      },
+      {
+        "dependencies": [],
+        "dev": false,
+        "directIn": [],
+        "ecosystem": "python",
+        "id": "python:urllib3@2.2.1",
+        "name": "urllib3",
+        "projects": [
+          "python:services/api"
+        ],
+        "version": "2.2.1"
+      }
+    ],
+    "truncated": false
+  },
+  "projectTree": [
+    {
+      "ecosystem": "javascript-typescript",
+      "id": "javascript-typescript:.",
+      "path": "."
+    },
+    {
+      "ecosystem": "python",
+      "id": "python:services/api",
+      "parent": "javascript-typescript:.",
+      "path": "services/api"
+    }
+  ],
+  "projects": [
+    {
+      "ecosystem": "javascript-typescript",
+      "packageManagers": [
+        {
+          "lockfile": "package-lock.json",
+          "name": "npm"
+        }
+      ],
+      "path": "."
+    },
+    {
+      "ecosystem": "python",
+      "packageManagers": [],
+      "path": "services/api"
+    }
+  ],
+  "surface": [
+    {
+      "direct": 1,
+      "ecosystem": "javascript-typescript",
+      "graphs": "complete",
+      "transitive": 2
+    },
+    {
+      "direct": 1,
+      "ecosystem": "python",
+      "graphs": "complete",
+      "transitive": 2
+    }
+  ],
+  "usages": [
+    {
+      "dependency": "axios",
+      "file": "src/index.ts",
+      "form": "static",
+      "line": 1,
+      "symbols": [
+        "default",
+        "get"
+      ]
+    }
+  ]
+}
