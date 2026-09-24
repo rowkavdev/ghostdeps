@@ -25,7 +25,12 @@
       "name": "requests",
       "project": {
         "ecosystem": "python",
-        "packageManagers": [],
+        "packageManagers": [
+          {
+            "lockfile": "uv.lock",
+            "name": "uv"
+          }
+        ],
         "path": "services/api"
       }
     }
@@ -62,8 +67,17 @@
       "evidence": [
         {
           "file": "services/api/pyproject.toml",
-          "kind": "manifest",
+          "kind": "manifest-found",
           "statement": "found services/api/pyproject.toml"
+        },
+        {
+          "kind": "source-files",
+          "statement": "1 Python source file(s) under services/api"
+        },
+        {
+          "file": "services/api/uv.lock",
+          "kind": "lockfile-found",
+          "statement": "uv.lock at services/api identifies uv"
         }
       ]
     }
@@ -124,9 +138,9 @@
       },
       {
         "ecosystem": "python",
-        "emitted": 2,
+        "emitted": 5,
         "graphs": "complete",
-        "nodes": 2
+        "nodes": 5
       }
     ],
     "nodes": [
@@ -160,6 +174,47 @@
       },
       {
         "dependencies": [],
+        "dev": false,
+        "directIn": [],
+        "ecosystem": "python",
+        "id": "python:certifi@2024.2.2",
+        "name": "certifi",
+        "projects": [
+          "python:services/api"
+        ],
+        "version": "2024.2.2"
+      },
+      {
+        "dependencies": [],
+        "dev": false,
+        "directIn": [],
+        "ecosystem": "python",
+        "id": "python:charset-normalizer@3.3.2",
+        "name": "charset-normalizer",
+        "projects": [
+          "python:services/api"
+        ],
+        "version": "3.3.2"
+      },
+      {
+        "dependencies": [],
+        "dev": false,
+        "directIn": [],
+        "ecosystem": "python",
+        "id": "python:idna@3.6",
+        "name": "idna",
+        "projects": [
+          "python:services/api"
+        ],
+        "version": "3.6"
+      },
+      {
+        "dependencies": [
+          "certifi",
+          "charset-normalizer",
+          "idna",
+          "urllib3"
+        ],
         "dev": false,
         "directIn": [
           "python:services/api"
@@ -213,7 +268,12 @@
     },
     {
       "ecosystem": "python",
-      "packageManagers": [],
+      "packageManagers": [
+        {
+          "lockfile": "uv.lock",
+          "name": "uv"
+        }
+      ],
       "path": "services/api"
     }
   ],
@@ -228,7 +288,7 @@
       "direct": 1,
       "ecosystem": "python",
       "graphs": "complete",
-      "transitive": 2
+      "transitive": 5
     }
   ],
   "usages": [

@@ -256,6 +256,9 @@ importers:
       '@ghostdeps/javascript-typescript':
         specifier: workspace:*
         version: link:../adapters/javascript-typescript
+      '@ghostdeps/python':
+        specifier: workspace:*
+        version: link:../adapters/python
       '@ghostdeps/rust':
         specifier: workspace:*
         version: link:../adapters/rust
@@ -281,6 +284,9 @@ importers:
       '@ghostdeps/javascript-typescript':
         specifier: workspace:*
         version: link:../adapters/javascript-typescript
+      '@ghostdeps/python':
+        specifier: workspace:*
+        version: link:../adapters/python
       '@ghostdeps/rust':
         specifier: workspace:*
         version: link:../adapters/rust

@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { analyseDirectory, createDefaultPolicy, renderJsonReport } from "@ghostdeps/core";
 import { defaultAdapters } from "./adapters.js";
-import { createStubPythonAdapter, isTestOnlyStub } from "./testing/stub-python-adapter.js";
 
 /** Tests run from packages/cli/dist. */
 const FIXTURE = "../../../fixtures/polyglot/js-app-python-service";
@@ -19,21 +18,21 @@ const expected = JSON.parse(
 };
 const golden = new URL("../test/golden/scan-polyglot-js-app-python-service.json", import.meta.url);
 
-// Multi-ecosystem mechanics only (#55): the real JS adapter plus a TEST-ONLY
-// stub Python adapter. This is not Python support.
+// Multi-ecosystem mechanics (#55) through the shipped adapters: the real JS
+// adapter and the real Python adapter. The test-only stub that stood in for
+// Python before the adapter landed has been removed.
 const analyse = () =>
   analyseDirectory(fixture, {
-    adapters: [...defaultAdapters(), createStubPythonAdapter()],
+    adapters: defaultAdapters(),
     network: { mode: "offline" },
     recommend: createDefaultPolicy({}),
   });
 
 describe("polyglot fixture: one unified result (#55)", () => {
-  it("the stub never ships", () => {
-    // Marker-based, so this keeps passing once the real Python adapter is
-    // registered.
-    assert.ok(isTestOnlyStub(createStubPythonAdapter()));
-    assert.ok(!defaultAdapters().some(isTestOnlyStub));
+  it("ships exactly one Python adapter, the real one", () => {
+    const python = defaultAdapters().filter((adapter) => adapter.ecosystem === "python");
+    assert.equal(python.length, 1);
+    assert.ok(python[0]!.capabilities.has("dependencyGraph"));
   });
 
   it("yields one project tree, one graph and cross-ecosystem overlap notes", async () => {

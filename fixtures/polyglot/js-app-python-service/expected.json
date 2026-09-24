@@ -1,13 +1,33 @@
 {
-  "scenario": "A JS app at the root with a Python service nested under it, analysed with the real JS adapter plus the test-only stub Python adapter. Proves multi-ecosystem mechanics only; it does not claim Python support.",
+  "scenario": "A JS app at the root with a Python service nested under it, analysed with the shipped adapters (real JS and real Python). Proves the multi-ecosystem mechanics end to end: one project tree, one graph with a complete entry per ecosystem, and the cross-ecosystem HTTP-client overlap notes.",
   "projectTree": [
-    { "id": "javascript-typescript:." },
-    { "id": "python:services/api", "parent": "javascript-typescript:." }
+    {
+      "id": "javascript-typescript:."
+    },
+    {
+      "id": "python:services/api",
+      "parent": "javascript-typescript:."
+    }
   ],
-  "graphEcosystems": ["javascript-typescript", "python"],
+  "graphEcosystems": [
+    "javascript-typescript",
+    "python"
+  ],
   "findings": [
-    { "rule": "cross-ecosystem-capability-overlap", "dependency": "axios", "kind": "info" },
-    { "rule": "cross-ecosystem-capability-overlap", "dependency": "requests", "kind": "info" }
+    {
+      "rule": "cross-ecosystem-capability-overlap",
+      "dependency": "axios",
+      "kind": "info"
+    },
+    {
+      "rule": "cross-ecosystem-capability-overlap",
+      "dependency": "requests",
+      "kind": "info"
+    }
   ],
-  "mustNotFind": [{ "rule": "unused" }]
+  "mustNotFind": [
+    {
+      "rule": "unused"
+    }
+  ]
 }
