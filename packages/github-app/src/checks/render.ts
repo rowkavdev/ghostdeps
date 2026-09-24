@@ -15,7 +15,13 @@
  * - At most 50 annotations (one API request); everything else goes in the summary.
  * - Repository-derived text is data: annotation text is plain, summary text is Markdown-escaped.
  */
-import type { AnalysisResult, Evidence, Finding } from "@ghostdeps/core";
+import {
+  findingGroup,
+  type AnalysisResult,
+  type Evidence,
+  type Finding,
+  type FindingGroup,
+} from "@ghostdeps/core";
 import type { AddedLines } from "./diff.js";
 
 export const checkName = "ghostdeps";
@@ -103,27 +109,6 @@ function annotationFor(f: Finding, e: Evidence & { file: string; line: number })
   };
 }
 
-/**
- * An info finding saying the analysis was incomplete: about the whole run
- * (#178, #154: adapter failure, partial scan, caps) or a PR dependency change
- * that wasn't analysed. These keep a check neutral (#197).
- */
-export function isRunNote(f: Finding): boolean {
-  return (
-    f.kind === "info" &&
-    (f.dependency === undefined || f.evidence.some((e) => e.kind === "pr-dependency-change"))
-  );
-}
-
-/**
- * Every other info finding: about a dependency, suggesting no action
- * (cross-ecosystem overlap, unverified-no-imports, capability notes). Never
- * affects the conclusion (#209).
- */
-export function isAwarenessNote(f: Finding): boolean {
-  return f.kind === "info" && !isRunNote(f);
-}
-
 function awarenessSection(awareness: readonly Finding[]): string[] {
   if (awareness.length === 0) return [];
   const n = awareness.length;
@@ -140,13 +125,14 @@ function awarenessSection(awareness: readonly Finding[]): string[] {
 }
 
 function noteLine(f: Finding): string {
-  return `- ${md(f.summary)}`;
+  return `- ${f.dependency ? `**${md(f.dependency)}** - ` : ""}${md(f.summary)}`;
 }
 
 /**
- * Run-level notes from core (Findings) plus the app's own status notes: plain
- * text about a step the app itself skipped, e.g. an unreadable PR diff (#195).
- * Core's notes cover what core decided; the app never repeats them.
+ * Core's notes (findingGroup "incomplete" and "note") plus the app's own
+ * status notes: plain text about a step the app itself skipped, e.g. an
+ * unreadable PR diff (#195). Core's notes cover what core decided; the app
+ * never repeats them.
  */
 function notesSection(notes: readonly Finding[], appNotes: readonly string[]): string[] {
   const lines = [...appNotes.map((n) => `- ${md(n)}`), ...notes.map(noteLine)];
@@ -168,16 +154,24 @@ export function renderCheck(
   added: AddedLines,
   appNotes: readonly string[] = [],
 ): CheckOutput {
-  const notes = result.findings.filter(isRunNote);
-  const awareness = result.findings.filter(isAwarenessNote);
-  const findings = result.findings.filter((f) => f.kind !== "info");
-  const noteCount = notes.length + appNotes.length;
-  if (findings.length === 0 && noteCount === 0) {
+  // Grouping is core's (#239): the app only formats. "incomplete" notes and
+  // the app's own notes make a finding-free run neutral; plain adapter
+  // "note"s are shown but keep success; "awareness" never counts.
+  const group = (g: FindingGroup) => result.findings.filter((f) => findingGroup(f) === g);
+  const findings = group("verdict");
+  const notes = [...group("incomplete"), ...group("note")];
+  const awareness = group("awareness");
+  const incomplete = group("incomplete").length + appNotes.length;
+  if (findings.length === 0 && incomplete === 0) {
     return {
       conclusion: "success",
       output: {
         title: quietSummary,
-        summary: truncateSummary([quietSummary, ...awarenessSection(awareness)].join("\n")),
+        summary: truncateSummary(
+          [quietSummary, ...awarenessSection(awareness), ...notesSection(notes, appNotes)].join(
+            "\n",
+          ),
+        ),
         annotations: [],
       },
     };

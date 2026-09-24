@@ -142,6 +142,7 @@ describe("renderCheck", () => {
     summary:
       "requests (python) covers the same capability (HTTP client) as axios (javascript-typescript)",
     evidence: [{ kind: "capability-cluster", statement: "http-client" }],
+    awareness: true,
   });
 
   it("an awareness note alone keeps the quiet success check (#209)", () => {
@@ -182,8 +183,55 @@ describe("renderCheck", () => {
     const out = renderCheck(result([unanalysed]), added);
     assert.equal(out.conclusion, "neutral");
     assert.equal(out.output.title, incompleteTitle);
-    assert.match(out.output.summary, /### Notes\n\n- left\\-pad was added/);
+    assert.match(out.output.summary, /### Notes\n\n- \*\*left\\-pad\*\* - left\\-pad was added/);
     assert.doesNotMatch(out.output.summary, /awareness note/);
+  });
+
+  it("groups only through core: an unmarked dependency note is incomplete, not awareness (#239)", () => {
+    const unverified = finding({
+      kind: "info",
+      dependency: "left-pad",
+      rule: "unverified-no-imports",
+      summary: "No imports of left-pad were found; manual review recommended",
+      evidence: [],
+    });
+    const out = renderCheck(result([unverified]), added);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, incompleteTitle);
+    assert.match(
+      out.output.summary,
+      /### Notes\n\n- \*\*left\\-pad\*\* - No imports of left\\-pad/,
+    );
+    assert.doesNotMatch(out.output.summary, /awareness note/);
+    // An overlap finding without core's explicit marker is not awareness either.
+    const unmarked: Finding = { ...overlap };
+    delete unmarked.awareness;
+    assert.equal(renderCheck(result([unmarked]), added).conclusion, "neutral");
+  });
+
+  it("a plain adapter note is shown but keeps the quiet success check (#239)", () => {
+    const edges = finding({
+      kind: "info",
+      rule: "graph-edges-unavailable",
+      summary: "go module graph edges unavailable",
+      evidence: [],
+      adapterNote: true,
+    });
+    const out = renderCheck(result([edges]), added);
+    assert.equal(out.conclusion, "success");
+    assert.equal(out.output.title, quietSummary);
+    assert.match(
+      out.output.summary,
+      /### Notes\n\n- \*\*left\\-pad\*\* - go module graph edges unavailable/,
+    );
+  });
+
+  it("an adapter note next to an incomplete note is still neutral", () => {
+    const edges = finding({ kind: "info", summary: "edges", evidence: [], adapterNote: true });
+    const capped = finding({ kind: "info", summary: "capped", evidence: [] });
+    const out = renderCheck(result([edges, capped]), added);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, incompleteTitle);
   });
 
   it("is neutral, never failure, when there are findings", () => {
