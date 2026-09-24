@@ -110,6 +110,18 @@ export function parseNpmLockfile(
     }));
     const root = entry(projectDir);
     if (root) mismatches(root, declared, lockfile, evidence);
+    // Listed as a direct dependency but never resolved to a package entry:
+    // the lockfile is incomplete for it, same as the v1 path reports.
+    const listed = root ? rootListed(root) : new Set<string>();
+    for (const d of direct) {
+      if (!d.id && listed.has(d.name)) {
+        evidence.push({
+          kind: "lockfile-manifest-mismatch",
+          statement: `${d.name} is a direct dependency in ${lockfile} but has no resolved package entry`,
+          file: lockfile,
+        });
+      }
+    }
     return { packages, direct, evidence };
   }
 
@@ -170,17 +182,22 @@ export function parseNpmLockfile(
   return { packages, direct: declared.map((d) => ({ ...d, id: undefined })), evidence };
 }
 
+/** Direct dependency names recorded on a v2/v3 root or workspace entry. */
+function rootListed(root: NpmEntry): Set<string> {
+  return new Set([
+    ...Object.keys(isObject(root.dependencies) ? root.dependencies : {}),
+    ...Object.keys(isObject(root.devDependencies) ? root.devDependencies : {}),
+    ...Object.keys(isObject(root.optionalDependencies) ? root.optionalDependencies : {}),
+  ]);
+}
+
 function mismatches(
   root: NpmEntry,
   declared: { name: string; dev: boolean }[],
   lockfile: string,
   evidence: Evidence[],
 ): void {
-  const locked = new Set([
-    ...Object.keys(isObject(root.dependencies) ? root.dependencies : {}),
-    ...Object.keys(isObject(root.devDependencies) ? root.devDependencies : {}),
-    ...Object.keys(isObject(root.optionalDependencies) ? root.optionalDependencies : {}),
-  ]);
+  const locked = rootListed(root);
   const want = new Set(declared.map((d) => d.name));
   for (const n of want) {
     if (!locked.has(n)) {
