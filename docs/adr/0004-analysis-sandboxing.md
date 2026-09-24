@@ -29,6 +29,10 @@ The policy, in enforceable terms:
 
 **Trust popular repositories.** Rejected outright. Popularity is not a security boundary; account takeovers and protestware target exactly the popular set.
 
+## Amendment (2026-09-24): symlinks are recorded, never materialised
+
+Point 3 originally validated link targets and created root-confined links on disk. Independent review of the first extractor found two resolution-order escapes (lexical vs physical `..` handling; targets resolved at link-creation time changing meaning as later links land). The decision is amended: extraction **never creates symlinks**. Link entries are validated as paths and recorded in the extraction summary for the `RepositoryHandle`; nothing on disk can be followed, which removes the entire escape class rather than patching resolution order. Hardlinks remain materialised but may only reference files already extracted inside the root.
+
 ## Consequences
 
 - Some questions ("exact transitive closure without a lockfile") are intentionally unanswered rather than unsafely answered; the product reports reduced confidence instead.
