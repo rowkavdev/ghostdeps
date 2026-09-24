@@ -69,7 +69,7 @@ For pull request jobs (and re-runs GitHub links to a same-repo PR), the worker a
 
 What the app costs per analysis against GitHub's rate limits, what already protects it, and the open gaps: [github-api-limits.md](github-api-limits.md) (#37).
 
-The worker retries a rate-limited GitHub request only when the wait is 60 seconds or less, and at most twice (#255). Otherwise the run ends `neutral` as "GhostDeps could not run", saying the rate limit was reached and to wait a few minutes before re-running, instead of holding a worker slot until the limit resets. The webhook never waits: if the changed-files lookup takes longer than 5 seconds, the event takes the same path as a failed lookup and the change is analysed anyway.
+The worker retries a rate-limited GitHub request only when the wait is 60 seconds or less, and at most twice (#255). Otherwise the run ends `neutral` as "GhostDeps could not run", saying the rate limit was reached and to wait a few minutes before re-running, instead of holding a worker slot until the limit resets. The webhook never waits: if the changed-files lookup takes longer than 5 seconds, the event takes the same path as a failed lookup and the change is analysed anyway. The worker logs every GitHub response's `x-ratelimit-*` reading at debug level and warns once (per job client and resource) when the remaining budget drops below 10% of the limit (#256).
 
 ## Development
 
