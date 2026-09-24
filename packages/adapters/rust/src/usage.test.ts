@@ -132,12 +132,16 @@ describe("rust usage scanning (#50)", () => {
   it("keeps memory flat across repeated parses of a large file", async () => {
     const line = "fn f() { let _x = serde_json::to_string(&vec![1, 2, 3]).unwrap(); }\n";
     const big = `use serde::Serialize;\n${line.repeat(2600)}`; // ~180 KB
-    await refs(big);
+    // Warm up first: the WASM heap grows to its high-water mark and never
+    // shrinks, so growth during warm-up is not a leak (on Node 24 CI it
+    // alone reached ~150 MB). Measure steady state after it.
+    for (let i = 0; i < 20; i++) await withRustTree(big, collectReferences);
     const before = process.memoryUsage().rss;
     for (let i = 0; i < 40; i++) await withRustTree(big, collectReferences);
     const grownMb = (process.memoryUsage().rss - before) / 1024 / 1024;
-    // Leaking trees grew RSS by ~340 MB here; freed trees stay near flat.
-    assert.ok(grownMb < 150, `RSS grew ${grownMb.toFixed(0)} MB over 40 parses`);
+    // Leaking trees grow RSS by ~340 MB per 40 parses; freed trees stay near flat.
+    assert.ok(grownMb < 100, `RSS grew ${grownMb.toFixed(0)} MB over 40 parses`);
+    assert.equal(liveTreeCount(), 0);
     assert.equal(liveTreeCount(), 0);
   });
 });
