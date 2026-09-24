@@ -173,5 +173,29 @@ export interface AnalysisResult {
   /** Languages and package managers detected, with detection evidence. */
   detected: { ecosystem: string; confidence: Confidence; evidence: Evidence[] }[];
   /** Per-ecosystem dependency surface totals. */
-  surface: { ecosystem: string; direct: number; transitive: number }[];
+  surface: SurfaceEntry[];
+}
+
+/**
+ * How much of an ecosystem's transitive surface the lockfile graphs cover.
+ * - "none": no usable graph (no lockfile, unparseable, or the stage failed);
+ *   `transitive` is 0 but the true count is unknown.
+ * - "partial": some graph was built, but a project has no graph or a graph
+ *   is marked incomplete; `transitive` is a lower bound.
+ * - "complete": every detected project has a complete graph.
+ */
+export type GraphCompleteness = "none" | "partial" | "complete";
+
+/** One ecosystem's dependency surface totals. */
+export interface SurfaceEntry {
+  ecosystem: string;
+  direct: number;
+  /** Unique node names across the ecosystem's graphs; read with `graphs`. */
+  transitive: number;
+  /**
+   * How complete the graphs behind `transitive` are (#114). The engine
+   * always sets it; results written before it existed omit it, and readers
+   * must treat a missing value as unknown, never as complete.
+   */
+  graphs?: GraphCompleteness;
 }

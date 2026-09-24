@@ -73,6 +73,7 @@
     {
       "direct": 1,
       "ecosystem": "javascript-typescript",
+      "graphs": "complete",
       "transitive": 1
     }
   ],
