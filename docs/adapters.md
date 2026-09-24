@@ -22,6 +22,11 @@ recommendation policy lives in core.
   degrades gracefully. The contract tests verify declarations match reality.
 - **No direct I/O.** Adapters receive a read-only `RepositoryHandle` and a
   `NetworkPolicy`. Registry metadata comes from core's metadata service.
+- **Complete or conservative.** `findUsage` returns `Usage[]` or
+  `{ usages, referenceAnalysisComplete }`. Set `referenceAnalysisComplete: true`
+  only when every script, bin and config reference to the dependency was
+  checked. An array, an omitted flag or `false` all count as incomplete, and
+  the policy then never calls the dependency "unused".
 - **Evidence or silence.** Usage findings carry file and line. Missing
   lockfiles produce `incomplete` graphs and reduced confidence, never
   resolution.

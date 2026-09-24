@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { runAdapterContractTests } from "@ghostdeps/core";
+import { normaliseUsageResult, runAdapterContractTests } from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { createJavaScriptTypeScriptAdapter } from "./adapter.js";
 import { fixtureHandle } from "./testing/fs-handle.js";
@@ -34,7 +34,9 @@ describe("createJavaScriptTypeScriptAdapter wiring", () => {
       project: root,
       declaredIn: "package.json",
     };
-    const usages = await adapter.findUsage!(ctx("usage-static-and-require"), axios);
+    const { usages } = normaliseUsageResult(
+      await adapter.findUsage!(ctx("usage-static-and-require"), axios),
+    );
     assert.ok(usages.length > 0);
     assert.ok(usages.every((u) => u.file.length > 0 && u.line > 0));
   });

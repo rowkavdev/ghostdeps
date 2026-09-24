@@ -4,7 +4,7 @@
  * logic must not fork: both isolation tiers run adapters through the same
  * stage sequence, error-isolation contract and timeout shape.
  */
-import { adapterApiVersion, type EcosystemAdapter } from "../adapter.js";
+import { adapterApiVersion, normaliseUsageResult, type EcosystemAdapter } from "../adapter.js";
 import type {
   Dependency,
   DependencyGraph,
@@ -229,9 +229,10 @@ export async function runAdapter(
                 outcome.dependencies,
                 usageConcurrency,
                 controller.signal,
-                (dep) => adapter.findUsage!(context, dep),
+                async (dep) => normaliseUsageResult(await adapter.findUsage!(context, dep)),
               );
-              return perDependency.flat();
+              // referenceAnalysisComplete is consumed by the policy engine (#121).
+              return perDependency.flatMap((result) => result.usages);
             },
             timeoutMs,
             "usage analysis",
