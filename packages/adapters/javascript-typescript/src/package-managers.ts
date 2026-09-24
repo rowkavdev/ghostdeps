@@ -77,10 +77,12 @@ export async function detectPackageManagers(
     }
     let berry: boolean;
     let basis: string;
-    if (head.startsWith("__metadata:")) {
+    // Real berry lockfiles open with a comment header before __metadata:,
+    // so match line-anchored anywhere in the head, not just at byte 0.
+    if (/^__metadata:/m.test(head)) {
       berry = true;
       basis = "lockfile __metadata block";
-    } else if (head.includes("yarn lockfile v1")) {
+    } else if (/^# yarn lockfile v1$/m.test(head)) {
       berry = false;
       basis = "lockfile v1 header";
     } else {
