@@ -19,7 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { DependencyChange } from "../diff/dependency-changes.js";
-import type { AnalysisResult, NetworkPolicy } from "../types/index.js";
+import type { AnalysisResult, Finding, NetworkPolicy } from "../types/index.js";
 import {
   assembleAnalysisResult,
   DEFAULT_ADAPTER_TIMEOUT_MS,
@@ -70,6 +70,8 @@ export const OUTCOME_CAPS = Object.freeze({
 export interface IsolatedAnalyseOptions {
   /** See AnalyseOptions.scanIncomplete. */
   scanIncomplete?: boolean;
+  /** See AnalyseOptions.scanCompleteness. */
+  scanCompleteness?: readonly Finding[];
   /**
    * Module specifiers; each module's default or "adapter" export is the
    * adapter. TRUSTED CONFIGURATION ONLY: every specifier goes to import()
@@ -485,5 +487,6 @@ export async function analyseRepositoryIsolated(
 
   return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
     scanIncomplete: options.scanIncomplete === true,
+    scanCompleteness: options.scanCompleteness ?? [],
   });
 }

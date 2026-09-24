@@ -108,3 +108,60 @@ describe("normaliseUsageResult on malformed adapter output", () => {
     assert.deepEqual(normaliseUsageResult(worse), { usages: [], referenceAnalysisComplete: false });
   });
 });
+
+describe("scan completeness in analyseRepository (#154)", () => {
+  const note = {
+    kind: "info" as const,
+    summary: "repository scan stopped early (max-files)",
+    recommendation: "Manual review recommended.",
+    evidence: [{ kind: "scan-truncated", statement: "stopped" }],
+    confidence: "high" as const,
+    limitations: [],
+    affectedFiles: [],
+  };
+  const unusedPolicy = () => [
+    {
+      kind: "unused" as const,
+      dependency: "a",
+      summary: "a is unused",
+      recommendation: "Remove a.",
+      evidence: [{ kind: "no-usage-found", statement: "none" }],
+      confidence: "high" as const,
+      limitations: [],
+      affectedFiles: ["package.json"],
+    },
+  ];
+
+  async function analyse(extra: { scanIncomplete?: boolean; scanCompleteness?: (typeof note)[] }) {
+    return analyseRepository(handle, {
+      adapters: [adapter(both, { a: complete })],
+      recommend: unusedPolicy,
+      ...extra,
+    });
+  }
+
+  it("caps absence findings and appends the notes when scanCompleteness is non-empty", async () => {
+    const result = await analyse({ scanCompleteness: [note] });
+    const unused = result.findings.find((f) => f.kind === "unused");
+    assert.equal(unused?.confidence, "medium");
+    assert.ok(unused?.limitations.some((l) => l.includes("scan was incomplete")));
+    assert.ok(result.findings.some((f) => f.summary === note.summary));
+    const runLevel = result.findings.filter((f) =>
+      f.summary.startsWith("all verdicts in this result"),
+    );
+    assert.equal(runLevel.length, 1, "exactly one run-level statement");
+    assert.match(runLevel[0]?.recommendation ?? "", /should-be-dev and type-only/);
+  });
+
+  it("caps without notes when only scanIncomplete is set", async () => {
+    const result = await analyse({ scanIncomplete: true });
+    assert.equal(result.findings.find((f) => f.kind === "unused")?.confidence, "medium");
+    assert.ok(result.findings.some((f) => f.summary.startsWith("all verdicts in this result")));
+  });
+
+  it("leaves findings alone when the scan was complete", async () => {
+    const result = await analyse({ scanCompleteness: [] });
+    assert.equal(result.findings.find((f) => f.kind === "unused")?.confidence, "high");
+    assert.ok(!result.findings.some((f) => f.summary.startsWith("all verdicts in this result")));
+  });
+});

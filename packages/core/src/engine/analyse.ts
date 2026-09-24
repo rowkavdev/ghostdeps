@@ -101,12 +101,26 @@ export interface AnalyseOptions {
   /**
    * Set when the repository handle could not see every file (scan truncated
    * or paths skipped). Then no ecosystem counts as reference-analysed, so the
-   * policy cannot return an "unused" verdict. analyseDirectory sets it from
-   * scanCompletenessFindings; the GitHub App must set it from its tarball
-   * scan the same way.
+   * policy cannot return an "unused" verdict, and core caps "unused" and
+   * "potentially-unnecessary" findings at medium with a limitation saying
+   * why. Implied when scanCompleteness is non-empty.
    */
   scanIncomplete?: boolean;
+  /**
+   * Info findings describing where the scan was incomplete, from
+   * scanCompletenessFindings(scan). Core appends them to the result and
+   * treats a non-empty list as scanIncomplete. analyseDirectory passes both
+   * from its scan; the GitHub App passes both from its tarball scan. Callers
+   * never post-process the result themselves (ADR 0004, #154).
+   */
+  scanCompleteness?: readonly Finding[];
 }
+
+/** Finding kinds whose claim ("not needed") can be wrong when files were not scanned. */
+const ABSENCE_KINDS: ReadonlySet<Finding["kind"]> = new Set(["unused", "potentially-unnecessary"]);
+
+const INCOMPLETE_SCAN_LIMITATION =
+  "The repository scan was incomplete; this dependency may be used in files that were not analysed.";
 
 /**
  * Info findings for PR dependency changes the analysis could not cover:
@@ -196,8 +210,10 @@ export async function assembleAnalysisResult(
   outcomes: readonly AdapterOutcome[],
   recommend?: RecommendationPolicy,
   pullRequestChanges?: readonly DependencyChange[],
-  context: { scanIncomplete?: boolean } = {},
+  context: { scanIncomplete?: boolean; scanCompleteness?: readonly Finding[] } = {},
 ): Promise<AnalysisResult> {
+  const scanNotes = context.scanCompleteness ?? [];
+  const scanIncomplete = context.scanIncomplete === true || scanNotes.length > 0;
   const projects = new Map<string, ProjectRef>();
   const dependencies: Dependency[] = [];
   const usages: Usage[] = [];
@@ -218,7 +234,7 @@ export async function assembleAnalysisResult(
     usages.push(...outcome.usages);
     graphs.push(...outcome.graphs);
     if (outcome.usageAnalysed) usageAnalysedEcosystems.add(outcome.ecosystem);
-    if (outcome.usageAnalysed && outcome.referenceAnalysed === true && !context.scanIncomplete) {
+    if (outcome.usageAnalysed && outcome.referenceAnalysed === true && !scanIncomplete) {
       referenceAnalysedEcosystems.add(outcome.ecosystem);
     }
     detected.push({
@@ -282,6 +298,37 @@ export async function assembleAnalysisResult(
     }
   }
 
+  if (scanIncomplete) {
+    // An incomplete scan must never yield a confident "not needed" claim,
+    // whoever produced the finding: cap at medium and say why on each one.
+    for (let i = 0; i < findings.length; i++) {
+      const finding = findings[i]!;
+      if (!ABSENCE_KINDS.has(finding.kind)) continue;
+      findings[i] = {
+        ...finding,
+        confidence: finding.confidence === "high" ? "medium" : finding.confidence,
+        limitations: [...finding.limitations, INCOMPLETE_SCAN_LIMITATION],
+      };
+    }
+    findings.push(...scanNotes);
+    // One run-level statement covering every verdict, including hygiene
+    // verdicts (should-be-dev, type-only) that carry no per-finding note.
+    findings.push({
+      kind: "info",
+      summary: "all verdicts in this result were computed from a partial repository scan",
+      recommendation:
+        "Treat every recommendation here, including should-be-dev and type-only, as provisional until a complete scan confirms it.",
+      evidence: [
+        { kind: "scan-incomplete", statement: "the repository scan did not cover every file" },
+      ],
+      confidence: "high",
+      limitations: [
+        "Files outside the scan may use dependencies, import them from shipped code, or use them as values.",
+      ],
+      affectedFiles: [],
+    });
+  }
+
   // One canonical ordering for the engine and the JSON reporter (#71).
   return normaliseAnalysisResult({
     schemaVersion: 1,
@@ -321,5 +368,6 @@ export async function analyseRepository(
 
   return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
     scanIncomplete: options.scanIncomplete === true,
+    scanCompleteness: options.scanCompleteness ?? [],
   });
 }
