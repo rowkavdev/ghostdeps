@@ -118,4 +118,30 @@ describe("parseUnifiedDiff on malformed and hostile input", () => {
     const parsed = parseUnifiedDiff('diff --git "a/\\377" "b/\\377"\nnew file mode 100644\n');
     assert.equal(parsed.files[0]?.newPath, '"b/\\377"');
   });
+
+  it("reports a header-only file whose paths can't be split", () => {
+    const parsed = parseUnifiedDiff(
+      "diff --git a/my file b/other file\nold mode 100644\nnew mode 100755\n",
+    );
+    assert.equal(parsed.files.length, 1);
+    assert.equal(parsed.files[0]?.newPath, undefined);
+    assert.match(parsed.problems.join(" "), /no readable path/);
+  });
+
+  it("counts a blank line inside a hunk as context, like git with stripped whitespace", () => {
+    const parsed = parseUnifiedDiff(
+      "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,4 @@\n a\n\n+new\n c\n",
+    );
+    const lines = parsed.files[0]!.hunks[0]!.lines;
+    assert.deepEqual(
+      lines.map((l) => [l.type, l.oldLine, l.newLine]),
+      [
+        ["context", 1, 1],
+        ["context", 2, 2],
+        ["add", undefined, 3],
+        ["context", 3, 4],
+      ],
+    );
+    assert.deepEqual(parsed.problems, []);
+  });
 });
