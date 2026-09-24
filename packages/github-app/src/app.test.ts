@@ -294,7 +294,7 @@ describe("GhostDeps GitHub App", () => {
 
   it("re-runs analysis on check_run.rerequested even after the SHA was analysed", async () => {
     mockInstallationToken();
-    mockPrFiles(["package.json"], 1);
+    mockPrFiles(["package.json"], 2);
     await deliver("pull_request", await fixture("pull_request.opened"));
     const res = await deliver("check_run", await fixture("check_run.rerequested"));
     assert.equal(res.status, 200);
@@ -303,6 +303,36 @@ describe("GhostDeps GitHub App", () => {
       ["pull_request", "rerequested"],
     );
     assert.equal(queue.jobs[1]?.headSha, queue.jobs[0]?.headSha);
+  });
+
+  it("marks a re-run of a source-only PR source-only from the PR files API (#196)", async () => {
+    mockInstallationToken();
+    mockPrFiles(["src/index.js", "README.md"], 2);
+    await deliver("pull_request", await fixture("pull_request.opened"));
+    await deliver("check_run", await fixture("check_run.rerequested"));
+    const [first, rerun] = queue.jobs.map((j) => j.trigger);
+    assert.equal(first?.kind === "pull_request" && first.sourceOnly, true);
+    assert.equal(rerun?.kind === "rerequested" && rerun.pullRequest?.sourceOnly, true);
+  });
+
+  it("does not mark a re-run source-only when the PR touches a manifest", async () => {
+    mockInstallationToken();
+    mockPrFiles(["package.json", "src/index.js"], 2);
+    await deliver("pull_request", await fixture("pull_request.opened"));
+    await deliver("check_run", await fixture("check_run.rerequested"));
+    const rerun = queue.jobs[1]?.trigger;
+    assert.equal(rerun?.kind, "rerequested");
+    assert.equal(rerun?.kind === "rerequested" && rerun.pullRequest?.sourceOnly, undefined);
+  });
+
+  it("still re-runs, unflagged, when the PR files API fails", async () => {
+    mockInstallationToken();
+    nock(API).get(`${REPO_PATH}/pulls/42/files`).query({ per_page: "100" }).reply(404, {});
+    const res = await deliver("check_run", await fixture("check_run.rerequested"));
+    assert.equal(res.status, 200);
+    assert.equal(queue.jobs.length, 1);
+    const rerun = queue.jobs[0]?.trigger;
+    assert.equal(rerun?.kind === "rerequested" && rerun.pullRequest?.sourceOnly, undefined);
   });
 
   it("ignores check_run actions other than rerequested", async () => {

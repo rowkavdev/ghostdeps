@@ -31,7 +31,12 @@ export type AnalysisTrigger =
       readonly kind: "rerequested";
       readonly checkRunId: number;
       /** Present when GitHub linked the run to a PR in the same repository (not for forks). */
-      readonly pullRequest?: { readonly number: number; readonly baseSha: string };
+      readonly pullRequest?: {
+        readonly number: number;
+        readonly baseSha: string;
+        /** Same meaning as the pull_request trigger's sourceOnly, from a files-API lookup at re-run time (#196). */
+        readonly sourceOnly?: true;
+      };
     };
 
 export interface AnalysisJob {
