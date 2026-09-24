@@ -249,7 +249,11 @@ export async function assembleAnalysisResult(
     notes?: readonly Finding[];
   } = {},
 ): Promise<AnalysisResult> {
-  const scanNotes = context.scanCompleteness ?? [];
+  // Caller notes plus notes adapters raised while running (#113).
+  const scanNotes = [
+    ...(context.scanCompleteness ?? []),
+    ...outcomes.flatMap((outcome) => outcome.scanCompleteness ?? []),
+  ];
   const scanIncomplete = context.scanIncomplete === true || scanNotes.length > 0;
   const projects = new Map<string, ProjectRef>();
   const dependencies: Dependency[] = [];
