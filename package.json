@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r --workspace-concurrency=1 run typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

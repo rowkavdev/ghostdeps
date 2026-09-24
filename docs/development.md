@@ -13,7 +13,7 @@ pnpm build          # build all packages (tsc project references)
 pnpm test           # run all package tests (node:test)
 pnpm lint           # ESLint (flat config)
 pnpm format         # Prettier write
-pnpm typecheck      # tsc --noEmit across packages
+pnpm typecheck      # tsc --noEmit across packages, one at a time (#304)
 ```
 
 All of these run in CI on Node 22 and 24; nothing merges on red.
