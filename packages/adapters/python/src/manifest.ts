@@ -1,12 +1,13 @@
 /**
- * Per-project manifest reading. pyproject.toml today (#43); requirements
- * files join in #44. Read failures and malformed files become evidence,
+ * Per-project manifest reading: pyproject.toml (#43) and requirements
+ * files (#44). Read failures and malformed files become evidence,
  * never exceptions.
  */
 import type { Evidence, ProjectRef, RepositoryHandle } from "@ghostdeps/core";
 import { MAX_PYPROJECT_BYTES } from "./detect.js";
 import { joinPath } from "./paths.js";
 import { parsePyprojectText, type PythonRequirement } from "./pyproject.js";
+import { parseRequirementsFiles, requirementsEntryPoints } from "./requirements.js";
 
 export interface ManifestParseResult {
   requirements: PythonRequirement[];
@@ -45,6 +46,13 @@ export async function parseManifests(
       Object.assign(result.extras, parsed.extras);
       result.evidence.push(...parsed.evidence);
     }
+  }
+  const { entries, evidence } = requirementsEntryPoints(project, await repository.listFiles());
+  result.evidence.push(...evidence);
+  if (entries.length > 0) {
+    const parsed = await parseRequirementsFiles(repository, project, entries);
+    result.requirements.push(...parsed.requirements);
+    result.evidence.push(...parsed.evidence);
   }
   return result;
 }

@@ -1,6 +1,39 @@
 {
   "description": "Plain pip project: requirements.txt plus a small package. Detected at the root with pip as the package manager.",
-  "detection": { "minConfidence": 0.7, "maxConfidence": 0.7, "projects": ["."], "packageManagers": { ".": ["pip"] } },
+  "detection": {
+    "minConfidence": 0.7,
+    "maxConfidence": 0.7,
+    "projects": [
+      "."
+    ],
+    "packageManagers": {
+      ".": [
+        "pip"
+      ]
+    }
+  },
   "findings": [],
-  "mustNotFind": [{ "kind": "unused", "dependency": "requests" }, { "kind": "unused", "dependency": "click" }]
+  "mustNotFind": [
+    {
+      "kind": "unused",
+      "dependency": "requests"
+    },
+    {
+      "kind": "unused",
+      "dependency": "click"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "requests",
+      "kind": "runtime",
+      "constraint": "==2.32.3",
+      "declaredIn": "requirements.txt"
+    },
+    {
+      "name": "click",
+      "kind": "runtime",
+      "constraint": ">=8.1,<9"
+    }
+  ]
 }

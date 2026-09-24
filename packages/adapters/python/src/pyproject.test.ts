@@ -104,6 +104,17 @@ httpx = "^0.27"
     ]);
   });
 
+  it("OR-s the markers of two conditional declarations", () => {
+    const result = parse(`[project.optional-dependencies]
+a = ['tomli; python_version < "3.11"']
+b = ['tomli; sys_platform == "win32"']
+`);
+    assert.equal(
+      result.requirements[0]?.marker,
+      '(python_version < "3.11") or (sys_platform == "win32")',
+    );
+  });
+
   it("drops the marker when any declaration is unconditional", () => {
     const result = parse(`[project.optional-dependencies]
 a = ['tomli; python_version < "3.11"']
