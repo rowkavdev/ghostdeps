@@ -56,7 +56,10 @@ export function computeImpact(
         : projectGraphs.some((g) => g.incomplete)
           ? "partial"
           : "complete";
-    const names = [...new Set(deps.map((d) => d.name))];
+    // One row per name per project, even when it is declared in several
+    // sections (e.g. dependencies and devDependencies).
+    const unique = [...new Map(deps.map((d) => [d.name, d] as const)).values()];
+    const names = unique.map((d) => d.name);
     const base = (dep: Dependency) => ({
       ecosystem: dep.project.ecosystem,
       project: dep.project.path,
@@ -65,7 +68,7 @@ export function computeImpact(
     });
 
     if (completeness === "none") {
-      for (const dep of deps) impact.push({ ...base(dep), transitive: null, exclusive: null });
+      for (const dep of unique) impact.push({ ...base(dep), transitive: null, exclusive: null });
       continue;
     }
 
@@ -81,8 +84,8 @@ export function computeImpact(
     }
     if (used + size > budget) {
       limitedProjects++;
-      limitedDependencies += deps.length;
-      for (const dep of deps) {
+      limitedDependencies += unique.length;
+      for (const dep of unique) {
         impact.push({ ...base(dep), transitive: null, exclusive: null, limited: true });
       }
       continue;
@@ -103,19 +106,23 @@ export function computeImpact(
       }
       closures.set(name, set);
     }
+    // Exclusivity needs every direct dependency's closure: one missing
+    // entry (e.g. a name the lockfile spells differently) would make shared
+    // packages look exclusive, so the whole project gets `exclusive: null`.
+    const allClosures = [...closures.values()].every((set) => set !== undefined);
     const direct = new Set(names);
     const reach = new Map<string, number>();
     for (const set of closures.values()) {
       for (const member of set ?? []) reach.set(member, (reach.get(member) ?? 0) + 1);
     }
-    for (const dep of deps) {
+    for (const dep of unique) {
       const set = closures.get(dep.name);
       if (set === undefined) {
         impact.push({ ...base(dep), transitive: null, exclusive: null });
         continue;
       }
       let exclusive: number | null = null;
-      if (completeness === "complete") {
+      if (completeness === "complete" && allClosures) {
         exclusive = 0;
         for (const member of set) if (reach.get(member) === 1 && !direct.has(member)) exclusive++;
       }

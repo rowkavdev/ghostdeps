@@ -60,6 +60,25 @@ describe("computeImpact (#59)", () => {
     assert.deepEqual([r.c!.transitive, r.c!.exclusive], [0, 0]);
   });
 
+  it("drops exclusive for the whole project when any direct closure is missing", () => {
+    // Reviewer's repro: the lockfile spells PyYAML as pyyaml, so PyYAML has
+    // no closure entry and urllib3 must not look exclusive to requests.
+    const r = byName(
+      computeImpact(
+        [graph({ requests: ["urllib3", "idna"], pyyaml: ["urllib3"] })],
+        [dep("requests"), dep("PyYAML")],
+      ),
+    );
+    assert.deepEqual([r.requests!.transitive, r.requests!.exclusive], [2, null]);
+    assert.deepEqual([r.PyYAML!.transitive, r.PyYAML!.exclusive], [null, null]);
+  });
+
+  it("emits one row per name per project", () => {
+    const r = computeImpact([graph({ a: ["x"] })], [dep("a"), { ...dep("a"), kind: "dev" }]);
+    assert.equal(r.impact.length, 1);
+    assert.deepEqual([r.impact[0]!.transitive, r.impact[0]!.exclusive], [1, 1]);
+  });
+
   it("gives a lower bound and no exclusive on a partial graph", () => {
     const r = byName(computeImpact([graph({ a: ["x", "y"] }, true)], [dep("a")]));
     assert.deepEqual([r.a!.graph, r.a!.transitive, r.a!.exclusive], ["partial", 2, null]);
