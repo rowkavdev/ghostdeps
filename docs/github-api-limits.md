@@ -12,11 +12,11 @@ What limits the GitHub App runs into, what it already does about them, and what 
 - At most 900 points per minute per REST endpoint. Most `GET` requests cost 1 point and most writes cost 5. GraphQL allows 2,000 points per minute. Some endpoints have costs GitHub doesn't publish.
 - At most 90 seconds of CPU time per 60 seconds, and at most 60 of those seconds for GraphQL.
 - About 80 content-creating requests per minute and 500 per hour.
-- At most 2,000 token requests per hour per app.
+- At most 2,000 OAuth access token requests per hour for GitHub Apps and OAuth apps. The docs don't give a figure for installation-token requests.
 
 Over a secondary limit, wait for `retry-after` if it's present. If `x-ratelimit-remaining` is 0, wait until `x-ratelimit-reset`. Otherwise wait at least a minute, back off exponentially, and give up after a fixed number of retries.
 
-**Free requests.** A conditional `GET` (`If-None-Match` with an ETag, or `If-Modified-Since`) that returns 304 doesn't count against the primary limit. `GET /rate_limit` doesn't count either.
+**Free requests.** A conditional `GET` (`If-None-Match` with an ETag, or `If-Modified-Since`) that returns 304 doesn't count against the primary limit. `GET /rate_limit` doesn't count against the primary limit either, but it can count against the secondary limits.
 
 ## What one analysis costs today
 
@@ -39,15 +39,20 @@ At that rate, the 5,000-an-hour primary limit covers several hundred analyses pe
 ## Already in place
 
 - **No per-file reads.** The worker downloads one tarball of the exact SHA and reads files locally (#112). The issue's main recommendation is done.
-- **Token cache.** Probot keeps an in-process LRU of installation tokens, keyed by installation, repository ids and permissions. A repo-scoped worker token is reused for about an hour, so the token-request limit isn't a concern.
-- **Throttling and retry.** Every Probot Octokit, including the worker's per-job client, loads `@octokit/plugin-throttling` and `@octokit/plugin-retry`. They wait for `retry-after` / `x-ratelimit-reset` and serialise writes within a client.
+- **Token cache.** Probot keeps an in-process LRU of installation tokens, keyed by installation, repository ids and permissions. A repo-scoped worker token is reused for about an hour, so the worker mints at most one token per repository per hour.
+- **Throttling and retry.** Every Probot Octokit, including the worker's per-job client, loads `@octokit/plugin-throttling` and `@octokit/plugin-retry`. They wait for `retry-after` / `x-ratelimit-reset` and serialise writes within a client. How often a client retries a rate limit depends on which defaults built it (see gap 1).
 - **Same-SHA result cache (#174, #215).** Re-runs of an unchanged head don't touch the API beyond the check-run writes.
 - **Bounded concurrency.** The in-memory queue runs 2 jobs at a time, and one head SHA gets one job.
 - **Two check-run writes.** Create in progress, then complete, with at most 50 annotations in the completing request.
 
 ## Gaps
 
-1. **Rate-limit retries have no limit.** Probot's default `onRateLimit` and `onSecondaryRateLimit` handlers always return `true`. So a job that hits the primary limit waits until the reset, which can be up to an hour, while holding one of the 2 worker slots. In the webhook, the same wait would push the PR file lookup past GitHub's 10-second delivery timeout. Proposed fix: give both clients their own handlers. The worker retries only while `retryAfter` is at most 60 seconds and at most twice; otherwise the run ends neutral with "GitHub rate limit reached - re-run later". The webhook never waits: it reports the file list as incomplete, so the PR is analysed in full, as it is for a capped list today.
+1. **The worker's rate-limit retries have no limit.** In Probot 14.3.2 (the locked version) the two clients get different throttle handlers.
+   - The webhook client comes from the Probot instance (`getOctokitThrottleOptions`). It retries a primary limit while `retryCount <= 2`, waiting for the reset each time, and doesn't retry a secondary limit at all (it only logs). Retries are bounded, but one wait for a primary reset can still run past GitHub's 10-second delivery timeout while the PR file list is being read.
+   - The worker builds its client with `new ProbotOctokit(...)`, which uses the class defaults. Those `onRateLimit` and `onSecondaryRateLimit` handlers always return `true`. So a worker job that hits the primary limit waits until the reset, up to an hour, holding one of the 2 worker slots, and it keeps retrying for as long as the limit lasts.
+
+   Proposed fix, per client. The worker passes its own handlers: it retries only while `retryAfter` is at most 60 seconds and at most twice, and otherwise the run ends neutral with "GitHub rate limit reached - re-run later". The webhook's file lookup doesn't wait for a primary reset either: it reports the file list as incomplete, so the PR is analysed in full, as it is for a capped list today. Its secondary behaviour (no retry, the lookup fails and takes the same path) can stay.
+
 2. **No rate-limit telemetry.** Nothing logs `x-ratelimit-remaining`, so we'd only find out about trouble through failures. Proposed fix: after each worker job, log `remaining`, `limit` and `resource` from the last response, and warn below 10% of the limit.
 3. **Superseded heads aren't dropped.** A new push to a PR queues a job for the new head, and a queued job for the old head still runs. Proposed fix: when a PR job is queued, drop any queued (not running) job for the same PR with an older head. It's queue-local, and a check run that was never started needs no clean-up.
 4. **No per-installation fairness.** The queue is first in, first out across installations, so one busy installation can delay everyone else. This isn't a limit problem at 2 concurrent jobs. Revisit together with the durable queue.
