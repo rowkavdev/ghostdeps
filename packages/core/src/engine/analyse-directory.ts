@@ -2,7 +2,9 @@
  * Convenience entry point for local checkouts: scan a directory with the
  * repository scanner (#7), analyse it (#69), and turn scan limits that
  * could hide real source into info findings, so an incomplete scan is
- * never presented as a complete analysis.
+ * never presented as a complete analysis. When the scan is incomplete,
+ * "unused" and "potentially-unnecessary" findings are capped at medium
+ * confidence and carry a limitation saying why.
  */
 import type { AnalysisResult, Finding } from "../types/index.js";
 import { normaliseAnalysisResult } from "../report/json.js";
@@ -27,17 +29,20 @@ const INCOMPLETENESS_REASONS: readonly SkipReason[] = [
   "unreadable",
 ];
 
-const REASON_TEXT: Record<SkipReason, string> = {
-  "excluded-directory": "in excluded directories",
-  "excluded-generated-file": "generated",
-  symlink: "symlinks",
-  "special-file": "special files",
-  "unsafe-name": "with unsafe names",
-  "path-too-long": "with over-long paths",
-  "too-deep": "nested too deeply",
-  "file-too-large": "over the size ceiling",
-  unreadable: "unreadable",
+/** Summary text per reason, with the right noun for what the count counts. */
+const REASON_TEXT: Partial<Record<SkipReason, (count: number) => string>> = {
+  "unsafe-name": (n) => `${n} entr${n === 1 ? "y" : "ies"} with unsafe names`,
+  "path-too-long": (n) => `${n} path${n === 1 ? "" : "s"} over the length limit`,
+  "too-deep": (n) => `${n} director${n === 1 ? "y" : "ies"} nested too deeply`,
+  "file-too-large": (n) => `${n} file${n === 1 ? "" : "s"} over the size ceiling`,
+  unreadable: (n) => `${n} unreadable path${n === 1 ? "" : "s"}`,
 };
+
+/** Finding kinds whose claim ("not needed") can be wrong when files were not scanned. */
+const ABSENCE_KINDS: ReadonlySet<Finding["kind"]> = new Set(["unused", "potentially-unnecessary"]);
+
+const INCOMPLETE_SCAN_LIMITATION =
+  "The repository scan was incomplete; this dependency may be used in files that were not analysed.";
 
 /** Info findings describing where the scan was incomplete. */
 export function scanCompletenessFindings(scan: ScanResult): Finding[] {
@@ -64,7 +69,7 @@ export function scanCompletenessFindings(scan: ScanResult): Finding[] {
     const examples = scan.skipped.filter((s) => s.reason === reason).slice(0, 5);
     findings.push({
       kind: "info",
-      summary: `${count} file(s) or directories ${REASON_TEXT[reason]} were not analysed`,
+      summary: `${REASON_TEXT[reason]!(count)} not analysed`,
       recommendation: "Manual review recommended for the skipped paths.",
       evidence: examples.map((s) => ({
         kind: `scan-skipped-${reason}`,
@@ -89,5 +94,16 @@ export async function analyseDirectory(
   const result = await analyseRepository(handle, analyseOptions);
   const notes = scanCompletenessFindings(handle.scan);
   if (notes.length === 0) return result;
-  return normaliseAnalysisResult({ ...result, findings: [...result.findings, ...notes] });
+  // An incomplete scan must never yield a confident "not needed" claim:
+  // cap those findings at medium and say why on each one.
+  const findings = result.findings.map((finding) =>
+    ABSENCE_KINDS.has(finding.kind)
+      ? {
+          ...finding,
+          confidence: finding.confidence === "high" ? ("medium" as const) : finding.confidence,
+          limitations: [...finding.limitations, INCOMPLETE_SCAN_LIMITATION],
+        }
+      : finding,
+  );
+  return normaliseAnalysisResult({ ...result, findings: [...findings, ...notes] });
 }

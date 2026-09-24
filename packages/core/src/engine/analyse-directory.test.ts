@@ -77,6 +77,68 @@ describe("analyseDirectory", () => {
     assert.equal(note.evidence[0]?.file, "src/huge.js");
   });
 
+  it("never reports high-confidence unused when the only usage is in an unscanned file", async () => {
+    await writeFile(path.join(root, "src/huge.js"), `require("leftpad");\n${"x".repeat(500)}`);
+    const withUsage: EcosystemAdapter = {
+      ...manifestAdapter,
+      capabilities: new Set(["usageAnalysis"]),
+      async findUsage(ctx, dep) {
+        const usages = [];
+        for (const file of await ctx.repository.listFiles()) {
+          if (!file.endsWith(".js")) continue;
+          if ((await ctx.repository.readFile(file)).includes(`require("${dep.name}")`)) {
+            usages.push({
+              dependency: dep.name,
+              file,
+              line: 1,
+              form: "require" as const,
+              symbols: [],
+            });
+          }
+        }
+        return usages;
+      },
+    };
+    const result = await analyseDirectory(root, {
+      adapters: [withUsage],
+      scan: { limits: { maxFileBytes: 100 } },
+      recommend: ({ dependencies, usages }) =>
+        dependencies
+          .filter((d) => !usages.some((u) => u.dependency === d.name))
+          .map((d) => ({
+            kind: "unused" as const,
+            dependency: d.name,
+            summary: `${d.name} is never imported`,
+            recommendation: "Remove it.",
+            evidence: [{ kind: "no-import-found", statement: "no imports" }],
+            confidence: "high" as const,
+            limitations: [],
+            affectedFiles: [d.declaredIn],
+          })),
+    });
+    const unused = result.findings.find((f) => f.kind === "unused" && f.dependency === "leftpad");
+    assert.ok(unused, "the policy still reports it, since usage is invisible");
+    assert.equal(unused.confidence, "medium");
+    assert.ok(unused.limitations.some((l) => l.includes("scan was incomplete")));
+  });
+
+  it("uses the right noun per skip reason", async () => {
+    const deep = await analyseDirectory(root, {
+      adapters: [manifestAdapter],
+      scan: { limits: { maxDepth: 0 } },
+    });
+    assert.ok(
+      deep.findings.some((f) => f.summary === "1 directory nested too deeply not analysed"),
+    );
+    const large = await analyseDirectory(root, {
+      adapters: [manifestAdapter],
+      scan: { limits: { maxFileBytes: 100 } },
+    });
+    assert.ok(
+      large.findings.some((f) => f.summary === "1 file over the size ceiling not analysed"),
+    );
+  });
+
   it("reports a truncated scan so a partial result is never presented as complete", async () => {
     const result = await analyseDirectory(root, {
       adapters: [manifestAdapter],

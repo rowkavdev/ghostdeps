@@ -36,4 +36,6 @@ Scan limits that could hide the project's own files become `info` findings, so a
 - a truncated scan (`max-files`, `max-directories`, `max-total-bytes`)
 - files or directories skipped as too large, too deep, over-long, unsafely named or unreadable, with counts from `skippedCounts` and up to 5 example paths
 
+When any of these is reported, `unused` and `potentially-unnecessary` findings are capped at `medium` confidence and each carries a limitation saying the scan was incomplete, so a skipped file can never produce a confident false "not needed".
+
 Skips that are by design (excluded vendor/generated directories, generated files, symlinks, special files) are not reported. `scanCompletenessFindings(scan)` is exported for callers that scan on their own.
