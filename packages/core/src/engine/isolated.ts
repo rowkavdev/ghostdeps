@@ -35,18 +35,25 @@ export const DEFAULT_ADAPTER_HEAP_MB = 512;
 
 /**
  * Main-side caps on what a worker may post back (#123). An adapter can stay
- * under its own heap ceiling and still structured-clone a huge outcome into
- * the main heap, so counts are capped here and overflow becomes a
- * limitation on the outcome - the same "oversize surfaces as evidence"
- * rule as the byte ceilings in limits.ts.
+ * under its own heap ceiling and still structured-clone a huge outcome; the
+ * clone has already landed in the main heap by the time these caps run, so
+ * they bound what flows downstream (policy, reporters), not peak main-heap
+ * memory. Overflow becomes a limitation on the outcome - the same
+ * "oversize surfaces as evidence" rule as the byte ceilings in limits.ts.
  */
 export const OUTCOME_CAPS = Object.freeze({
   maxDependencies: 10_000,
   maxUsages: 50_000,
-  /** Total graph nodes across all of one adapter's graphs. */
+  /**
+   * Total graph size across all of one adapter's graphs, counting each
+   * graph's nodes plus its transitive-closure entries, so a graph with few
+   * nodes but a huge closure is bounded too.
+   */
   maxGraphNodes: 100_000,
   /** Evidence entries kept per finding. */
   maxEvidencePerFinding: 100,
+  /** Findings kept per outcome. */
+  maxFindings: 1_000,
 });
 
 export interface IsolatedAnalyseOptions {
@@ -81,30 +88,43 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
     dependencies = dependencies.slice(0, OUTCOME_CAPS.maxDependencies);
   }
   let usages = outcome.usages;
+  let usageAnalysed = outcome.usageAnalysed;
   if (usages.length > OUTCOME_CAPS.maxUsages) {
     limitations.push(
-      `Adapter posted ${usages.length} usages; capped at ${OUTCOME_CAPS.maxUsages}.`,
+      `Adapter posted ${usages.length} usages; capped at ${OUTCOME_CAPS.maxUsages}. Usage analysis is incomplete: dependencies past the cut must not read as unused.`,
     );
     usages = usages.slice(0, OUTCOME_CAPS.maxUsages);
+    // A capped usage list is not a complete usage analysis. Leaving
+    // usageAnalysed true would let policy read "analysed, no usage" for
+    // every dependency whose only usage fell past the cut - exactly the
+    // high-confidence false "unused" finding the engine guards against.
+    usageAnalysed = false;
   }
   let graphs = outcome.graphs;
-  const totalNodes = graphs.reduce((sum, graph) => sum + graph.nodes.length, 0);
-  if (totalNodes > OUTCOME_CAPS.maxGraphNodes) {
-    limitations.push(
-      `Adapter posted ${totalNodes} graph nodes; capped at ${OUTCOME_CAPS.maxGraphNodes}.`,
-    );
+  // Closure entries count against the same budget as nodes, and a graph
+  // that does not fit whole is dropped rather than truncated: slicing nodes
+  // would leave transitiveClosure pointing at removed nodes, an
+  // inconsistent graph downstream code cannot trust.
+  const graphSize = (graph: (typeof graphs)[number]): number =>
+    graph.nodes.length +
+    Object.values(graph.transitiveClosure).reduce((sum, names) => sum + names.length, 0);
+  const totalGraphSize = graphs.reduce((sum, graph) => sum + graphSize(graph), 0);
+  if (totalGraphSize > OUTCOME_CAPS.maxGraphNodes) {
     const kept: typeof graphs = [];
     let budget: number = OUTCOME_CAPS.maxGraphNodes;
+    let dropped = 0;
     for (const graph of graphs) {
-      if (budget <= 0) break;
-      if (graph.nodes.length <= budget) {
+      const size = graphSize(graph);
+      if (size <= budget) {
         kept.push(graph);
-        budget -= graph.nodes.length;
+        budget -= size;
       } else {
-        kept.push({ ...graph, nodes: graph.nodes.slice(0, budget) });
-        budget = 0;
+        dropped += 1;
       }
     }
+    limitations.push(
+      `Adapter posted ${totalGraphSize} graph nodes/closure entries; budget is ${OUTCOME_CAPS.maxGraphNodes}. Dropped ${dropped} graph(s) whole rather than truncate them into inconsistency.`,
+    );
     graphs = kept;
   }
   let findings = outcome.findings;
@@ -118,11 +138,18 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
     limitations.push(
       `Finding evidence capped at ${OUTCOME_CAPS.maxEvidencePerFinding} entries each.`,
     );
+  if (findings.length > OUTCOME_CAPS.maxFindings) {
+    limitations.push(
+      `Adapter posted ${findings.length} findings; capped at ${OUTCOME_CAPS.maxFindings}.`,
+    );
+    findings = findings.slice(0, OUTCOME_CAPS.maxFindings);
+  }
   if (limitations.length === 0) return outcome;
   return {
     ...outcome,
     dependencies,
     usages,
+    usageAnalysed,
     graphs,
     findings: [
       ...findings,
