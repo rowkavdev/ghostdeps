@@ -6,25 +6,35 @@
  * the normalised names "pyyaml" / "typing-extensions", and get no line.
  */
 
-const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/**
+ * Lines longer than this get no declaredLine. Every declaration on one
+ * line would otherwise rescan that line (quadratic on a hostile one-line
+ * manifest); real declaration lines are short.
+ */
+export const MAX_DECLARATION_LINE_CHARS = 4096;
 
-/** Mirrors core's verifyDeclaredLines token test. */
+const BEFORE_NAME = /[A-Za-z0-9._/@-]/;
+const AFTER_NAME = /[A-Za-z0-9._/-]/;
+
+/**
+ * Mirrors core's verifyDeclaredLines token test: `name` appears with no
+ * name character right before it (letters, digits, . _ / @ -) or right
+ * after it (the same minus @). Done with indexOf, not a RegExp built per
+ * dependency: it runs once per declaration on untrusted manifests.
+ */
 export function lineNamesDependency(lineText: string, name: string): boolean {
-  return new RegExp(`(^|[^A-Za-z0-9._/@-])${escape(name)}([^A-Za-z0-9._/-]|$)`).test(lineText);
+  if (name.length === 0 || lineText.length > MAX_DECLARATION_LINE_CHARS) return false;
+  for (let at = lineText.indexOf(name); at !== -1; at = lineText.indexOf(name, at + 1)) {
+    const before = at === 0 ? "" : lineText[at - 1]!;
+    const after = lineText[at + name.length] ?? "";
+    if (!BEFORE_NAME.test(before) && !AFTER_NAME.test(after)) return true;
+  }
+  return false;
 }
 
-interface StringAt {
-  section: string;
-  key: string | undefined;
-  value: string;
-  line: number;
-}
-
-interface KeyAt {
-  section: string;
-  key: string;
-  line: number;
-}
+/** Leading distribution-name token of a PEP 508 string, as written. */
+const LEADING_NAME = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)/;
+const slot = (...parts: string[]): string => parts.join("\0");
 
 const unquote = (part: string): string => part.trim().replace(/^(["'])(.*)\1$/, "$2");
 const sectionOf = (header: string): string => header.split(".").map(unquote).join(".");
@@ -37,8 +47,10 @@ const sectionOf = (header: string): string => header.split(".").map(unquote).joi
  * because every returned line is also name-checked.
  */
 export class PyprojectLines {
-  private readonly strings: StringAt[] = [];
-  private readonly keys: KeyAt[] = [];
+  /** section, key, leading name -> first line (each lookup is O(1)). */
+  private readonly strings = new Map<string, number>();
+  /** section, key -> first line. */
+  private readonly keys = new Map<string, number>();
   private readonly lines: string[];
 
   constructor(text: string) {
@@ -63,7 +75,8 @@ export class PyprojectLines {
         const assign = /^\s*("[^"]*"|'[^']*'|[A-Za-z0-9_.-]+)\s*=/.exec(raw);
         if (assign) {
           key = unquote(assign[1]!);
-          this.keys.push({ section, key, line });
+          const at = slot(section, key);
+          if (!this.keys.has(at)) this.keys.set(at, line);
         }
       }
       // Walk the line: string literals and bracket depth, comments ignored.
@@ -92,7 +105,11 @@ export class PyprojectLines {
             value += raw[j];
             j += 1;
           }
-          if (depth > 0) this.strings.push({ section, key, value, line });
+          const name = depth > 0 && key !== undefined ? LEADING_NAME.exec(value)?.[1] : undefined;
+          if (name !== undefined) {
+            const at = slot(section, key!, name);
+            if (!this.strings.has(at)) this.strings.set(at, line);
+          }
           i = j;
           continue;
         }
@@ -109,11 +126,7 @@ export class PyprojectLines {
 
   /** Line of a PEP 508 string for `rawName` in `section`'s array `key`. */
   pep508(section: string, key: string, rawName: string, name: string): number | undefined {
-    const head = new RegExp(`^\\s*${escape(rawName)}(?![A-Za-z0-9._-])`);
-    const hit = this.strings.find(
-      (s) => s.section === section && s.key === key && head.test(s.value),
-    );
-    return this.checked(hit?.line, name);
+    return this.checked(this.strings.get(slot(section, key, rawName)), name);
   }
 
   /**
@@ -122,7 +135,6 @@ export class PyprojectLines {
    * that follows ".".
    */
   tableKey(section: string, rawName: string, name: string): number | undefined {
-    const hit = this.keys.find((k) => k.section === section && k.key === rawName);
-    return this.checked(hit?.line, name);
+    return this.checked(this.keys.get(slot(section, rawName)), name);
   }
 }

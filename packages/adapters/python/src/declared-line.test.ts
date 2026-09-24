@@ -119,6 +119,27 @@ describe("declaredLine (#280)", () => {
     assert.deepEqual(lines(result.requirements), { "httpx/runtime": 7 });
   });
 
+  it("stays linear on large manifests (untrusted input)", () => {
+    // ~30k dependencies, ~0.5 MB: each lookup is a map hit, never a scan.
+    const count = 30_000;
+    const deps = Array.from({ length: count }, (_, i) => `  "pkg${i}>=1",`);
+    const text = ["[project]", 'name = "x"', "dependencies = [", ...deps, "]"].join("\n");
+    const started = performance.now();
+    const result = parsePyprojectText(text, project, "pyproject.toml");
+    const elapsed = performance.now() - started;
+    assert.equal(result.requirements.length, count);
+    assert.equal(result.requirements[count - 1]!.dependency.declaredLine, count + 3);
+    assert.ok(elapsed < 3000, `took ${Math.round(elapsed)} ms`);
+
+    // All on one line: no rescanning per declaration, and no line offered.
+    const oneLine = `[project]\nname = "x"\ndependencies = [${deps.join(" ")}]`;
+    const t0 = performance.now();
+    const flat = parsePyprojectText(oneLine, project, "pyproject.toml");
+    assert.ok(performance.now() - t0 < 3000);
+    assert.equal(flat.requirements.length, count);
+    assert.equal(flat.requirements[0]!.dependency.declaredLine, undefined);
+  });
+
   it("end to end: core keeps the lines, so no declaration-line-unavailable note", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "gd-py-line-"));
     try {
