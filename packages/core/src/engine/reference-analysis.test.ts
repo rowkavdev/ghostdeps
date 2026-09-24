@@ -146,15 +146,22 @@ describe("scan completeness in analyseRepository (#154)", () => {
     assert.equal(unused?.confidence, "medium");
     assert.ok(unused?.limitations.some((l) => l.includes("scan was incomplete")));
     assert.ok(result.findings.some((f) => f.summary === note.summary));
+    const runLevel = result.findings.filter((f) =>
+      f.summary.startsWith("all verdicts in this result"),
+    );
+    assert.equal(runLevel.length, 1, "exactly one run-level statement");
+    assert.match(runLevel[0]?.recommendation ?? "", /should-be-dev and type-only/);
   });
 
   it("caps without notes when only scanIncomplete is set", async () => {
     const result = await analyse({ scanIncomplete: true });
     assert.equal(result.findings.find((f) => f.kind === "unused")?.confidence, "medium");
+    assert.ok(result.findings.some((f) => f.summary.startsWith("all verdicts in this result")));
   });
 
   it("leaves findings alone when the scan was complete", async () => {
     const result = await analyse({ scanCompleteness: [] });
     assert.equal(result.findings.find((f) => f.kind === "unused")?.confidence, "high");
+    assert.ok(!result.findings.some((f) => f.summary.startsWith("all verdicts in this result")));
   });
 });

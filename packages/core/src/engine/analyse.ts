@@ -311,6 +311,22 @@ export async function assembleAnalysisResult(
       };
     }
     findings.push(...scanNotes);
+    // One run-level statement covering every verdict, including hygiene
+    // verdicts (should-be-dev, type-only) that carry no per-finding note.
+    findings.push({
+      kind: "info",
+      summary: "all verdicts in this result were computed from a partial repository scan",
+      recommendation:
+        "Treat every recommendation here, including should-be-dev and type-only, as provisional until a complete scan confirms it.",
+      evidence: [
+        { kind: "scan-incomplete", statement: "the repository scan did not cover every file" },
+      ],
+      confidence: "high",
+      limitations: [
+        "Files outside the scan may use dependencies, import them from shipped code, or use them as values.",
+      ],
+      affectedFiles: [],
+    });
   }
 
   // One canonical ordering for the engine and the JSON reporter (#71).
