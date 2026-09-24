@@ -28,6 +28,8 @@ export interface GoModRequire {
   /** Marked `// indirect`: not imported by this module's own packages. */
   indirect: boolean;
   line: number;
+  /** The path appears on its line exactly as written (no backslash escapes). */
+  verbatim: boolean;
 }
 
 export interface GoModReplace {
@@ -79,6 +81,8 @@ interface Token {
   text: string;
   /** False for bare words, true for "..." / `...` strings (quotes removed). */
   quoted: boolean;
+  /** A "..." string that used a backslash escape, so its text differs from the source. */
+  escaped?: boolean;
 }
 
 interface Line {
@@ -114,10 +118,12 @@ function lexLine(text: string, line: number): Line {
       let j = i + 1;
       let value = "";
       let closed = false;
+      let escaped = false;
       while (j < text.length) {
         const d = text[j]!;
         if (d === "\\" && j + 1 < text.length) {
           value += text[j + 1];
+          escaped = true;
           j += 2;
           continue;
         }
@@ -129,7 +135,7 @@ function lexLine(text: string, line: number): Line {
         j++;
       }
       if (!closed) unterminated = true;
-      tokens.push({ text: value, quoted: true });
+      tokens.push({ text: value, quoted: true, ...(escaped ? { escaped } : {}) });
       i = j + 1;
       continue;
     }
@@ -277,7 +283,13 @@ export function parseGoMod(text: string): GoModFile {
         if (words.length !== 2 || !path || !version) {
           return error(l.line, "require takes a module path and version");
         }
-        out.require.push({ path, version, indirect: isIndirect(l.comment), line: l.line });
+        out.require.push({
+          path,
+          version,
+          indirect: isIndirect(l.comment),
+          line: l.line,
+          verbatim: args[0]?.escaped !== true,
+        });
         return;
       }
       case "exclude": {

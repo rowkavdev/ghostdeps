@@ -57,6 +57,9 @@ export function directDependencies(mod: GoModFile, project: ProjectRef): Depende
         kind: "runtime" as const,
         project,
         declaredIn,
+        // Only a line that shows the path as written: core drops a line
+        // that does not contain the dependency name (#198).
+        ...(r.verbatim ? { declaredLine: r.line } : {}),
         ...(specifier ? { specifier } : {}),
       };
     });
