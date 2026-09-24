@@ -4,6 +4,8 @@ import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { memoryHandle } from "../testing/fs-handle.js";
 import {
   MAX_CONFIG_BYTES,
+  MAX_CONFIG_STRING_NOTES,
+  configStringNotes,
   expandShorthand,
   findConfigUsages,
   packageOf,
@@ -357,5 +359,95 @@ describe("nested configs and discovery conventions", () => {
     ]);
     assert.deepEqual(await via(context, "simple-git-hooks"), [["convention", "package.json", 1]]);
     assert.deepEqual(await via(context, "@size-limitx/other"), []);
+  });
+});
+
+describe("config-string capability notes (#205, #201 follow-up)", () => {
+  const none = async () => false;
+  it("one note per string-credited dependency, naming the first string; none for other config refs", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "vite.config.ts": `export default {\n  optimizeDeps: { include: ["only-in-config"] },\n  x: "only-in-config",\n};`,
+      "next.config.mjs": `export default { transpilePackages: ["ui-kit"] };`,
+      ".eslintrc.json": `{"plugins": ["import"]}`,
+    });
+    const notes = await configStringNotes(
+      context,
+      [dep("only-in-config"), dep("ui-kit"), dep("eslint-plugin-import"), dep("not-referenced")],
+      none,
+    );
+    assert.deepEqual(notes, [
+      {
+        dependency: "only-in-config",
+        statement:
+          "credited by a string in vite.config.ts:2 (+ 1 more); JS/TS config files are read statically for package names, never run",
+      },
+      {
+        dependency: "ui-kit",
+        statement:
+          "credited by a string in next.config.mjs:1; JS/TS config files are read statically for package names, never run",
+      },
+    ]);
+  });
+
+  it("a name declared in several projects gets one note; unreadable configs give none", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "vite.config.ts": `export default { include: ["shared"] };`,
+      "packages/a/package.json": "{}",
+      "packages/a/vite.config.ts": `export default { include: ["shared"] };`,
+      "packages/b/package.json": "{}",
+      "packages/b/vite.config.ts": "export default [;",
+    });
+    const notes = await configStringNotes(
+      context,
+      [dep("shared"), dep("shared", "packages/a"), dep("broken-only", "packages/b")],
+      none,
+    );
+    assert.deepEqual(
+      notes.map((n) => [n.dependency, n.statement.split(";")[0]]),
+      [["shared", "credited by a string in packages/a/vite.config.ts:1 (+ 1 more)"]],
+    );
+  });
+
+  it("no note when the dependency is used some other way in any project", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "vite.config.ts": `export default { include: ["both", "only"] };`,
+      "packages/a/package.json": "{}",
+    });
+    const seen: string[][] = [];
+    const notes = await configStringNotes(
+      context,
+      [dep("only"), dep("both", "packages/a"), dep("both")],
+      async (d, strings) => {
+        seen.push([d.name, d.project.path, [...strings].join(",")]);
+        return d.name === "both" && d.project.path === "packages/a";
+      },
+    );
+    assert.deepEqual(
+      notes.map((n) => n.dependency),
+      ["only"],
+    );
+    // The strings passed are the dependency's own credited strings; a name
+    // already known to be used elsewhere is not checked again.
+    assert.deepEqual(seen, [
+      ["only", ".", "vite.config.ts:1"],
+      ["both", "packages/a", "vite.config.ts:1"],
+    ]);
+  });
+
+  it("bounded per run", async () => {
+    const names = Array.from({ length: MAX_CONFIG_STRING_NOTES + 5 }, (_, i) => `p${i}`);
+    const context = ctx({
+      "package.json": "{}",
+      "vite.config.ts": `export default { include: ${JSON.stringify(names)} };`,
+    });
+    const notes = await configStringNotes(
+      context,
+      names.map((n) => dep(n)),
+      none,
+    );
+    assert.equal(notes.length, MAX_CONFIG_STRING_NOTES);
   });
 });

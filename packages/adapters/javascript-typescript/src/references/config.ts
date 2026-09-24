@@ -36,6 +36,8 @@ export interface ConfigReference {
   source: string;
   /** Package-name prefixes also credited (tools that auto-discover plugins: "@size-limit/"). */
   prefixes?: string[];
+  /** A string literal in an executable JS/TS config (#149), read statically. */
+  configString?: true;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -596,6 +598,7 @@ export function readExecutableConfig(
           line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
           via: "config",
           source: `${tool} string`,
+          configString: true,
         });
       }
     }
@@ -821,6 +824,60 @@ export async function findConfigUsages(
       via: r.via,
       symbols: [r.source],
     }));
+}
+
+/** Most notes the adapter returns per run; core also caps the run at 100 (#205). */
+export const MAX_CONFIG_STRING_NOTES = 50;
+
+/**
+ * Capability notes (#205, #201 follow-up): one per declared dependency that
+ * only a string in an executable JS/TS config credited, naming the first
+ * such string. That is the case the note explains: without the config read,
+ * the dependency would look unused. A dependency with any other usage
+ * (`hasOtherUsage`) gets no note, so imported packages don't flood the run.
+ * The config was read statically, never run. Every note carries its
+ * dependency (lead ruling on #205); unread configs are coverage gaps and stay
+ * in unreadConfigs, never here. Deterministic: dependencies by name, strings
+ * by file then line.
+ */
+export async function configStringNotes(
+  context: AdapterContext,
+  dependencies: readonly Dependency[],
+  hasOtherUsage: (dependency: Dependency, strings: ReadonlySet<string>) => Promise<boolean>,
+): Promise<{ statement: string; dependency: string }[]> {
+  const byName = new Map<string, ConfigReference[]>();
+  const used = new Set<string>();
+  for (const dependency of dependencies) {
+    if (used.has(dependency.name)) continue;
+    const { refs } = await scanFor(context, dependency);
+    const own = refs.filter((r) => r.configString && r.packages.includes(dependency.name));
+    if (own.length === 0) continue;
+    if (await hasOtherUsage(dependency, new Set(own.map((r) => `${r.file}:${r.line}`)))) {
+      // Used some other way in any project: the note would explain nothing.
+      used.add(dependency.name);
+      byName.delete(dependency.name);
+      continue;
+    }
+    const list = byName.get(dependency.name) ?? [];
+    for (const r of own)
+      if (!list.some((x) => x.file === r.file && x.line === r.line)) list.push(r);
+    byName.set(dependency.name, list);
+  }
+  const names = [...byName.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return names.slice(0, MAX_CONFIG_STRING_NOTES).map((name) => {
+    const refs = byName
+      .get(name)!
+      .sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
+    const first = refs[0]!;
+    const more = refs.length - 1;
+    return {
+      dependency: name,
+      statement:
+        `credited by a string in ${first.file}:${first.line}` +
+        `${more > 0 ? ` (+ ${more} more)` : ""}; ` +
+        "JS/TS config files are read statically for package names, never run",
+    };
+  });
 }
 
 /** Config files for `dependency`'s project that exist but could not be read. Empty = complete coverage. */

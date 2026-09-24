@@ -3,10 +3,11 @@
  * #24 detection, #25 package-manager detection, #26 manifest parsing,
  * #27 lockfile graphs and #28 usage analysis.
  */
-import { adapterApiVersion } from "@ghostdeps/core";
+import { adapterApiVersion, normaliseUsageResult } from "@ghostdeps/core";
 import type {
   AdapterCapability,
   AdapterContext,
+  AdapterNote,
   Dependency,
   EcosystemAdapter,
   ProjectRef,
@@ -15,7 +16,7 @@ import type {
 import { JS_ECOSYSTEM, detectJavaScriptTypeScript } from "./detect.js";
 import { buildDependencyGraph } from "./lockfile/index.js";
 import { parseManifest } from "./manifest.js";
-import { findConfigUsages, unreadConfigs } from "./references/config.js";
+import { configStringNotes, findConfigUsages, unreadConfigs } from "./references/config.js";
 import { findScriptUsages, scriptGaps } from "./references/scripts.js";
 import { findWorkflowUsages } from "./references/workflows.js";
 import {
@@ -25,8 +26,22 @@ import {
   usageLimitations,
 } from "./usage/index.js";
 
+async function listDirectDependencies(
+  context: AdapterContext,
+  projects: ProjectRef[],
+): Promise<Dependency[]> {
+  const all: Dependency[] = [];
+  for (const project of projects) {
+    // Parse errors surface as detection evidence (manifest-malformed);
+    // a broken manifest yields zero dependencies here, never a crash.
+    const result = await parseManifest(context.repository, project);
+    all.push(...result.dependencies);
+  }
+  return all;
+}
+
 export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
-  return {
+  const adapter: EcosystemAdapter = {
     ecosystem: JS_ECOSYSTEM,
     apiVersion: adapterApiVersion,
     // referenceAnalysis (#132): findUsage reports referenceAnalysisComplete,
@@ -68,18 +83,21 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
           importGaps.length === 0 && scriptProblems.length === 0 && unread.length === 0,
       };
     },
-    async listDirectDependencies(
-      context: AdapterContext,
-      projects: ProjectRef[],
-    ): Promise<Dependency[]> {
-      const all: Dependency[] = [];
-      for (const project of projects) {
-        // Parse errors surface as detection evidence (manifest-malformed);
-        // a broken manifest yields zero dependencies here, never a crash.
-        const result = await parseManifest(context.repository, project);
-        all.push(...result.dependencies);
-      }
-      return all;
+    listDirectDependencies,
+    /**
+     * Capability notes (#205): dependencies credited only by a JS/TS config
+     * string (#149/#201). Never caps; unread configs stay coverage gaps.
+     */
+    async notes(context: AdapterContext, projects: ProjectRef[]): Promise<AdapterNote[]> {
+      return configStringNotes(
+        context,
+        await listDirectDependencies(context, projects),
+        async (dependency, strings) =>
+          normaliseUsageResult(await adapter.findUsage!(context, dependency)).usages.some(
+            (u) => !u.removedInPr && !(u.via === "config" && strings.has(`${u.file}:${u.line}`)),
+          ),
+      );
     },
   };
+  return adapter;
 }
