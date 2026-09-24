@@ -1,0 +1,14 @@
+{
+  "description": "Symlink entry pointing at an absolute target ('/etc/passwd'). Extraction must record it as metadata and never materialise it, so nothing can ever be followed out of the checkout.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "extract",
+    "symlinks": 1,
+    "links": [
+      {
+        "path": "repo/passwd",
+        "target": "/etc/passwd"
+      }
+    ]
+  }
+}

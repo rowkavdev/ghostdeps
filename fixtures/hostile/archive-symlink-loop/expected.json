@@ -1,0 +1,19 @@
+{
+  "description": "Symlink loop (a -> b, b -> a) plus an entry under the loop. A materialising extractor needs loop-capped resolution; a recording extractor is immune by construction.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "extract",
+    "files": 1,
+    "symlinks": 2,
+    "links": [
+      {
+        "path": "repo/a",
+        "target": "b"
+      },
+      {
+        "path": "repo/b",
+        "target": "a"
+      }
+    ]
+  }
+}

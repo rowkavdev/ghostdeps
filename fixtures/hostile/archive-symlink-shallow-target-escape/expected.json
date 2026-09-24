@@ -1,0 +1,18 @@
+{
+  "description": "A link sitting deeper than its target (a/b/c/L points at the root) lets a later target 'L/../..' climb out of the root when '..' is applied lexically instead of physically. This escaped the first, materialising extractor (independent-review PoC on PR #81); with links recorded as metadata there is nothing to follow.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "extract",
+    "symlinks": 2,
+    "links": [
+      {
+        "path": "a/b/c/L",
+        "target": "../../.."
+      },
+      {
+        "path": "a/b/c/M",
+        "target": "L/../.."
+      }
+    ]
+  }
+}

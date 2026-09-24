@@ -1,0 +1,9 @@
+{
+  "description": "Nothing. Control: a valid codeload-shaped archive (pax global header, long pax path, UTF-8 names, internal symlink) MUST extract cleanly. Guards against false positives in the validator.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "extract",
+    "files": 4,
+    "symlinks": 1
+  }
+}

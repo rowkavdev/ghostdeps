@@ -1,0 +1,8 @@
+{
+  "description": "Two entries for the same path. Classic parser-differential: validator checks entry one, extractor writes entry two.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "DUPLICATE_PATH"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "description": "A link target's meaning changes as later links land: L points at x/y/z, then x becomes a link to '.', then M -> L/../../.. climbs out of the root when L is resolved against the new x. This escaped the second, creation-time-resolution extractor (independent-review re-review PoC on PR #81); recording links as metadata removes resolution entirely.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "extract",
+    "symlinks": 3,
+    "links": [
+      {
+        "path": "r/L",
+        "target": "x/y/z"
+      },
+      {
+        "path": "r/x",
+        "target": "."
+      },
+      {
+        "path": "r/M",
+        "target": "L/../../.."
+      }
+    ]
+  }
+}

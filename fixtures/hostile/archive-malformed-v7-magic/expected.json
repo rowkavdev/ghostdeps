@@ -1,0 +1,8 @@
+{
+  "description": "Pre-ustar (v7) header with no magic. Strict parsers reject formats they do not implement instead of guessing.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "MALFORMED_ARCHIVE"
+  }
+}

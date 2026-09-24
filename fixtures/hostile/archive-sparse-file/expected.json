@@ -1,0 +1,8 @@
+{
+  "description": "GNU sparse file (typeflag S): gigabytes of apparent content in kilobytes of archive. A disk-fill bomb against naive extractors.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "UNSUPPORTED_ENTRY"
+  }
+}

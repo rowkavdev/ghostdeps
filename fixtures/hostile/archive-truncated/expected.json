@@ -1,0 +1,8 @@
+{
+  "description": "Archive cut off mid-file (gzip stream severed at 50%). Extraction must fail loudly, never emit a partial checkout that looks valid.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "TRUNCATED_ARCHIVE"
+  }
+}

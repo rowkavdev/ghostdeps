@@ -1,0 +1,8 @@
+{
+  "description": "Filename containing U+FF0F FULLWIDTH SOLIDUS, which NFKC-folds to '/'. Validators that normalise after checking (or consumers that fold) turn it into traversal.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "UNICODE_PATH_FOLDING"
+  }
+}
