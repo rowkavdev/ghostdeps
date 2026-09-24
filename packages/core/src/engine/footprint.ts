@@ -13,6 +13,26 @@ export const FOOTPRINT_TIMEOUT_MS = 10_000;
 const MAX_BASIS_LENGTH = 100;
 
 const projectKey = (ecosystem: string, path: string): string => `${ecosystem}\0${path}`;
+
+/**
+ * GraphNode.registryOrigin as a canonical origin, or undefined. It comes
+ * from repository data, so only a plain http(s) origin passes: no path,
+ * credentials, query or fragment.
+ */
+export function normaliseRegistryOrigin(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.length > 200) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  if (url.username || url.password || url.search || url.hash) return undefined;
+  if (url.pathname !== "/" && url.pathname !== "") return undefined;
+  if (value.replace(/\/$/, "").toLowerCase() !== url.origin) return undefined;
+  return url.origin;
+}
 const versionKey = (name: string, version: string): string => `${name}\0${version}`;
 
 /**
@@ -42,6 +62,21 @@ export async function addFootprints(
   // member (closures are by name, so every locked version of a name).
   const members = new Map<DependencyImpact, Map<string, PackageVersionRef>>();
   const wanted = new Map<string, Map<string, PackageVersionRef>>();
+  // Per ecosystem and name@version, the one origin every locked node
+  // agrees on; null once any node disagrees or has none (#174 step 3).
+  const origins = new Map<string, Map<string, string | null>>();
+  for (const graph of graphs) {
+    const eco = graph.project.ecosystem;
+    let perEco = origins.get(eco);
+    if (!perEco) origins.set(eco, (perEco = new Map()));
+    for (const node of graph.nodes) {
+      if (typeof node.name !== "string" || typeof node.version !== "string") continue;
+      const key = versionKey(node.name, node.version);
+      const origin = normaliseRegistryOrigin(node.registryOrigin) ?? null;
+      if (!perEco.has(key)) perEco.set(key, origin);
+      else if (perEco.get(key) !== origin) perEco.set(key, null);
+    }
+  }
   for (const entry of impact) {
     if (entry.transitive === null) continue;
     const projectGraphs = graphsByProject.get(projectKey(entry.ecosystem, entry.project)) ?? [];
@@ -63,7 +98,11 @@ export async function addFootprints(
     members.set(entry, set);
     let perEcosystem = wanted.get(entry.ecosystem);
     if (!perEcosystem) wanted.set(entry.ecosystem, (perEcosystem = new Map()));
-    for (const [key, ref] of set) perEcosystem.set(key, ref);
+    const perEcoOrigins = origins.get(entry.ecosystem);
+    for (const [key, ref] of set) {
+      const origin = perEcoOrigins?.get(key);
+      perEcosystem.set(key, typeof origin === "string" ? { ...ref, origin } : ref);
+    }
   }
 
   const answers = new Map<string, { basis: string; sizes: Map<string, number> }>();

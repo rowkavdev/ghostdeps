@@ -54,6 +54,17 @@ export interface GraphNode {
   /** Names of this node's own dependencies (edges). */
   dependencies: string[];
   dev: boolean;
+  /**
+   * Where the lockfile says this package was fetched from (#174 step 3):
+   * the lowercase URL origin (`scheme://host[:port]`) of its resolved
+   * http(s) tarball URL, e.g. "https://registry.npmjs.org". Only from
+   * explicit lockfile evidence, or a scoped registry binding that
+   * unambiguously matches the package's scope; a default registry setting
+   * is not evidence. Absent for git, file, link and workspace packages
+   * and whenever in doubt: absent fails closed (no registry lookup, so no
+   * footprint). Additive, optional.
+   */
+  registryOrigin?: string;
 }
 
 /** The transitive graph for one project, built from lockfiles only. */
@@ -367,6 +378,14 @@ export interface DependencyFootprint {
 export interface PackageVersionRef {
   name: string;
   version: string;
+  /**
+   * The locked package's GraphNode.registryOrigin, validated and
+   * normalised by core. Absent when no node had one, it was malformed, or
+   * locked nodes for this name and version disagree. Providers decide
+   * which origins they may query (the GitHub App: npm's public registry
+   * only) and skip the rest.
+   */
+  origin?: string;
 }
 
 /**
