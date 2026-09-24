@@ -71,12 +71,13 @@ const IMPACT_KINDS: ReadonlySet<FindingKind> = new Set([
 ]);
 
 /** 1_400_000 -> "1.4 MB" (decimal units, like registries report). */
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 1000) return `${bytes} B`;
   const units = ["kB", "MB", "GB", "TB"];
   let value = bytes / 1000;
   let unit = 0;
-  while (value >= 1000 && unit < units.length - 1) {
+  // Compare the rounded value, so 999,950 B reads "1.0 MB", not "1000.0 kB".
+  while (Number(value.toFixed(1)) >= 1000 && unit < units.length - 1) {
     value /= 1000;
     unit++;
   }
