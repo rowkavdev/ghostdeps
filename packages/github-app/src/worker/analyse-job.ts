@@ -22,6 +22,7 @@ import {
   type AnalysisResult,
   type DependencyChange,
   type RecommendationPolicy,
+  type PackageMetadataProvider,
   type SourceLineChanges,
 } from "@ghostdeps/core";
 import type { AddedLines } from "../checks/diff.js";
@@ -29,6 +30,7 @@ import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/re
 import type { AnalysisJob, JobWorker } from "../jobs.js";
 import { pullRequestContext, type PullRequestClient } from "../pull-request/changes.js";
 import { isRateLimitError } from "../github/rate-limit.js";
+import type { NpmMetadataService } from "./npm-metadata.js";
 import { isCacheable, ResultCache, resultCacheKey } from "./result-cache.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
@@ -55,6 +57,8 @@ export interface AnalyseRunOptions {
   readonly pullRequestSourceChanges?: readonly SourceLineChanges[];
   /** Core's recommendation policy; omitted means facts only, no verdicts. */
   readonly recommend?: RecommendationPolicy;
+  /** Registry metadata for install footprints (#174); omitted means none. */
+  readonly metadata?: PackageMetadataProvider;
 }
 
 export interface AnalysisWorkerOptions {
@@ -81,6 +85,12 @@ export interface AnalysisWorkerOptions {
    * repository (4 entries); false turns it off.
    */
   readonly resultCache?: ResultCache | false;
+  /**
+   * npm install-footprint metadata (#174). Off unless set; each job gets a
+   * provider with its own fetch budget. Only public-registry packages are
+   * ever queried (docs/security-model.md).
+   */
+  readonly metadata?: NpmMetadataService;
   /** Checkout scan limits/exclusions. Defaults to core's. */
   readonly scan?: CheckoutScanOptions;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
@@ -121,6 +131,7 @@ export async function analyseCheckout(
       ? { pullRequestSourceChanges: run.pullRequestSourceChanges }
       : {}),
     ...(run.recommend ? { recommend: run.recommend } : {}),
+    ...(run.metadata ? { metadata: run.metadata } : {}),
     ...(scanCompleteness.length > 0 ? { scanIncomplete: true, scanCompleteness } : {}),
   });
 }
@@ -193,6 +204,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
   const cacheContext = {
     adapterModules,
     recommend: options.recommend !== undefined,
+    footprint: options.metadata !== undefined,
     ...(options.scan !== undefined ? { scan: options.scan } : {}),
   };
 
@@ -257,7 +269,11 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         pullRequestChanges?: readonly DependencyChange[];
         pullRequestSourceChanges?: readonly SourceLineChanges[];
         recommend?: RecommendationPolicy;
-      } = options.recommend ? { recommend: options.recommend } : {};
+        metadata?: PackageMetadataProvider;
+      } = {
+        ...(options.recommend ? { recommend: options.recommend } : {}),
+        ...(options.metadata ? { metadata: options.metadata.forRun() } : {}),
+      };
       // baseSha is from the payload at enqueue time. If the base branch has
       // moved since, base...head still diffs from the merge base, so the
       // change list is still the PR's own.

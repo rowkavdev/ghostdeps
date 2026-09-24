@@ -67,12 +67,14 @@ For pull request jobs (and re-runs GitHub links to a same-repo PR), the worker a
 
 ## Install footprint metadata
 
-Core can add an approximate install footprint to each direct dependency's impact entry (#59 slice B), from sizes the caller supplies through a `PackageMetadataProvider`. The app's provider is `NpmMetadataService` in `worker/npm-metadata.ts` (#174). It is not wired into analysis yet: that lands after core's true-lower-bound fix for footprint bytes (#288), and it will be off by default.
+Core can add an approximate install footprint to each direct dependency's impact entry (#59 slice B), from sizes the caller supplies through a `PackageMetadataProvider`. The app's provider is `NpmMetadataService` in `worker/npm-metadata.ts` (#174). It is **off by default**: set `GHOSTDEPS_FOOTPRINT=true` (or `1`, or the app option `footprint: true`) to turn it on. Each job gets its own provider, so the fetch budget below applies per run.
 
 - npm only (`javascript-typescript`). Sizes are the registry's `dist.unpackedSize` for each exact name@version. PyPI, crates.io and Go get no footprint.
+- Only packages whose lockfile evidence puts them on the public registry are queried: core's `origin` must be one of exactly two origins, `https://registry.npmjs.org` or `https://registry.yarnpkg.com` (yarn classic's public mirror). The allowlist lives in core. Everything else is skipped silently: no request, no footprint, no note. A private or mirrored package's name never leaves the installation.
+- **pnpm:** expect no footprint for most pnpm projects. Unscoped `pnpm-lock.yaml` entries carry only an integrity hash, with no resolved URL, so there is no origin evidence and they are skipped by design (fail-closed, not a bug). Packages under a scope with a `.npmrc` registry binding for the public registry do get one.
 - Names and versions from lockfiles are validated before they reach a URL: npm name syntax and exact semver only. Anything else stays unsized.
 - Sizes and known misses are cached per name@version in an LRU (50,000 entries). Whole answers are also cached under a hash of the resolved dependency set, so a source-only PR, whose lockfiles are unchanged, is answered without the registry. Any change to a resolved name@version misses.
-- Each run gets a budget of 300 registry requests, 8 at a time, with a 3 s per-request timeout and an 8 s deadline for the run (core stops waiting at 10 s). An answer cut short by the budget, deadline or a failed request is used but not cached as a whole, so the next run fills the gaps.
+- Each run gets a budget of 300 registry requests, 8 at a time, with a 3 s per-request timeout and an 8 s deadline for the run (core stops waiting at 10 s). A response over 1 MiB is dropped: the cap is enforced on the streamed body, so a chunked response can't be buffered past it. An answer cut short by the budget, deadline or a failed request is used but not cached as a whole, so the next run fills the gaps.
 - Any failure leaves the package unsized. The footprint is advisory: it never changes a conclusion, and a registry outage never shows as an error.
 
 ## API rate limits

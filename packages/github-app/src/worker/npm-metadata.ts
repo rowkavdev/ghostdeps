@@ -12,7 +12,12 @@
  * advisory, so nothing here throws, caps a check or reports an error.
  */
 import { createHash } from "node:crypto";
-import type { PackageMetadataProvider, PackageVersionRef } from "@ghostdeps/core";
+import {
+  isPublicNpmRegistryOrigin,
+  normaliseRegistryOrigin,
+  type PackageMetadataProvider,
+  type PackageVersionRef,
+} from "@ghostdeps/core";
 
 /** The only ecosystem served. PyPI, crates.io and Go size data is too weak for now. */
 export const NPM_ECOSYSTEM = "javascript-typescript";
@@ -26,8 +31,29 @@ export type FetchLike = (
 ) => Promise<{
   status: number;
   headers: { get(name: string): string | null };
-  text(): Promise<string>;
+  /** The response body as a byte stream (a web ReadableStream is async iterable). */
+  body: AsyncIterable<Uint8Array> | null;
 }>;
+
+/**
+ * The body as text, or undefined once it passes `max` bytes. Reads the
+ * stream in chunks, so a chunked response with no content-length can't
+ * make it buffer more than the cap.
+ */
+export async function readCapped(
+  body: AsyncIterable<Uint8Array> | null,
+  max: number,
+): Promise<string | undefined> {
+  if (!body) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for await (const chunk of body) {
+    total += chunk.byteLength;
+    if (total > max) return undefined;
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
 
 export interface NpmMetadataOptions {
   /** Cached name@version sizes (and known misses), least recently used go first. Default 50,000. */
@@ -48,6 +74,25 @@ export interface NpmMetadataOptions {
   readonly fetch?: FetchLike;
 }
 
+/** A requested version; `origin` is core's lockfile registry origin when known. */
+type Ref = PackageVersionRef;
+
+/**
+ * Only versions whose lockfile origin is on core's public npm allowlist
+ * (PUBLIC_NPM_REGISTRY_ORIGINS: npmjs and yarn classic's mirror, exact
+ * match, #174 step 3). A package from anywhere else may be private, so its
+ * name never leaves the installation and a 404 can't reveal it. No origin,
+ * no query.
+ */
+export function publicRefs(packages: readonly PackageVersionRef[]): Ref[] {
+  const out: Ref[] = [];
+  for (const p of packages) {
+    if (!p || !isPublicNpmRegistryOrigin(p.origin)) continue;
+    out.push({ name: p.name, version: p.version, origin: normaliseRegistryOrigin(p.origin)! });
+  }
+  return out;
+}
+
 type Answer = { basis: string; sizes: (PackageVersionRef & { bytes: number })[] };
 
 // npm package names: lower-case, URL-safe, optional @scope/, at most 214 chars.
@@ -65,12 +110,12 @@ export function registryPath(ref: PackageVersionRef): string | undefined {
 
 /**
  * The content key for a request: a hash of the resolved dependency set the
- * lockfiles produced. Source-only changes leave it alone, so those runs are
+ * lockfiles produced, origin included. Source-only changes leave it alone, so those runs are
  * answered without touching the version cache or the registry; any change
  * to a resolved name@version misses.
  */
-export function answerKey(ecosystem: string, packages: readonly PackageVersionRef[]): string {
-  const lines = packages.map((p) => `${p.name}\0${p.version}`).sort();
+export function answerKey(ecosystem: string, packages: readonly Ref[]): string {
+  const lines = packages.map((p) => `${p.origin ?? ""}\0${p.name}\0${p.version}`).sort();
   return createHash("sha256").update(ecosystem).update("\n").update(lines.join("\n")).digest("hex");
 }
 
@@ -135,11 +180,15 @@ export class NpmMetadataService {
       installSizes: async ({ ecosystem, packages }) => {
         try {
           if (ecosystem !== NPM_ECOSYSTEM || !Array.isArray(packages)) return undefined;
-          const key = answerKey(ecosystem, packages);
+          // Anything not resolved from the public registry is skipped
+          // silently: no request, no size, no note.
+          const wanted = publicRefs(packages);
+          if (wanted.length === 0) return { basis: NPM_SIZE_BASIS, sizes: [] };
+          const key = answerKey(ecosystem, wanted);
           const cached = this.#answers.get(key);
           if (cached) return cached;
           const take = () => (budget > 0 ? (budget--, true) : false);
-          const { answer, complete } = await this.#resolve(packages, take);
+          const { answer, complete } = await this.#resolve(wanted, take);
           // Only a fully resolved answer stands for the whole set: one cut
           // short by the budget, deadline or a transient failure retries.
           if (complete) this.#answers.set(key, answer);
@@ -218,8 +267,8 @@ export class NpmMetadataService {
       if (res.status !== 200) return "transient";
       const length = Number(res.headers.get("content-length"));
       if (Number.isFinite(length) && length > this.#options.maxResponseBytes) return null;
-      const body = await res.text();
-      if (body.length > this.#options.maxResponseBytes) return null;
+      const body = await readCapped(res.body, this.#options.maxResponseBytes);
+      if (body === undefined) return null;
       const doc: unknown = JSON.parse(body);
       const size = (doc as { dist?: { unpackedSize?: unknown } } | null)?.dist?.unpackedSize;
       return typeof size === "number" && Number.isSafeInteger(size) && size >= 0 ? size : null;

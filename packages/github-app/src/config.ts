@@ -20,6 +20,15 @@ export function sourcePrTriggerFromEnv(env: NodeJS.ProcessEnv = process.env): bo
 }
 
 /**
+ * GHOSTDEPS_FOOTPRINT: install footprints from the public npm registry
+ * (#174) are off unless this is "true" or "1".
+ */
+export function footprintFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.GHOSTDEPS_FOOTPRINT?.trim().toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
+/**
  * GHOSTDEPS_RECOMMENDATIONS: recommendation verdicts are on unless this is
  * "false" or "0" (then the app reports facts only).
  */

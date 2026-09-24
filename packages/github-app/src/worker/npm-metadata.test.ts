@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { PUBLIC_NPM_REGISTRY_ORIGINS } from "@ghostdeps/core";
 import {
   answerKey,
   NPM_ECOSYSTEM,
@@ -9,11 +10,16 @@ import {
   type FetchLike,
 } from "./npm-metadata.js";
 
-type Reply = number | "404" | "500" | "throw" | "hang" | "nosize" | "big";
+type Reply = number | "404" | "500" | "throw" | "hang" | "nosize" | "big" | "chunked";
+
+async function* chunks(text: string) {
+  yield Buffer.from(text);
+}
 
 /** A registry stub: records every URL and request, answers from `replies`. */
 function registry(replies: Record<string, Reply>) {
   const urls: string[] = [];
+  let chunksRead = 0;
   const inits: Parameters<FetchLike>[1][] = [];
   const fetch: FetchLike = async (url, init) => {
     urls.push(url);
@@ -26,7 +32,7 @@ function registry(replies: Record<string, Reply>) {
         get: (n: string) =>
           n === "content-length" && length !== undefined ? String(length) : null,
       },
-      text: async () => body,
+      body: chunks(body),
     });
     if (reply === "throw") throw new Error("network down");
     if (reply === "hang")
@@ -37,14 +43,32 @@ function registry(replies: Record<string, Reply>) {
     if (reply === "500") return res(500, "");
     if (reply === "nosize") return res(200, JSON.stringify({ dist: {} }));
     if (reply === "big") return res(200, "{}", 10 * 1024 * 1024);
+    if (reply === "chunked")
+      // No content-length, and an endless body: only the cap stops it.
+      return {
+        status: 200,
+        headers: { get: () => null },
+        body: (async function* () {
+          for (;;) {
+            chunksRead++;
+            yield new Uint8Array(512);
+          }
+        })(),
+      };
     return res(200, JSON.stringify({ name: "x", dist: { unpackedSize: reply } }));
   };
-  return { fetch, urls, inits };
+  return { fetch, urls, inits, chunksRead: () => chunksRead };
 }
 
+const NPM_PUBLIC_ORIGIN = "https://registry.npmjs.org";
+const YARN_PUBLIC_ORIGIN = "https://registry.yarnpkg.com";
 const ref = (name: string, version: string) => ({ name, version });
+// Core passes the lockfile's resolved origin; these tests ask as the public registry.
 const ask = (service: NpmMetadataService, packages: { name: string; version: string }[]) =>
-  service.forRun().installSizes({ ecosystem: NPM_ECOSYSTEM, packages });
+  service.forRun().installSizes({
+    ecosystem: NPM_ECOSYSTEM,
+    packages: packages.map((p) => ({ ...p, origin: NPM_PUBLIC_ORIGIN })),
+  });
 
 describe("npm footprint metadata (#174)", () => {
   it("returns registry sizes, leaves unknown versions out, and sends no credentials", async () => {
@@ -68,6 +92,45 @@ describe("npm footprint metadata (#174)", () => {
       assert.equal(init.method, "GET");
       assert.equal(init.redirect, "error");
     }
+  });
+
+  it("never queries a package not resolved from the public registry", async () => {
+    const r = registry({ "a/1.0.0": 1, "secret/1.0.0": 2 });
+    const service = new NpmMetadataService({ fetch: r.fetch });
+    const answer = await service.forRun().installSizes({
+      ecosystem: NPM_ECOSYSTEM,
+      packages: [
+        { name: "a", version: "1.0.0", origin: NPM_PUBLIC_ORIGIN },
+        { name: "secret", version: "1.0.0", origin: "https://npm.corp.example" },
+        { name: "secret", version: "1.0.0", origin: "http://registry.npmjs.org" },
+        { name: "secret", version: "1.0.0", origin: "https://registry.npmjs.org.evil.example" },
+        { name: "secret", version: "1.0.0" },
+        { name: "secret", version: "1.0.0", origin: "https://mirror.registry.npmjs.org" },
+        { name: "secret", version: "1.0.0", origin: "https://registry.npmjs.org/private" },
+      ],
+    });
+    assert.deepEqual(answer?.sizes, [{ name: "a", version: "1.0.0", bytes: 1 }]);
+    assert.deepEqual(r.urls, ["https://registry.npmjs.org/a/1.0.0"]);
+    const none = await service
+      .forRun()
+      .installSizes({ ecosystem: NPM_ECOSYSTEM, packages: [ref("secret", "1.0.0")] });
+    assert.deepEqual(none, { basis: NPM_SIZE_BASIS, sizes: [] });
+    assert.equal(r.urls.length, 1);
+  });
+
+  it("queries yarn classic's public mirror origin too, always at registry.npmjs.org", async () => {
+    assert.deepEqual([...PUBLIC_NPM_REGISTRY_ORIGINS].sort(), [
+      NPM_PUBLIC_ORIGIN,
+      YARN_PUBLIC_ORIGIN,
+    ]);
+    const r = registry({ "y/1.0.0": 7 });
+    const service = new NpmMetadataService({ fetch: r.fetch });
+    const answer = await service.forRun().installSizes({
+      ecosystem: NPM_ECOSYSTEM,
+      packages: [{ name: "y", version: "1.0.0", origin: YARN_PUBLIC_ORIGIN }],
+    });
+    assert.deepEqual(answer?.sizes, [{ name: "y", version: "1.0.0", bytes: 7 }]);
+    assert.deepEqual(r.urls, ["https://registry.npmjs.org/y/1.0.0"]);
   });
 
   it("answers only its own ecosystem", async () => {
@@ -98,6 +161,7 @@ describe("npm footprint metadata (#174)", () => {
     assert.equal(registryPath(ref("@s/b", "1.2.3+build.7")), "@s%2Fb/1.2.3%2Bbuild.7");
     const r = registry({});
     await ask(new NpmMetadataService({ fetch: r.fetch }), [ref("../etc", "1.0.0")]);
+    // An unsafe name is skipped even with a public origin.
     assert.equal(r.urls.length, 0);
   });
 
@@ -128,6 +192,10 @@ describe("npm footprint metadata (#174)", () => {
     assert.notEqual(
       answerKey(NPM_ECOSYSTEM, [ref("a", "1.0.0")]),
       answerKey(NPM_ECOSYSTEM, [ref("a", "1.0.1")]),
+    );
+    assert.notEqual(
+      answerKey(NPM_ECOSYSTEM, [{ ...ref("a", "1.0.0"), origin: NPM_PUBLIC_ORIGIN }]),
+      answerKey(NPM_ECOSYSTEM, [{ ...ref("a", "1.0.0"), origin: "https://npm.corp.example" }]),
     );
   });
 
@@ -169,6 +237,16 @@ describe("npm footprint metadata (#174)", () => {
         .sort(),
       ["b", "c", "d"],
     );
+  });
+
+  it("stops reading a chunked body at the size cap (a cached miss)", async () => {
+    const r = registry({ "a/1.0.0": "chunked", "b/1.0.0": 5 });
+    const service = new NpmMetadataService({ fetch: r.fetch, maxResponseBytes: 2048 });
+    const answer = await ask(service, [ref("a", "1.0.0"), ref("b", "1.0.0")]);
+    assert.deepEqual(answer?.sizes, [{ name: "b", version: "1.0.0", bytes: 5 }]);
+    assert.equal(r.chunksRead(), 5);
+    await ask(service, [ref("a", "1.0.0")]);
+    assert.equal(r.urls.length, 2);
   });
 
   it("stops at the run deadline", async () => {

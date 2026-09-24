@@ -33,6 +33,8 @@ export interface ResultCacheOptions {
 export interface ResultCacheContext {
   readonly adapterModules: readonly string[];
   readonly recommend: boolean;
+  /** Install footprints on (#174). */
+  readonly footprint?: boolean;
   readonly scan?: unknown;
 }
 
@@ -60,6 +62,7 @@ export function resultCacheKey(job: AnalysisJob, context: ResultCacheContext): s
     sourceOnlyOf(job),
     CODE_VERSION,
     context.recommend ? "recommend:policy" : "recommend:off",
+    context.footprint ? "footprint:npm" : "footprint:off",
     context.adapterModules,
     context.scan ?? null,
   ]);
