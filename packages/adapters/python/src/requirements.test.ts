@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ProjectRef } from "@ghostdeps/core";
+import { parseManifests } from "./manifest.js";
 import {
   MAX_INCLUDE_DEPTH,
+  MAX_REQUIREMENTS_BYTES,
   parseRequirementsFiles,
   requirementsEntryPoints,
   requirementsKind,
@@ -81,6 +83,56 @@ describe("parseRequirementsFiles (issue #44)", () => {
       "flask >=3 runtime requirements.txt",
       "gunicorn * runtime requirements/prod.txt",
     ]);
+  });
+
+  it("keeps the shared base runtime when the dev file sorts first and includes it (#241 review)", async () => {
+    // Entry points come back sorted: requirements-dev.txt before requirements.txt.
+    const files = {
+      "requirements.txt": "flask\n",
+      "requirements-dev.txt": "-r requirements.txt\npytest\n",
+      "app.py": "",
+    };
+    const { entries } = requirementsEntryPoints(project, Object.keys(files).sort());
+    assert.deepEqual(entries, ["requirements-dev.txt", "requirements.txt"]);
+    const result = await parseManifests(memoryHandle(files), project);
+    assert.deepEqual(
+      result.requirements.map(
+        (r) => `${r.dependency.name} ${r.dependency.kind} ${r.dependency.declaredIn}`,
+      ),
+      ["flask runtime requirements.txt", "pytest dev requirements-dev.txt"],
+    );
+  });
+
+  it("keeps requirements/base.txt runtime when requirements/dev.txt includes it", async () => {
+    const files = {
+      "requirements/base.txt": "flask\n",
+      "requirements/dev.txt": "-r base.txt\npytest\n",
+      "app.py": "",
+    };
+    const result = await parseManifests(memoryHandle(files), project);
+    assert.deepEqual(
+      result.requirements.map(
+        (r) => `${r.dependency.name} ${r.dependency.kind} ${r.dependency.declaredIn}`,
+      ),
+      ["flask runtime requirements/base.txt", "pytest dev requirements/dev.txt"],
+    );
+  });
+
+  it("strips per-requirement options only after the requirement", async () => {
+    const result = await parse({
+      "requirements.txt":
+        'pkg==1.0 ; python_version >= "3.9" --hash=sha256:abc --hash=sha256:def\n',
+    });
+    assert.equal(result.requirements[0]?.dependency.constraint, "==1.0");
+    assert.equal(result.requirements[0]?.marker, 'python_version >= "3.9"');
+  });
+
+  it("does not parse an oversized requirements file", async () => {
+    const result = await parse({
+      "requirements.txt": `flask\n# ${"x".repeat(MAX_REQUIREMENTS_BYTES)}\n`,
+    });
+    assert.deepEqual(result.requirements, []);
+    assert.equal(result.evidence[0]?.kind, "requirements-oversized");
   });
 
   it("treats -c constraint files as pins, not declarations", async () => {

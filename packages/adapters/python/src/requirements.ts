@@ -17,6 +17,8 @@ import { isRequirementsFile } from "./detect.js";
 
 /** Include chains deeper than this are cut off with a note (hostile input). */
 export const MAX_INCLUDE_DEPTH = 8;
+/** Requirements files above this are not parsed (hostile input bound). */
+export const MAX_REQUIREMENTS_BYTES = 1024 * 1024;
 /** Total requirements files read per project. */
 export const MAX_REQUIREMENTS_FILES = 64;
 
@@ -184,6 +186,14 @@ export async function parseRequirementsFiles(
       note("requirements-unreadable", `${file} could not be read`, file);
       return;
     }
+    if (Buffer.byteLength(text, "utf8") > MAX_REQUIREMENTS_BYTES) {
+      note(
+        "requirements-oversized",
+        `${file} exceeds ${MAX_REQUIREMENTS_BYTES} bytes and was not parsed`,
+        file,
+      );
+      return;
+    }
     for (const { line, text: entry } of logicalLines(text)) {
       const option = /^(-r|--requirement|-c|--constraint)(?:\s+|=)(.+)$/.exec(entry);
       if (option) {
@@ -246,7 +256,9 @@ export async function parseRequirementsFiles(
         continue;
       }
       // Per-requirement options (--hash=...) follow the requirement.
-      const requirementText = entry.replace(/\s+--[\w-]+(?:[=\s]\S+)?/g, "").trim();
+      // Everything from the first whitespace-delimited "--" on is options.
+      const optionStart = entry.search(/\s--[\w-]/);
+      const requirementText = (optionStart === -1 ? entry : entry.slice(0, optionStart)).trim();
       const req = parseRequirement(requirementText);
       if (req === undefined) {
         note(
@@ -262,6 +274,12 @@ export async function parseRequirementsFiles(
     }
   }
 
-  for (const entry of entries) await visit(entry, 0, requirementsKind(entry), false);
+  // Runtime entry points first: requirements-dev.txt usually starts with
+  // "-r requirements.txt", and the shared base must be read as runtime
+  // before a dev file can pull it in (each file is read once).
+  const ordered = [...entries].sort(
+    (a, b) => Number(requirementsKind(a) === "dev") - Number(requirementsKind(b) === "dev"),
+  );
+  for (const entry of ordered) await visit(entry, 0, requirementsKind(entry), false);
   return { requirements, evidence };
 }
