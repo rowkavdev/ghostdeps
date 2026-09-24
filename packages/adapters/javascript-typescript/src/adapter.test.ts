@@ -94,10 +94,24 @@ describe("reference analysis completeness (#132)", () => {
   it("partial scans are never complete", async () => {
     // Non-literal dynamic import in the source scan.
     assert.equal((await report("usage-dynamic", "plugin-a")).referenceAnalysisComplete, false);
-    // A JS config that is never evaluated.
+    // A JS config that imports a local module whose strings are not read.
     const js = await report("refs-partial-js-config", "eslint-plugin-foo");
     assert.deepEqual(js.usages, []);
     assert.equal(js.referenceAnalysisComplete, false);
+  });
+
+  it("JS configs read statically credit string-named plugins and stay complete (#149)", async () => {
+    for (const name of ["eslint-config-airbnb", "eslint-plugin-react", "@babel/preset-env"]) {
+      const r = await report("refs-static-js-config", name);
+      assert.ok(
+        r.usages.some((u) => u.via === "config"),
+        JSON.stringify(r.usages),
+      );
+      assert.equal(r.referenceAnalysisComplete, true);
+    }
+    const unused = await report("refs-static-js-config", "left-pad");
+    assert.deepEqual(unused.usages, []);
+    assert.equal(unused.referenceAnalysisComplete, true);
   });
 
   it("pnpm: a script bin whose name differs from its package is a gap, never complete", async () => {

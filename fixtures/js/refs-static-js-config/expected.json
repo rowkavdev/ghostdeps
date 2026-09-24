@@ -1,0 +1,9 @@
+{
+  "description": "JS configs are read statically, never evaluated (#149). Plugins and presets named by string in .eslintrc.cjs and babel.config.js are used via=config, and with every config read the analysis is complete, so the genuinely unused left-pad is reported with high confidence.",
+  "findings": [{ "kind": "unused", "dependency": "left-pad", "minConfidence": "high" }],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "eslint-config-airbnb" },
+    { "kind": "unused", "dependency": "eslint-plugin-react" },
+    { "kind": "unused", "dependency": "@babel/preset-env" }
+  ]
+}

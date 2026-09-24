@@ -4,9 +4,9 @@
  * Tooling is often referenced only by name inside a config file: tsconfig
  * `types`, ESLint `extends`/`plugins`, Babel presets, a Jest `preset`, a
  * Prettier plugin. Declarative configs (JSON, JSONC, YAML, and the matching
- * package.json keys) are parsed as data. JS/TS config files are not
- * evaluated. They're source files, so the import scanner already sees their
- * import/require calls. "Convention" usage is a tool whose own config file
+ * package.json keys) are parsed as data. JS/TS config files are parsed,
+ * never evaluated (#149): their string literals are credited and the import
+ * scanner sees their import/require calls. "Convention" usage is a tool whose own config file
  * or directory exists (for example `.husky/` means husky).
  *
  * Every reference only ever adds usage. That's the safe direction for an
@@ -430,7 +430,14 @@ async function readText(repository: RepositoryHandle, file: string): Promise<Rea
 /** A config file that exists but whose references could not be read. */
 export interface UnreadConfig {
   file: string;
-  reason: "unreadable" | "oversized" | "malformed" | "not evaluated" | "over limit";
+  reason:
+    | "unreadable"
+    | "oversized"
+    | "malformed"
+    | "not evaluated"
+    | "over limit"
+    | "computed specifier"
+    | "imports local module";
 }
 
 /** Everything the config scan found for one project, plus what it could not read. */
@@ -442,6 +449,143 @@ export interface ConfigScan {
 
 /** JS/TS tool configs are source files and are never evaluated. */
 const EXECUTABLE_CONFIG = /^(?:[^/]+\.config|\.[a-z-]+rc)\.(?:c|m)?[jt]s$/;
+
+/** String literals credited per executable config. */
+const MAX_CONFIG_STRINGS = 5_000;
+
+/** Shorthand prefixes a tool applies to names in its own config, by config basename. */
+function toolExpander(base: string): (n: string) => string[] {
+  const tool = /^\.?([a-z-]+?)(?:rc|\.config)?\.(?:c|m)?[jt]s$/.exec(base)?.[1] ?? "";
+  const both =
+    (a: string, b: string) =>
+    (n: string): string[] => {
+      const m = /^plugin:((?:@[^/]+\/)?[^/]+)/.exec(n);
+      const name = m ? m[1]! : n;
+      return [...new Set([...expandShorthand(name, a), ...expandShorthand(name, b)])];
+    };
+  switch (tool) {
+    case "eslint": {
+      const expand = both("eslint-plugin", "eslint-config");
+      // Rule ids name their plugin: "react/jsx-key" -> eslint-plugin-react,
+      // "@stylistic/indent" -> @stylistic/eslint-plugin.
+      return (n) => {
+        const rule = /^(@[^/\s]+|[^@/\s]+)\/[^/\s]+$/.exec(n);
+        return rule ? [...new Set([...expand(n), ...expand(rule[1]!)])] : expand(n);
+      };
+    }
+    case "babel":
+      return both("babel-preset", "babel-plugin");
+    case "stylelint":
+      return both("stylelint-plugin", "stylelint-config");
+    case "commitlint":
+      return both("commitlint-plugin", "commitlint-config");
+    case "jest":
+      return both("jest-environment", "jest-runner");
+    default:
+      return pkgOnly;
+  }
+}
+
+/** Text a string-building expression starts with, when it starts with a literal. */
+function leadingLiteral(node: ts.Expression): string | undefined {
+  if (ts.isTemplateExpression(node)) return node.head.text;
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    let left: ts.Expression = node;
+    for (let i = 0; i < 1_000 && ts.isBinaryExpression(left); i++) left = left.left;
+    return ts.isStringLiteralLike(left) ? left.text : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * A string built at runtime that may be a package name: its literal start is
+ * itself a bare or scoped name fragment ("eslint-plugin-" + x, `@scope/${x}`).
+ * Paths (`${__dirname}/src`) and prose ("Hello " + x) are not.
+ */
+const NAME_FRAGMENT =
+  /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*[-/]?$|^@[a-z0-9-~][a-z0-9-._~]*\/?$/i;
+
+/**
+ * Statically read one JS/TS tool config (#149). It is parsed with the
+ * TypeScript parser and never evaluated. Every string literal in it becomes
+ * a config reference (with the tool's shorthand expansion), since plugins and
+ * presets are usually named by string. The config stays unread (coverage
+ * incomplete) if it does not parse, loads a module by a non-literal
+ * specifier, builds a string that may be a package name at runtime, or
+ * imports a local module whose strings are not read here. Its import/require
+ * calls are credited by the source scan, as before.
+ */
+export function readExecutableConfig(
+  file: string,
+  base: string,
+  text: string,
+): { refs: ConfigReference[] } | { reason: UnreadConfig["reason"] } {
+  const kind = /\.(?:c|m)?ts$/.test(base) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+  const diagnostics = (sf as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
+  if (diagnostics && diagnostics.length > 0) return { reason: "malformed" };
+  const expand = toolExpander(base);
+  const tool = base.replace(/\.(?:c|m)?[jt]s$/, "");
+  const refs: ConfigReference[] = [];
+  let problem: UnreadConfig["reason"] | undefined;
+  let strings = 0;
+  let visited = 0;
+
+  const moduleSpecifier = (spec: ts.Expression | undefined): void => {
+    if (spec === undefined) return;
+    if (!ts.isStringLiteralLike(spec)) {
+      problem ??= "computed specifier";
+      return;
+    }
+    const s = spec.text;
+    if (s.startsWith(".") || s.startsWith("/")) {
+      const target = s.slice(s.lastIndexOf("/") + 1);
+      if (!(EXECUTABLE_CONFIG.test(target) || KNOWN_EXECUTABLE_CONFIGS.has(target))) {
+        problem ??= "imports local module";
+      }
+    }
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (problem || ++visited > 200_000) {
+      problem ??= "over limit";
+      return;
+    }
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      moduleSpecifier(node.moduleSpecifier);
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const loads =
+        callee.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(callee) && callee.text === "require") ||
+        (ts.isPropertyAccessExpression(callee) &&
+          ts.isIdentifier(callee.expression) &&
+          callee.expression.text === "require" &&
+          callee.name.text === "resolve");
+      if (loads) moduleSpecifier(node.arguments[0] ?? node);
+    } else if (ts.isTemplateExpression(node) || ts.isBinaryExpression(node)) {
+      const lead = leadingLiteral(node);
+      if (lead !== undefined && NAME_FRAGMENT.test(lead)) problem ??= "computed specifier";
+    }
+    if (ts.isStringLiteralLike(node) && strings < MAX_CONFIG_STRINGS) {
+      strings += 1;
+      const packages = expand(node.text);
+      if (packages.length) {
+        refs.push({
+          packages,
+          file,
+          line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+          via: "config",
+          source: `${tool} string`,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  if (strings >= MAX_CONFIG_STRINGS) problem ??= "over limit";
+  return problem ? { reason: problem } : { refs };
+}
 
 /** Every config/convention reference directly inside one directory. */
 async function collectDirectory(
@@ -477,7 +621,20 @@ async function collectDirectory(
     const base = f.slice(f.lastIndexOf("/") + 1);
     const nested = f.includes("/");
     if (nested ? KNOWN_EXECUTABLE_CONFIGS.has(base) : EXECUTABLE_CONFIG.test(base)) {
-      unread.push({ file: `${prefix}${f}`, reason: "not evaluated" });
+      // Parsed, never evaluated (#149).
+      const file = `${prefix}${f}`;
+      if (++configFiles > MAX_CONFIG_FILES) {
+        unread.push({ file, reason: "over limit" });
+        continue;
+      }
+      const read = await readText(repository, file);
+      if (!("text" in read)) {
+        unread.push({ file, reason: read.reason as UnreadConfig["reason"] });
+        continue;
+      }
+      const result = readExecutableConfig(file, base, read.text);
+      if ("reason" in result) unread.push({ file, reason: result.reason });
+      else refs.push(...result.refs);
       continue;
     }
     const handler = handlerFor(base);

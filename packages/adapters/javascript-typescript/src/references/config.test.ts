@@ -160,32 +160,69 @@ describe("unreadConfigs (coverage for referenceAnalysisComplete)", () => {
     ]);
   });
 
-  it("reports JS/TS tool configs, which are never evaluated", async () => {
+  it("reads JS/TS tool configs statically; only unreadable ones are reported (#149)", async () => {
     const context = ctx({
       "package.json": "{}",
       "eslint.config.mjs": "export default [];",
-      "vite.config.ts": "export default {};",
-      ".prettierrc.cjs": "module.exports = {};",
+      "vite.config.ts": "export default { plugins: [] } satisfies object;",
+      ".prettierrc.cjs": "module.exports = {",
+      "webpack.config.js": "module.exports = require(process.env.CONFIG);",
+      "rollup.config.mjs": "const p = 'rollup-plugin-' + name; export default {};",
+      "jest.config.js": "module.exports = require('./jest.shared');",
       "src/app.config.ts": "export const x = 1;",
     });
     assert.deepEqual(await unread(context), [
-      ".prettierrc.cjs:not evaluated",
-      "eslint.config.mjs:not evaluated",
-      "vite.config.ts:not evaluated",
+      ".prettierrc.cjs:malformed",
+      "jest.config.js:imports local module",
+      "rollup.config.mjs:computed specifier",
+      "webpack.config.js:computed specifier",
     ]);
+  });
+
+  it("credits string literals in JS/TS configs with the tool's shorthand rules (#149)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      ".eslintrc.cjs": `module.exports = {
+  extends: ["airbnb", "plugin:react/recommended"],
+  plugins: ["@typescript-eslint"],
+  rules: { "@stylistic/indent": "error", "import/no-cycle": "off" },
+};`,
+      "babel.config.js": `module.exports = (api) => ({ presets: [["@babel/env", {}]] });`,
+      "vite.config.ts": [
+        `import { defineConfig } from "vite";`,
+        `const root = \`\${__dirname}/src\`;`,
+        `export default defineConfig({ optimizeDeps: { include: ["lodash-es"] }, root });`,
+      ].join("\n"),
+      "next.config.mjs": `import base from "../../eslint.config.js"; export default { transpilePackages: ["ui-kit"] };`,
+    });
+    assert.deepEqual(await unread(context), []);
+    assert.deepEqual(await via(context, "eslint-config-airbnb"), [["config", ".eslintrc.cjs", 2]]);
+    assert.deepEqual(await via(context, "eslint-plugin-react"), [["config", ".eslintrc.cjs", 2]]);
+    assert.deepEqual(await via(context, "@typescript-eslint/eslint-plugin"), [
+      ["config", ".eslintrc.cjs", 3],
+    ]);
+    assert.deepEqual(await via(context, "@stylistic/eslint-plugin"), [
+      ["config", ".eslintrc.cjs", 4],
+    ]);
+    assert.deepEqual(await via(context, "eslint-plugin-import"), [["config", ".eslintrc.cjs", 4]]);
+    assert.deepEqual(await via(context, "@babel/preset-env"), [["config", "babel.config.js", 1]]);
+    assert.deepEqual(await via(context, "lodash-es"), [["config", "vite.config.ts", 3]]);
+    assert.deepEqual(await via(context, "ui-kit"), [["config", "next.config.mjs", 1]]);
+    // vite.config's own strings get no eslint-style expansion.
+    assert.deepEqual(await via(context, "eslint-plugin-lodash-es"), []);
   });
 
   it("workspace members inherit root configs: references and coverage gaps", async () => {
     const context = ctx({
       "package.json": "{}",
       ".eslintrc.json": `{"plugins": ["import"]}`,
-      "eslint.config.js": "export default [];",
+      "eslint.config.js": "export default [;",
       "packages/a/package.json": "{}",
     });
     assert.deepEqual(await via(context, "eslint-plugin-import", "packages/a"), [
       ["config", ".eslintrc.json", 1],
     ]);
-    assert.deepEqual(await unread(context, "packages/a"), ["eslint.config.js:not evaluated"]);
+    assert.deepEqual(await unread(context, "packages/a"), ["eslint.config.js:malformed"]);
   });
 });
 
@@ -207,15 +244,15 @@ describe("nested configs and discovery conventions", () => {
     assert.deepEqual(await via(context, "eslint-plugin-only-a"), []);
   });
 
-  it("known JS tool configs are unread at any depth; other nested *.config.ts are source", async () => {
+  it("known JS tool configs are read at any depth; other nested *.config.ts are source", async () => {
     const context = ctx({
       "package.json": "{}",
-      "test/bundler/webpack.config.js": "module.exports = {};",
+      "test/bundler/webpack.config.js": "module.exports = require(dynamic);",
       "src/app.config.ts": "export const x = 1;",
     });
     assert.deepEqual(
       (await unreadConfigs(context, dep("x"))).map((u) => `${u.file}:${u.reason}`),
-      ["test/bundler/webpack.config.js:not evaluated"],
+      ["test/bundler/webpack.config.js:computed specifier"],
     );
   });
 

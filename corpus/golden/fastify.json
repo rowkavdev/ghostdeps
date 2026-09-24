@@ -11,11 +11,6 @@
     {
       "kind": "info",
       "severity": "info",
-      "dependency": "@stylistic/eslint-plugin"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
       "dependency": "branch-comparer"
     }
   ]
