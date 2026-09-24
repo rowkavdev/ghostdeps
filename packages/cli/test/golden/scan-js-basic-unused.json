@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [],
+  "detected": [
+    {
+      "confidence": "medium",
+      "ecosystem": "javascript-typescript",
+      "evidence": [
+        {
+          "file": "package.json",
+          "kind": "manifest-found",
+          "statement": "found package.json"
+        },
+        {
+          "kind": "source-files",
+          "statement": "1 JS/TS source file(s) under repository root"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "projects": [
+    {
+      "ecosystem": "javascript-typescript",
+      "packageManagers": [],
+      "path": "."
+    }
+  ],
+  "surface": [
+    {
+      "direct": 0,
+      "ecosystem": "javascript-typescript",
+      "transitive": 0
+    }
+  ],
+  "usages": []
+}

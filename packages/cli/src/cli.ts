@@ -149,7 +149,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     if (entry === undefined) {
       throw unknownCommand(command);
     }
-    return await entry.run(config);
+    return await entry.run(config, io);
   } catch (error) {
     if (error instanceof NotImplementedError) {
       // --json emits an error object, never an AnalysisResult-shaped body:

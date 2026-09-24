@@ -206,6 +206,9 @@ importers:
       '@ghostdeps/core':
         specifier: workspace:*
         version: link:../core
+      '@ghostdeps/javascript-typescript':
+        specifier: workspace:*
+        version: link:../adapters/javascript-typescript
     devDependencies:
       typescript:
         specifier: ^5.7.0

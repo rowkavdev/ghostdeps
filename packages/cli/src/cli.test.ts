@@ -77,10 +77,10 @@ describe("ghostdeps cli", () => {
 
   it("treats `ghostdeps --json` as scan with JSON output", async () => {
     const { io, out } = capture();
-    const code = await run(["--json"], io);
-    assert.equal(code, 3);
-    const result = jsonOut(out);
-    assert.equal((result["error"] as Record<string, unknown>)["code"], "not-implemented");
+    const fixture = new URL("../../../fixtures/js/basic-unused", import.meta.url).pathname;
+    const code = await run(["--json", "--", fixture], io);
+    assert.equal(code, 0);
+    assert.equal(jsonOut(out)["schemaVersion"], 1);
   });
 
   it("stub commands exit non-zero with a clear message", async () => {
@@ -92,7 +92,7 @@ describe("ghostdeps cli", () => {
 
   it("--json stubs emit an error object, never an AnalysisResult", async () => {
     const { io, out, err } = capture();
-    const code = await run(["scan", "--json"], io);
+    const code = await run(["packages", "--json"], io);
     assert.equal(code, 3);
     assert.match(err.join(" "), /not implemented/);
     const result = jsonOut(out);

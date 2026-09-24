@@ -36,6 +36,16 @@ Human output follows the canonical formats in
 `AnalysisResult` from `@ghostdeps/core`, serialised by core's stable JSON
 reporter (canonical ordering, escaping) - the CLI has no second JSON writer.
 
+Implementation status: `ghostdeps scan --json` runs the engine today. It
+scans the directory through the inert `FsRepositoryHandle` and runs the
+JavaScript/TypeScript adapter, the only one wired so far. Until the
+package.json parser (#26) lands, that adapter lists no direct dependencies,
+so `dependencies` is empty even for JS projects. Human `scan` output is still
+the not-implemented stub (exit 3) until the repository-summary renderer is
+wired (#39). A golden file (`packages/cli/test/golden/`) pins the JSON for
+`fixtures/js/basic-unused`. Regenerate it with `UPDATE_GOLDEN=1` when adapter
+output changes on purpose.
+
 On failure, `--json` emits an error object instead, and never an
 `AnalysisResult`:
 
