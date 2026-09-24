@@ -1,0 +1,15 @@
+{
+  "description": "Crates outside workspace.members that are path dependencies of a member (and transitively of an auto-member) join the workspace automatically (#226): inherited dependencies resolve and the root Cargo.lock governs them.",
+  "detection": { "minConfidence": 0.9, "projects": ["crates/app", "tools/gen", "tools/helper"] },
+  "dependencies": [
+    { "name": "serde", "kind": "runtime", "constraint": "1.0", "declaredIn": "crates/app/Cargo.toml" },
+    { "name": "helper", "kind": "runtime", "constraint": "*", "declaredIn": "crates/app/Cargo.toml" },
+    { "name": "serde", "kind": "runtime", "constraint": "1.0", "declaredIn": "tools/helper/Cargo.toml" },
+    { "name": "gen", "kind": "runtime", "constraint": "*", "declaredIn": "tools/helper/Cargo.toml" },
+    { "name": "log", "kind": "runtime", "constraint": "0.4", "declaredIn": "tools/gen/Cargo.toml" }
+  ],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "serde" },
+    { "kind": "unused", "dependency": "log" }
+  ]
+}

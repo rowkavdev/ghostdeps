@@ -115,12 +115,66 @@ describe("Cargo.toml parsing (#49)", () => {
     ]);
   });
 
+  it("makes in-workspace path dependencies of members members too (#226)", async () => {
+    const files = {
+      "Cargo.toml": `[workspace]\nmembers = ["crates/*"]\nexclude = ["tools/skip"]\n[workspace.dependencies]\nserde = "1"\nlog = "0.4"\n`,
+      "Cargo.lock": "version = 4\n",
+      "crates/app/Cargo.toml": `[package]\nname = "app"\nversion = "0.1.0"\n[dependencies]\nserde = { workspace = true }\nhelper = { path = "../../tools/helper" }\nskip = { path = "../../tools/skip" }\n[target.'cfg(unix)'.dev-dependencies]\nunixy = { path = "../../tools/unixy" }\n`,
+      "tools/helper/Cargo.toml": `[package]\nname = "helper"\nversion = "0.1.0"\n[dependencies]\nserde = { workspace = true }\ngen = { path = "../gen" }\n`,
+      "tools/gen/Cargo.toml": `[package]\nname = "gen"\nversion = "0.1.0"\n[dependencies]\nlog.workspace = true\n`,
+      "tools/skip/Cargo.toml": `[package]\nname = "skip"\nversion = "0.1.0"\n`,
+      "tools/unixy/Cargo.toml": `[package]\nname = "unixy"\nversion = "0.1.0"\n`,
+      "tools/stray/Cargo.toml": `[package]\nname = "stray"\nversion = "0.1.0"\n`,
+    };
+    const { crates } = await discoverCrates(ctx(files));
+    const ws = new Map(crates.map((c) => [c.project.path, c.workspaceRoot?.root]));
+    assert.equal(ws.get("tools/helper"), ".", "direct path dependency of a member");
+    assert.equal(ws.get("tools/gen"), ".", "transitive: path dependency of an auto-member");
+    assert.equal(ws.get("tools/unixy"), ".", "target-specific dev path dependency");
+    assert.equal(ws.get("tools/skip"), undefined, "excluded");
+    assert.equal(ws.get("tools/stray"), undefined, "not a member and nobody depends on it");
+    const helper = crates.find((c) => c.project.path === "tools/helper")!;
+    assert.equal(helper.lockfile, "Cargo.lock");
+    assert.deepEqual(helper.project.packageManagers, [
+      { name: "cargo", lockfile: "../../Cargo.lock" },
+    ]);
+
+    const results = await parse(files);
+    const helperDeps = results.find((r) =>
+      r.dependencies.some((d) => d.declaredIn === "tools/helper/Cargo.toml"),
+    );
+    assert.deepEqual(
+      helperDeps?.dependencies.map((d) => `${d.name}@${d.constraint}`),
+      ["serde@1", "gen@*"],
+    );
+    assert.deepEqual(helperDeps?.errors, []);
+  });
+
+  it("does not pull in path dependencies outside the workspace directory", async () => {
+    const { crates } = await discoverCrates(
+      ctx({
+        "ws/Cargo.toml": `[workspace]\nmembers = ["app"]\n`,
+        "ws/app/Cargo.toml": `[package]\nname = "app"\nversion = "0.1.0"\n[dependencies]\nshared = { path = "../../shared" }\n`,
+        "shared/Cargo.toml": `[package]\nname = "shared"\nversion = "0.1.0"\n`,
+      }),
+    );
+    const ws = new Map(crates.map((c) => [c.project.path, c.workspaceRoot?.root]));
+    assert.equal(ws.get("ws/app"), "ws");
+    assert.equal(ws.get("shared"), undefined);
+  });
+
   it("matches member globs conservatively", () => {
     assert.ok(matchMemberGlob("crates/*", "crates/a"));
     assert.ok(!matchMemberGlob("crates/*", "crates/a/b"));
     assert.ok(matchMemberGlob("crates/**", "crates/a/b"));
     assert.ok(matchMemberGlob("./tools/x?", "tools/x1"));
-    assert.ok(!matchMemberGlob("crates/[ab]", "crates/a"), "character classes fail closed");
+    assert.ok(matchMemberGlob("crates/[ab]", "crates/a"));
+    assert.ok(!matchMemberGlob("crates/[ab]", "crates/c"));
+    assert.ok(matchMemberGlob("crates/x-[0-9]", "crates/x-7"));
+    assert.ok(matchMemberGlob("crates/[!a]*", "crates/core"));
+    assert.ok(!matchMemberGlob("crates/[!a]*", "crates/app"));
+    assert.ok(!matchMemberGlob("crates/[ab", "crates/a"), "unterminated class fails closed");
+    assert.ok(!matchMemberGlob("crates/{a,b}", "crates/a"), "braces fail closed");
     assert.ok(!matchMemberGlob("../out", "out"));
   });
 
