@@ -180,8 +180,9 @@ export class CheckReporter {
     checkRunId: number,
     result: AnalysisResult,
     added: AddedLines,
+    appNotes: readonly string[] = [],
   ): Promise<void> {
-    const { conclusion, output } = renderCheck(result, added);
+    const { conclusion, output } = renderCheck(result, added, appNotes);
     await this.client.checks.update({
       owner: target.owner,
       repo: target.repo,

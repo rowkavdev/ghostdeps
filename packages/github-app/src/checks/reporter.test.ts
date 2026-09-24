@@ -113,6 +113,28 @@ describe("renderCheck", () => {
     assert.match(out.output.summary, /analysis incomplete: run failed: boom/);
   });
 
+  it("lists app notes in Notes and treats a notes-only run as incomplete", () => {
+    const out = renderCheck(result([]), added, ["Removed-usage check skipped: diff too large."]);
+    assert.equal(out.conclusion, "neutral");
+    assert.equal(out.output.title, incompleteTitle);
+    assert.match(
+      out.output.summary,
+      /### Notes\n\n- Removed\\-usage check skipped: diff too large\\./,
+    );
+  });
+
+  it("opens the lower-confidence group when there is no high-confidence group", () => {
+    const onlyMedium = renderCheck(result([finding({ confidence: "medium" })]), added);
+    assert.match(onlyMedium.output.summary, /<details open><summary>1 lower-confidence/);
+    const offDiff = finding({ dependency: "b", evidence: [] });
+    const mixed = renderCheck(
+      result([offDiff, finding({ dependency: "c", confidence: "low" })]),
+      added,
+    );
+    assert.match(mixed.output.summary, /### High confidence/);
+    assert.match(mixed.output.summary, /<details><summary>1 lower-confidence/);
+  });
+
   it("still counts a dependency-level info finding as a finding", () => {
     const out = renderCheck(result([finding({ kind: "info", confidence: "low" })]), added);
     assert.equal(out.output.title, "1 dependency finding to review");

@@ -114,6 +114,15 @@ export async function analyseCheckout(
   });
 }
 
+/**
+ * App-authored status note (#195): the app, not core, skipped removed-usage
+ * analysis because it could not read the PR diff in full. Core's own notes
+ * (e.g. pr-source-changes-capped) only arise when source changes were passed,
+ * which this path never does, so the two never double up.
+ */
+export const SKIPPED_REMOVED_USAGE_NOTE =
+  "Removed-usage check skipped: this pull request's diff was too large or unavailable to read in full, so GhostDeps did not check whether it removed the last use of a dependency.";
+
 /** The PR base for jobs that have one; fork re-runs and pushes have none. */
 function pullRequestBase(job: AnalysisJob): string | undefined {
   if (job.trigger.kind === "pull_request") return job.trigger.baseSha;
@@ -192,6 +201,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         { destDir },
       );
       let added: AddedLines = new Map();
+      const appNotes: string[] = [];
       const run: {
         pullRequestChanges?: readonly DependencyChange[];
         pullRequestSourceChanges?: readonly SourceLineChanges[];
@@ -217,6 +227,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
           // post repository-wide verdicts it didn't cause. Stay PR-scoped and
           // quiet; without the full diff there is no removed-last-usage (#101).
           run.pullRequestChanges = [];
+          appNotes.push(SKIPPED_REMOVED_USAGE_NOTE);
           options.log?.warn(
             { job: job.key, limitations: pr.dependencyChanges.limitations },
             "PR diff incomplete on a source-only PR; staying PR-scoped",
@@ -230,7 +241,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         }
       }
       const result = await analyse(await checkoutRoot(destDir), adapterModules, run);
-      await reporter.complete(target, checkRunId, result, added);
+      await reporter.complete(target, checkRunId, result, added, appNotes);
       options.log?.info({ job: job.key, findings: result.findings.length }, "analysis complete");
     } catch (error) {
       options.log?.warn({ job: job.key, err: error }, "analysis failed");

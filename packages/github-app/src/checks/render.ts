@@ -72,7 +72,7 @@ export function truncateSummary(summary: string, limit = summaryLimit): string {
   let cut = summary.slice(0, limit - note.length - closing.length);
   const lastNewline = cut.lastIndexOf("\n");
   if (lastNewline > 0) cut = cut.slice(0, lastNewline);
-  const open = cut.lastIndexOf("<details>") > cut.lastIndexOf("</details>");
+  const open = cut.lastIndexOf("<details") > cut.lastIndexOf("</details>");
   return `${cut}${open ? closing : ""}${note}`;
 }
 
@@ -109,8 +109,14 @@ function noteLine(f: Finding): string {
   return `- ${md(f.summary)}`;
 }
 
-function notesSection(notes: readonly Finding[]): string[] {
-  return notes.length > 0 ? ["", "### Notes", "", ...notes.map(noteLine)] : [];
+/**
+ * Run-level notes from core (Findings) plus the app's own status notes: plain
+ * text about a step the app itself skipped, e.g. an unreadable PR diff (#195).
+ * Core's notes cover what core decided; the app never repeats them.
+ */
+function notesSection(notes: readonly Finding[], appNotes: readonly string[]): string[] {
+  const lines = [...appNotes.map((n) => `- ${md(n)}`), ...notes.map(noteLine)];
+  return lines.length > 0 ? ["", "### Notes", "", ...lines] : [];
 }
 
 function summaryLine(f: Finding): string {
@@ -121,11 +127,17 @@ function summaryLine(f: Finding): string {
 /**
  * Builds the check conclusion and output.
  * @param added lines the PR added, by path. Pass an empty map for pushes: no annotations then.
+ * @param appNotes the app's own status notes (not Findings); they make a run incomplete like core's notes.
  */
-export function renderCheck(result: AnalysisResult, added: AddedLines): CheckOutput {
+export function renderCheck(
+  result: AnalysisResult,
+  added: AddedLines,
+  appNotes: readonly string[] = [],
+): CheckOutput {
   const notes = result.findings.filter(isRunNote);
   const findings = result.findings.filter((f) => !isRunNote(f));
-  if (findings.length === 0 && notes.length === 0) {
+  const noteCount = notes.length + appNotes.length;
+  if (findings.length === 0 && noteCount === 0) {
     return {
       conclusion: "success",
       output: { title: quietSummary, summary: quietSummary, annotations: [] },
@@ -138,7 +150,7 @@ export function renderCheck(result: AnalysisResult, added: AddedLines): CheckOut
       conclusion: "neutral",
       output: {
         title: incompleteTitle,
-        summary: truncateSummary([intro, ...notesSection(notes)].join("\n")),
+        summary: truncateSummary([intro, ...notesSection(notes, appNotes)].join("\n")),
         annotations: [],
       },
     };
@@ -177,14 +189,16 @@ export function renderCheck(result: AnalysisResult, added: AddedLines): CheckOut
   if (lower.length > 0) {
     parts.push(
       "",
-      `<details><summary>${lower.length} lower-confidence finding${lower.length === 1 ? "" : "s"} (manual review)</summary>`,
+      // Open when nothing is high-confidence (e.g. while the #178 cap applies),
+      // so the only findings aren't hidden behind a click.
+      `<details${high.length === 0 ? " open" : ""}><summary>${lower.length} lower-confidence finding${lower.length === 1 ? "" : "s"} (manual review)</summary>`,
       "",
       ...lower.map(summaryLine),
       "",
       "</details>",
     );
   }
-  parts.push(...notesSection(notes));
+  parts.push(...notesSection(notes, appNotes));
 
   const summary = truncateSummary(parts.join("\n"));
 
