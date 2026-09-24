@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AnalysisResult, Dependency, Finding, FindingKind, ProjectRef } from "@ghostdeps/core";
+import type {
+  AnalysisResult,
+  Dependency,
+  DependencyImpact,
+  Finding,
+  FindingKind,
+  ProjectRef,
+} from "@ghostdeps/core";
 import { renderRepositorySummary } from "./human.js";
 
 const rootProject: ProjectRef = {
@@ -482,5 +489,101 @@ describe("renderRepositorySummary", () => {
     assert.ok(!text.includes("\u001B"), "raw ESC must never reach the terminal");
     assert.ok(text.includes("evil\uFFFD[8;;https://bad.example - declared but never used"), text);
     assert.ok(text.includes("- ... and 3 more"), text);
+  });
+
+  describe("impact lines (#59 C)", () => {
+    const verdict = (
+      dependency: string,
+      kind: FindingKind = "unused",
+      files = ["package.json"],
+    ): Finding => ({
+      kind,
+      dependency,
+      summary: "declared but never imported",
+      recommendation: "remove",
+      evidence: [{ kind: "no-usage-found", statement: "no import found" }],
+      confidence: "high",
+      limitations: [],
+      affectedFiles: files,
+    });
+    const impact = (name: string, extra: Partial<DependencyImpact> = {}) => ({
+      ecosystem: "javascript-typescript",
+      project: ".",
+      name,
+      graph: "complete" as const,
+      transitive: 12,
+      exclusive: 3,
+      ...extra,
+    });
+    const render = (findings: Finding[], entries: ReturnType<typeof impact>[]) =>
+      renderRepositorySummary({ ...emptyResult(), findings, impact: entries });
+
+    it("adds counts and footprint under a removal verdict", () => {
+      const out = render(
+        [verdict("left-pad")],
+        [
+          impact("left-pad", {
+            footprint: {
+              approximate: true,
+              basis: "npm unpackedSize",
+              bytes: 1_400_000,
+              coverage: { sized: 11, total: 13 },
+            },
+          }),
+        ],
+      );
+      assert.match(
+        out,
+        /\n {6}- no import found\n {6}- impact: 12 transitive packages; removing it drops 3 of them; at least 1\.4 MB installed \(11 of 13 packages sized, npm unpackedSize\)/,
+      );
+    });
+
+    it("says at least on a partial graph and skips unknown removal counts", () => {
+      const out = render([verdict("a")], [impact("a", { graph: "partial", exclusive: null })]);
+      assert.match(out, /- impact: at least 12 transitive packages$/m);
+    });
+
+    it("says no other packages for exclusive 0 and singular for 1", () => {
+      const out = render([verdict("a")], [impact("a", { transitive: 1, exclusive: 0 })]);
+      assert.match(out, /- impact: 1 transitive package; removing it drops no other packages$/m);
+    });
+
+    it("prints nothing for unknown or limited counts", () => {
+      for (const extra of [{ transitive: null, exclusive: null }, { limited: true as const }]) {
+        assert.doesNotMatch(render([verdict("a")], [impact("a", extra)]), /impact:/);
+      }
+    });
+
+    it("prints nothing for non-removal verdicts", () => {
+      assert.doesNotMatch(render([verdict("a", "should-be-dev")], [impact("a")]), /impact:/);
+    });
+
+    it("picks the declaring project, and prints nothing when ambiguous", () => {
+      const entries = [
+        impact("a", { transitive: 5 }),
+        impact("a", { project: "web", transitive: 9 }),
+      ];
+      assert.match(render([verdict("a", "unused", ["web/package.json"])], entries), /impact: 9 /);
+      assert.match(render([verdict("a")], entries), /impact: 5 /);
+      assert.doesNotMatch(render([verdict("a", "unused", [])], entries), /impact:/);
+    });
+
+    it("escapes the provider basis", () => {
+      const out = render(
+        [verdict("a")],
+        [
+          impact("a", {
+            footprint: {
+              approximate: true,
+              basis: "x\u001b[31m",
+              bytes: 5,
+              coverage: { sized: 1, total: 1 },
+            },
+          }),
+        ],
+      );
+      assert.ok(!out.includes("\u001b"));
+      assert.match(out, /at least 5 B installed/);
+    });
   });
 });

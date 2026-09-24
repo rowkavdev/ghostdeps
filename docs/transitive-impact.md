@@ -1,6 +1,6 @@
 # Transitive impact and footprint (#59) - design
 
-Status: slices A and B implemented (#59). The lead's rulings on the open questions are recorded below.
+Status: slices A, B and C (CLI) implemented (#59). The lead's rulings on the open questions are recorded below.
 
 ## What "impact" means
 
@@ -54,7 +54,7 @@ interface PackageMetadataProvider {
 
 - **A (core, this PR)**: counts, JSON, docs and tests, plus goldens (the CLI/app e2e/corpus results gain `impact`).
 - **B (core)**: the footprint provider contract, offline behaviour and caching expectations.
-- **C (presenter lanes)**: e.g. "removing left-pad drops 0 other packages" next to an existing verdict. Out of scope here.
+- **C (presenters)**: the CLI repository summary prints one `impact:` line under removal verdicts (see [output-formats.md](output-formats.md)). Other surfaces render from the same `impact[]` fields and wording rules.
 
 ## Rulings (lead, on #265)
 

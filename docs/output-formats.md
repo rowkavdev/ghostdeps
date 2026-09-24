@@ -35,6 +35,7 @@ Verdicts:
   unused:
     left-pad - declared as a runtime dependency but never imported (high confidence, rule: unused)
       - no import, require or dynamic import of left-pad found
+      - impact: 3 transitive packages; removing it drops 2 of them; at least 48.2 kB installed (4 of 4 packages sized, npm unpackedSize)
     moment - imported only from a file deleted in this PR (medium confidence, rule: unused)
       - last import removed in src/legacy/report.ts
   should be dev dependencies:
@@ -62,6 +63,17 @@ kind in canonical order, each verdict with its dependency, summary,
 confidence and rule id, then evidence lines (capped, with a "+N more" note
 when truncated). The section is omitted when there are no verdicts.
 Everything verdict-derived is terminal-escaped.
+
+Removal verdicts (`unused`, `potentially unnecessary`, `duplicate
+capabilities`) get one `impact:` line from `impact[]` (#59) when core knows
+something. It shows the transitive count (`at least N` on a partial graph),
+`removing it drops M of them` only when core computed `exclusive`, and
+the footprint as `at least X installed (S of T packages sized, basis)`,
+since footprint is a lower bound. The entry is matched by dependency name
+and the declaring project (the directory of the finding's manifest). With
+no match, an ambiguous match, unknown or `limited` counts, the line is
+omitted, never printed as `0`. Impact is a fact: it never changes a
+verdict, a count or the exit code.
 
 `Notes` lists the info findings that say the analysis itself was
 incomplete - run-level gaps (partial scans, adapter failures, cap notices)
