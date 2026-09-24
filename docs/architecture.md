@@ -53,6 +53,18 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 - **Repository content is escaped.** Soft hyphens, line separators, bidi controls, zero-width and other invisible characters are written as `\uXXXX` escapes so a hostile name or path can't hide or reorder text (security model rule 6).
 - **Golden files** in `packages/core/test/golden/` pin the exact output. After an intended schema change, regenerate them with `UPDATE_GOLDEN=1 pnpm --filter @ghostdeps/core test` and review the diff.
 
+## Pull request analysis
+
+For a PR, core first works out what changed before running any adapter:
+
+1. `parseUnifiedDiff()` reads the PR diff into files, hunks and line numbers. The diff is untrusted input: it never throws, and size limits or unreadable parts become `truncated`/`problems`.
+2. `classifyDependencyFile()` sorts changed files into manifests and lockfiles by name, per ecosystem, skipping vendored copies.
+3. `extractDependencyChanges()` compares each changed manifest's declared dependencies at base and head. Core never parses manifests itself: the caller passes `readDeclared`, normally the adapter's `listDirectDependencies()` over the base and head trees. package.json is the first format, through the JS/TS adapter.
+
+The result lists added, removed and changed direct dependencies, which lockfiles changed, manifests whose dependencies changed without a lockfile change nearby, and the added lines in changed source files. Added dependencies are marked `usageCheck: "pending"`: whether a new dependency is actually used is decided by usage analysis on those lines, not here. Anything that could not be read becomes a limitation, never a guess.
+
+Diff paths are attacker data. Paths that are absolute, contain `..` segments, backslashes or control characters are never passed on; they become limitations. `readDeclared` implementations must read through the job's `RepositoryHandle` (never the host filesystem) and extract statically: a manifest with an executable surface such as `setup.py` is parsed as text or reported as unreadable (return `undefined`), never imported or run (ADR 0004 rule 2).
+
 ## Key concepts
 
 - **Unused vs potentially unnecessary.** _Unused_: declared, never imported. _Potentially unnecessary_: imported, but used only for functionality the runtime provides natively or another existing dependency already covers. The second category is the product's differentiator and demands the strongest evidence.
@@ -79,6 +91,7 @@ No premature optimisation, with deliberate design headroom: cached lockfile pars
 | Shared types, dependency model, result schema | `packages/core/src/types/`                                          |
 | Adapter interface + contract test kit         | `packages/core/src/adapter.ts`, `packages/core/src/contract-tests/` |
 | Analysis engine                               | `packages/core/src/engine/`                                         |
+| PR diff parsing, dependency-change extraction | `packages/core/src/diff/`                                           |
 | Recommendation policy                         | `packages/core/src/recommend/`                                      |
 | Native replacement rules                      | `packages/core/src/native-rules/`                                   |
 | Ecosystem adapters                            | `packages/adapters/<ecosystem>/`                                    |
