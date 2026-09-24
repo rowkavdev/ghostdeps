@@ -27,3 +27,4 @@ export {
   type PullRequestDependencyChanges,
   type ReadDeclaredDependencies,
 } from "./dependency-changes.js";
+export { reconstructBase } from "./reconstruct-base.js";
