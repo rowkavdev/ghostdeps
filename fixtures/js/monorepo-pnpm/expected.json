@@ -1,0 +1,19 @@
+{
+  "description": "pnpm workspace monorepo: root has no source of its own but declares the workspace; members app and lib carry the source. Detection must find root + both members, attribute pnpm via the root lockfile, and record the workspace: protocol specifier on fixture-lib.",
+  "detection": { "minConfidence": 0.5, "projects": [".", "packages/app", "packages/lib"] },
+  "dependencies": [
+    { "name": "typescript", "kind": "dev", "declaredIn": "package.json" },
+    { "name": "left-pad", "kind": "runtime", "declaredIn": "packages/app/package.json" },
+    { "name": "fixture-lib", "kind": "runtime", "constraint": "workspace:*", "declaredIn": "packages/app/package.json" }
+  ],
+  "findings": [
+    {
+      "kind": "unused",
+      "dependency": "left-pad",
+      "note": "left-pad IS imported by packages/app/src/index.ts, so a correct usage analysis (#28) must NOT report it unused; this entry documents intent for later engine stages."
+    }
+  ],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "fixture-lib" }
+  ]
+}

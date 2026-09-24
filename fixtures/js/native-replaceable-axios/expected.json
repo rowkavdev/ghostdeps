@@ -1,0 +1,13 @@
+{
+  "description": "axios is used only for simple GET/JSON calls; analysis should eventually report it potentially-unnecessary (native fetch on Node 18+). Findings consumption lands with usage analysis (#28) and native rules (#57).",
+  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "dependencies": [{ "name": "axios", "kind": "runtime", "constraint": "^1.7.0" }],
+  "findings": [
+    {
+      "kind": "potentially-unnecessary",
+      "dependency": "axios",
+      "minConfidence": "medium"
+    }
+  ],
+  "mustNotFind": []
+}

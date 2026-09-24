@@ -1,5 +1,10 @@
 {
   "description": "package.json exists for tooling metadata but there is no meaningful JS/TS source; detection must stay below threshold and skip the project with a stated reason.",
+  "detection": {
+    "maxConfidence": 0.49,
+    "projects": []
+  },
+  "dependencies": [],
   "findings": [],
   "mustNotFind": []
 }

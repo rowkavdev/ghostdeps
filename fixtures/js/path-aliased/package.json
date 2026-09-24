@@ -1,0 +1,8 @@
+{
+  "name": "fixture-path-aliased",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "lodash-es": "^4.17.21"
+  }
+}

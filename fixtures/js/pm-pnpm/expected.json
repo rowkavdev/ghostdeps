@@ -1,5 +1,18 @@
 {
   "description": "pnpm project: pnpm-lock.yaml plus a packageManager pin identify pnpm; detection must report packageManagers [pnpm].",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
+  "dependencies": [
+    {
+      "name": "left-pad",
+      "kind": "runtime",
+      "constraint": "^1.3.0"
+    }
+  ],
   "findings": [],
   "mustNotFind": []
 }

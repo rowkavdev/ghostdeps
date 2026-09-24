@@ -1,0 +1,9 @@
+{
+  "description": "dynamic import() usage: lodash-es is used but not statically imported; usage analysis (#28) must report form 'dynamic' and findings must carry the dynamic-import limitation.",
+  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "dependencies": [{ "name": "lodash-es", "kind": "runtime" }],
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "lodash-es" }
+  ]
+}

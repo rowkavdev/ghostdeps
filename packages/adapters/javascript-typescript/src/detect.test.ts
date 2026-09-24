@@ -73,8 +73,25 @@ describe("js/ts ecosystem detection (issue #24)", () => {
         }),
       ),
     );
-    // The manifest-only workspace root stays below threshold; the member with
-    // real source is the detected project.
+    // A declared workspace root with sourced members is a real project root
+    // (its devDependencies matter); the member owns its own source.
+    assert.deepEqual(
+      result.projects.map((project) => project.path),
+      [".", "packages/app"],
+    );
+    assert.ok(result.evidence.some((entry) => entry.kind === "workspace-root"));
+  });
+
+  it("still skips a manifest-only root that declares no workspace", async () => {
+    const result = await detectJavaScriptTypeScript(
+      contextFor(
+        memoryHandle({
+          "package.json": "{}",
+          "packages/app/package.json": "{}",
+          "packages/app/src/index.ts": "export {};",
+        }),
+      ),
+    );
     assert.deepEqual(
       result.projects.map((project) => project.path),
       ["packages/app"],

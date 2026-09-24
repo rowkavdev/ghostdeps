@@ -50,6 +50,19 @@ function isSourceFile(path: string): boolean {
   return SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension));
 }
 
+/** True when the manifest or its neighbours declare a workspace layout. */
+function declaresWorkspace(manifest: unknown, files: string[], root: string): boolean {
+  if (files.includes(joinPath(root, "pnpm-workspace.yaml"))) return true;
+  if (typeof manifest !== "object" || manifest === null) return false;
+  const workspaces = (manifest as Record<string, unknown>).workspaces;
+  if (Array.isArray(workspaces)) return true;
+  return (
+    typeof workspaces === "object" &&
+    workspaces !== null &&
+    Array.isArray((workspaces as Record<string, unknown>).packages)
+  );
+}
+
 /** Repo-relative project root for a manifest path ("package.json" -> "."). */
 function manifestRoot(manifestPath: string): string {
   return manifestPath === "package.json" ? "." : manifestPath.slice(0, -"/package.json".length);
@@ -102,8 +115,9 @@ export async function detectJavaScriptTypeScript(
     });
 
     let manifestReadable = true;
+    let parsedManifest: unknown;
     try {
-      JSON.parse(await repository.readFile(manifestPath));
+      parsedManifest = JSON.parse(await repository.readFile(manifestPath));
     } catch {
       manifestReadable = false;
     }
@@ -121,12 +135,30 @@ export async function detectJavaScriptTypeScript(
         file: manifestPath,
       });
     } else if (sourceCount === 0) {
-      confidence = 0.3;
-      evidence.push({
-        kind: "no-js-ts-source",
-        statement: `${manifestPath} has no meaningful JS/TS source under ${displayRoot(root)}`,
-        file: manifestPath,
-      });
+      // A manifest-only root is normally tooling noise, but a declared
+      // workspace root whose member projects have real source is a genuine
+      // JS/TS project root (its own devDependencies matter).
+      const memberWithSource = roots.some(
+        (other) =>
+          other !== root &&
+          (root === "." || other.startsWith(`${root}/`)) &&
+          (sourceCountByRoot.get(other) ?? 0) > 0,
+      );
+      if (declaresWorkspace(parsedManifest, files, root) && memberWithSource) {
+        confidence = 0.6;
+        evidence.push({
+          kind: "workspace-root",
+          statement: `${manifestPath} declares a workspace whose member projects contain JS/TS source`,
+          file: manifestPath,
+        });
+      } else {
+        confidence = 0.3;
+        evidence.push({
+          kind: "no-js-ts-source",
+          statement: `${manifestPath} has no meaningful JS/TS source under ${displayRoot(root)}`,
+          file: manifestPath,
+        });
+      }
     } else {
       confidence = 0.7;
       evidence.push({

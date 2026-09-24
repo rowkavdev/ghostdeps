@@ -34,9 +34,9 @@ recommendation policy lives in core.
 
 ## Status
 
-| Adapter                            | Ecosystem                                    | Status                                                                                                                                                        |
-| ---------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@ghostdeps/javascript-typescript` | JavaScript/TypeScript (npm, pnpm, Yarn, Bun) | in progress: ecosystem detection (#24), lockfile graphs for npm/pnpm/Yarn/Bun (#27), import usage scanning (#28); manifest parsing and adapter wiring to come |
-| (none yet)                         | Python, Rust, Go                             | contracts only - implementations start from the M1/M2 issues                                                                                                  |
+| Adapter                            | Ecosystem                                    | Status                                                                                                                                                      |
+| ---------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@ghostdeps/javascript-typescript` | JavaScript/TypeScript (npm, pnpm, Yarn, Bun) | detection (#24), package-manager detection (#25), manifest parsing (#26), lockfile graphs (#27), usage scanning (#28); fixtures (#30) adds the scenario set |
+| (none yet)                         | Python, Rust, Go                             | contracts only - implementations start from the M1/M2 issues                                                                                                |
 
 New adapters: read [contributing-adapters.md](contributing-adapters.md).
