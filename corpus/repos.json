@@ -6,6 +6,24 @@
       "url": "https://github.com/vitejs/vite.git",
       "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e",
       "covers": "pnpm monorepo (273 workspace projects), HTML/SFC references, nested-member usage; the 18-name watchlist from #172 - no 'unused' finding for any of those names at this pin"
+    },
+    {
+      "name": "fastify",
+      "url": "https://github.com/fastify/fastify.git",
+      "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0",
+      "covers": "npm; concurrently-quoted-args, script-flag-value and nested-tsconfig hole classes (#171 sweep 15)"
+    },
+    {
+      "name": "uuid",
+      "url": "https://github.com/uuidjs/uuid.git",
+      "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545",
+      "covers": "npm; workflow-only tool references (.github/workflows run: steps) hole class (#171)"
+    },
+    {
+      "name": "chalk",
+      "url": "https://github.com/chalk/chalk.git",
+      "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee",
+      "covers": "npm; true-positive unused (yoctodelay, hand-verified in #171) - proves the unused path keeps firing, not just staying silent"
     }
   ]
 }

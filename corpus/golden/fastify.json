@@ -1,0 +1,22 @@
+{
+  "repo": "fastify",
+  "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@stylistic/eslint-plugin-js"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@stylistic/eslint-plugin"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "branch-comparer"
+    }
+  ]
+}
