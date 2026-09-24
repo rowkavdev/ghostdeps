@@ -171,4 +171,30 @@ describe("renderRepositorySummary", () => {
     };
     assert.ok(renderRepositorySummary(result).includes("Direct dependencies:\n  1,234"));
   });
+
+  it("escapes repository-derived package-manager names for the terminal", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      projects: [
+        {
+          path: ".",
+          ecosystem: "javascript-typescript",
+          packageManagers: [{ name: "pm\u001B[2Jevil" }],
+        },
+      ],
+      detected: [{ ecosystem: "javascript-typescript", confidence: "high", evidence: [] }],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(!text.includes("\u001B"), "no raw ESC reaches the terminal");
+    assert.ok(text.includes("pm\uFFFD[2Jevil"), text);
+  });
+
+  it("escapes unknown ecosystem ids for the terminal", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      detected: [{ ecosystem: "evi\u202El", confidence: "low", evidence: [] }],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(text.includes("Evi\uFFFDl"), text);
+  });
 });

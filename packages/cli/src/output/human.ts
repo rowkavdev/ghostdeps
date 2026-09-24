@@ -1,4 +1,5 @@
 import type { AnalysisResult, FindingKind } from "@ghostdeps/core";
+import { escapeTerminal } from "./escape.js";
 
 /**
  * Human renderer for a full-repository scan. The canonical layout lives in
@@ -35,7 +36,8 @@ const findingOrder: readonly FindingKind[] = [
 ];
 
 function ecosystemName(id: string): string {
-  return ecosystemNames[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
+  // Known names are ours; unknown ids are adapter data, so escape them.
+  return ecosystemNames[id] ?? escapeTerminal(id.charAt(0).toUpperCase() + id.slice(1));
 }
 
 /** 1482 -> "1,482", matching the canonical format's grouping. */
@@ -57,7 +59,10 @@ function unique(values: string[]): string[] {
 export function renderRepositorySummary(result: AnalysisResult): string {
   const languages = unique(result.detected.map((d) => ecosystemName(d.ecosystem)));
   const packageManagers = unique(
-    result.projects.flatMap((project) => project.packageManagers.map((pm) => pm.name)),
+    result.projects.flatMap((project) =>
+      // Package-manager names come from the repository's manifests.
+      project.packageManagers.map((pm) => escapeTerminal(pm.name)),
+    ),
   );
   const direct = result.dependencies.length;
   const transitive =
