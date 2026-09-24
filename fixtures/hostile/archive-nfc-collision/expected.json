@@ -1,0 +1,8 @@
+{
+  "description": "Same filename in NFC and NFD Unicode normalisation. Normalising filesystems (APFS) see one file; byte-wise validators see two and miss the collision.",
+  "archive": "archive.tar.gz",
+  "expect": {
+    "result": "reject",
+    "code": "DUPLICATE_PATH"
+  }
+}

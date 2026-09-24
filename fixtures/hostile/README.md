@@ -32,7 +32,7 @@ symlink absolute/relative escape, symlink loop, hardlink to missing
 target, duplicate paths, device node, fifo, sparse file, huge declared
 file, entry flood, total-size bomb, deep nesting, corrupt checksum, v7
 magic, base-256 size, truncation, NFKC Unicode folding, invalid UTF-8
-names - plus the clean control.
+names, case and NFC normalisation collisions - plus the clean control.
 
 ## Parser-hostile repository fixtures (`repo-*`)
 
