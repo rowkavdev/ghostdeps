@@ -8,7 +8,7 @@ import type {
   FindingKind,
   ProjectRef,
 } from "@ghostdeps/core";
-import { renderRepositorySummary } from "./human.js";
+import { formatBytes, renderRepositorySummary } from "./human.js";
 
 const rootProject: ProjectRef = {
   path: ".",
@@ -585,5 +585,16 @@ describe("renderRepositorySummary", () => {
       assert.ok(!out.includes("\u001b"));
       assert.match(out, /at least 5 B installed/);
     });
+  });
+});
+
+describe("formatBytes", () => {
+  it("rolls over to the next unit after rounding", () => {
+    assert.equal(formatBytes(999), "999 B");
+    assert.equal(formatBytes(1000), "1.0 kB");
+    assert.equal(formatBytes(999_949), "999.9 kB");
+    assert.equal(formatBytes(999_950), "1.0 MB");
+    assert.equal(formatBytes(1_400_000), "1.4 MB");
+    assert.equal(formatBytes(999_950_000), "1.0 GB");
   });
 });
