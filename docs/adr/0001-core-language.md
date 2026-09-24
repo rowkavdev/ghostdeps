@@ -39,7 +39,7 @@ Concretely:
 
 **Python.** Natural for the Python adapter and rich parsing (ast, importlib). Rejected: weak GitHub App ecosystem compared to Octokit/Probot, painful CLI distribution, and no meaningful static typing story for contracts shared across many contributors without significant discipline.
 
-**Polyglot core (each adapter in its own language).** Rejected explicitly by the product spec: one analysis engine, one shared contract, no per-language reimplementation of the core. Adapter *analysis helpers* may still shell out to ecosystem tools later inside sandboxing (ADR 0004), but the contract boundary stays TypeScript.
+**Polyglot core (each adapter in its own language).** Rejected explicitly by the product spec: one analysis engine, one shared contract, no per-language reimplementation of the core. Adapter _analysis helpers_ may still shell out to ecosystem tools later inside sandboxing (ADR 0004), but the contract boundary stays TypeScript.
 
 ## Consequences
 

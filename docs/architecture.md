@@ -45,7 +45,7 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 
 ## Key concepts
 
-- **Unused vs potentially unnecessary.** *Unused*: declared, never imported. *Potentially unnecessary*: imported, but used only for functionality the runtime provides natively or another existing dependency already covers. The second category is the product's differentiator and demands the strongest evidence.
+- **Unused vs potentially unnecessary.** _Unused_: declared, never imported. _Potentially unnecessary_: imported, but used only for functionality the runtime provides natively or another existing dependency already covers. The second category is the product's differentiator and demands the strongest evidence.
 - **Evidence-based recommendations.** A finding without evidence is a bug. "Manual review recommended" with a stated reason (e.g. dynamic imports prevent complete analysis) is a first-class result.
 - **Deterministic first.** No LLM is required anywhere in the pipeline. Optional AI assistance (explaining findings, evaluating ambiguous replacements) may come later as an additive layer over deterministic evidence — never as the source of a verdict.
 - **Static analysis only.** Repository code is never executed. See ADR 0004 and [security-model.md](security-model.md).
@@ -64,15 +64,15 @@ No premature optimisation, with deliberate design headroom: cached lockfile pars
 
 ## Where things live
 
-| Concern | Location |
-| --- | --- |
-| Shared types, dependency model, result schema | `packages/core/src/types/` |
-| Adapter interface + contract test kit | `packages/core/src/adapter.ts`, `packages/core/src/contract-tests/` |
-| Analysis engine | `packages/core/src/engine/` |
-| Recommendation policy | `packages/core/src/recommend/` |
-| Native replacement rules | `packages/core/src/native-rules/` |
-| Ecosystem adapters | `packages/adapters/<ecosystem>/` |
-| CLI | `packages/cli/` |
-| GitHub App | `packages/github-app/` |
-| Test fixture repositories | `fixtures/` |
-| Decisions | `docs/adr/` |
+| Concern                                       | Location                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| Shared types, dependency model, result schema | `packages/core/src/types/`                                          |
+| Adapter interface + contract test kit         | `packages/core/src/adapter.ts`, `packages/core/src/contract-tests/` |
+| Analysis engine                               | `packages/core/src/engine/`                                         |
+| Recommendation policy                         | `packages/core/src/recommend/`                                      |
+| Native replacement rules                      | `packages/core/src/native-rules/`                                   |
+| Ecosystem adapters                            | `packages/adapters/<ecosystem>/`                                    |
+| CLI                                           | `packages/cli/`                                                     |
+| GitHub App                                    | `packages/github-app/`                                              |
+| Test fixture repositories                     | `fixtures/`                                                         |
+| Decisions                                     | `docs/adr/`                                                         |
