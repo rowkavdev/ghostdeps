@@ -102,6 +102,11 @@ describe("isAnalysableSource (#101)", () => {
       assert.equal(isAnalysableSource(p), true, p);
     }
   });
+  it("matches Python, Go and Rust source (#297)", () => {
+    for (const p of ["app/main.py", "gui.pyw", "cmd/tool/main.go", "src/lib.rs", "a_test.go"]) {
+      assert.equal(isAnalysableSource(p), true, p);
+    }
+  });
   it("ignores installs, build output, vendored code, bundles and non-source", () => {
     for (const p of [
       "node_modules/a/index.js",
@@ -111,7 +116,12 @@ describe("isAnalysableSource (#101)", () => {
       "public/app.min.js",
       "a.js.map",
       "README.md",
-      "src/a.py",
+      "src/types.pyi",
+      ".venv/lib/site.py",
+      "pkg/__pycache__/m.py",
+      "vendor/github.com/x/y.go",
+      "target/debug/build.rs",
+      "a.pyc",
       "styles.css",
     ]) {
       assert.equal(isAnalysableSource(p), false, p);
