@@ -14,6 +14,7 @@ import {
   type AnalyseRunOptions,
   type RepositoryClient,
 } from "./analyse-job.js";
+import { NpmMetadataService } from "./npm-metadata.js";
 import { tarGz, type TarEntry } from "./test-tar.js";
 
 const SHA = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
@@ -763,6 +764,34 @@ describe("analyseCheckout: recommendation policy on the app path", () => {
     });
     await worker(job());
     assert.equal(seen?.recommend, recommend);
+  });
+
+  it("passes footprint metadata only when set, a fresh provider per job (#174)", async () => {
+    const seen: (AnalyseRunOptions | undefined)[] = [];
+    const make = async (metadata?: NpmMetadataService) => {
+      const { client } = fakeClient();
+      return createAnalysisWorker({
+        appId: APP_ID,
+        clientFor: async () => client,
+        workRoot: await workRoot(),
+        fetch: fetchServing(tarGz(repo)),
+        resultCache: false,
+        ...(metadata ? { metadata } : {}),
+        analyse: async (_dir, _mods, run) => {
+          seen.push(run);
+          return emptyResult;
+        },
+      });
+    };
+    await (
+      await make()
+    )(job());
+    assert.equal(seen[0]?.metadata, undefined);
+    const withMetadata = await make(new NpmMetadataService({ fetch: async () => ({}) as never }));
+    await withMetadata(job());
+    await withMetadata(job());
+    assert.equal(typeof seen[1]?.metadata?.installSizes, "function");
+    assert.notEqual(seen[1]?.metadata, seen[2]?.metadata);
   });
 });
 

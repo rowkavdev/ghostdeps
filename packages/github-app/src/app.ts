@@ -2,7 +2,12 @@ import { ProbotOctokit, type ApplicationFunction, type Probot } from "probot";
 import { BusyLimiter } from "./checks/busy-limiter.js";
 import { CheckReporter } from "./checks/reporter.js";
 import { createDefaultPolicy } from "@ghostdeps/core";
-import { appIdFromEnv, recommendationsFromEnv, sourcePrTriggerFromEnv } from "./config.js";
+import {
+  appIdFromEnv,
+  footprintFromEnv,
+  recommendationsFromEnv,
+  sourcePrTriggerFromEnv,
+} from "./config.js";
 import { changedFiles } from "./events/changed-files.js";
 import { checkName } from "./checks/render.js";
 import {
@@ -14,6 +19,7 @@ import {
 import { decideRerequest } from "./events/rerequested.js";
 import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
+import { NpmMetadataService } from "./worker/npm-metadata.js";
 import { noWaitThrottle, WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./github/rate-limit.js";
 import { repoScopedClients } from "./worker/github-client.js";
 
@@ -42,6 +48,12 @@ export interface GhostDepsAppOptions {
    * leaving facts only.
    */
   readonly recommendations?: boolean;
+  /**
+   * Install footprints from the public npm registry (#174). Off by default;
+   * GHOSTDEPS_FOOTPRINT=true (or 1) turns them on. Only packages the
+   * lockfile resolved from registry.npmjs.org are ever queried.
+   */
+  readonly footprint?: boolean;
   /** Limits "busy" check runs when the queue is full. Defaults to one per repository per minute. */
   readonly busyLimiter?: BusyLimiter;
 }
@@ -117,6 +129,9 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             log: app.log,
             ...((options.recommendations ?? recommendationsFromEnv())
               ? { recommend: createDefaultPolicy() }
+              : {}),
+            ...((options.footprint ?? footprintFromEnv())
+              ? { metadata: new NpmMetadataService() }
               : {}),
           }));
     const queue =

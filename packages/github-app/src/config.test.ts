@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { appIdFromEnv, recommendationsFromEnv, sourcePrTriggerFromEnv } from "./config.js";
+import {
+  appIdFromEnv,
+  footprintFromEnv,
+  recommendationsFromEnv,
+  sourcePrTriggerFromEnv,
+} from "./config.js";
+
+describe("footprintFromEnv (#174)", () => {
+  it("is off unless true or 1", () => {
+    for (const v of [undefined, "", "false", "0", "yes"]) {
+      assert.equal(footprintFromEnv({ GHOSTDEPS_FOOTPRINT: v }), false, String(v));
+    }
+    for (const v of ["true", "TRUE", " 1 "]) {
+      assert.equal(footprintFromEnv({ GHOSTDEPS_FOOTPRINT: v }), true, v);
+    }
+  });
+});
 
 describe("appIdFromEnv", () => {
   it("accepts a positive integer", () => {

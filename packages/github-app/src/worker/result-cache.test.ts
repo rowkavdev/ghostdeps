@@ -3,7 +3,12 @@ import { describe, it } from "node:test";
 import type { AnalysisResult } from "@ghostdeps/core";
 import type { CheckOutput } from "../checks/render.js";
 import type { AnalysisJob } from "../jobs.js";
-import { isCacheable, ResultCache, resultCacheKey } from "./result-cache.js";
+import {
+  isCacheable,
+  ResultCache,
+  resultCacheKey,
+  type ResultCacheContext,
+} from "./result-cache.js";
 
 const result = { findings: [] } as unknown as AnalysisResult;
 const check = (summary = "ok"): CheckOutput => ({
@@ -44,7 +49,7 @@ describe("resultCacheKey", () => {
   });
 
   it("changes with head, base, source-only flag and config", () => {
-    const k = (j: AnalysisJob, c = ctx) => resultCacheKey(j, c);
+    const k = (j: AnalysisJob, c: ResultCacheContext = ctx) => resultCacheKey(j, c);
     const pr = job({ kind: "pull_request", number: 1, action: "opened", baseSha: base });
     const keys = new Set([
       k(pr),
@@ -55,9 +60,10 @@ describe("resultCacheKey", () => {
       ),
       k(pr, { adapterModules: ["m"], recommend: false }),
       k(pr, { adapterModules: ["m", "n"], recommend: true }),
+      k(pr, { adapterModules: ["m"], recommend: true, footprint: true }),
       k(job({ kind: "rerequested", checkRunId: 2 })),
     ]);
-    assert.equal(keys.size, 7);
+    assert.equal(keys.size, 8);
   });
 });
 
