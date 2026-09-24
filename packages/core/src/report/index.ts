@@ -1,6 +1,8 @@
 export { jsonSchemaVersion, normaliseAnalysisResult, renderJsonReport } from "./json.js";
 export {
+  UNUSED_CONFIDENCE_CAP,
   UNUSED_SEVERITY_CAP,
+  capConfidence,
   atOrAboveSeverity,
   parseSeverity,
   severityOf,

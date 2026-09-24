@@ -41,8 +41,8 @@ describe("ghostdeps scan --json", () => {
     const findings = (JSON.parse(text) as { findings: { rule?: string; confidence?: string }[] })
       .findings;
     assert.ok(
-      findings.some((f) => f.rule === "unused" && f.confidence === "high"),
-      "the default policy runs: fully analysed usage produces a real high-confidence unused verdict",
+      findings.some((f) => f.rule === "unused" && f.confidence === "medium"),
+      "the default policy runs: fully analysed usage produces a real unused verdict (medium under the #178 cap)",
     );
     assertGolden("scan-js-basic-unused.json", text);
   });
@@ -128,7 +128,8 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     assert.equal(code, 0);
     const text = out.join("\n");
     assert.match(text, /Findings:\n {2}none/);
-    assert.match(text, /\(1 finding below the --severity critical filter hidden\)/);
+    // The unused verdict plus the #178 confidence-cap note.
+    assert.match(text, /\(2 findings below the --severity critical filter hidden\)/);
   });
 
   it("--json always prints the complete result; --severity with it is a usage error", async () => {

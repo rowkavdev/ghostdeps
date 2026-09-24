@@ -161,7 +161,10 @@ describe("scan completeness in analyseRepository (#154)", () => {
 
   it("leaves findings alone when the scan was complete", async () => {
     const result = await analyse({ scanCompleteness: [] });
-    assert.equal(result.findings.find((f) => f.kind === "unused")?.confidence, "high");
+    const unused = result.findings.find((f) => f.kind === "unused");
+    // Medium from the #178 cap, not from the scan: no partial-scan limitation.
+    assert.equal(unused?.confidence, "medium");
+    assert.deepEqual(unused?.limitations, []);
     assert.ok(!result.findings.some((f) => f.summary.startsWith("all verdicts in this result")));
   });
 });

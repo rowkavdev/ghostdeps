@@ -32,10 +32,25 @@
   ],
   "findings": [
     {
+      "affectedFiles": [],
+      "confidence": "high",
+      "evidence": [
+        {
+          "kind": "unused-confidence-capped",
+          "statement": "1 unused finding(s) capped at medium confidence"
+        }
+      ],
+      "kind": "info",
+      "limitations": [],
+      "recommendation": "Unused findings are reported at medium confidence at most until the pinned corpus check has stayed green; review before removing.",
+      "rule": "unused-confidence-capped",
+      "summary": "unused confidence capped pending corpus validation"
+    },
+    {
       "affectedFiles": [
         "package.json"
       ],
-      "confidence": "high",
+      "confidence": "medium",
       "dependency": "left-pad",
       "evidence": [
         {

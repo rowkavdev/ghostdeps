@@ -31,6 +31,24 @@ export function parseSeverity(text: string): Severity | undefined {
 export const UNUSED_SEVERITY_CAP: Severity = "medium";
 
 /**
+ * Companion gate (#178): the confidence core emits for `unused` findings is
+ * min(computed, this). It never raises confidence. The engine applies it
+ * where findings are produced (assembleAnalysisResult), never the
+ * renderers, and adds one run-level info note when it capped anything.
+ * The lift criterion is the same as UNUSED_SEVERITY_CAP (#172 green for 14
+ * consecutive nightly runs). Both caps come off in one PR, with their
+ * contract tests updated together.
+ */
+export const UNUSED_CONFIDENCE_CAP: Confidence = "medium";
+
+const CONFIDENCE_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
+
+/** min(confidence, cap): a ceiling, never a floor. */
+export function capConfidence(confidence: Confidence, cap: Confidence): Confidence {
+  return CONFIDENCE_RANK[confidence] > CONFIDENCE_RANK[cap] ? cap : confidence;
+}
+
+/**
  * The worst a finding of each kind can be. Every FindingKind needs an
  * explicit entry - the Record type fails typecheck otherwise, and
  * severity.test.ts asserts completeness at runtime - so a new kind must be
