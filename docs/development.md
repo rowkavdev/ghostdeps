@@ -10,7 +10,7 @@
 ```bash
 pnpm install        # install workspace dependencies
 pnpm build          # build all packages (tsc project references)
-pnpm test           # run all package tests (node:test)
+pnpm test           # run all package tests (node:test), one at a time (#309)
 pnpm lint           # ESLint (flat config)
 pnpm format         # Prettier write
 pnpm typecheck      # tsc --noEmit across packages, one at a time (#304)
