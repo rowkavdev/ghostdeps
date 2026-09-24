@@ -23,6 +23,12 @@ export type AnalysisTrigger =
        * the worker stays PR-scoped instead of analysing the whole repository.
        */
       readonly sourceOnly?: true;
+      /**
+       * For synchronize: the PR's head before this push (the payload's
+       * `before`). Only a queued job for exactly this head is superseded
+       * (#257), so a late or redelivered event never drops a newer head.
+       */
+      readonly beforeSha?: string;
     }
   | { readonly kind: "push"; readonly ref: string; readonly beforeSha: string }
   | { readonly kind: "full_scan"; readonly reason: "installation" | "explicit" }
@@ -81,6 +87,8 @@ export interface InProcessJobQueueOptions {
   /** Maximum jobs waiting to run. Beyond this, enqueue returns "overloaded". Default 500. */
   readonly maxPending?: number;
   readonly onError?: (job: AnalysisJob, error: unknown) => void;
+  /** Called for each queued job dropped because its PR's head moved past it (#257). */
+  readonly onSuperseded?: (dropped: AnalysisJob, by: AnalysisJob) => void;
 }
 
 /** v0.1 queue: in memory, bounded concurrency, duplicate keys collapse. */
@@ -90,6 +98,7 @@ export class InProcessJobQueue implements JobQueue {
   readonly #dedupeWindow: number;
   readonly #maxPending: number;
   readonly #onError: (job: AnalysisJob, error: unknown) => void;
+  readonly #onSuperseded: (dropped: AnalysisJob, by: AnalysisJob) => void;
   readonly #pending: AnalysisJob[] = [];
   readonly #seen = new Set<string>();
   #running = 0;
@@ -101,10 +110,12 @@ export class InProcessJobQueue implements JobQueue {
     this.#dedupeWindow = Math.max(1, options.dedupeWindow ?? 1000);
     this.#maxPending = Math.max(1, options.maxPending ?? 500);
     this.#onError = options.onError ?? (() => {});
+    this.#onSuperseded = options.onSuperseded ?? (() => {});
   }
 
   enqueue(job: AnalysisJob): EnqueueResult {
     if (this.#seen.has(job.key)) return "duplicate";
+    this.#dropSuperseded(job);
     if (this.#pending.length >= this.#maxPending) return "overloaded";
     this.#seen.add(job.key);
     if (this.#seen.size > this.#dedupeWindow) {
@@ -124,6 +135,36 @@ export class InProcessJobQueue implements JobQueue {
   onIdle(): Promise<void> {
     if (this.size === 0) return Promise.resolve();
     return new Promise((resolve) => this.#idleWaiters.push(resolve));
+  }
+
+  /**
+   * A new head for a PR (#257): a synchronize event says which head it
+   * replaced (`beforeSha`). A queued pull_request job for exactly that head
+   * of the same PR would analyse a commit whose check is already superseded,
+   * so drop it. Matching on `beforeSha`, not just "a different head", keeps
+   * a late or redelivered older event from dropping the current head's job.
+   * Re-runs the user asked for are never dropped and never supersede.
+   * Running jobs are left to finish. A dropped job never created its check
+   * run, so nothing needs cleaning up, and its key is forgotten so that head
+   * can be queued again later.
+   */
+  #dropSuperseded(job: AnalysisJob): void {
+    const t = job.trigger;
+    if (t.kind !== "pull_request" || t.beforeSha === undefined) return;
+    for (let i = this.#pending.length - 1; i >= 0; i--) {
+      const queued = this.#pending[i]!;
+      if (
+        queued.trigger.kind === "pull_request" &&
+        queued.trigger.number === t.number &&
+        queued.repository.id === job.repository.id &&
+        queued.headSha === t.beforeSha &&
+        queued.headSha !== job.headSha
+      ) {
+        this.#pending.splice(i, 1);
+        this.#seen.delete(queued.key);
+        this.#onSuperseded(queued, job);
+      }
+    }
   }
 
   #drain(): void {

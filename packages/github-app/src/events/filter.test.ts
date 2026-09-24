@@ -129,6 +129,24 @@ describe("preFilter", () => {
     }
   });
 
+  it("records a synchronize's before SHA, and only for synchronize (#257)", () => {
+    const before = "c".repeat(40);
+    const sync = preFilter("pull_request", pr("synchronize", { before }));
+    assert.ok("candidate" in sync);
+    assert.equal(sync.candidate.trigger.kind, "pull_request");
+    if (sync.candidate.trigger.kind === "pull_request") {
+      assert.equal(sync.candidate.trigger.beforeSha, before);
+    }
+    for (const r of [
+      preFilter("pull_request", pr("opened", { before })),
+      preFilter("pull_request", pr("synchronize", { before: "0".repeat(40) })),
+      preFilter("pull_request", pr("synchronize")),
+    ]) {
+      assert.ok("candidate" in r);
+      assert.equal("beforeSha" in r.candidate.trigger, false);
+    }
+  });
+
   it("default-denies other pull_request actions and other events", () => {
     for (const a of [
       "closed",
