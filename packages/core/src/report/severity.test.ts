@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Confidence, Finding, FindingKind } from "../types/index.js";
-import { atOrAboveSeverity, parseSeverity, severityOf, severityOrder } from "./severity.js";
+import {
+  UNUSED_SEVERITY_CAP,
+  atOrAboveSeverity,
+  parseSeverity,
+  severityOf,
+  severityOrder,
+} from "./severity.js";
 
 const finding = (kind: FindingKind, confidence: Confidence): Finding => ({
   kind,
@@ -15,9 +21,9 @@ const finding = (kind: FindingKind, confidence: Confidence): Finding => ({
 
 describe("severityOf", () => {
   it("derives severity from the kind ceiling and confidence", () => {
-    assert.equal(severityOf(finding("unused", "high")), "high");
-    assert.equal(severityOf(finding("unused", "medium")), "medium");
-    assert.equal(severityOf(finding("unused", "low")), "low");
+    assert.equal(severityOf(finding("unused", "high")), "medium");
+    assert.equal(severityOf(finding("unused", "medium")), "low");
+    assert.equal(severityOf(finding("unused", "low")), "info");
     assert.equal(severityOf(finding("should-be-dev", "high")), "medium");
     assert.equal(severityOf(finding("type-only", "high")), "medium");
     assert.equal(severityOf(finding("duplicate-capability", "high")), "medium");
@@ -25,6 +31,18 @@ describe("severityOf", () => {
     assert.equal(severityOf(finding("maintenance-risk", "high")), "low");
     assert.equal(severityOf(finding("footprint", "high")), "low");
     assert.equal(severityOf(finding("should-be-dev", "low")), "info");
+  });
+
+  it("caps unused at medium until the corpus check has been green for 14 days (#173 contract)", () => {
+    // Shipping gate. Lifting the cap means changing UNUSED_SEVERITY_CAP and
+    // this test in the same PR - never one without the other.
+    assert.equal(UNUSED_SEVERITY_CAP, "medium");
+    for (const confidence of ["high", "medium", "low"] as const) {
+      assert.equal(atOrAboveSeverity(finding("unused", confidence), "high"), false);
+    }
+    // A ceiling, never a floor: confidence downgrades still apply below it.
+    assert.equal(severityOf(finding("unused", "high")), "medium");
+    assert.equal(severityOf(finding("unused", "low")), "info");
   });
 
   it("never rates info findings above info, whatever the confidence", () => {
@@ -57,9 +75,9 @@ describe("severityOf", () => {
   });
 
   it("compares findings against thresholds and parses names", () => {
-    assert.equal(atOrAboveSeverity(finding("unused", "high"), "high"), true);
-    assert.equal(atOrAboveSeverity(finding("unused", "low"), "high"), false);
-    assert.equal(atOrAboveSeverity(finding("unused", "low"), "low"), true);
+    assert.equal(atOrAboveSeverity(finding("should-be-dev", "high"), "medium"), true);
+    assert.equal(atOrAboveSeverity(finding("should-be-dev", "high"), "high"), false);
+    assert.equal(atOrAboveSeverity(finding("unused", "medium"), "low"), true);
     assert.equal(parseSeverity("high"), "high");
     assert.equal(parseSeverity("bogus"), undefined);
   });
