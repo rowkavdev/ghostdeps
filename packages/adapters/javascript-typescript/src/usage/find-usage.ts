@@ -440,11 +440,19 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
   return usages.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
 }
 
+/** Nested projects named in one propagated-gap summary; the rest are counted. */
+export const MAX_NAMED_GAP_PROJECTS = 10;
+
 /**
  * Limitations relevant to one project: its own (unresolved dynamic imports,
- * skipped or broken files), those of nested projects (their unresolved
- * requires can fall through to this project's declarations), plus the
- * bounded shared set for files outside every project.
+ * skipped or broken files), the bounded shared set for files outside every
+ * project, and one summary for nested projects with import gaps (their
+ * unresolved requires can fall through to this project's declarations).
+ *
+ * Propagation is never capped (#185): any gap in any nested project keeps
+ * this project incomplete. Only the reporting is bounded - one summary per
+ * ancestor naming at most MAX_NAMED_GAP_PROJECTS projects - instead of one
+ * note per gap per nested project.
  */
 export async function usageLimitations(
   context: AdapterContext,
@@ -453,19 +461,30 @@ export async function usageLimitations(
   const scan = await scanForContext(context);
   const project = normaliseProject(projectPath);
   const out: Evidence[] = [];
+  const nested: { root: string; gaps: number }[] = [];
   for (const [root, list] of scan.byProject) {
+    if (list.length === 0) continue;
     if (root === project) {
       out.push(...list);
     } else if (scan.roots.has(project) && isWithin(root, project)) {
       // Upward only: a nested project's gaps reach its ancestors, never siblings or descendants.
-      const to = project === "." ? "the root project" : project;
-      for (const e of list) {
-        out.push({
-          ...e,
-          statement: `${e.statement} (import gap in nested project ${root}; it can fall through to ${to})`,
-        });
-      }
+      nested.push({ root, gaps: list.length });
     }
+  }
+  if (nested.length > 0) {
+    nested.sort((a, b) => (a.root < b.root ? -1 : a.root > b.root ? 1 : 0));
+    const to = project === "." ? "the root project" : project;
+    const named = nested.slice(0, MAX_NAMED_GAP_PROJECTS).map((n) => `${n.root} (${n.gaps})`);
+    const more = nested.length - named.length;
+    const gaps = nested.reduce((sum, n) => sum + n.gaps, 0);
+    out.push({
+      kind: "nested-project-import-gaps",
+      statement:
+        `import gaps in ${nested.length} nested project${nested.length === 1 ? "" : "s"} ` +
+        `(${named.join(", ")}${more > 0 ? `, + ${more} more` : ""}; ${gaps} in total) ` +
+        `can fall through to ${to}`,
+      file: `${nested[0]!.root}/package.json`,
+    });
   }
   return [...out, ...scan.shared];
 }
