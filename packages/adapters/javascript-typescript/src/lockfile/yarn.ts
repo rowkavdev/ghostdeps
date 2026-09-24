@@ -4,6 +4,7 @@
  */
 import { parse } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
+import { own } from "./model.js";
 import type { ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
@@ -38,14 +39,14 @@ export function readClassicLockfile(text: string): Map<string, Rec> {
     const line = raw.trim();
     if (indent === 0) {
       if (!line.endsWith(":")) throw new Error(`line ${i + 1}: expected an entry header`);
-      current = {};
+      current = Object.create(null) as Rec;
       nested = undefined;
       for (const p of line.slice(0, -1).split(",")) entries.set(unquote(p), current);
     } else if (!current) {
       throw new Error(`line ${i + 1}: field outside an entry`);
     } else if (indent === 2) {
       if (line.endsWith(":")) {
-        nested = {};
+        nested = Object.create(null) as Rec;
         current[unquote(line.slice(0, -1))] = nested;
       } else {
         nested = undefined;
@@ -73,7 +74,11 @@ export function parseYarnLockfile(
     dev: d.dev,
     id: undefined,
   }));
-  const berry = /^__metadata:/m.test(text);
+  // Berry lockfiles are YAML whose first entry is `__metadata:`; classic ones start with entry headers.
+  const firstLine = text
+    .split(/\r?\n/)
+    .find((l) => l.trim() !== "" && !l.trimStart().startsWith("#"));
+  const berry = firstLine?.trim() === "__metadata:";
 
   // Both formats: pattern -> entry. Package id = the entry's first pattern.
   const byPattern = new Map<string, { id: string; entry: Rec }>();
@@ -104,10 +109,11 @@ export function parseYarnLockfile(
 
   for (const { id, entry } of byPattern.values()) {
     if (packages.has(id)) continue;
-    const resolution = typeof entry.resolution === "string" ? entry.resolution : id;
+    const res = own(entry, "resolution");
+    const resolution = typeof res === "string" ? res : id;
     const deps: string[] = [];
     for (const field of ["dependencies", "optionalDependencies"]) {
-      const map = entry[field];
+      const map = own(entry, field);
       if (!isObject(map)) continue;
       for (const [n, r] of Object.entries(map)) {
         const dep = lookup(n, String(r));
@@ -116,17 +122,16 @@ export function parseYarnLockfile(
     }
     packages.set(id, {
       name: patternName(resolution),
-      version: String(entry.version ?? "0.0.0"),
+      version: String(own(entry, "version") ?? "0.0.0"),
       dependencies: deps,
     });
   }
 
   if (berry) {
-    const ws = [...byPattern.values()].find(
-      ({ entry }) =>
-        typeof entry.resolution === "string" &&
-        entry.resolution.endsWith(`@workspace:${importerPath}`),
-    );
+    const ws = [...byPattern.values()].find(({ entry }) => {
+      const r = own(entry, "resolution");
+      return typeof r === "string" && r.endsWith(`@workspace:${importerPath}`);
+    });
     if (!ws) {
       evidence.push({
         kind: "lockfile-manifest-mismatch",
@@ -137,7 +142,7 @@ export function parseYarnLockfile(
     }
     const locked = new Map<string, string>();
     for (const field of ["dependencies", "optionalDependencies", "devDependencies"]) {
-      const map = ws.entry[field];
+      const map = own(ws.entry, field);
       if (isObject(map)) for (const [n, r] of Object.entries(map)) locked.set(n, String(r));
     }
     for (const d of direct) {
