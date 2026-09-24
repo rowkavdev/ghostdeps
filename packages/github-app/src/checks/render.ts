@@ -13,6 +13,8 @@ import type { AddedLines } from "./diff.js";
 export const checkName = "ghostdeps";
 export const quietSummary = "No significant dependency issues found.";
 export const maxAnnotations = 50;
+export const busySummary =
+  "GhostDeps was too busy to analyse this commit, so no dependency analysis ran. Push a new commit to re-run.";
 
 // GitHub limits: output.summary/text 65535 chars, annotation title 255, message 64 KB.
 const summaryLimit = 65_000;
@@ -143,5 +145,13 @@ export function renderCheck(result: AnalysisResult, added: AddedLines): CheckOut
       summary,
       annotations,
     },
+  };
+}
+
+/** Output for a job dropped because the queue was full. Neutral: nothing was checked, nothing is blocked. */
+export function busyCheck(): CheckOutput {
+  return {
+    conclusion: "neutral",
+    output: { title: "GhostDeps was busy", summary: busySummary, annotations: [] },
   };
 }

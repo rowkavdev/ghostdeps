@@ -5,7 +5,10 @@
  */
 import type { AnalysisResult } from "@ghostdeps/core";
 import type { AddedLines } from "./diff.js";
-import { checkName, renderCheck, type CheckOutput } from "./render.js";
+import { busyCheck, checkName, renderCheck, type CheckOutput } from "./render.js";
+
+/** external_id prefix for runs that only say the app was too busy. */
+export const BUSY_PREFIX = "busy:";
 
 /** The slice of Octokit the reporter needs; Probot's context.octokit satisfies it. */
 export interface ChecksClient {
@@ -18,14 +21,21 @@ export interface ChecksClient {
       app_id?: number;
       filter?: "latest" | "all";
       per_page?: number;
-    }): Promise<{ data: { check_runs: { id: number; app?: { id?: number } | null }[] } }>;
+    }): Promise<{
+      data: {
+        check_runs: { id: number; external_id?: string | null; app?: { id?: number } | null }[];
+      };
+    }>;
     create(params: {
       owner: string;
       repo: string;
       name: string;
       head_sha: string;
-      status: "in_progress";
-      started_at: string;
+      status: "in_progress" | "completed";
+      started_at?: string;
+      completed_at?: string;
+      conclusion?: CheckOutput["conclusion"];
+      output?: CheckOutput["output"];
       external_id: string;
     }): Promise<{ data: { id: number } }>;
     update(params: {
@@ -44,7 +54,7 @@ export interface CheckTarget {
   owner: string;
   repo: string;
   headSha: string;
-  /** Idempotency key, stored as external_id (see jobKey in events/filter). */
+  /** Idempotency key (the job key), stored as external_id. */
   externalId: string;
   /** Our GitHub App id, so another app's run with the same name is never touched. */
   appId?: number;
@@ -69,7 +79,9 @@ export class CheckReporter {
     if (target.appId !== undefined) params.app_id = target.appId;
     const { data } = await this.client.checks.listForRef(params);
     const run = data.check_runs.find(
-      (r) => target.appId === undefined || r.app?.id === target.appId,
+      (r) =>
+        (target.appId === undefined || r.app?.id === target.appId) &&
+        !(r.external_id ?? "").startsWith(BUSY_PREFIX),
     );
     return run?.id;
   }
@@ -107,6 +119,30 @@ export class CheckReporter {
       external_id: target.externalId,
     });
     return { checkRunId: data.id, created: true };
+  }
+
+  /**
+   * Records that the job was dropped because the queue was full, so the
+   * commit shows a neutral run instead of nothing. GitHub will not redeliver
+   * the webhook, so the summary tells the user how to re-run. Busy runs are
+   * ignored by `find`, so a later analysis of the same SHA still gets its own run.
+   */
+  async busy(target: CheckTarget): Promise<number> {
+    const { conclusion, output } = busyCheck();
+    const now = new Date().toISOString();
+    const { data } = await this.client.checks.create({
+      owner: target.owner,
+      repo: target.repo,
+      name: checkName,
+      head_sha: target.headSha,
+      status: "completed",
+      started_at: now,
+      completed_at: now,
+      conclusion,
+      output,
+      external_id: `${BUSY_PREFIX}${target.externalId}`,
+    });
+    return data.id;
   }
 
   /** Completes the run with a success/neutral conclusion in one request. */

@@ -122,7 +122,7 @@ describe("renderCheck", () => {
   });
 });
 
-function fakeClient(existing: { id: number; app?: { id: number } }[] = []) {
+function fakeClient(existing: { id: number; app?: { id: number }; external_id?: string }[] = []) {
   const calls: { op: string; params: Record<string, unknown> }[] = [];
   const client: ChecksClient = {
     checks: {
@@ -182,6 +182,21 @@ describe("CheckReporter", () => {
   it("ignores another app's run with the same name", async () => {
     const { client } = fakeClient([{ id: 5, app: { id: 777 } }]);
     const res = await new CheckReporter(client).start(target);
+    assert.equal(res.created, true);
+  });
+
+  it("records a neutral busy run that a later analysis does not reuse", async () => {
+    const { client, calls } = fakeClient();
+    const r = new CheckReporter(client);
+    await r.busy(target);
+    const created = calls.find((c) => c.op === "create")!.params;
+    assert.equal(created.status, "completed");
+    assert.equal(created.conclusion, "neutral");
+    assert.equal(created.external_id, "busy:acme/demo@h");
+    assert.match(String((created.output as { summary: string }).summary), /Push a new commit/);
+
+    const later = fakeClient([{ id: 5, app: { id: 1 }, external_id: "busy:acme/demo@h" }]);
+    const res = await new CheckReporter(later.client).start(target);
     assert.equal(res.created, true);
   });
 
