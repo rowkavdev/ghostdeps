@@ -1,0 +1,14 @@
+{
+  "description": "Manifest and lockfile disagree: left-pad declared but absent from package-lock.json; stray-package locked but never declared. Graph facts must flag the skew instead of picking a silent winner.",
+  "expectations": [
+    {
+      "assert": "parse.mustNotCrash",
+      "why": "Skewed manifests/lockfiles are normal in real repos."
+    },
+    {
+      "assert": "limitations.includes",
+      "contains": "lockfile",
+      "why": "The graph cannot be authoritative when manifest and lockfile disagree."
+    }
+  ]
+}

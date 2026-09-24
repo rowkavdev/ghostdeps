@@ -1,0 +1,14 @@
+{
+  "description": "pnpm workspace where package a depends on b and b depends on a. Graph construction must terminate and report the cycle, not hang or recurse forever.",
+  "expectations": [
+    {
+      "assert": "parse.mustNotCrash",
+      "why": "Cycles must not hang graph construction."
+    },
+    {
+      "assert": "limitations.includes",
+      "contains": "cycle",
+      "why": "A cyclic workspace graph should be surfaced, not silently truncated."
+    }
+  ]
+}

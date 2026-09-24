@@ -1,0 +1,15 @@
+{
+  "description": "Dependency declared via git URL (\"git+https://github.com/user/repo#branch\"). No registry version, no lockfile entry shape; must not be treated as a normal versioned dependency.",
+  "expectations": [
+    {
+      "assert": "dependencies.includes",
+      "dependency": "internal-lib",
+      "why": "It is declared and used; it must appear in the model."
+    },
+    {
+      "assert": "limitations.includes",
+      "contains": "git",
+      "why": "Non-registry constraints carry no version/health facts."
+    }
+  ]
+}

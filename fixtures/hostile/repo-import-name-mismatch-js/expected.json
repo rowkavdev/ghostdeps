@@ -1,0 +1,15 @@
+{
+  "description": "Import specifier != package name: scoped packages, subpath imports ('lodash/map' comes from package 'lodash'), and package.json exports maps hiding real paths.",
+  "expectations": [
+    {
+      "assert": "unused.excludes",
+      "dependency": "lodash",
+      "why": "'lodash/map' is usage of package lodash."
+    },
+    {
+      "assert": "unused.excludes",
+      "dependency": "@scope/toolkit",
+      "why": "Subpath imports still count as package usage."
+    }
+  ]
+}

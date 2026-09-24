@@ -1,0 +1,19 @@
+{
+  "description": "package.json that is not valid JSON (trailing comma, unterminated string). The manifest parser must degrade to reduced confidence, never crash.",
+  "expectations": [
+    {
+      "assert": "parse.mustNotCrash",
+      "why": "Malformed input produces a finding of reduced confidence, not a crash (security model rule 3)."
+    },
+    {
+      "assert": "limitations.includes",
+      "contains": "package.json",
+      "why": "The manifest could not be parsed; dependency facts from it are missing."
+    },
+    {
+      "assert": "confidence.atMost",
+      "value": "low",
+      "why": "Unparseable manifest means declared dependencies are unknown."
+    }
+  ]
+}

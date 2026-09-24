@@ -1,0 +1,14 @@
+{
+  "description": "package.json starting with a UTF-8 BOM. Strict JSON.parse rejects it; a manifest parser must strip the BOM or report reduced confidence.",
+  "expectations": [
+    {
+      "assert": "parse.mustNotCrash",
+      "why": "BOM-prefixed manifests are common in the wild."
+    },
+    {
+      "assert": "dependencies.includes",
+      "dependency": "left-pad",
+      "why": "BOM must not make a valid manifest unreadable."
+    }
+  ]
+}

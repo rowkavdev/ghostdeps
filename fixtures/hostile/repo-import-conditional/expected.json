@@ -1,0 +1,10 @@
+{
+  "description": "Require behind runtime conditions and try/catch optional loading. The import exists but is conditional; usage reporting must reflect that form.",
+  "expectations": [
+    {
+      "assert": "unused.excludes",
+      "dependency": "optional-native",
+      "why": "It is required, conditionally - conditional usage is still usage evidence."
+    }
+  ]
+}

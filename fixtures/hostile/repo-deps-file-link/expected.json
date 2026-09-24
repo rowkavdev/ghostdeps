@@ -1,0 +1,15 @@
+{
+  "description": "Local protocol dependencies: file:, link: and portal:. These point at paths, not packages; analysis must not invent registry facts for them.",
+  "expectations": [
+    {
+      "assert": "dependencies.includes",
+      "dependency": "shared",
+      "why": "Declared and used."
+    },
+    {
+      "assert": "limitations.includes",
+      "contains": "file:",
+      "why": "Local path deps have no registry metadata."
+    }
+  ]
+}

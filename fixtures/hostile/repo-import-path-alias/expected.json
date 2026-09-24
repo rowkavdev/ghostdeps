@@ -1,0 +1,15 @@
+{
+  "description": "tsconfig paths alias @app/* -> src/*. Imports of '@app/util' must resolve to local files, not to a phantom dependency named '@app'.",
+  "expectations": [
+    {
+      "assert": "dependencies.excludes",
+      "dependency": "@app",
+      "why": "@app is a path alias for local source, not a package."
+    },
+    {
+      "assert": "unused.excludes",
+      "dependency": "left-pad",
+      "why": "Actually imported."
+    }
+  ]
+}

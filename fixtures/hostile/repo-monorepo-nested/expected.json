@@ -1,0 +1,15 @@
+{
+  "description": "Nested projects: a sub-package with its own package.json, plus a vendored third-party tree with its own package.json that must be excluded as vendor/generated.",
+  "expectations": [
+    {
+      "assert": "projects.includes",
+      "path": "packages/web",
+      "why": "Workspace members are separate projects (monorepo-native results)."
+    },
+    {
+      "assert": "projects.excludes",
+      "path": "vendor/legacy-lib",
+      "why": "Vendor/generated directories are skipped (pipeline step 1)."
+    }
+  ]
+}
