@@ -1,7 +1,8 @@
 import type { ApplicationFunction, Probot } from "probot";
 import { BusyLimiter } from "./checks/busy-limiter.js";
 import { CheckReporter } from "./checks/reporter.js";
-import { appIdFromEnv, sourcePrTriggerFromEnv } from "./config.js";
+import { createDefaultPolicy } from "@ghostdeps/core";
+import { appIdFromEnv, recommendationsFromEnv, sourcePrTriggerFromEnv } from "./config.js";
 import { changedFiles } from "./events/changed-files.js";
 import { checkName } from "./checks/render.js";
 import { analysedEvents, decide, type ChangedFilesLookup } from "./events/filter.js";
@@ -29,6 +30,12 @@ export interface GhostDepsAppOptions {
    * otherwise, until the "last import removed" finding lands.
    */
   readonly sourcePrTrigger?: boolean;
+  /**
+   * Recommendation verdicts (core's default policy, as in the CLI scan).
+   * Defaults to on; GHOSTDEPS_RECOMMENDATIONS=false (or 0) turns them off,
+   * leaving facts only.
+   */
+  readonly recommendations?: boolean;
   /** Limits "busy" check runs when the queue is full. Defaults to one per repository per minute. */
   readonly busyLimiter?: BusyLimiter;
 }
@@ -46,7 +53,14 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             // so write nothing rather than duplicate check runs.
             app.log.warn({ job: job.key }, "APP_ID is not a valid app id; analysis skipped");
           }
-        : createAnalysisWorker({ appId, clientFor: repoScopedClients(app), log: app.log }));
+        : createAnalysisWorker({
+            appId,
+            clientFor: repoScopedClients(app),
+            log: app.log,
+            ...((options.recommendations ?? recommendationsFromEnv())
+              ? { recommend: createDefaultPolicy() }
+              : {}),
+          }));
     const queue =
       options.queue ??
       new InProcessJobQueue({
