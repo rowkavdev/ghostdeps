@@ -97,9 +97,16 @@ describe("crossEcosystemOverlaps (#55)", () => {
         manifest: "services/api/pyproject.toml",
       },
     ];
+    // The finding attaches to the package the PR added and names the
+    // standing package in the other ecosystem.
     assert.deepEqual(
-      crossEcosystemOverlaps(deps, added).map((f) => f.dependency),
-      ["requests"],
+      crossEcosystemOverlaps(deps, added).map((f) => [f.dependency, f.summary]),
+      [
+        [
+          "requests",
+          "requests (python) covers the same capability (HTTP client) as axios (javascript-typescript)",
+        ],
+      ],
     );
     assert.deepEqual(crossEcosystemOverlaps(deps, []), []);
   });
