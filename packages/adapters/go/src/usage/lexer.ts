@@ -1,8 +1,9 @@
 /**
  * Minimal Go lexer for import extraction (#53). Hand-written on purpose:
- * the arch lead chose it over web-tree-sitter on 2026-09-24 (recorded in
- * #231; #63 has the tree-sitter findings). Go's import syntax is small and regular, and a
- * lexer needs no native build or WASM. It sits behind GoImportExtractor so
+ * the arch lead chose it over web-tree-sitter on 2026-09-24. Decision
+ * record: https://github.com/rowkavdev/ghostdeps/issues/53#issuecomment-5822579331
+ * (#63 has the tree-sitter findings). Go's import syntax is small and
+ * regular, and a lexer needs no native build or WASM. It sits behind GoImportExtractor so
  * a tree-sitter backend can replace it later.
  *
  * It only needs to be right about token boundaries: comments, interpreted
