@@ -1,0 +1,22 @@
+# GitHub App manifest for GhostDeps.
+# https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
+#
+# Least privilege. This file must match the permissions table in
+# docs/github-app.md exactly; src/manifest.test.ts enforces that.
+# Any change here is a product change: installers see this list.
+
+name: GhostDeps
+description: Finds dependencies your code doesn't really need. Reports through GitHub Checks, never gates.
+url: https://github.com/rowkavdev/ghostdeps
+
+# installation and installation_repositories are delivered to every app and
+# cannot be listed here. checks:write also delivers check_suite and check_run.
+default_events:
+  - pull_request
+  - push
+
+default_permissions:
+  contents: read
+  pull_requests: read
+  checks: write
+  metadata: read
