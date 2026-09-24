@@ -1,0 +1,12 @@
+{
+  "name": "fixture-refs-shared-config-lockfile",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "devDependencies": {
+    "@acme/eslint-config": "1.0.0",
+    "eslint": "9.0.0",
+    "eslint-import-resolver-typescript": "3.0.0",
+    "globals": "15.0.0"
+  }
+}

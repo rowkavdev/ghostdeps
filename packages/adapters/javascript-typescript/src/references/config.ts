@@ -12,9 +12,11 @@
  * Every reference only ever adds usage. That's the safe direction for an
  * "unused" verdict, so name normalisation errs towards more candidates.
  */
+import { isBuiltin } from "node:module";
 import ts from "typescript";
 import { parse as parseYaml } from "yaml";
 import type { AdapterContext, Dependency, RepositoryHandle, Usage } from "@ghostdeps/core";
+import { buildLockfileGraph } from "../lockfile/build.js";
 
 /** Config files larger than this are not parsed. */
 export const MAX_CONFIG_BYTES = 256 * 1024;
@@ -437,7 +439,8 @@ export interface UnreadConfig {
     | "not evaluated"
     | "over limit"
     | "computed specifier"
-    | "imports local module";
+    | "imports local module"
+    | "imports shared config package";
 }
 
 /** Everything the config scan found for one project, plus what it could not read. */
@@ -445,6 +448,13 @@ export interface ConfigScan {
   refs: ConfigReference[];
   /** Non-empty means config coverage is incomplete: no "unused" verdict may rely on it. */
   unread: UnreadConfig[];
+  /**
+   * JS/TS configs that import a package (a shared config such as
+   * "@acme/eslint-config"). That package's own references (its peers) are
+   * not read, so these count as unread unless the project has a complete
+   * dependency graph whose edges show those peers (#201 review).
+   */
+  sharedImports: string[];
 }
 
 /** JS/TS tool configs are source files and are never evaluated. */
@@ -460,19 +470,17 @@ function toolExpander(base: string): (n: string) => string[] {
     (a: string, b: string) =>
     (n: string): string[] => {
       const m = /^plugin:((?:@[^/]+\/)?[^/]+)/.exec(n);
-      const name = m ? m[1]! : n;
-      return [...new Set([...expandShorthand(name, a), ...expandShorthand(name, b)])];
+      const name = m ? m[1]! : n.replace(/^module:/, "");
+      // Only whole names ("airbnb", "@scope", "@scope/foo"): a rule id or a
+      // path ("import/no-cycle", "react/jsx-key") is not a package reference.
+      if (!PACKAGE_NAME.test(name) && !/^@[a-z0-9-~][a-z0-9-._~]*$/i.test(name)) return [];
+      return [
+        ...new Set([...exactName(n), ...expandShorthand(name, a), ...expandShorthand(name, b)]),
+      ];
     };
   switch (tool) {
-    case "eslint": {
-      const expand = both("eslint-plugin", "eslint-config");
-      // Rule ids name their plugin: "react/jsx-key" -> eslint-plugin-react,
-      // "@stylistic/indent" -> @stylistic/eslint-plugin.
-      return (n) => {
-        const rule = /^(@[^/\s]+|[^@/\s]+)\/[^/\s]+$/.exec(n);
-        return rule ? [...new Set([...expand(n), ...expand(rule[1]!)])] : expand(n);
-      };
-    }
+    case "eslint":
+      return both("eslint-plugin", "eslint-config");
     case "babel":
       return both("babel-preset", "babel-plugin");
     case "stylelint":
@@ -482,9 +490,15 @@ function toolExpander(base: string): (n: string) => string[] {
     case "jest":
       return both("jest-environment", "jest-runner");
     default:
-      return pkgOnly;
+      return exactName;
   }
 }
+
+/** A whole string that is a valid npm package name. */
+const PACKAGE_NAME = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+
+/** The string itself, when it is a package name: exact matching, no subpath or prefix. */
+const exactName = (n: string): string[] => (PACKAGE_NAME.test(n) ? [n] : []);
 
 /** Text a string-building expression starts with, when it starts with a literal. */
 function leadingLiteral(node: ts.Expression): string | undefined {
@@ -519,7 +533,7 @@ export function readExecutableConfig(
   file: string,
   base: string,
   text: string,
-): { refs: ConfigReference[] } | { reason: UnreadConfig["reason"] } {
+): { refs: ConfigReference[]; importsPackage: boolean } | { reason: UnreadConfig["reason"] } {
   const kind = /\.(?:c|m)?ts$/.test(base) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
   const diagnostics = (sf as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
@@ -528,6 +542,7 @@ export function readExecutableConfig(
   const tool = base.replace(/\.(?:c|m)?[jt]s$/, "");
   const refs: ConfigReference[] = [];
   let problem: UnreadConfig["reason"] | undefined;
+  let importsPackage = false;
   let strings = 0;
   let visited = 0;
 
@@ -538,6 +553,7 @@ export function readExecutableConfig(
       return;
     }
     const s = spec.text;
+    if (packageOf(s) !== undefined && !isBuiltin(s)) importsPackage = true;
     if (s.startsWith(".") || s.startsWith("/")) {
       const target = s.slice(s.lastIndexOf("/") + 1);
       if (!(EXECUTABLE_CONFIG.test(target) || KNOWN_EXECUTABLE_CONFIGS.has(target))) {
@@ -584,7 +600,7 @@ export function readExecutableConfig(
   };
   visit(sf);
   if (strings >= MAX_CONFIG_STRINGS) problem ??= "over limit";
-  return problem ? { reason: problem } : { refs };
+  return problem ? { reason: problem } : { refs, importsPackage };
 }
 
 /** Every config/convention reference directly inside one directory. */
@@ -599,6 +615,7 @@ async function collectDirectory(
   );
   const refs: ConfigReference[] = [];
   const unread: UnreadConfig[] = [];
+  const sharedImports: string[] = [];
   const collector =
     (file: string, text: string): Collector =>
     (source, rawNames, expand) => {
@@ -634,7 +651,10 @@ async function collectDirectory(
       }
       const result = readExecutableConfig(file, base, read.text);
       if ("reason" in result) unread.push({ file, reason: result.reason });
-      else refs.push(...result.refs);
+      else {
+        refs.push(...result.refs);
+        if (result.importsPackage) sharedImports.push(file);
+      }
       continue;
     }
     const handler = handlerFor(base);
@@ -725,7 +745,7 @@ async function collectDirectory(
       });
     }
   }
-  return { refs, unread };
+  return { refs, unread, sharedImports };
 }
 
 /**
@@ -745,7 +765,11 @@ export async function collectConfigReferences(
 }
 
 function mergeScans(own: ConfigScan, root: ConfigScan): ConfigScan {
-  return { refs: [...own.refs, ...root.refs], unread: [...own.unread, ...root.unread] };
+  return {
+    refs: [...own.refs, ...root.refs],
+    unread: [...own.unread, ...root.unread],
+    sharedImports: [...own.sharedImports, ...root.sharedImports],
+  };
 }
 
 /** One scan per directory per analysis run; the root is scanned once, not once per member. */
@@ -801,5 +825,36 @@ export async function unreadConfigs(
   context: AdapterContext,
   dependency: Dependency,
 ): Promise<UnreadConfig[]> {
-  return (await scanFor(context, dependency)).unread;
+  const scan = await scanFor(context, dependency);
+  if (scan.sharedImports.length === 0 || (await graphComplete(context, dependency))) {
+    return scan.unread;
+  }
+  return [
+    ...scan.unread,
+    ...scan.sharedImports.map((file) => ({
+      file,
+      reason: "imports shared config package" as const,
+    })),
+  ];
+}
+
+/** Whether the dependency's project has a lockfile graph, cached per project per run. */
+const graphCaches = new WeakMap<AdapterContext, Map<string, Promise<boolean>>>();
+
+function graphComplete(context: AdapterContext, dependency: Dependency): Promise<boolean> {
+  let perProject = graphCaches.get(context);
+  if (!perProject) {
+    perProject = new Map();
+    graphCaches.set(context, perProject);
+  }
+  const key = dependency.project.path;
+  let pending = perProject.get(key);
+  if (!pending) {
+    pending = buildLockfileGraph(context, dependency.project).then(
+      (r) => !r.graph.incomplete,
+      () => false,
+    );
+    perProject.set(key, pending);
+  }
+  return pending;
 }

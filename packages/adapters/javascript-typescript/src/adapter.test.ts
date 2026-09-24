@@ -114,6 +114,15 @@ describe("reference analysis completeness (#132)", () => {
     assert.equal(unused.referenceAnalysisComplete, true);
   });
 
+  it("a config importing a shared config package is complete only with a lockfile (#201 review)", async () => {
+    const none = await report("refs-shared-config-no-lockfile", "globals");
+    assert.deepEqual(none.usages, []);
+    assert.equal(none.referenceAnalysisComplete, false);
+    const locked = await report("refs-shared-config-lockfile", "globals");
+    assert.deepEqual(locked.usages, []);
+    assert.equal(locked.referenceAnalysisComplete, true);
+  });
+
   it("pnpm: a script bin whose name differs from its package is a gap, never complete", async () => {
     const r = await report("refs-pnpm-bin-mismatch", "npm-check-updates");
     assert.equal(r.referenceAnalysisComplete, false);

@@ -1,0 +1,8 @@
+{
+  "description": "#201 review repro: eslint.config.js imports a shared config package. Its peers (eslint-import-resolver-typescript, globals) are referenced inside @acme/eslint-config, which is never read, and with no lockfile nothing shows the peer edges. The config stays unread (imports shared config package), so the peers must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "eslint-import-resolver-typescript" },
+    { "kind": "unused", "dependency": "globals" }
+  ]
+}

@@ -26,6 +26,8 @@ const ctx = (files: Record<string, string>): AdapterContext => ({
   repository: memoryHandle(files),
   network: { mode: "offline" },
 });
+const unread = async (context: AdapterContext, path = ".") =>
+  (await unreadConfigs(context, dep("anything", path))).map((u) => `${u.file}:${u.reason}`).sort();
 const via = async (context: AdapterContext, name: string, path = ".") =>
   (await findConfigUsages(context, dep(name, path))).map((u) => [u.via, u.file, u.line]);
 
@@ -132,11 +134,6 @@ describe("findConfigUsages", () => {
 });
 
 describe("unreadConfigs (coverage for referenceAnalysisComplete)", () => {
-  const unread = async (context: AdapterContext, path = ".") =>
-    (await unreadConfigs(context, dep("anything", path)))
-      .map((u) => `${u.file}:${u.reason}`)
-      .sort();
-
   it("is empty when every present config was parsed", async () => {
     const context = ctx({
       "package.json": `{"prettier": {"plugins": ["x"]}}`,
@@ -195,16 +192,16 @@ describe("unreadConfigs (coverage for referenceAnalysisComplete)", () => {
       ].join("\n"),
       "next.config.mjs": `import base from "../../eslint.config.js"; export default { transpilePackages: ["ui-kit"] };`,
     });
-    assert.deepEqual(await unread(context), []);
+    // vite.config imports the "vite" package and there is no lockfile.
+    assert.deepEqual(await unread(context), ["vite.config.ts:imports shared config package"]);
     assert.deepEqual(await via(context, "eslint-config-airbnb"), [["config", ".eslintrc.cjs", 2]]);
     assert.deepEqual(await via(context, "eslint-plugin-react"), [["config", ".eslintrc.cjs", 2]]);
     assert.deepEqual(await via(context, "@typescript-eslint/eslint-plugin"), [
       ["config", ".eslintrc.cjs", 3],
     ]);
-    assert.deepEqual(await via(context, "@stylistic/eslint-plugin"), [
-      ["config", ".eslintrc.cjs", 4],
-    ]);
-    assert.deepEqual(await via(context, "eslint-plugin-import"), [["config", ".eslintrc.cjs", 4]]);
+    // A rule id is not a package reference.
+    assert.deepEqual(await via(context, "@stylistic/eslint-plugin"), []);
+    assert.deepEqual(await via(context, "eslint-plugin-import"), []);
     assert.deepEqual(await via(context, "@babel/preset-env"), [["config", "babel.config.js", 1]]);
     assert.deepEqual(await via(context, "lodash-es"), [["config", "vite.config.ts", 3]]);
     assert.deepEqual(await via(context, "ui-kit"), [["config", "next.config.mjs", 1]]);
@@ -223,6 +220,84 @@ describe("unreadConfigs (coverage for referenceAnalysisComplete)", () => {
       ["config", ".eslintrc.json", 1],
     ]);
     assert.deepEqual(await unread(context, "packages/a"), ["eslint.config.js:malformed"]);
+  });
+});
+
+describe("JS/TS config string contract (#149, lead guardrails)", () => {
+  it("a declared dep named only inside a config string is credited via=config", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "vite.config.ts": `export default { optimizeDeps: { include: ["only-in-config"] } };`,
+    });
+    assert.deepEqual(await via(context, "only-in-config"), [["config", "vite.config.ts", 1]]);
+  });
+
+  it("outside a tool's own config, matching is exact: no subpath, prefix or substring", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "vite.config.ts": `export default { a: "pkg/sub", b: "prefix-pkg", c: "some pkg", d: "@s/p/x" };`,
+    });
+    for (const name of ["pkg", "prefix", "@s/p", "some"])
+      assert.deepEqual(await via(context, name), []);
+    assert.deepEqual(await via(context, "prefix-pkg"), [["config", "vite.config.ts", 1]]);
+  });
+
+  // The documented shorthands, and only in the tool's own config files.
+  const shorthands = [
+    [".eslintrc.cjs", "airbnb", "eslint-config-airbnb"],
+    ["eslint.config.js", "react", "eslint-plugin-react"],
+    ["eslint.config.js", "plugin:react/recommended", "eslint-plugin-react"],
+    ["eslint.config.js", "@scope", "@scope/eslint-plugin"],
+    ["eslint.config.js", "@scope/foo", "@scope/eslint-config-foo"],
+    ["babel.config.js", "@babel/env", "@babel/preset-env"],
+    [".babelrc.js", "module:metro", "babel-preset-metro"],
+    ["babel.config.cjs", "transform-runtime", "babel-plugin-transform-runtime"],
+    ["stylelint.config.mjs", "standard", "stylelint-config-standard"],
+    ["commitlint.config.js", "conventional", "commitlint-config-conventional"],
+    ["jest.config.ts", "jsdom", "jest-environment-jsdom"],
+  ] as const;
+  for (const [config, value, pkg] of shorthands) {
+    it(`${config}: "${value}" credits ${pkg}; the same string in vite.config.ts does not`, async () => {
+      const text = `export default { x: ${JSON.stringify(value)} };`;
+      assert.deepEqual(await via(ctx({ "package.json": "{}", [config]: text }), pkg), [
+        ["config", config, 1],
+      ]);
+      assert.deepEqual(await via(ctx({ "package.json": "{}", "vite.config.ts": text }), pkg), []);
+    });
+  }
+
+  it("a config importing a package is unread without a lockfile, read with one (#201 review)", async () => {
+    const files = {
+      "package.json": JSON.stringify({
+        devDependencies: { "@acme/eslint-config": "1.0.0", globals: "1.0.0" },
+      }),
+      "eslint.config.js": `import acme from "@acme/eslint-config";\nimport path from "node:path";\nexport default [...acme];`,
+    };
+    assert.deepEqual(await unread(ctx(files)), ["eslint.config.js:imports shared config package"]);
+    const lock = JSON.stringify({
+      name: "x",
+      lockfileVersion: 3,
+      packages: {
+        "": { devDependencies: { "@acme/eslint-config": "1.0.0", globals: "1.0.0" } },
+        "node_modules/@acme/eslint-config": {
+          version: "1.0.0",
+          dev: true,
+          peerDependencies: { globals: "*" },
+        },
+        "node_modules/globals": { version: "1.0.0", dev: true },
+      },
+    });
+    assert.deepEqual(await unread(ctx({ ...files, "package-lock.json": lock })), []);
+    // Only builtins and local configs imported: read regardless of a lockfile.
+    assert.deepEqual(
+      await unread(
+        ctx({
+          "package.json": "{}",
+          "eslint.config.js": `import path from "node:path"; export default [];`,
+        }),
+      ),
+      [],
+    );
   });
 });
 

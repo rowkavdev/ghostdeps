@@ -1,0 +1,8 @@
+{
+  "description": "#201 review repro with a lockfile: the graph is complete and records @acme/eslint-config's peers, so eslint.config.js counts as read and the peers are suppressed by required-by-direct-dependency rather than reported unused.",
+  "findings": [],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "eslint-import-resolver-typescript" },
+    { "kind": "unused", "dependency": "globals" }
+  ]
+}
