@@ -1,0 +1,1 @@
+{"name":"gitdeps","dependencies":{"internal-lib":"git+https://github.com/example/internal-lib.git#v2"}}

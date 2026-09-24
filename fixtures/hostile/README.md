@@ -44,9 +44,30 @@ names, case and NFC normalisation collisions - plus the clean control.
 
 ## Parser-hostile repository fixtures (`repo-*`)
 
-Planned next under issue #22: malformed manifests, package.json with no
-JS source, lockfile mismatches, dynamic/conditional/aliased imports,
-git/path dependencies, cyclic workspaces, weird encodings, and
-import-name != package-name cases. Each carries `expected.json` describing
-what a correct analysis must (or must not) report, so adapter lanes can
-wire them into their suites.
+Small repository trees attacking the *parsers and detectors* rather than
+the extractor: malformed manifests (broken JSON, duplicate keys, BOM,
+UTF-16), package.json with no JS source, lockfile/manifest skew, dynamic
+and conditional imports, tsconfig path aliases, git/file/link/npm-alias
+dependencies, cyclic workspaces, nested monorepos with vendored trees,
+symlinked trees, and import-name != package-name (JS subpaths, Python
+PIL/bs4/yaml).
+
+Each directory is a scenario with `expected.json` describing what a
+correct analysis must (or must not) report, using a small assertion
+vocabulary:
+
+- `parse.mustNotCrash` - malformed input degrades confidence, never crashes
+- `detection.excludes <ecosystem>` - adapter must stay below threshold
+- `dependencies.includes/excludes <name>` - dependency model facts
+- `unused.excludes <name>` - must never be reported unused
+- `projects.includes/excludes <path>` - monorepo project discovery
+- `limitations.includes "<text>"` - the analysis must say what it could not do
+- `confidence.atMost <level>` - verdict confidence ceiling
+
+A scenario may set `"posixOnly": true` when its tree relies on real
+symlinks or other POSIX filesystem semantics that do not survive a
+default Windows checkout; suites must skip such fixtures there.
+
+Adapter lanes wire these into their test suites as their parsers land;
+an expectation that cannot be checked yet is still the documented
+contract.

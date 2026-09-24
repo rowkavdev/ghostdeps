@@ -1,0 +1,14 @@
+{
+  "description": "Python source with latin-1 bytes and a coding cookie, plus a UTF-8 file containing invalid byte sequences. Usage scanners must not crash on undecodable source.",
+  "expectations": [
+    {
+      "assert": "parse.mustNotCrash",
+      "why": "Encoding tricks are parser hardening cases."
+    },
+    {
+      "assert": "unused.excludes",
+      "dependency": "requests",
+      "why": "Genuinely imported; encoding must not hide usage."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "description": "package.json encoded UTF-16 LE with BOM. Not valid JSON by spec; parser must not crash and must not silently read garbage.",
+  "expectations": [
+    {
+      "assert": "parse.mustNotCrash",
+      "why": "Encoding tricks are parser hardening cases (security model rule 3)."
+    },
+    {
+      "assert": "limitations.includes",
+      "contains": "package.json",
+      "why": "If the manifest cannot be decoded, say so."
+    }
+  ]
+}

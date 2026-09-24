@@ -1,0 +1,20 @@
+{
+  "description": "PyPI name != import name: Pillow->PIL, beautifulsoup4->bs4, PyYAML->yaml. The classic source of false 'unused' verdicts in Python dependency tools.",
+  "expectations": [
+    {
+      "assert": "unused.excludes",
+      "dependency": "Pillow",
+      "why": "Imported as PIL; name mapping is required (issue #46 territory)."
+    },
+    {
+      "assert": "unused.excludes",
+      "dependency": "beautifulsoup4",
+      "why": "Imported as bs4."
+    },
+    {
+      "assert": "unused.excludes",
+      "dependency": "PyYAML",
+      "why": "Imported as yaml."
+    }
+  ]
+}
