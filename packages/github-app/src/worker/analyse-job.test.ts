@@ -501,6 +501,7 @@ index 3333333..4444444 100644
       result?: AnalysisResult;
       rerun?: AnalysisJob;
       cache?: ResultCache | false;
+      metadata?: NpmMetadataService;
     }) {
       const cache = opts.cache ?? new ResultCache();
       let calls = 0;
@@ -513,8 +514,14 @@ index 3333333..4444444 100644
           workRoot: await workRoot(),
           fetch: fetchServing(tarGz(prRepo)),
           resultCache: cache,
-          analyse: async () => {
+          ...(opts.metadata ? { metadata: opts.metadata } : {}),
+          analyse: async (_root, _mods, run) => {
             calls++;
+            // Stand in for core asking for footprints.
+            await run.metadata?.installSizes({
+              ecosystem: "javascript-typescript",
+              packages: [{ name: "a", version: "1.0.0", origin: "https://registry.npmjs.org" }],
+            });
             return opts.result ?? emptyResult;
           },
         });
@@ -529,6 +536,21 @@ index 3333333..4444444 100644
       const { calls, outputs } = await runBoth({});
       assert.equal(calls, 1);
       assert.deepEqual(outputs[1], outputs[0]);
+    });
+
+    it("caches with a complete footprint, never with a truncated one (#313 review)", async () => {
+      const sized = async () => ({
+        status: 200,
+        headers: { get: () => null },
+        body: (async function* () {
+          yield Buffer.from(JSON.stringify({ dist: { unpackedSize: 10 } }));
+        })(),
+      });
+      const complete = new NpmMetadataService({ fetch: sized });
+      assert.equal((await runBoth({ metadata: complete })).calls, 1);
+      // A zero budget truncates every answer: post it, but don't cache it.
+      const truncated = new NpmMetadataService({ fetch: sized, fetchBudget: 0 });
+      assert.equal((await runBoth({ metadata: truncated })).calls, 2);
     });
 
     it("misses on a different base SHA or source-only flag", async () => {

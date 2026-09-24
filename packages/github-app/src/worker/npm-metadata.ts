@@ -32,8 +32,26 @@ export type FetchLike = (
   status: number;
   headers: { get(name: string): string | null };
   /** The response body as a byte stream (a web ReadableStream is async iterable). */
-  body: AsyncIterable<Uint8Array> | null;
+  body: (AsyncIterable<Uint8Array> & { cancel?(): Promise<void> }) | null;
 }>;
+
+/**
+ * A provider for one run. `complete` is true only when every answer it gave
+ * was fully resolved and none is still pending, so callers can refuse to
+ * persist anything built on a truncated footprint (#313 review).
+ */
+export interface RunMetadataProvider extends PackageMetadataProvider {
+  readonly complete: boolean;
+}
+
+/** Drop a body we won't read, so the connection can be reused (#313 review). */
+async function discard(body: { cancel?(): Promise<void> } | null): Promise<void> {
+  try {
+    await body?.cancel?.();
+  } catch {
+    // Nothing to clean up if cancelling fails.
+  }
+}
 
 /**
  * The body as text, or undefined once it passes `max` bytes. Reads the
@@ -174,10 +192,16 @@ export class NpmMetadataService {
   }
 
   /** A provider for one analysis run. */
-  forRun(): PackageMetadataProvider {
+  forRun(): RunMetadataProvider {
     let budget = this.#options.fetchBudget;
+    let pending = 0;
+    let truncated = false;
     return {
+      get complete() {
+        return pending === 0 && !truncated;
+      },
       installSizes: async ({ ecosystem, packages }) => {
+        pending++;
         try {
           if (ecosystem !== NPM_ECOSYSTEM || !Array.isArray(packages)) return undefined;
           // Anything not resolved from the public registry is skipped
@@ -192,9 +216,13 @@ export class NpmMetadataService {
           // Only a fully resolved answer stands for the whole set: one cut
           // short by the budget, deadline or a transient failure retries.
           if (complete) this.#answers.set(key, answer);
+          else truncated = true;
           return answer;
         } catch {
+          truncated = true;
           return undefined;
+        } finally {
+          pending--;
         }
       },
     };
@@ -263,10 +291,19 @@ export class NpmMetadataService {
         redirect: "error",
         signal,
       });
-      if (res.status === 404) return null;
-      if (res.status !== 200) return "transient";
+      if (res.status === 404) {
+        await discard(res.body);
+        return null;
+      }
+      if (res.status !== 200) {
+        await discard(res.body);
+        return "transient";
+      }
       const length = Number(res.headers.get("content-length"));
-      if (Number.isFinite(length) && length > this.#options.maxResponseBytes) return null;
+      if (Number.isFinite(length) && length > this.#options.maxResponseBytes) {
+        await discard(res.body);
+        return null;
+      }
       const body = await readCapped(res.body, this.#options.maxResponseBytes);
       if (body === undefined) return null;
       const doc: unknown = JSON.parse(body);
