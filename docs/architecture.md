@@ -34,7 +34,7 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 
 ## The core pipeline
 
-1. **Repository discovery.** Walk the repository through a read-only `RepositoryHandle`. Identify candidate projects, including workspaces and monorepo sub-projects. Skip vendor/generated directories.
+1. **Repository discovery.** Walk the repository through a read-only `RepositoryHandle`. Identify candidate projects, including workspaces and monorepo sub-projects. Skip vendor/generated directories. See [repository-scanner.md](repository-scanner.md).
 2. **Ecosystem detection.** Every adapter's `detect()` runs and returns a confidence-scored result with evidence. Adapters below threshold are skipped — `package.json` present but no meaningful JS/TS source means no JS analysis.
 3. **Package-manager detection.** Within each detected ecosystem, identify the package manager(s) from lockfiles and manifests (npm/pnpm/Yarn/Bun; pip/Poetry/uv/Pipenv; Cargo; Go Modules), per project.
 4. **Dependency model.** Parse manifests into a normalised `Dependency` model: name, version constraint, kind (runtime/dev/peer/optional/build), scope (root vs workspace package).
