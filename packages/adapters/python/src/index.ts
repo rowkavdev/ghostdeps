@@ -9,3 +9,10 @@ export {
   detectPython,
   isRequirementsFile,
 } from "./detect.js";
+export {
+  ImportResolver,
+  KNOWN_IMPORT_NAMES,
+  firstPartyModules,
+  readTopLevelMetadata,
+  type ImportResolution,
+} from "./import-map.js";
