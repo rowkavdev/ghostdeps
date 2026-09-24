@@ -10,6 +10,7 @@
  */
 import { parse as parseToml } from "smol-toml";
 import type { Dependency, DependencyKind, Evidence, ProjectRef } from "@ghostdeps/core";
+import { PyprojectLines } from "./declared-line.js";
 import { normaliseName, parseRequirement } from "./pep508.js";
 
 /** A declared requirement with the Python-specific facts Dependency cannot carry. */
@@ -58,6 +59,7 @@ class Collector {
   constructor(
     private readonly project: ProjectRef,
     readonly declaredIn: string,
+    readonly lines?: PyprojectLines,
   ) {}
 
   add(
@@ -65,7 +67,13 @@ class Collector {
     constraint: string,
     kind: DependencyKind,
     extras: string[],
-    options: { marker?: string; group?: string; specifier?: Dependency["specifier"] } = {},
+    options: {
+      marker?: string;
+      group?: string;
+      specifier?: Dependency["specifier"];
+      /** Declaring line (#280); the first declaration of a name+kind keeps it. */
+      line?: number | undefined;
+    } = {},
   ): void {
     const normalised = normaliseName(name);
     // One Dependency per name and kind (as every adapter emits): repeats
@@ -93,6 +101,7 @@ class Collector {
       declaredIn: this.declaredIn,
     };
     if (options.specifier !== undefined) dependency.specifier = options.specifier;
+    if (options.line !== undefined) dependency.declaredLine = options.line;
     const requirement: PythonRequirement = {
       dependency,
       extras: [...extras],
@@ -104,7 +113,12 @@ class Collector {
   }
 
   /** A PEP 508 string from PEP 621, PEP 735, build-system or uv. */
-  addPep508(text: string, kind: DependencyKind, group?: string): string | undefined {
+  addPep508(
+    text: string,
+    kind: DependencyKind,
+    group: string | undefined,
+    at: { section: string; key: string },
+  ): string | undefined {
     const req = parseRequirement(text);
     if (req === undefined) {
       this.evidence.push({
@@ -114,10 +128,16 @@ class Collector {
       });
       return undefined;
     }
-    const options: { marker?: string; group?: string; specifier?: Dependency["specifier"] } = {};
+    const options: {
+      marker?: string;
+      group?: string;
+      specifier?: Dependency["specifier"];
+      line?: number | undefined;
+    } = {};
     if (req.marker !== undefined) options.marker = req.marker;
     if (group !== undefined) options.group = group;
     if (req.url !== undefined) options.specifier = classifyUrl(req.url);
+    options.line = this.lines?.pep508(at.section, at.key, req.rawName, req.name);
     this.add(req.rawName, req.url ?? req.specifier, kind, req.extras, options);
     return req.name;
   }
@@ -152,13 +172,18 @@ function parsePep621(doc: Table, out: Collector, extras: Record<string, string[]
         file: out.declaredIn,
       });
     }
-    for (const text of strings(project.dependencies)) out.addPep508(text, "runtime");
+    for (const text of strings(project.dependencies)) {
+      out.addPep508(text, "runtime", undefined, { section: "project", key: "dependencies" });
+    }
     const optional = table(project, "optional-dependencies") ?? {};
     for (const [extra, list] of Object.entries(optional)) {
       const name = normaliseName(extra);
       const members: string[] = [];
       for (const text of strings(list)) {
-        const dep = out.addPep508(text, "optional", name);
+        const dep = out.addPep508(text, "optional", name, {
+          section: "project.optional-dependencies",
+          key: extra,
+        });
         if (dep !== undefined) members.push(dep);
       }
       extras[name] = members;
@@ -170,11 +195,20 @@ function parsePep621(doc: Table, out: Collector, extras: Record<string, string[]
   // are skipped: their members are listed in the included group.
   const groups = table(doc, "dependency-groups") ?? {};
   for (const [group, list] of Object.entries(groups)) {
-    for (const text of strings(list)) out.addPep508(text, "dev", normaliseName(group));
+    for (const text of strings(list)) {
+      out.addPep508(text, "dev", normaliseName(group), {
+        section: "dependency-groups",
+        key: group,
+      });
+    }
   }
-  for (const text of strings(table(doc, "build-system")?.requires)) out.addPep508(text, "build");
+  for (const text of strings(table(doc, "build-system")?.requires)) {
+    out.addPep508(text, "build", undefined, { section: "build-system", key: "requires" });
+  }
   const uv = table(table(doc, "tool"), "uv");
-  for (const text of strings(uv?.["dev-dependencies"])) out.addPep508(text, "dev");
+  for (const text of strings(uv?.["dev-dependencies"])) {
+    out.addPep508(text, "dev", undefined, { section: "tool.uv", key: "dev-dependencies" });
+  }
 }
 
 /** One Poetry constraint: "^1.2", {version, extras, optional, markers, git|path|url}, or a list of those. */
@@ -185,9 +219,11 @@ function parsePoetryEntry(
   out: Collector,
   group: string | undefined,
   declaredIn: string,
+  section: string,
 ): void {
+  const line = out.lines?.tableKey(section, name, normaliseName(name));
   if (typeof value === "string") {
-    const options: { group?: string } = {};
+    const options: { group?: string; line?: number | undefined } = { line };
     if (group !== undefined) options.group = group;
     out.add(name, value, kind, [], options);
     return;
@@ -222,7 +258,12 @@ function parsePoetryEntry(
   const markers = entries
     .map((entry) => (typeof entry.markers === "string" ? entry.markers : undefined))
     .filter((m): m is string => m !== undefined);
-  const options: { marker?: string; group?: string; specifier?: Dependency["specifier"] } = {};
+  const options: {
+    marker?: string;
+    group?: string;
+    specifier?: Dependency["specifier"];
+    line?: number | undefined;
+  } = { line };
   if (markers.length > 0) options.marker = markers.join(" or ");
   if (group !== undefined) options.group = group;
   if (specifier !== undefined) options.specifier = specifier;
@@ -248,20 +289,30 @@ function parsePoetry(
   }
   for (const [name, value] of Object.entries(table(poetry, "dependencies") ?? {})) {
     if (name.toLowerCase() === "python") continue;
-    parsePoetryEntry(name, value, "runtime", out, extraOf.get(normaliseName(name)), declaredIn);
+    parsePoetryEntry(
+      name,
+      value,
+      "runtime",
+      out,
+      extraOf.get(normaliseName(name)),
+      declaredIn,
+      "tool.poetry.dependencies",
+    );
   }
   for (const [name, value] of Object.entries(table(poetry, "dev-dependencies") ?? {})) {
-    parsePoetryEntry(name, value, "dev", out, "dev", declaredIn);
+    parsePoetryEntry(name, value, "dev", out, "dev", declaredIn, "tool.poetry.dev-dependencies");
   }
   for (const [group, body] of Object.entries(table(poetry, "group") ?? {})) {
     // group.main is Poetry's name for [tool.poetry.dependencies]: runtime.
     const main = normaliseName(group) === "main";
+    const section = `tool.poetry.group.${group}.dependencies`;
     for (const [name, value] of Object.entries(table(body, "dependencies") ?? {})) {
       if (name.toLowerCase() === "python") continue;
       if (main) {
-        parsePoetryEntry(name, value, "runtime", out, extraOf.get(normaliseName(name)), declaredIn);
+        const extra = extraOf.get(normaliseName(name));
+        parsePoetryEntry(name, value, "runtime", out, extra, declaredIn, section);
       } else {
-        parsePoetryEntry(name, value, "dev", out, normaliseName(group), declaredIn);
+        parsePoetryEntry(name, value, "dev", out, normaliseName(group), declaredIn, section);
       }
     }
   }
@@ -293,7 +344,7 @@ export function parsePyprojectText(
       ],
     };
   }
-  const out = new Collector(project, declaredIn);
+  const out = new Collector(project, declaredIn, new PyprojectLines(text));
   const extras: Record<string, string[]> = {};
   if (isTable(doc)) {
     parsePep621(doc, out, extras);
