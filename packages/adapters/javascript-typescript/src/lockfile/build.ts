@@ -22,6 +22,27 @@ import { MAX_LOCKFILE_BYTES } from "@ghostdeps/core";
 
 export { MAX_LOCKFILE_BYTES };
 
+/** lockfile-manifest-mismatch entries kept individually per graph; the rest are summarised. */
+export const MAX_MISMATCH_EVIDENCE = 50;
+
+/** Keep the first MAX_MISMATCH_EVIDENCE mismatches, then one summary entry with the dropped count. */
+export function capMismatchEvidence(evidence: Evidence[], lockfile: string): Evidence[] {
+  const out: Evidence[] = [];
+  let mismatches = 0;
+  for (const e of evidence) {
+    if (e.kind === "lockfile-manifest-mismatch" && ++mismatches > MAX_MISMATCH_EVIDENCE) continue;
+    out.push(e);
+  }
+  if (mismatches > MAX_MISMATCH_EVIDENCE) {
+    out.push({
+      kind: "lockfile-manifest-mismatch-summary",
+      statement: `${mismatches - MAX_MISMATCH_EVIDENCE} more lockfile/manifest mismatches in ${lockfile} were not listed individually`,
+      file: lockfile,
+    });
+  }
+  return out;
+}
+
 type Format = "npm" | "pnpm" | "yarn" | "bun" | "bun-binary";
 const LOCKFILES: [string, Format][] = [
   ["npm-shrinkwrap.json", "npm"],
@@ -182,7 +203,7 @@ export async function buildLockfileGraph(
     });
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
-  evidence.push(...parsed.evidence);
+  evidence.push(...capMismatchEvidence(parsed.evidence, lock.path));
   const assembled = assembleGraph(project, parsed);
   evidence.push(...assembled.evidence);
   const graph = assembled.graph;

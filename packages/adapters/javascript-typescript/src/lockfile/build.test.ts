@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AdapterContext, ProjectRef } from "@ghostdeps/core";
 import { FIXTURES_ROOT, fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
-import { buildLockfileGraph } from "./build.js";
+import { MAX_LOCKFILE_BYTES as CORE_MAX_LOCKFILE_BYTES } from "@ghostdeps/core";
+import { MAX_LOCKFILE_BYTES, MAX_MISMATCH_EVIDENCE, buildLockfileGraph } from "./build.js";
 
 const project = (p = ".", pm: string[] = []): ProjectRef => ({
   path: p,
@@ -378,5 +379,35 @@ describe("buildLockfileGraph", () => {
     const elapsed = performance.now() - started;
     assert.equal(res.graph.transitiveClosure.p0?.length, N - 1);
     assert.ok(elapsed < 5000, `took ${Math.round(elapsed)} ms`);
+  });
+});
+
+describe("lockfile hardening (#91)", () => {
+  it("re-exports core's single lockfile ceiling", () => {
+    assert.equal(MAX_LOCKFILE_BYTES, CORE_MAX_LOCKFILE_BYTES);
+  });
+
+  it("caps lockfile-manifest-mismatch evidence per graph and summarises the rest", async () => {
+    const extra = 9;
+    const declared: Record<string, string> = {};
+    for (let i = 0; i < MAX_MISMATCH_EVIDENCE + extra; i++) declared[`missing-${i}`] = "1";
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": JSON.stringify({ dependencies: declared }),
+          "package-lock.json": JSON.stringify({
+            lockfileVersion: 3,
+            // Stale lockfile: every declared dep is missing from the root entry.
+            packages: { "": {} },
+          }),
+        }),
+      ),
+      project(),
+    );
+    const mismatches = res.evidence.filter((e) => e.kind === "lockfile-manifest-mismatch");
+    assert.equal(mismatches.length, MAX_MISMATCH_EVIDENCE);
+    const summary = res.evidence.filter((e) => e.kind === "lockfile-manifest-mismatch-summary");
+    assert.equal(summary.length, 1);
+    assert.match(summary[0]!.statement, new RegExp(`^${extra} more`));
   });
 });
