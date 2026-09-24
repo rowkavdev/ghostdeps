@@ -1,0 +1,139 @@
+/**
+ * The analysis worker (#127, ADR 0003): turns an AnalysisJob into a check run.
+ *
+ *   job -> repo-scoped installation client -> codeload tarball
+ *       -> core extractTarball (inert, hostile-input validated)
+ *       -> core analyseRepositoryIsolated (adapters in worker threads, #112)
+ *       -> CheckReporter
+ *
+ * Repository code is never executed: the tarball is only extracted through
+ * core, and adapters parse files statically inside isolated workers.
+ */
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  analyseRepositoryIsolated,
+  extractTarball,
+  ExtractionError,
+  FsRepositoryHandle,
+  type AnalysisResult,
+} from "@ghostdeps/core";
+import type { AddedLines } from "../checks/diff.js";
+import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
+import type { AnalysisJob, JobWorker } from "../jobs.js";
+import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
+
+/** Adapter modules run by default, as specifiers core's isolation tier can import. */
+export const DEFAULT_ADAPTER_MODULES: readonly string[] = [
+  new URL("./adapters/javascript-typescript.js", import.meta.url).href,
+];
+
+/** Everything the worker needs from GitHub, scoped to one repository. */
+export type RepositoryClient = ChecksClient & TarballClient;
+
+export interface AnalysisWorkerOptions {
+  /** Our GitHub App id, so the reporter only ever counts our own runs. */
+  readonly appId: number;
+  /** A client whose token is scoped to this one repository (and our permission subset). */
+  readonly clientFor: (job: AnalysisJob) => Promise<RepositoryClient>;
+  readonly adapterModules?: readonly string[];
+  /** Parent directory for per-job checkouts. Default: the OS temp dir. */
+  readonly workRoot?: string;
+  readonly maxTarballBytes?: number;
+  /** Wall-clock budget for download + extraction. Default 5 minutes. */
+  readonly downloadTimeoutMs?: number;
+  readonly fetch?: typeof fetch;
+  /** Swap the engine in tests. Defaults to core's isolated engine. */
+  readonly analyse?: (root: string, adapterModules: readonly string[]) => Promise<AnalysisResult>;
+  readonly log?: {
+    info(obj: object, msg: string): void;
+    warn(obj: object, msg: string): void;
+  };
+}
+
+async function analyseIsolated(root: string, adapterModules: readonly string[]) {
+  const handle = await FsRepositoryHandle.open(root);
+  return analyseRepositoryIsolated(handle, { adapters: adapterModules });
+}
+
+/** Codeload tarballs wrap everything in one `owner-repo-sha/` directory. */
+async function checkoutRoot(dir: string): Promise<string> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const only = entries.length === 1 ? entries[0] : undefined;
+  return only?.isDirectory() ? join(dir, only.name) : dir;
+}
+
+/** A plain, repository-free explanation for the check summary. */
+export function failureReason(error: unknown): string {
+  if (error instanceof ExtractionError) {
+    return `the repository archive was rejected by the safety checks (${error.code}).`;
+  }
+  if (error instanceof TarballError) {
+    return error.code === "TOO_LARGE"
+      ? "the repository archive is larger than GhostDeps will download."
+      : "the repository archive could not be downloaded.";
+  }
+  if (error instanceof Error && error.name === "TimeoutError") {
+    return "downloading the repository archive took too long.";
+  }
+  return "an internal error stopped the analysis.";
+}
+
+export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker {
+  const adapterModules = options.adapterModules ?? DEFAULT_ADAPTER_MODULES;
+  const analyse = options.analyse ?? analyseIsolated;
+  const timeoutMs = options.downloadTimeoutMs ?? 5 * 60 * 1000;
+
+  return async (job) => {
+    const client = await options.clientFor(job);
+    const reporter = new CheckReporter(client);
+    const target: CheckTarget = {
+      owner: job.repository.owner,
+      repo: job.repository.name,
+      headSha: job.headSha,
+      externalId: job.key,
+      appId: options.appId,
+    };
+
+    let checkRunId: number;
+    if (job.trigger.kind === "rerequested") {
+      checkRunId = await reporter.restart(target);
+    } else {
+      const claim = await reporter.start(target);
+      if (!claim.created) {
+        options.log?.info({ job: job.key }, "SHA already has a GhostDeps run; skipped");
+        return;
+      }
+      checkRunId = claim.checkRunId;
+    }
+
+    const workDir = await mkdtemp(join(options.workRoot ?? tmpdir(), "ghostdeps-"));
+    try {
+      const url = await tarballUrl(client, {
+        owner: target.owner,
+        repo: target.repo,
+        sha: job.headSha,
+      });
+      const destDir = join(workDir, "checkout");
+      await extractTarball(
+        downloadTarball(url, {
+          signal: AbortSignal.timeout(timeoutMs),
+          ...(options.maxTarballBytes !== undefined ? { maxBytes: options.maxTarballBytes } : {}),
+          ...(options.fetch ? { fetch: options.fetch } : {}),
+        }),
+        { destDir },
+      );
+      const result = await analyse(await checkoutRoot(destDir), adapterModules);
+      // PR-scoped annotation lines arrive with #115; until then no annotations.
+      const added: AddedLines = new Map();
+      await reporter.complete(target, checkRunId, result, added);
+      options.log?.info({ job: job.key, findings: result.findings.length }, "analysis complete");
+    } catch (error) {
+      options.log?.warn({ job: job.key, err: error }, "analysis failed");
+      await reporter.fail(target, checkRunId, failureReason(error));
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  };
+}

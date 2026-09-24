@@ -225,6 +225,9 @@ importers:
       '@ghostdeps/core':
         specifier: workspace:*
         version: link:../core
+      '@ghostdeps/javascript-typescript':
+        specifier: workspace:*
+        version: link:../adapters/javascript-typescript
       probot:
         specifier: ^14.3.2
         version: 14.3.2

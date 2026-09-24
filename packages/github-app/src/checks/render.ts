@@ -172,3 +172,18 @@ export function busyCheck(): CheckOutput {
     output: { title: "GhostDeps was busy", summary: busySummary, annotations: [] },
   };
 }
+
+/**
+ * Output for an analysis that could not finish (download, extraction or
+ * engine failure). Neutral, never failure: GhostDeps advises, it does not gate.
+ * `reason` is our own message, never repository content.
+ */
+export function failedCheck(reason: string): CheckOutput {
+  const summary = truncateSummary(
+    `GhostDeps could not analyse this commit: ${md(reason)}\n\nNothing was checked, so nothing is blocked. Use Re-run on this check to try again.`,
+  );
+  return {
+    conclusion: "neutral",
+    output: { title: "GhostDeps could not run", summary, annotations: [] },
+  };
+}

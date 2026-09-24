@@ -8,7 +8,7 @@ What is here (M0):
 - `src/jobs.ts` - the job boundary: `AnalysisJob`, the `JobQueue` interface, and the v0.1 `InProcessJobQueue` (bounded concurrency, duplicate (repository id, head SHA) keys collapse onto one job).
 - `test/fixtures/` - webhook payloads the tests sign and post through the real middleware.
 
-Not yet: push handling and the event pre-filter (#36), the check run reporter (#32), the analysis worker.
+- `src/worker/` - the analysis worker: repo-scoped token, codeload tarball, core extraction and isolated analysis, then the check run (see docs/github-app.md).
 
 ## Running locally
 

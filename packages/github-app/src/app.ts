@@ -1,17 +1,22 @@
 import type { ApplicationFunction, Probot } from "probot";
 import { BusyLimiter } from "./checks/busy-limiter.js";
 import { CheckReporter } from "./checks/reporter.js";
+import { appIdFromEnv } from "./config.js";
 import { changedFiles } from "./events/changed-files.js";
 import { checkName } from "./checks/render.js";
 import { analysedEvents, decide, type ChangedFilesLookup } from "./events/filter.js";
 import { decideRerequest } from "./events/rerequested.js";
-import { InProcessJobQueue, type JobQueue } from "./jobs.js";
+import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
+import { createAnalysisWorker } from "./worker/analyse-job.js";
+import { repoScopedClients } from "./worker/github-client.js";
 
 export const HEALTH_PATH = "/healthz";
 
 export interface GhostDepsAppOptions {
-  /** Job boundary. Defaults to an in-process queue whose worker only logs (the analysis worker lands separately). */
+  /** Job boundary. Defaults to an in-process queue running the analysis worker. */
   readonly queue?: JobQueue;
+  /** Worker for the default queue. Defaults to the analysis worker (#127). */
+  readonly worker?: JobWorker;
   /**
    * This GitHub App's id, used to recognise our own check runs. Defaults to
    * the APP_ID environment variable that `probot run` also reads. Without it,
@@ -24,19 +29,21 @@ export interface GhostDepsAppOptions {
 
 export function createGhostDepsApp(options: GhostDepsAppOptions = {}): ApplicationFunction {
   return (app: Probot, { addHandler }) => {
-    const envAppId = Number(process.env.APP_ID);
-    const appId =
-      options.appId ?? (Number.isInteger(envAppId) && envAppId > 0 ? envAppId : undefined);
+    const appId = options.appId ?? appIdFromEnv();
     const busyLimiter = options.busyLimiter ?? new BusyLimiter();
+    const worker: JobWorker =
+      options.worker ??
+      (appId === undefined
+        ? async (job) => {
+            // Without our app id the reporter cannot recognise its own runs,
+            // so write nothing rather than duplicate check runs.
+            app.log.warn({ job: job.key }, "APP_ID is not a valid app id; analysis skipped");
+          }
+        : createAnalysisWorker({ appId, clientFor: repoScopedClients(app), log: app.log }));
     const queue =
       options.queue ??
       new InProcessJobQueue({
-        worker: async (job) => {
-          app.log.info(
-            { job: job.key, trigger: job.trigger.kind },
-            "analysis job received (no worker yet)",
-          );
-        },
+        worker,
         onError: (job, error) => app.log.error({ job: job.key, err: error }, "analysis job failed"),
       });
 
