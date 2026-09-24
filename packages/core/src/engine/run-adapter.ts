@@ -120,6 +120,11 @@ export interface AdapterOutcome {
   usages: Usage[];
   graphs: DependencyGraph[];
   usageAnalysed: boolean;
+  /**
+   * Usage analysis completed, the adapter declares "referenceAnalysis", and
+   * every findUsage result reported referenceAnalysisComplete: true.
+   */
+  referenceAnalysed?: boolean;
   findings: Finding[];
 }
 
@@ -231,16 +236,20 @@ export async function runAdapter(
                 controller.signal,
                 async (dep) => normaliseUsageResult(await adapter.findUsage!(context, dep)),
               );
-              // referenceAnalysisComplete is consumed by the policy engine (#121).
-              return perDependency.flatMap((result) => result.usages);
+              return {
+                usages: perDependency.flatMap((result) => result.usages),
+                // One incomplete dependency clears the ecosystem for this run.
+                complete: perDependency.every((result) => result.referenceAnalysisComplete),
+              };
             },
             timeoutMs,
             "usage analysis",
             controller,
           ).then(
-            (usages) => {
+            ({ usages, complete }) => {
               outcome.usages = usages;
               outcome.usageAnalysed = true;
+              outcome.referenceAnalysed = adapter.capabilities.has("referenceAnalysis") && complete;
             },
             (error: unknown) => {
               outcome.findings.push(adapterFailure(adapter, "usage analysis", error));

@@ -54,20 +54,24 @@ const added = (name: string, ecosystem = "javascript-typescript"): DependencyCha
 /** Example scoped policy: flags unused deps, scoped to PR changes in pull-request mode. */
 const scopedUnused: RecommendationPolicy = (input) => {
   const touched = new Set((input.pullRequestChanges ?? []).map((c) => c.name));
-  return input.dependencies
-    .filter((d) => input.usageAnalysedEcosystems.has(d.project.ecosystem))
-    .filter((d) => input.mode === "full" || touched.has(d.name))
-    .filter((d) => !input.usages.some((u) => u.dependency === d.name))
-    .map((d): Finding => ({
-      kind: "unused",
-      dependency: d.name,
-      summary: `${d.name} is never imported`,
-      recommendation: "Remove it.",
-      evidence: [{ kind: "no-import-found", statement: "no imports" }],
-      confidence: "high",
-      limitations: [],
-      affectedFiles: [d.declaredIn],
-    }));
+  return (
+    input.dependencies
+      .filter((d) => input.usageAnalysedEcosystems.has(d.project.ecosystem))
+      // High-confidence absence claims need complete reference analysis.
+      .filter((d) => input.referenceAnalysedEcosystems.has(d.project.ecosystem))
+      .filter((d) => input.mode === "full" || touched.has(d.name))
+      .filter((d) => !input.usages.some((u) => u.dependency === d.name))
+      .map((d): Finding => ({
+        kind: "unused",
+        dependency: d.name,
+        summary: `${d.name} is never imported`,
+        recommendation: "Remove it.",
+        evidence: [{ kind: "no-import-found", statement: "no imports" }],
+        confidence: "high",
+        limitations: [],
+        affectedFiles: [d.declaredIn],
+      }))
+  );
 };
 
 describe("analyseRepository pullRequestChanges (#128)", () => {

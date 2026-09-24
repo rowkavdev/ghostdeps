@@ -26,6 +26,7 @@ const baseFacts = {
   ],
   graphs: [],
   usageAnalysedEcosystems: new Set(["javascript-typescript"]),
+  referenceAnalysedEcosystems: new Set(["javascript-typescript"]),
 };
 
 /** Facts for both engine modes. PR mode touches only the "added-*" deps and a removal. */
@@ -83,7 +84,11 @@ export function runRecommendationPolicyContractTests(
       });
 
       it(`${label}: never calls a dependency unused where usage was not analysed`, async () => {
-        const notAnalysed = { ...input, usageAnalysedEcosystems: new Set<string>() };
+        const notAnalysed = {
+          ...input,
+          usageAnalysedEcosystems: new Set<string>(),
+          referenceAnalysedEcosystems: new Set<string>(),
+        };
         const findings = await policy(notAnalysed);
         assert.deepEqual(
           findings.filter((f) => f.kind === "unused"),
@@ -91,6 +96,21 @@ export function runRecommendationPolicyContractTests(
         );
       });
     }
+
+    it("absence findings stay at most medium when reference analysis is incomplete", async () => {
+      for (const input of Object.values(fixtures)) {
+        const incomplete = { ...input, referenceAnalysedEcosystems: new Set<string>() };
+        for (const finding of await policy(incomplete)) {
+          if (finding.kind === "unused" || finding.kind === "potentially-unnecessary") {
+            assert.notEqual(
+              finding.confidence,
+              "high",
+              `${finding.dependency}: a confident absence claim needs complete evidence`,
+            );
+          }
+        }
+      }
+    });
 
     it("pull-request mode: findings only concern dependencies the PR touched", async () => {
       const input = fixtures.pullRequest;

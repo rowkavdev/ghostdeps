@@ -257,8 +257,15 @@ describe("capOutcome (#123 review)", () => {
     findings: [],
   });
 
+  it("keeps referenceAnalysed only when it is exactly true", () => {
+    const posted = { ...baseOutcome(), referenceAnalysed: "yes" } as unknown as AdapterOutcome;
+    assert.equal(capOutcome(posted).referenceAnalysed, false);
+    assert.equal(capOutcome({ ...baseOutcome(), referenceAnalysed: true }).referenceAnalysed, true);
+  });
+
   it("marks usage analysis incomplete when usages are capped", () => {
     const outcome = baseOutcome();
+    outcome.referenceAnalysed = true;
     outcome.dependencies = [
       { name: "late-dep", constraint: "^1.0.0", kind: "runtime", project, declaredIn: "m" },
     ];
@@ -286,6 +293,7 @@ describe("capOutcome (#123 review)", () => {
       false,
       "a capped usage list must not read as a complete usage analysis",
     );
+    assert.equal(capped.referenceAnalysed, false);
   });
 
   it("a dependency whose only usage is past the cap gets no unused finding", async () => {

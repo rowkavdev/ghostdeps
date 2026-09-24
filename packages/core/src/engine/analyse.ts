@@ -65,6 +65,12 @@ export interface RecommendationInput {
   mode: "full" | "pull-request";
   /** Present exactly when mode is "pull-request". */
   pullRequestChanges?: readonly DependencyChange[];
+  /**
+   * Ecosystems whose usage analysis completed and whose adapter declares
+   * "referenceAnalysis" (script/config references checked). The policy only
+   * emits "unused" verdicts here; elsewhere no-import deps get info at most.
+   */
+  referenceAnalysedEcosystems: ReadonlySet<string>;
 }
 
 /** Core-owned policy that turns facts into findings (#56 and friends plug in here). */
@@ -92,6 +98,14 @@ export interface AnalyseOptions {
    * Versioned with @ghostdeps/core, not the adapter contract.
    */
   pullRequestChanges?: readonly DependencyChange[];
+  /**
+   * Set when the repository handle could not see every file (scan truncated
+   * or paths skipped). Then no ecosystem counts as reference-analysed, so the
+   * policy cannot return an "unused" verdict. analyseDirectory sets it from
+   * scanCompletenessFindings; the GitHub App must set it from its tarball
+   * scan the same way.
+   */
+  scanIncomplete?: boolean;
 }
 
 /**
@@ -182,6 +196,7 @@ export async function assembleAnalysisResult(
   outcomes: readonly AdapterOutcome[],
   recommend?: RecommendationPolicy,
   pullRequestChanges?: readonly DependencyChange[],
+  context: { scanIncomplete?: boolean } = {},
 ): Promise<AnalysisResult> {
   const projects = new Map<string, ProjectRef>();
   const dependencies: Dependency[] = [];
@@ -191,6 +206,7 @@ export async function assembleAnalysisResult(
   const detected: AnalysisResult["detected"] = [];
   const surface: AnalysisResult["surface"] = [];
   const usageAnalysedEcosystems = new Set<string>();
+  const referenceAnalysedEcosystems = new Set<string>();
 
   for (const outcome of outcomes) {
     findings.push(...outcome.findings);
@@ -202,6 +218,9 @@ export async function assembleAnalysisResult(
     usages.push(...outcome.usages);
     graphs.push(...outcome.graphs);
     if (outcome.usageAnalysed) usageAnalysedEcosystems.add(outcome.ecosystem);
+    if (outcome.usageAnalysed && outcome.referenceAnalysed === true && !context.scanIncomplete) {
+      referenceAnalysedEcosystems.add(outcome.ecosystem);
+    }
     detected.push({
       ecosystem: outcome.ecosystem,
       confidence: outcome.detected.confidence,
@@ -232,6 +251,7 @@ export async function assembleAnalysisResult(
         usages,
         graphs,
         usageAnalysedEcosystems,
+        referenceAnalysedEcosystems,
         mode: pullRequestChanges ? "pull-request" : "full",
       };
       if (pullRequestChanges) input.pullRequestChanges = pullRequestChanges;
@@ -299,5 +319,7 @@ export async function analyseRepository(
     ),
   );
 
-  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges);
+  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
+    scanIncomplete: options.scanIncomplete === true,
+  });
 }

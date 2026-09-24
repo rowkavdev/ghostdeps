@@ -91,8 +91,11 @@ export async function analyseDirectory(
 ): Promise<AnalysisResult> {
   const { scan: scanOptions, ...analyseOptions } = options;
   const handle = await FsRepositoryHandle.open(rootDir, scanOptions ?? {});
-  const result = await analyseRepository(handle, analyseOptions);
   const notes = scanCompletenessFindings(handle.scan);
+  const result = await analyseRepository(handle, {
+    ...analyseOptions,
+    scanIncomplete: analyseOptions.scanIncomplete === true || notes.length > 0,
+  });
   if (notes.length === 0) return result;
   // An incomplete scan must never yield a confident "not needed" claim:
   // cap those findings at medium and say why on each one.
