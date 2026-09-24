@@ -5,6 +5,9 @@ import type {
   PackageMetadataProvider,
   PackageVersionRef,
 } from "../types/index.js";
+import { normaliseRegistryOrigin } from "../registry-origins.js";
+
+export { normaliseRegistryOrigin };
 
 /** Most distinct package versions asked for per ecosystem; past it, no footprint there. */
 export const MAX_FOOTPRINT_PACKAGES = 50_000;
@@ -14,25 +17,6 @@ const MAX_BASIS_LENGTH = 100;
 
 const projectKey = (ecosystem: string, path: string): string => `${ecosystem}\0${path}`;
 
-/**
- * GraphNode.registryOrigin as a canonical origin, or undefined. It comes
- * from repository data, so only a plain http(s) origin passes: no path,
- * credentials, query or fragment.
- */
-export function normaliseRegistryOrigin(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length === 0 || value.length > 200) return undefined;
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return undefined;
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
-  if (url.username || url.password || url.search || url.hash) return undefined;
-  if (url.pathname !== "/" && url.pathname !== "") return undefined;
-  if (value.replace(/\/$/, "").toLowerCase() !== url.origin) return undefined;
-  return url.origin;
-}
 const versionKey = (name: string, version: string): string => `${name}\0${version}`;
 
 /**
