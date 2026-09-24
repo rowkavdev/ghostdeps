@@ -85,6 +85,8 @@ function isPlainData(value: unknown, depth = 32): boolean {
   if (value === null || typeof value === "boolean" || typeof value === "string") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (Array.isArray(value)) return value.every((item) => isPlainData(item, depth - 1));
+  // Sets are accepted because the reporter's canonical() serialises them as arrays.
+  if (value instanceof Set) return [...value].every((item) => isPlainData(item, depth - 1));
   if (typeof value === "object") {
     const proto: unknown = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) return false;

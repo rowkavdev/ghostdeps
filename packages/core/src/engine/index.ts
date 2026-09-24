@@ -14,3 +14,8 @@ export {
   DEFAULT_ADAPTER_HEAP_MB,
   type IsolatedAnalyseOptions,
 } from "./isolated.js";
+export {
+  analyseDirectory,
+  scanCompletenessFindings,
+  type AnalyseDirectoryOptions,
+} from "./analyse-directory.js";

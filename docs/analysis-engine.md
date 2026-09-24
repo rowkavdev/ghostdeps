@@ -26,3 +26,14 @@ const result = await analyseRepository(handle, {
 - **Recommendation policy.** Core-owned and injected via `recommend`. It receives dependencies, usages, graphs, and `usageAnalysedEcosystems`, the ecosystems where usage analysis actually completed. Policy must not call a dependency unused outside that set. A policy failure becomes an info finding; facts survive. Findings that are not plain JSON data (Map, Date, class instances, non-finite numbers) are dropped with an info finding, because `renderJsonReport` rejects them and one bad finding must not abort the run. As a second guard, the canonical sort (`normaliseAnalysisResult`) never throws, even on such values, so ordering can't abort a run on its own.
 - **Determinism.** Projects, dependencies, usages, findings, detections and surfaces are sorted by stable keys, so adapter order and completion timing never change the output. The engine uses the same canonical ordering as the JSON reporter (`normaliseAnalysisResult`), so there is one sorter to keep correct.
 - **Surface.** `direct` counts unique direct dependency names per ecosystem; `transitive` counts unique node names across that ecosystem's graphs (0 without a graph).
+
+## Local directories
+
+`analyseDirectory(path, options)` scans a checkout with the repository scanner ([repository-scanner.md](repository-scanner.md)) and runs `analyseRepository` over the resulting `FsRepositoryHandle`. Scan options go in `options.scan`.
+
+Scan limits that could hide the project's own files become `info` findings, so a partial scan is never presented as a complete analysis:
+
+- a truncated scan (`max-files`, `max-directories`, `max-total-bytes`)
+- files or directories skipped as too large, too deep, over-long, unsafely named or unreadable, with counts from `skippedCounts` and up to 5 example paths
+
+Skips that are by design (excluded vendor/generated directories, generated files, symlinks, special files) are not reported. `scanCompletenessFindings(scan)` is exported for callers that scan on their own.
