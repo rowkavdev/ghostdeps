@@ -6,7 +6,13 @@
  * reason; malformed manifests degrade confidence instead of crashing
  * (security-model rule 3).
  */
-import type { AdapterContext, DetectionResult, Evidence, ProjectRef } from "@ghostdeps/core";
+import {
+  hasExcludedSegment,
+  type AdapterContext,
+  type DetectionResult,
+  type Evidence,
+  type ProjectRef,
+} from "@ghostdeps/core";
 
 export const JS_ECOSYSTEM = "javascript-typescript";
 
@@ -28,11 +34,12 @@ const LOCKFILES = [
 
 const SOURCE_EXTENSIONS = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"] as const;
 
-/** Vendored and generated directories are never evidence of ecosystem use. */
-const EXCLUDED_SEGMENTS = new Set(["node_modules", "vendor", "dist", "build", "out", "coverage"]);
-
+/**
+ * Vendored and generated directories are never evidence of ecosystem use.
+ * The shared list lives in core (issue #89).
+ */
 function isExcluded(path: string): boolean {
-  return path.split("/").some((segment) => EXCLUDED_SEGMENTS.has(segment));
+  return hasExcludedSegment(path);
 }
 
 function isSourceFile(path: string): boolean {

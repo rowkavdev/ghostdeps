@@ -1,8 +1,12 @@
 /**
  * Scanner ceilings. Every byte of a scanned repository is attacker-controlled
- * (docs/security-model.md), so every walk is bounded. Defaults are documented
- * in docs/repository-scanner.md; keep the two in sync.
+ * (docs/security-model.md), so every walk is bounded. The shared ceilings
+ * (file count, per-file read, lockfile bytes) come from
+ * packages/core/src/limits.ts (issue #89); scanner-specific ceilings stay
+ * here. Defaults are documented in docs/repository-scanner.md; keep the two
+ * in sync.
  */
+import { MAX_FILE_READ_BYTES, MAX_LOCKFILE_BYTES, MAX_REPO_FILES } from "../../limits.js";
 export interface ScanLimits {
   /** Maximum number of files listed. The walk stops (truncated) past this. */
   maxFiles: number;
@@ -23,12 +27,12 @@ export interface ScanLimits {
 }
 
 export const DEFAULT_SCAN_LIMITS: Readonly<ScanLimits> = Object.freeze({
-  maxFiles: 50_000,
+  maxFiles: MAX_REPO_FILES,
   maxDirectories: 20_000,
   maxDepth: 32,
   maxPathLength: 1_024,
-  maxFileBytes: 2 * 1024 * 1024,
-  maxLockfileBytes: 32 * 1024 * 1024,
+  maxFileBytes: MAX_FILE_READ_BYTES,
+  maxLockfileBytes: MAX_LOCKFILE_BYTES,
   maxTotalBytes: 512 * 1024 * 1024,
   maxSkippedRecords: 10_000,
 });
