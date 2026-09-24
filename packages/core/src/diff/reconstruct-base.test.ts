@@ -79,4 +79,11 @@ describe("reconstructBase (#259)", () => {
     // Base line 5 would need three shared lines before it; head has one.
     assert.equal(reconstructBase(["a"], change([[5, "e"]])), undefined);
   });
+
+  it("handles a very large removal without a RangeError", () => {
+    const removed: [number, string][] = Array.from({ length: 300_000 }, (_, i) => [i + 1, `l${i}`]);
+    const base = reconstructBase([], change(removed));
+    assert.equal(base?.length, 300_000);
+    assert.equal(base?.[299_999], "l299999");
+  });
 });

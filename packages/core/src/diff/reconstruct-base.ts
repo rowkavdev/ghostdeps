@@ -17,7 +17,10 @@ export function reconstructBase(
   for (const l of change.removedLines) removed.set(l.line, l.text);
   const added = new Set(change.addedLines.map((l) => l.line));
   for (const n of added) if (n > head.length) return undefined;
-  const lastRemoved = Math.max(0, ...removed.keys());
+  // A loop, not Math.max(...spread): a spread throws RangeError on a huge
+  // argument list, and this is a public export (#290 review).
+  let lastRemoved = 0;
+  for (const n of removed.keys()) if (n > lastRemoved) lastRemoved = n;
   const base: string[] = [];
   let h = 0; // index into head (0-based)
   for (let n = 1; ; n++) {
