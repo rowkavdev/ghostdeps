@@ -248,3 +248,23 @@ describe("ghostdeps scan policy flags", () => {
     assert.match(err.join(" "), /only apply to ghostdeps scan/);
   });
 });
+
+describe("unparsed manifests are never an all-clear (#269)", () => {
+  it("a malformed pyproject.toml shows an incomplete manifest note, not 'Findings: none'", async () => {
+    const { io, out } = capture();
+    const code = await run(
+      [
+        "scan",
+        fileURLToPath(new URL("../../../fixtures/python/pyproject-malformed", import.meta.url)),
+      ],
+      io,
+    );
+    assert.equal(code, 0);
+    const text = out.join("\n");
+    assert.doesNotMatch(text, /Findings:\n {2}none/);
+    assert.match(
+      text,
+      /pyproject\.toml could not be parsed; its declared dependencies may be missing/,
+    );
+  });
+});
