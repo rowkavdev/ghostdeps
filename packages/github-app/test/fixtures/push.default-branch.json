@@ -1,0 +1,43 @@
+{
+  "ref": "refs/heads/main",
+  "before": "9049f1265b7d61be4a8904a9a27120d2064dab3b",
+  "after": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "commits": [
+    {
+      "id": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+      "message": "chore: bump deps",
+      "added": [],
+      "modified": [
+        "package.json",
+        "pnpm-lock.yaml"
+      ],
+      "removed": []
+    }
+  ],
+  "repository": {
+    "id": 872001,
+    "node_id": "R_kgDOExample",
+    "name": "example-app",
+    "full_name": "octo-org/example-app",
+    "private": false,
+    "owner": {
+      "login": "octo-org",
+      "id": 9001,
+      "type": "Organization"
+    },
+    "default_branch": "main",
+    "fork": false
+  },
+  "installation": {
+    "id": 55501,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNTU1MDE="
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 583231,
+    "type": "User"
+  }
+}

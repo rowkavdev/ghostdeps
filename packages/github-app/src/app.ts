@@ -1,10 +1,9 @@
 import type { ApplicationFunction, Probot } from "probot";
-import { analysisJobKey, InProcessJobQueue, type JobQueue } from "./jobs.js";
+import { changedFiles } from "./events/changed-files.js";
+import { analysedEvents, decide, type ChangedFilesLookup } from "./events/filter.js";
+import { InProcessJobQueue, type JobQueue } from "./jobs.js";
 
 export const HEALTH_PATH = "/healthz";
-
-/** Pull request actions that can change the dependency picture. Default-deny the rest. */
-const ANALYSED_PR_ACTIONS = ["opened", "synchronize", "reopened"] as const;
 
 export interface GhostDepsAppOptions {
   /** Job boundary. Defaults to an in-process queue whose worker only logs (the analysis worker lands separately). */
@@ -51,37 +50,36 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
     });
 
     app.on(
-      ANALYSED_PR_ACTIONS.map((a) => `pull_request.${a}` as const),
+      [...analysedEvents.pull_request.map((a) => `pull_request.${a}` as const), "push"],
       async (context) => {
-        const { payload } = context;
-        const installationId = payload.installation?.id;
-        if (installationId === undefined) {
-          context.log.warn({ delivery: context.id }, "pull_request without installation; ignored");
+        const lookup: ChangedFilesLookup = async (candidate) => {
+          try {
+            return await changedFiles(context.octokit, candidate);
+          } catch (error) {
+            context.log.warn(
+              { delivery: context.id, err: error },
+              "changed-files lookup failed; analysing anyway",
+            );
+            throw error;
+          }
+        };
+        const decision = await decide(context.name, context.payload, context.id, lookup);
+        if (!decision.analyse) {
+          context.log.debug({ delivery: context.id, reason: decision.reason }, "event skipped");
           return;
         }
-        const action = payload.action;
-        const result = queue.enqueue({
-          key: analysisJobKey(payload.repository.id, payload.pull_request.head.sha),
-          deliveryId: context.id,
-          installationId,
-          repository: {
-            id: payload.repository.id,
-            owner: payload.repository.owner.login,
-            name: payload.repository.name,
-          },
-          headSha: payload.pull_request.head.sha,
-          trigger: {
-            kind: "pull_request",
-            number: payload.pull_request.number,
-            action,
-            baseSha: payload.pull_request.base.sha,
-          },
-        });
-        const fields = { delivery: context.id, repository: payload.repository.id, result };
+        const result = queue.enqueue(decision.job);
+        const fields = {
+          delivery: context.id,
+          repository: decision.job.repository.id,
+          trigger: decision.job.trigger.kind,
+          dependencyFiles: decision.dependencyFiles.length,
+          result,
+        };
         if (result === "overloaded") {
-          context.log.warn(fields, "analysis queue full; pull_request job dropped");
+          context.log.warn(fields, "analysis queue full; job dropped");
         } else {
-          context.log.info(fields, "pull_request analysis job");
+          context.log.info(fields, "analysis job");
         }
       },
     );

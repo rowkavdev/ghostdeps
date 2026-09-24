@@ -31,6 +31,27 @@ async function fixture(name: string): Promise<string> {
   return readFile(new URL(`../test/fixtures/${name}.json`, import.meta.url), "utf8");
 }
 
+const API = "https://api.github.com";
+const REPO_PATH = "/repos/octo-org/example-app";
+
+/** Installation token for the fixture installation; Probot caches it per test instance. */
+function mockInstallationToken() {
+  nock(API)
+    .post("/app/installations/55501/access_tokens")
+    .reply(201, { token: "test-token", expires_at: "2099-01-01T00:00:00Z" });
+}
+
+function mockPrFiles(filenames: string[], times = 1) {
+  nock(API)
+    .get(`${REPO_PATH}/pulls/42/files`)
+    .query({ per_page: "100" })
+    .times(times)
+    .reply(
+      200,
+      filenames.map((filename) => ({ filename, status: "modified" })),
+    );
+}
+
 function sign(body: string, secret = SECRET): string {
   return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
 }
@@ -54,7 +75,7 @@ describe("GhostDeps GitHub App", () => {
   }
 
   before(() => {
-    // Handlers must not call the GitHub API yet; any outbound request fails the test.
+    // Only mocked GitHub API calls are allowed; anything else fails the test.
     nock.disableNetConnect();
     nock.enableNetConnect("127.0.0.1");
   });
@@ -79,6 +100,7 @@ describe("GhostDeps GitHub App", () => {
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     assert.deepEqual(nock.pendingMocks(), []);
+    nock.cleanAll();
   });
 
   it("serves a health endpoint", async () => {
@@ -111,7 +133,9 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(queue.jobs.length, 0);
   });
 
-  it("emits an AnalysisJob for pull_request.opened", async () => {
+  it("emits an AnalysisJob for pull_request.opened that touches a manifest", async () => {
+    mockInstallationToken();
+    mockPrFiles(["package.json", "src/index.js"]);
     const res = await deliver("pull_request", await fixture("pull_request.opened"));
     assert.equal(res.status, 200);
     assert.equal(queue.jobs.length, 1);
@@ -129,6 +153,8 @@ describe("GhostDeps GitHub App", () => {
   });
 
   it("collapses a redelivery of the same head SHA onto one job", async () => {
+    mockInstallationToken();
+    mockPrFiles(["package-lock.json"], 2);
     const body = await fixture("pull_request.opened");
     await deliver("pull_request", body);
     await deliver("pull_request", body);
@@ -136,6 +162,8 @@ describe("GhostDeps GitHub App", () => {
   });
 
   it("emits a new job when synchronize moves the head SHA", async () => {
+    mockInstallationToken();
+    mockPrFiles(["package.json"], 2);
     await deliver("pull_request", await fixture("pull_request.opened"));
     await deliver("pull_request", await fixture("pull_request.synchronize"));
     assert.deepEqual(
@@ -159,5 +187,82 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(a.status, 200);
     assert.equal(b.status, 200);
     assert.equal(queue.jobs.length, 0);
+  });
+
+  it("skips a pull request that touches no dependency files", async () => {
+    mockInstallationToken();
+    mockPrFiles(["src/index.js", "README.md"]);
+    const res = await deliver("pull_request", await fixture("pull_request.opened"));
+    assert.equal(res.status, 200);
+    assert.equal(queue.jobs.length, 0);
+  });
+
+  it("emits a push job for the default branch from payload files, with no API calls", async () => {
+    const res = await deliver("push", await fixture("push.default-branch"));
+    assert.equal(res.status, 200);
+    assert.equal(queue.jobs.length, 1);
+    assert.deepEqual(queue.jobs[0]?.trigger, {
+      kind: "push",
+      ref: "refs/heads/main",
+      beforeSha: "9049f1265b7d61be4a8904a9a27120d2064dab3b",
+    });
+    assert.equal(queue.jobs[0]?.key, "872001:0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c");
+  });
+
+  it("ignores pushes to other branches and source-only pushes", async () => {
+    await deliver("push", await fixture("push.feature-branch"));
+    await deliver("push", await fixture("push.source-only"));
+    assert.equal(queue.jobs.length, 0);
+  });
+
+  it("counts a renamed manifest under its previous name", async () => {
+    mockInstallationToken();
+    nock(API)
+      .get(`${REPO_PATH}/pulls/42/files`)
+      .query({ per_page: "100" })
+      .reply(200, [
+        {
+          filename: "legacy/package.json.old",
+          previous_filename: "packages/a/package.json",
+          status: "renamed",
+        },
+      ]);
+    await deliver("pull_request", await fixture("pull_request.opened"));
+    assert.equal(queue.jobs.length, 1);
+  });
+
+  it("stops paging PR files after five pages and analyses anyway", async () => {
+    mockInstallationToken();
+    const page = Array.from({ length: 100 }, (_, i) => ({
+      filename: `src/f${i}.js`,
+      status: "modified",
+    }));
+    const scope = nock(API);
+    scope
+      .get(`${REPO_PATH}/pulls/42/files`)
+      .query({ per_page: "100" })
+      .reply(200, page, {
+        link: `<${API}${REPO_PATH}/pulls/42/files?per_page=100&page=2>; rel="next"`,
+      });
+    for (const n of [2, 3, 4, 5]) {
+      scope
+        .get(`${REPO_PATH}/pulls/42/files`)
+        .query({ per_page: "100", page: String(n) })
+        .reply(200, page, {
+          link: `<${API}${REPO_PATH}/pulls/42/files?per_page=100&page=${n + 1}>; rel="next"`,
+        });
+    }
+    let unmatched = 0;
+    const onNoMatch = (req: { hostname?: string; host?: string }) => {
+      if ((req.hostname ?? req.host ?? "").includes("api.github.com")) unmatched++;
+    };
+    nock.emitter.on("no match", onNoMatch);
+    try {
+      await deliver("pull_request", await fixture("pull_request.opened"));
+    } finally {
+      nock.emitter.removeListener("no match", onNoMatch);
+    }
+    assert.equal(unmatched, 0, "a sixth page was requested");
+    assert.equal(queue.jobs.length, 1);
   });
 });

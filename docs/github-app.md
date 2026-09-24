@@ -30,9 +30,20 @@ No other events are subscribed. The manifest ([`packages/github-app/app.yml`](..
 
 ## Triggers for analysis
 
-- A PR diff touches a dependency manifest or lockfile → diff-context analysis of the changed dependencies.
-- A PR adds a dependency → usage analysis of the new dependency within the PR's code changes.
-- Installation or explicit request → full repository scan.
+Event filtering lives in `packages/github-app/src/events/`. The rules are default-deny: anything not listed here short-circuits quietly with no job and no API calls beyond the changed-file lookup.
+
+| Event                                       | Accepted when                                                                        | Changed files from                                                                   | Result                                |
+| ------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------- |
+| `pull_request`                              | action is `opened`, `synchronize` or `reopened`                                      | PR files API (first 5 pages / 500 files inside the delivery)                         | job if a manifest/lockfile changed    |
+| `push`                                      | branch push to the default branch; not a tag, not a deletion, not a brand-new branch | payload `commits[]` when under 20 commits, otherwise the compare API (capped at 300) | job if a manifest/lockfile changed    |
+| `installation`, `installation_repositories` | always (handled separately)                                                          | n/a                                                                                  | logged no-op in v0.1; full scan later |
+| anything else                               | never                                                                                | n/a                                                                                  | skipped                               |
+
+Manifests and lockfiles are matched by file name at any depth: `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `pyproject.toml`, `poetry.lock`, `uv.lock`, `Pipfile`, `Pipfile.lock`, `setup.py`, `setup.cfg`, `requirements*.txt`/`.in`, `requirements/*.txt`, `Cargo.toml`, `Cargo.lock`, `go.mod`, `go.sum`, `go.work`.
+
+Renamed files count under both their old and new names. When a file list was capped or the lookup failed, the change is analysed anyway: missing a relevant change is worse than one extra job. The PR file lookup stops after five pages because it runs before the webhook responds and GitHub times deliveries out after 10 seconds. Duplicate deliveries collapse in the job queue (one job per repository id and head SHA).
+
+`check_suite.requested` is deliberately not used as a trigger: `push` already covers it, and using both would double jobs.
 
 ## Development
 
