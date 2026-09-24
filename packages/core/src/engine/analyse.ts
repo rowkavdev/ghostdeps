@@ -379,7 +379,6 @@ export async function assembleAnalysisResult(
   // Unified graph (#55), built after the policy has seen the full graphs:
   // the emission cap trims the output only and never changes a verdict.
   const unified = buildUnifiedGraph(graphs, dependencies, surface, context.maxGraphNodes);
-  if (unified.note) findings.push(unified.note);
 
   // Severity is core's output (ADR-0004). Stamp it on every finding BEFORE
   // the confidence cap below, so the cap limits only the displayed
@@ -425,7 +424,7 @@ export async function assembleAnalysisResult(
     schemaVersion: 1,
     projects: [...projects.values()],
     projectTree: buildProjectTree([...projects.values()]),
-    graph: unified.graph,
+    graph: unified,
     dependencies,
     usages,
     findings,

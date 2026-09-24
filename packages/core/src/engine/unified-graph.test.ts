@@ -42,7 +42,7 @@ const svc = project("py", "services/svc");
 
 describe("buildUnifiedGraph (#55)", () => {
   it("merges project graphs by ecosystem + name + version and records reach", () => {
-    const { graph: g, note } = buildUnifiedGraph(
+    const g = buildUnifiedGraph(
       [
         graph(web, [node("react", "18.0.0", ["loose-envify"]), node("loose-envify", "1.4.0")]),
         graph(api, [node("loose-envify", "1.4.0", [], true), node("debug", "4.3.4")]),
@@ -54,7 +54,6 @@ describe("buildUnifiedGraph (#55)", () => {
         { ecosystem: "py", direct: 1, transitive: 1, graphs: "partial" },
       ],
     );
-    assert.equal(note, undefined);
     assert.equal(g.truncated, false);
     assert.deepEqual(
       g.nodes.map((n) => n.id),
@@ -76,8 +75,8 @@ describe("buildUnifiedGraph (#55)", () => {
     ]);
   });
 
-  it("caps the emitted graph, keeping direct packages first, with one note", () => {
-    const { graph: g, note } = buildUnifiedGraph(
+  it("caps the emitted graph, keeping direct packages first", () => {
+    const g = buildUnifiedGraph(
       [graph(web, [node("a", "1"), node("b", "1"), node("z-direct", "1")])],
       [dep(web, "z-direct")],
       [{ ecosystem: "js", direct: 1, transitive: 3, graphs: "complete" }],
@@ -89,8 +88,6 @@ describe("buildUnifiedGraph (#55)", () => {
       ["js:a@1", "js:z-direct@1"],
     );
     assert.deepEqual(g.ecosystems, [{ ecosystem: "js", graphs: "complete", nodes: 3, emitted: 2 }]);
-    assert.equal(note?.kind, "info");
-    assert.equal(note?.rule, "graph-truncated");
   });
 });
 
@@ -134,11 +131,22 @@ describe("unified graph in the result (#55)", () => {
     assert.equal(full.graph?.nodes.length, 3);
     assert.equal(capped.graph?.truncated, true);
     assert.equal(capped.graph?.nodes.length, 1);
-    const verdicts = (r: typeof full) => r.findings.filter((f) => f.rule !== "graph-truncated");
-    assert.deepEqual(verdicts(capped), verdicts(full));
-    assert.equal(verdicts(full).length, 3);
-    const notes = capped.findings.filter((f) => f.rule === "graph-truncated");
-    assert.equal(notes.length, 1);
-    assert.equal(notes[0]?.severity, "info");
+    assert.deepEqual(capped.findings, full.findings);
+    assert.equal(full.findings.length, 3);
+  });
+
+  it("a capped graph on a clean repo adds no finding or run note", async () => {
+    // A run note (info, no dependency) would turn a clean PR check into
+    // "Analysis incomplete" (#197). The cap lives in graph.truncated and
+    // the per-ecosystem counts only.
+    const clean: RecommendationPolicy = () => [];
+    const capped = await assembleAnalysisResult([outcome()], clean, undefined, {
+      maxGraphNodes: 1,
+    });
+    assert.deepEqual(capped.findings, []);
+    assert.equal(capped.graph?.truncated, true);
+    assert.deepEqual(capped.graph?.ecosystems, [
+      { ecosystem: "js", graphs: "complete", nodes: 3, emitted: 1 },
+    ]);
   });
 });

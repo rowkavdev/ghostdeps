@@ -9,7 +9,6 @@ import { MAX_EMITTED_GRAPH_NODES } from "../limits.js";
 import type {
   Dependency,
   DependencyGraph,
-  Finding,
   SurfaceEntry,
   UnifiedGraph,
   UnifiedGraphNode,
@@ -34,7 +33,7 @@ export function buildUnifiedGraph(
   dependencies: readonly Dependency[],
   surface: readonly SurfaceEntry[],
   maxNodes: number = MAX_EMITTED_GRAPH_NODES,
-): { graph: UnifiedGraph; note?: Finding } {
+): UnifiedGraph {
   // Direct declarations by project id, matched to graph nodes by name.
   const declared = new Map<string, Set<string>>();
   for (const dep of dependencies) {
@@ -108,25 +107,8 @@ export function buildUnifiedGraph(
     }))
     .sort((a, b) => compare(a.ecosystem, b.ecosystem));
 
-  const graph: UnifiedGraph = { nodes, ecosystems, truncated };
-  if (!truncated) return { graph };
-  return {
-    graph,
-    note: {
-      kind: "info",
-      rule: "graph-truncated",
-      summary: `dependency graph output capped at ${limit} of ${ids.length} packages`,
-      recommendation:
-        "The graph in this result is shortened for size. Findings were computed from the full graph.",
-      evidence: [
-        {
-          kind: "graph-truncated",
-          statement: `${ids.length - kept.length} package(s) left out of the emitted graph; directly declared packages are kept first`,
-        },
-      ],
-      confidence: "high",
-      limitations: ["The emitted graph does not list every transitive package."],
-      affectedFiles: [],
-    },
-  };
+  // No Finding when capped: a note would be a run note and would mark a
+  // completed analysis as incomplete (#197). graph.truncated and the
+  // per-ecosystem nodes/emitted counts carry the cap instead.
+  return { nodes, ecosystems, truncated };
 }
