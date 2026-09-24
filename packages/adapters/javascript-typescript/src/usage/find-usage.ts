@@ -123,13 +123,16 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
     if (scan.owner.get(file) !== project) continue;
     for (const ref of result.references) {
       if (ref.packageName !== dependency.name) continue;
-      usages.push({
+      const usage: Usage = {
         dependency: dependency.name,
         file,
         line: ref.line,
         form: ref.form,
         symbols: [...new Set(ref.symbols)],
-      });
+      };
+      // Only `import type` / `export type` / `typeof import()` - erased at runtime.
+      if (ref.typeOnly) usage.typeOnly = true;
+      usages.push(usage);
     }
   }
   return usages.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));

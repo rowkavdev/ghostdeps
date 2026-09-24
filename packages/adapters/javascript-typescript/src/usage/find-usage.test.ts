@@ -86,6 +86,38 @@ describe("findUsage", () => {
     assert.deepEqual(await findUsage(context, dep("a-only")), []);
   });
 
+  it("marks type-only references with Usage.typeOnly and leaves runtime imports unmarked", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "a.ts": [
+        `import type { Config } from "vite";`,
+        `export type { Plugin } from "vite";`,
+        `type E = typeof import("esbuild");`,
+        `import { build } from "esbuild";`,
+        `import { type Schema, parse } from "zod";`,
+      ].join("\n"),
+    });
+    const vite = await findUsage(context, dep("vite"));
+    assert.deepEqual(
+      vite.map((u) => [u.line, u.typeOnly]),
+      [
+        [1, true],
+        [2, true],
+      ],
+    );
+    const esbuild = await findUsage(context, dep("esbuild"));
+    assert.deepEqual(
+      esbuild.map((u) => [u.line, u.typeOnly]),
+      [
+        [3, true],
+        [4, undefined],
+      ],
+    );
+    // Inline `type` modifiers keep the import at runtime under verbatimModuleSyntax.
+    const zod = await findUsage(context, dep("zod"));
+    assert.equal(zod[0]?.typeOnly, undefined);
+  });
+
   it("never scans node_modules and skips oversized files with a limitation", async () => {
     const context = ctx({
       "package.json": "{}",
