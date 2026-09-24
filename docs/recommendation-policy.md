@@ -28,11 +28,14 @@ Before `unused` is possible, all of these must be empty:
 - the curated dev-tooling allowlist (`allowlist.ts`, per ecosystem),
 - for `@types/foo` in a TypeScript repo: usage of `foo` (`@types/scope__pkg` maps to `@scope/pkg`).
 
-`unused` also needs the ecosystem in `RecommendationInput.referenceAnalysedEcosystems`:
-usage analysis completed and the adapter declares the `referenceAnalysis`
-capability, meaning `findUsage` also reports script, bin and config
-references. Without it, "no usages" could mean "never looked", so the policy
-emits `unverified-no-imports` instead.
+`unused` also needs the ecosystem in `RecommendationInput.referenceAnalysedEcosystems`. The engine adds an ecosystem only when all of these hold:
+
+- usage analysis completed (not timed out, failed or capped),
+- the adapter declares the `referenceAnalysis` capability,
+- every `findUsage` result for the run returned `referenceAnalysisComplete: true` (an array, an omitted flag or `false` counts as incomplete, and one incomplete dependency clears the whole ecosystem),
+- `AnalyseOptions.scanIncomplete` is not set. `analyseDirectory` sets it when the scan was truncated or skipped paths; the GitHub App sets it from its tarball scan.
+
+Otherwise "no usages" could mean "never looked", so the policy emits `unverified-no-imports` instead.
 
 ## Config
 

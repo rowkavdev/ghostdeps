@@ -98,6 +98,14 @@ export interface AnalyseOptions {
    * Versioned with @ghostdeps/core, not the adapter contract.
    */
   pullRequestChanges?: readonly DependencyChange[];
+  /**
+   * Set when the repository handle could not see every file (scan truncated
+   * or paths skipped). Then no ecosystem counts as reference-analysed, so the
+   * policy cannot return an "unused" verdict. analyseDirectory sets it from
+   * scanCompletenessFindings; the GitHub App must set it from its tarball
+   * scan the same way.
+   */
+  scanIncomplete?: boolean;
 }
 
 /**
@@ -188,6 +196,7 @@ export async function assembleAnalysisResult(
   outcomes: readonly AdapterOutcome[],
   recommend?: RecommendationPolicy,
   pullRequestChanges?: readonly DependencyChange[],
+  context: { scanIncomplete?: boolean } = {},
 ): Promise<AnalysisResult> {
   const projects = new Map<string, ProjectRef>();
   const dependencies: Dependency[] = [];
@@ -209,7 +218,7 @@ export async function assembleAnalysisResult(
     usages.push(...outcome.usages);
     graphs.push(...outcome.graphs);
     if (outcome.usageAnalysed) usageAnalysedEcosystems.add(outcome.ecosystem);
-    if (outcome.usageAnalysed && outcome.referenceAnalysed) {
+    if (outcome.usageAnalysed && outcome.referenceAnalysed === true && !context.scanIncomplete) {
       referenceAnalysedEcosystems.add(outcome.ecosystem);
     }
     detected.push({
@@ -310,5 +319,7 @@ export async function analyseRepository(
     ),
   );
 
-  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges);
+  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
+    scanIncomplete: options.scanIncomplete === true,
+  });
 }

@@ -65,6 +65,8 @@ export const OUTCOME_CAPS = Object.freeze({
 });
 
 export interface IsolatedAnalyseOptions {
+  /** See AnalyseOptions.scanIncomplete. */
+  scanIncomplete?: boolean;
   /**
    * Module specifiers; each module's default or "adapter" export is the
    * adapter. TRUSTED CONFIGURATION ONLY: every specifier goes to import()
@@ -110,6 +112,8 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
   }
   let usages = outcome.usages;
   let usageAnalysed = outcome.usageAnalysed;
+  // Worker-posted: only an explicit true survives.
+  let referenceAnalysed = outcome.referenceAnalysed === true;
   if (usages.length > OUTCOME_CAPS.maxUsages) {
     limitations.push(
       `Adapter posted ${usages.length} usages; capped at ${OUTCOME_CAPS.maxUsages}. Usage analysis is incomplete: dependencies past the cut must not read as unused.`,
@@ -120,6 +124,7 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
     // every dependency whose only usage fell past the cut - exactly the
     // high-confidence false "unused" finding the engine guards against.
     usageAnalysed = false;
+    referenceAnalysed = false;
   }
   let graphs = outcome.graphs;
   // Closure entries count against the same budget as nodes, and a graph
@@ -165,12 +170,13 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
     );
     findings = findings.slice(0, OUTCOME_CAPS.maxFindings);
   }
-  if (limitations.length === 0) return outcome;
+  if (limitations.length === 0) return { ...outcome, referenceAnalysed };
   return {
     ...outcome,
     dependencies,
     usages,
     usageAnalysed,
+    referenceAnalysed,
     graphs,
     findings: [
       ...findings,
@@ -396,5 +402,7 @@ export async function analyseRepositoryIsolated(
     Array.from({ length: Math.min(maxParallel, options.adapters.length) }, () => lane()),
   );
 
-  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges);
+  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
+    scanIncomplete: options.scanIncomplete === true,
+  });
 }

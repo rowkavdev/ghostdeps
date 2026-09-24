@@ -93,6 +93,11 @@ export function normaliseUsageResult(result: UsageAnalysisResult): {
   referenceAnalysisComplete: boolean;
 } {
   if (Array.isArray(result)) return { usages: result, referenceAnalysisComplete: false };
+  // Adapter output is untrusted: a malformed result reads as no usages and
+  // incomplete, never as "analysed, nothing found".
+  if (typeof result !== "object" || result === null || !Array.isArray(result.usages)) {
+    return { usages: [], referenceAnalysisComplete: false };
+  }
   return {
     usages: result.usages,
     referenceAnalysisComplete: result.referenceAnalysisComplete === true,
