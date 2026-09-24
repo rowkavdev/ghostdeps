@@ -469,14 +469,17 @@ describe("analyseCheckout: recommendation policy on the app path", () => {
   }
   const policy = { recommend: createDefaultPolicy() };
 
-  it("reports an unused dependency, capped at medium severity (#173)", async () => {
+  it("reports an unused dependency, capped at medium severity and confidence (#173, #178)", async () => {
     const result = await analyseCheckout(await unusedRepo(), DEFAULT_ADAPTER_MODULES, policy);
     const unused = result.findings.filter((f) => f.kind === "unused");
     assert.deepEqual(
       unused.map((f) => f.dependency),
       ["left-pad"],
     );
-    for (const f of unused) assert.equal(severityOf(f), "medium");
+    for (const f of unused) {
+      assert.notEqual(f.confidence, "high");
+      assert.ok(["info", "low", "medium"].includes(severityOf(f)), severityOf(f));
+    }
   });
 
   it("never reports unused on a truncated checkout", async () => {
