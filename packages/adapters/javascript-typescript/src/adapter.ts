@@ -23,6 +23,7 @@ import {
   findPreprocessorUsages,
   findRemovedUsages,
   findUsage,
+  tsconfigBaseNotes,
   usageLimitations,
 } from "./usage/index.js";
 
@@ -114,11 +115,14 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
     },
     listDirectDependencies,
     /**
-     * Capability notes (#205): dependencies credited only by a JS/TS config
-     * string (#149/#201). Never caps; unread configs stay coverage gaps.
+     * Notes (#205): capability notes for dependencies credited only by a
+     * JS/TS config string (#149/#201), plus one run note for unread
+     * node_modules tsconfig bases. Never caps; unread configs stay gaps.
      */
     async notes(context: AdapterContext, projects: ProjectRef[]): Promise<AdapterNote[]> {
-      return configStringNotes(
+      // Run-level: tsconfig bases from node_modules that were not read (#275, #276).
+      const bases = await tsconfigBaseNotes(context);
+      const strings = await configStringNotes(
         context,
         await listDirectDependencies(context, projects),
         async (dependency, strings) =>
@@ -126,6 +130,7 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
             (u) => !u.removedInPr && !(u.via === "config" && strings.has(`${u.file}:${u.line}`)),
           ),
       );
+      return [...bases, ...strings];
     },
   };
   return adapter;
