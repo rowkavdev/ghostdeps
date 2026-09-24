@@ -52,6 +52,30 @@ describe("buildLockfileGraph", () => {
     assert.equal(reactDom?.version, "18.2.0");
   });
 
+  it("fixture js/lockfile-yarn-classic: multi-pattern entries and npm: aliases", async () => {
+    const res = await checkFixture("lockfile-yarn-classic");
+    const chalks = res.graph.nodes.filter((n) => n.name === "chalk").map((n) => n.version);
+    assert.deepEqual(chalks.sort(), ["2.4.2", "4.1.2"]);
+  });
+
+  it("fixture js/lockfile-yarn-berry: workspace entry gives the direct edges", async () => {
+    await checkFixture("lockfile-yarn-berry");
+  });
+
+  it("yarn classic: stale lockfile (range not locked) is reported", async () => {
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": JSON.stringify({ dependencies: { a: "^2.0.0" } }),
+          "yarn.lock": 'a@^1.0.0:\n  version "1.0.0"\n',
+        }),
+      ),
+      project(),
+    );
+    assert.ok(res.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"));
+    assert.deepEqual(res.graph.transitiveClosure, { a: [] });
+  });
+
   it("fixture js/basic-unused: no lockfile gives an incomplete graph, never resolution", async () => {
     const res = await buildLockfileGraph(ctx(fixtureHandle("js", "basic-unused")), project());
     assert.equal(res.graph.incomplete, true);
@@ -203,6 +227,7 @@ describe("buildLockfileGraph", () => {
       ["package-lock.json", "{ not json", "lockfile-malformed"],
       ["pnpm-lock.yaml", "lockfileVersion: '5.4'\n", "lockfile-unsupported"],
       ["pnpm-lock.yaml", "a: &x [*x, *x]\nb: [: :\n", "lockfile-malformed"],
+      ["yarn.lock", '  version "1"\n', "lockfile-malformed"],
     ] as const) {
       const res = await buildLockfileGraph(
         ctx(memoryHandle({ "package.json": "{}", [file]: text })),

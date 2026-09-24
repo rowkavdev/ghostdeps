@@ -1,0 +1,12 @@
+{
+  "name": "fixture-lockfile-yarn-classic",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "@babel/code-frame": "^7.10.4",
+    "chalk": "^4.1.0"
+  },
+  "devDependencies": {
+    "old-chalk": "npm:chalk@^2.4.2"
+  }
+}
