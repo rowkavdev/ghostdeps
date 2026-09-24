@@ -95,4 +95,9 @@ describe("reference analysis completeness (#132)", () => {
     assert.deepEqual(js.usages, []);
     assert.equal(js.referenceAnalysisComplete, false);
   });
+
+  it("pnpm: a script bin whose name differs from its package is a gap, never complete", async () => {
+    const r = await report("refs-pnpm-bin-mismatch", "npm-check-updates");
+    assert.equal(r.referenceAnalysisComplete, false);
+  });
 });

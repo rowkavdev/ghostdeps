@@ -84,10 +84,18 @@ describe("commandWords", () => {
 
 describe("scriptGaps", () => {
   it("is empty for plain scripts and names each gap otherwise", async () => {
-    const clean = ctx({ "package.json": JSON.stringify({ scripts: { b: "tsc", t: "vitest" } }) });
+    const clean = ctx({
+      "package.json": JSON.stringify({
+        scripts: { b: "tsc && rm -rf tmp", t: "vitest" },
+        devDependencies: { typescript: "5", vitest: "2" },
+      }),
+    });
     assert.deepEqual(await scriptGaps(clean, dep("typescript")), []);
     const gappy = ctx({
-      "package.json": JSON.stringify({ scripts: { b: "tsc", ci: "sh ci.sh" } }),
+      "package.json": JSON.stringify({
+        scripts: { b: "tsc", ci: "sh ci.sh" },
+        devDependencies: { typescript: "5" },
+      }),
     });
     assert.deepEqual(await scriptGaps(gappy, dep("typescript")), [
       'package.json script "ci": sh runs ci.sh, which is not read',
@@ -96,8 +104,14 @@ describe("scriptGaps", () => {
 
   it("workspace members inherit root scripts: usages and gaps", async () => {
     const context = ctx({
-      "package.json": JSON.stringify({ scripts: { lint: "eslint .", gen: "sh gen.sh" } }),
-      "packages/a/package.json": JSON.stringify({ scripts: { t: "vitest" } }),
+      "package.json": JSON.stringify({
+        scripts: { lint: "eslint .", gen: "sh gen.sh" },
+        devDependencies: { eslint: "9" },
+      }),
+      "packages/a/package.json": JSON.stringify({
+        scripts: { t: "vitest" },
+        devDependencies: { vitest: "2" },
+      }),
     });
     assert.deepEqual(
       (await findScriptUsages(context, dep("eslint", "packages/a"))).map((u) => u.file),
@@ -108,6 +122,39 @@ describe("scriptGaps", () => {
     ]);
     // The root does not inherit from members.
     assert.deepEqual(await findScriptUsages(context, dep("vitest")), []);
+  });
+
+  it("a command no declared dependency's bin explains is a gap when bins are guessed", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        scripts: { up: "ncu -u", fmt: "prettier -w ." },
+        devDependencies: { "npm-check-updates": "17", prettier: "3" },
+      }),
+    });
+    assert.deepEqual(await scriptGaps(context, dep("prettier")), [
+      'package.json script "up": command "ncu" is not matched to a declared dependency\'s bin',
+    ]);
+  });
+
+  it("with lockfile bin data for every dependency, unmatched commands are global tools", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        scripts: { up: "ncu -u", ship: "flyctl deploy" },
+        devDependencies: { "npm-check-updates": "17" },
+      }),
+      "package-lock.json": JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": {},
+          "node_modules/npm-check-updates": { version: "17.1.0", bin: { ncu: "b.js" } },
+        },
+      }),
+    });
+    assert.deepEqual(await scriptGaps(context, dep("npm-check-updates")), []);
+    assert.deepEqual(
+      (await findScriptUsages(context, dep("npm-check-updates"))).map((u) => u.symbols),
+      [["ncu"]],
+    );
   });
 
   it("an unreadable or malformed manifest is a gap", async () => {
