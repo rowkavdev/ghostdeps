@@ -5,7 +5,7 @@
 import { parse } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
-import type { ParsedLockfile, ResolvedPackage } from "./model.js";
+import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
 const isObject = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -61,19 +61,14 @@ export function readClassicLockfile(text: string): Map<string, Rec> {
   return entries;
 }
 
-export function parseYarnLockfile(
-  text: string,
-  lockfile: string,
-  importerPath: string,
-  declared: { name: string; dev: boolean; constraint: string }[],
-): ParsedLockfile {
-  const evidence: Evidence[] = [];
-  const packages = new Map<string, ResolvedPackage>();
-  const direct: ParsedLockfile["direct"] = declared.map((d) => ({
-    name: d.name,
-    dev: d.dev,
-    id: undefined,
-  }));
+/** Yarn lockfile parsed once: pattern -> entry, plus which format it was. */
+interface YarnDoc {
+  berry: boolean;
+  byPattern: Map<string, { id: string; entry: Rec }>;
+}
+
+/** Parse yarn.lock text (classic or Berry) once; shared read-only across importers. */
+export function loadYarnLockfile(text: string): LoadedLockfile {
   // Berry lockfiles are YAML whose first entry is `__metadata:`; classic ones start with entry headers.
   const firstLine = text
     .split(/\r?\n/)
@@ -97,6 +92,25 @@ export function parseYarnLockfile(
       byPattern.set(p, { id: seen.get(entry)!, entry });
     }
   }
+  const loaded: YarnDoc = { berry, byPattern };
+  return { doc: loaded };
+}
+
+export function parseYarnLockfile(
+  source: string | LoadedLockfile,
+  lockfile: string,
+  importerPath: string,
+  declared: { name: string; dev: boolean; constraint: string }[],
+): ParsedLockfile {
+  const evidence: Evidence[] = [];
+  const packages = new Map<string, ResolvedPackage>();
+  const direct: ParsedLockfile["direct"] = declared.map((d) => ({
+    name: d.name,
+    dev: d.dev,
+    id: undefined,
+  }));
+  const { berry, byPattern } = (typeof source === "string" ? loadYarnLockfile(source) : source)
+    .doc as YarnDoc;
 
   const lookup = (name: string, range: string): string | undefined => {
     const candidates = berry ? [`${name}@${range}`, `${name}@npm:${range}`] : [`${name}@${range}`];

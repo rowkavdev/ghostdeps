@@ -6,7 +6,7 @@
 import { parse } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
-import type { ParsedLockfile, ResolvedPackage } from "./model.js";
+import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
 
 type Rec = Record<string, unknown>;
 const isObject = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -25,14 +25,19 @@ const baseVersion = (v: string) => {
   return i < 0 ? v : v.slice(0, i);
 };
 
+/** Parse pnpm-lock.yaml text once; the result is shared read-only across importers. */
+export function loadPnpmLockfile(text: string): LoadedLockfile {
+  return { doc: parse(text, { maxAliasCount: 100, uniqueKeys: true }) as unknown };
+}
+
 export function parsePnpmLockfile(
-  text: string,
+  source: string | LoadedLockfile,
   lockfile: string,
   importerPath: string,
   declared: { name: string; dev: boolean }[],
 ): ParsedLockfile {
   const evidence: Evidence[] = [];
-  const doc: unknown = parse(text, { maxAliasCount: 100, uniqueKeys: true });
+  const { doc } = typeof source === "string" ? loadPnpmLockfile(source) : source;
   if (!isObject(doc)) throw new Error("lockfile root is not a mapping");
   const version = String(doc.lockfileVersion ?? "");
   const major = Number.parseInt(version, 10);

@@ -21,6 +21,15 @@ export interface ParsedLockfile {
   evidence: Evidence[];
 }
 
+/**
+ * A lockfile parsed once per analysis run and shared by every importer
+ * (workspace project) that uses it. Deep-frozen by the loader cache, so
+ * per-importer extraction must treat it as read-only.
+ */
+export interface LoadedLockfile {
+  readonly doc: unknown;
+}
+
 /** Graph plus the evidence gathered while building it (mismatches, unsupported versions). */
 export interface LockfileGraphResult {
   graph: DependencyGraph;
