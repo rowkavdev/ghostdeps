@@ -16,6 +16,7 @@
  */
 import { adapterNoteFindings } from "./adapter-notes.js";
 import { computeImpact, impactLimitedNote } from "./impact.js";
+import { manifestMalformedNotes } from "./manifest-malformed.js";
 import { type EcosystemAdapter } from "../adapter.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
@@ -258,9 +259,17 @@ export async function assembleAnalysisResult(
   } = {},
 ): Promise<AnalysisResult> {
   // Caller notes plus notes adapters raised while running (#113).
+  // plus unparsed manifests adapters reported (#269, engine-owned mapping).
   const scanNotes = [
     ...(context.scanCompleteness ?? []),
     ...outcomes.flatMap((outcome) => outcome.scanCompleteness ?? []),
+    ...manifestMalformedNotes(
+      outcomes.flatMap((outcome) =>
+        outcome.detected
+          ? [{ ecosystem: outcome.ecosystem, evidence: outcome.detected.evidence }]
+          : [],
+      ),
+    ),
   ];
   const scanIncomplete = context.scanIncomplete === true || scanNotes.length > 0;
   const projects = new Map<string, ProjectRef>();
