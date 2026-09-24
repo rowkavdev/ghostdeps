@@ -70,6 +70,7 @@ function removedReferences(
     pending = (async () => {
       const out: RemovedReference[] = [];
       for (const change of changes) {
+        context.signal?.throwIfAborted();
         const file = change.path.replace(/^\.\//, "");
         if (!file.endsWith(".rs") || hasExcludedSegment(file) || change.removedLines.length === 0) {
           continue;

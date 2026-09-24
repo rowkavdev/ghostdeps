@@ -143,4 +143,14 @@ describe("rust removedInPr usages (#249)", () => {
     });
     assert.deepEqual(base, ["a", "b", "c"]);
   });
+
+  it("stops when the run is aborted", async () => {
+    const ctx = context({ "Cargo.toml": MANIFEST, "src/lib.rs": "" }, [
+      { path: "src/old.rs", removedLines: lines("use regex::Regex;"), addedLines: [] },
+    ]);
+    const controller = new AbortController();
+    controller.abort();
+    ctx.signal = controller.signal;
+    await assert.rejects(findRemovedUsages(ctx, dep("regex")));
+  });
 });
