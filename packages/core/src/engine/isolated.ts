@@ -19,9 +19,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { DependencyChange } from "../diff/dependency-changes.js";
-import type { AnalysisResult, Finding, NetworkPolicy } from "../types/index.js";
+import type { AnalysisResult, Finding, NetworkPolicy, SourceLineChanges } from "../types/index.js";
 import {
   assembleAnalysisResult,
+  boundPullRequestSourceChanges,
   DEFAULT_ADAPTER_TIMEOUT_MS,
   DEFAULT_USAGE_CONCURRENCY,
   type RecommendationPolicy,
@@ -293,6 +294,7 @@ export function runAdapterIsolated(
   usageConcurrency: number,
   heapMb: number,
   debugLog?: (line: string) => void,
+  pullRequestSourceChanges?: readonly SourceLineChanges[],
 ): Promise<AdapterOutcome> {
   // Trusted-config rule: never import() code from inside the analysed
   // repository (#150). Reject before a worker even starts.
@@ -325,6 +327,7 @@ export function runAdapterIsolated(
         detectionThreshold: threshold,
         adapterTimeoutMs: timeoutMs,
         usageConcurrency,
+        ...(pullRequestSourceChanges ? { pullRequestSourceChanges } : {}),
       },
       resourceLimits: { maxOldGenerationSizeMb: heapMb },
       // Capture adapter output instead of inheriting the parent's streams:
@@ -456,6 +459,7 @@ export async function analyseRepositoryIsolated(
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
   const heapMb = options.adapterHeapMb ?? DEFAULT_ADAPTER_HEAP_MB;
+  const sourceChanges = boundPullRequestSourceChanges(options);
   // Guard non-numeric input: Math.max(1, Math.floor(NaN)) is NaN, which
   // would start zero lanes and leave every outcome silently undefined.
   const requestedParallel = options.maxParallelAdapters ?? DEFAULT_MAX_PARALLEL_ADAPTERS;
@@ -478,6 +482,7 @@ export async function analyseRepositoryIsolated(
         usageConcurrency,
         heapMb,
         options.debugLog,
+        sourceChanges.changes,
       );
     }
   };
@@ -488,5 +493,6 @@ export async function analyseRepositoryIsolated(
   return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
     scanIncomplete: options.scanIncomplete === true,
     scanCompleteness: options.scanCompleteness ?? [],
+    notes: sourceChanges.findings,
   });
 }

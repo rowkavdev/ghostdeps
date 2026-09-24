@@ -1,6 +1,7 @@
 export {
   addedLines,
   defaultDiffParseLimits,
+  removedLines,
   parseUnifiedDiff,
   type DiffHunk,
   type DiffLine,

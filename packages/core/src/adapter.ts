@@ -15,6 +15,7 @@ import type {
   PackageHealth,
   ProjectRef,
   RepositoryHandle,
+  SourceLineChanges,
   Usage,
 } from "./types/index.js";
 
@@ -58,6 +59,15 @@ export interface AdapterContext {
    * worker-thread tier (engine/isolated.ts, #90) terminates it.
    */
   signal?: AbortSignal;
+  /**
+   * PR mode only (#101): lines the pull request removed and added in source
+   * files, already capped by core (limits.ts). An adapter with usage
+   * analysis matches removed lines against the dependency passed to
+   * findUsage and reports each match as a Usage with `removedInPr: true`.
+   * Diff text is attacker data: treat it as text, never evaluate it.
+   * Absent on full scans. Additive, no adapterApiVersion bump.
+   */
+  pullRequestSourceChanges?: readonly SourceLineChanges[];
 }
 
 /**

@@ -43,6 +43,76 @@ async function run(
 const byDep = (findings: Finding[], name: string) => findings.filter((f) => f.dependency === name);
 
 describe("default recommendation policy", () => {
+  describe("removed-last-usage (#101)", () => {
+    const removed = (name: string) => use(name, "src/old.ts", { line: 9, removedInPr: true });
+    const pr = { mode: "pull-request" as const, pullRequestChanges: [] };
+
+    it("flags a still-declared dependency whose only use the PR removed", async () => {
+      const findings = await run({
+        ...pr,
+        dependencies: [dep("left-pad")],
+        usages: [removed("left-pad")],
+      });
+      assert.equal(findings.length, 1);
+      assert.equal(findings[0]?.kind, "unused");
+      assert.equal(findings[0]?.rule, "removed-last-usage");
+      assert.equal(findings[0]?.confidence, "high");
+      assert.deepEqual(findings[0]?.affectedFiles, ["package.json", "src/old.ts"]);
+    });
+
+    it("stays silent when the dependency is still used at head", async () => {
+      const findings = await run({
+        ...pr,
+        dependencies: [dep("left-pad")],
+        usages: [removed("left-pad"), use("left-pad")],
+      });
+      assert.deepEqual(findings, []);
+    });
+
+    it("never counts a removed line as usage in any rule", async () => {
+      // Full scan: the removed usage is not usage, so plain "unused" applies.
+      const findings = await run({
+        dependencies: [dep("left-pad")],
+        usages: [removed("left-pad")],
+      });
+      assert.deepEqual(
+        findings.map((f) => f.rule),
+        ["unused"],
+      );
+    });
+
+    it("keeps the unused guards: no verdict without reference analysis", async () => {
+      const findings = await run({
+        ...pr,
+        dependencies: [dep("left-pad")],
+        usages: [removed("left-pad")],
+        referenceAnalysedEcosystems: new Set(),
+      });
+      assert.ok(!findings.some((f) => f.kind === "unused"));
+    });
+
+    it("keeps the unused guards: allowlisted tooling gets no verdict", async () => {
+      const findings = await run({
+        ...pr,
+        dependencies: [dep("typescript", "dev")],
+        usages: [removed("typescript")],
+      });
+      assert.ok(!findings.some((f) => f.kind === "unused"));
+    });
+
+    it("is untouched by PR scoping: a dependency with no PR change and no removal gets nothing", async () => {
+      const findings = await run({
+        ...pr,
+        dependencies: [dep("left-pad"), dep("other")],
+        usages: [removed("left-pad")],
+      });
+      assert.deepEqual(
+        findings.map((f) => f.dependency),
+        ["left-pad"],
+      );
+    });
+  });
+
   it("calls a dependency unused only with complete evidence", async () => {
     const findings = await run({
       dependencies: [dep("left-pad"), dep("axios")],

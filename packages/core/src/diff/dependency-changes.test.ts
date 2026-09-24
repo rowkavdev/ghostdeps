@@ -94,6 +94,23 @@ describe("extractDependencyChanges on a recorded package.json PR", async () => {
     );
     assert.deepEqual(result.limitations, []);
   });
+
+  it("records removed and added source lines, including deleted files (#101)", () => {
+    const gone = result.sourceLineChanges.find((f) => f.path === "gone.js");
+    assert.deepEqual(gone, {
+      path: "gone.js",
+      removedLines: [{ line: 1, text: "bye" }],
+      addedLines: [],
+    });
+    const index = result.sourceLineChanges.find((f) => f.path === "src/index.js");
+    assert.deepEqual(
+      index?.addedLines,
+      result.changedSourceFiles.find((f) => f.path === "src/index.js")?.addedLines,
+    );
+    // Binary files and dependency files never appear.
+    assert.ok(!result.sourceLineChanges.some((f) => f.path === "logo.png"));
+    assert.ok(!result.sourceLineChanges.some((f) => f.path === "package.json"));
+  });
 });
 
 describe("extractDependencyChanges edge cases", () => {

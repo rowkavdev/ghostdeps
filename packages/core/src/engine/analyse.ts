@@ -17,6 +17,7 @@
 import { type EcosystemAdapter } from "../adapter.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
+import { boundSourceChanges } from "./source-changes.js";
 import type {
   AnalysisResult,
   Dependency,
@@ -26,6 +27,7 @@ import type {
   NetworkPolicy,
   ProjectRef,
   RepositoryHandle,
+  SourceLineChanges,
   Usage,
 } from "../types/index.js";
 import {
@@ -115,6 +117,16 @@ export interface AnalyseOptions {
    * never post-process the result themselves (ADR 0004, #154).
    */
   scanCompleteness?: readonly Finding[];
+  /**
+   * PR mode (#101): removed and added source lines from
+   * extractDependencyChanges' `sourceLineChanges`. A separate field from
+   * pullRequestChanges on purpose: core only bounds it (limits.ts
+   * PR_SOURCE_CHANGE_LIMITS) and forwards it to adapters as
+   * AdapterContext.pullRequestSourceChanges. Adapters match removed lines
+   * to dependencies and report `Usage.removedInPr`; the policy stays
+   * ecosystem-free. Ignored unless pullRequestChanges is also set.
+   */
+  pullRequestSourceChanges?: readonly SourceLineChanges[];
 }
 
 /** Finding kinds whose claim ("not needed") can be wrong when files were not scanned. */
@@ -229,7 +241,12 @@ export async function assembleAnalysisResult(
   outcomes: readonly AdapterOutcome[],
   recommend?: RecommendationPolicy,
   pullRequestChanges?: readonly DependencyChange[],
-  context: { scanIncomplete?: boolean; scanCompleteness?: readonly Finding[] } = {},
+  context: {
+    scanIncomplete?: boolean;
+    scanCompleteness?: readonly Finding[];
+    /** Engine notes (e.g. capped PR source changes) appended as findings. */
+    notes?: readonly Finding[];
+  } = {},
 ): Promise<AnalysisResult> {
   const scanNotes = context.scanCompleteness ?? [];
   const scanIncomplete = context.scanIncomplete === true || scanNotes.length > 0;
@@ -243,6 +260,7 @@ export async function assembleAnalysisResult(
   const usageAnalysedEcosystems = new Set<string>();
   const referenceAnalysedEcosystems = new Set<string>();
 
+  findings.push(...(context.notes ?? []));
   for (const outcome of outcomes) {
     findings.push(...outcome.findings);
     if (!outcome.detected) continue;
@@ -370,24 +388,45 @@ export async function analyseRepository(
   const threshold = options.detectionThreshold ?? DEFAULT_DETECTION_THRESHOLD;
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
+  const sourceChanges = boundPullRequestSourceChanges(options);
 
   const outcomes = await Promise.all(
     options.adapters.map((adapter) =>
-      runAdapter(adapter, repository, network, threshold, timeoutMs, usageConcurrency).catch(
-        (error: unknown): AdapterOutcome => ({
-          ecosystem: adapter.ecosystem,
-          dependencies: [],
-          usages: [],
-          graphs: [],
-          usageAnalysed: false,
-          findings: [adapterFailure(adapter, "run", error)],
-        }),
-      ),
+      runAdapter(
+        adapter,
+        repository,
+        network,
+        threshold,
+        timeoutMs,
+        usageConcurrency,
+        undefined,
+        sourceChanges.changes,
+      ).catch((error: unknown): AdapterOutcome => ({
+        ecosystem: adapter.ecosystem,
+        dependencies: [],
+        usages: [],
+        graphs: [],
+        usageAnalysed: false,
+        findings: [adapterFailure(adapter, "run", error)],
+      })),
     ),
   );
 
   return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
     scanIncomplete: options.scanIncomplete === true,
     scanCompleteness: options.scanCompleteness ?? [],
+    notes: sourceChanges.findings,
   });
+}
+
+/**
+ * Bound the PR source-change payload once per run (#101). Undefined
+ * changes on a full scan, so adapters never see PR data outside PR mode.
+ */
+export function boundPullRequestSourceChanges(options: {
+  pullRequestChanges?: readonly DependencyChange[];
+  pullRequestSourceChanges?: readonly SourceLineChanges[];
+}): { changes?: SourceLineChanges[]; findings: Finding[] } {
+  if (!options.pullRequestChanges || !options.pullRequestSourceChanges) return { findings: [] };
+  return boundSourceChanges(options.pullRequestSourceChanges);
 }

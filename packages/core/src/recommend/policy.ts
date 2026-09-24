@@ -30,7 +30,10 @@ export interface PolicyConfig {
 /** Facts pre-indexed once per policy run. */
 export interface PolicyContext {
   input: RecommendationInput;
+  /** Usages at head. Never includes `removedInPr` usages. */
   usagesByDependency: ReadonlyMap<string, readonly Usage[]>;
+  /** PR mode (#101): usages on lines the pull request removed. */
+  removedInPrByDependency: ReadonlyMap<string, readonly Usage[]>;
   allowlists: Readonly<Record<string, ToolingAllowlist>>;
   typeStrippingEcosystems: ReadonlySet<string>;
   /** Ecosystems whose adapter checked script/config references (see referenceAnalysedEcosystems). */
@@ -118,6 +121,63 @@ const unusedRule: PolicyRule = {
       confidence: "high",
       limitations: [],
       affectedFiles: [d.declaredIn],
+    };
+  },
+};
+
+/** Most removed-line evidence records one PR-scoped finding carries. */
+const MAX_REMOVED_EVIDENCE = 20;
+
+/**
+ * "removed-last-usage" (#101, PR mode only): the dependency is still
+ * declared, nothing uses it at head, and the adapter found it on a line this
+ * pull request removed. Ecosystem-free: the matching happened in usage
+ * analysis. Same guards as "unused" (reference-analysed, not required by
+ * another direct dependency, not allowlisted), so it is the unused verdict
+ * scoped to this PR, with the removed lines as evidence.
+ */
+const removedLastUsageRule: PolicyRule = {
+  id: "removed-last-usage",
+  evaluate(d, context) {
+    if (context.input.mode !== "pull-request") return undefined;
+    const removed = context.removedInPrByDependency.get(key(d)) ?? [];
+    if (removed.length === 0) return undefined;
+    if (!hasNoUsageEvidence(d, context)) return undefined;
+    if (!context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
+    if (context.requiredByOtherDirect.has(key(d))) return undefined;
+    const shown = [...removed]
+      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
+      .slice(0, MAX_REMOVED_EVIDENCE);
+    const files = [...new Set(shown.map((u) => u.file))];
+    return {
+      kind: "unused",
+      rule: "removed-last-usage",
+      dependency: d.name,
+      summary: `${d.name} is no longer used after this pull request`,
+      recommendation: `This pull request removes the last use of ${d.name}. Remove it from ${d.declaredIn}.`,
+      evidence: [
+        ...shown.map((u) => ({
+          kind: "usage-removed-in-pr",
+          statement: `this pull request removes a use of ${d.name}`,
+          file: u.file,
+          line: u.line,
+        })),
+        noImportsEvidence(d),
+        {
+          kind: "no-reference-found",
+          statement: `no script, bin or config reference to ${d.name} found`,
+        },
+        {
+          kind: "not-allowlisted",
+          statement: `${d.name} is not on the dev-tooling allowlist`,
+        },
+      ],
+      confidence: "high",
+      limitations:
+        removed.length > shown.length
+          ? [`${removed.length - shown.length} more removed use(s) are not listed.`]
+          : [],
+      affectedFiles: [d.declaredIn, ...files.filter((f) => f !== d.declaredIn)],
     };
   },
 };
@@ -229,6 +289,7 @@ const typeOnlyRule: PolicyRule = {
 
 /** Registered rules, in evaluation order. First finding per dependency wins. */
 export const DEFAULT_RULES: readonly PolicyRule[] = [
+  removedLastUsageRule,
   unusedRule,
   unverifiedNoImportsRule,
   typeOnlyRule,
@@ -248,12 +309,15 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
     set.add(d.project.ecosystem);
     ecosystemByName.set(d.name, set);
   }
+  // A removed line is evidence of a removal, never usage at head (#101).
+  const removedInPrByDependency = new Map<string, Usage[]>();
   for (const u of input.usages) {
+    const target = u.removedInPr === true ? removedInPrByDependency : usagesByDependency;
     for (const ecosystem of ecosystemByName.get(u.dependency) ?? []) {
       const k = `${ecosystem}\0${u.dependency}`;
-      const list = usagesByDependency.get(k) ?? [];
+      const list = target.get(k) ?? [];
       list.push(u);
-      usagesByDependency.set(k, list);
+      target.set(k, list);
     }
   }
 
@@ -280,6 +344,7 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
   return {
     input,
     usagesByDependency,
+    removedInPrByDependency,
     allowlists: mergeAllowlists(DEFAULT_TOOLING_ALLOWLIST, config.allowlist),
     typeStrippingEcosystems: new Set(config.typeStrippingEcosystems ?? ["javascript-typescript"]),
     referenceAnalysedEcosystems: input.referenceAnalysedEcosystems,
@@ -298,13 +363,15 @@ export function createDefaultPolicy(
     const context = buildContext(input, config);
     // PR scan (#128): only dependencies the PR added or changed get findings.
     // Removed dependencies are no longer declared, so they get none here.
+    // A dependency whose use the PR removed counts as touched too (#101).
     const touched =
       input.mode === "pull-request"
-        ? new Set(
-            (input.pullRequestChanges ?? [])
+        ? new Set([
+            ...(input.pullRequestChanges ?? [])
               .filter((change) => change.change !== "removed")
               .map((change) => `${change.ecosystem}\0${change.name}`),
-          )
+            ...context.removedInPrByDependency.keys(),
+          ])
         : undefined;
     const findings: Finding[] = [];
     for (const dependency of input.dependencies) {

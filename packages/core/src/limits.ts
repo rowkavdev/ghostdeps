@@ -98,3 +98,21 @@ export const MAX_REPO_FILES = 50_000;
  * skipped with a recorded reason, never read partially.
  */
 export const MAX_FILE_READ_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Caps on AnalyseOptions.pullRequestSourceChanges (#101), in the #133 style:
+ * the payload is attacker-shaped diff text that core forwards to every
+ * adapter (and clones into every worker), so it is bounded before it leaves
+ * the engine. Lines past a per-file cap, files past the total byte cap, and
+ * malformed entries are dropped and reported in one info finding. Dropping
+ * is the safe direction: a missed removed line only means no PR-scoped
+ * "unused" finding, never a false one.
+ */
+export const PR_SOURCE_CHANGE_LIMITS = {
+  /** Removed lines kept per file; the same cap applies to added lines. */
+  maxLinesPerFile: 5_000,
+  /** Longer lines are dropped, not truncated (a cut import could mismatch). */
+  maxLineChars: 2_000,
+  /** Total UTF-16 code units of paths plus line text across the payload. */
+  maxTotalChars: 8 * 1024 * 1024,
+} as const;

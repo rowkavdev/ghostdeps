@@ -8,9 +8,9 @@
  * run against the base and head trees (ADR 0002). package.json is the first
  * format wired through the JavaScript/TypeScript adapter.
  */
-import type { Dependency, DependencyKind } from "../types/index.js";
+import type { Dependency, DependencyKind, SourceLineChanges } from "../types/index.js";
 import { classifyDependencyFile, type DependencyFileMatch } from "./dependency-files.js";
-import { addedLines, type FileDiff, type ParsedDiff } from "./unified.js";
+import { addedLines, removedLines, type FileDiff, type ParsedDiff } from "./unified.js";
 
 export type DiffSide = "base" | "head";
 
@@ -79,6 +79,12 @@ export interface PullRequestDependencyChanges {
   manifestsWithoutLockfileChange: string[];
   /** Non-dependency files that gained lines (not deleted, not binary). */
   changedSourceFiles: ChangedSourceFile[];
+  /**
+   * Removed and added lines for every non-dependency, non-binary file the
+   * PR touched, including deleted files and removal-only edits (#101).
+   * Pass it as AnalyseOptions.pullRequestSourceChanges; core caps it there.
+   */
+  sourceLineChanges: SourceLineChanges[];
   /** Why this result may be incomplete. Empty when the diff was fully read. */
   limitations: string[];
 }
@@ -196,6 +202,7 @@ export async function extractDependencyChanges(
   const manifestsChanged: string[] = [];
   const lockfilesChanged: ChangedLockfile[] = [];
   const changedSourceFiles: ChangedSourceFile[] = [];
+  const sourceLineChanges: SourceLineChanges[] = [];
   const manifestsWithDependencyChanges: { path: string; ecosystem: string }[] = [];
 
   for (const file of diff.files) {
@@ -216,9 +223,15 @@ export async function extractDependencyChanges(
       (file.oldPath ? classifyDependencyFile(file.oldPath) : undefined);
 
     if (!match) {
-      if (file.newPath !== undefined && !file.binary) {
-        const lines = addedLines(file);
-        if (lines.length > 0) changedSourceFiles.push({ path: file.newPath, addedLines: lines });
+      if (!file.binary) {
+        const added = file.newPath !== undefined ? addedLines(file) : [];
+        const removed = removedLines(file);
+        if (file.newPath !== undefined && added.length > 0) {
+          changedSourceFiles.push({ path: file.newPath, addedLines: added });
+        }
+        if (added.length > 0 || removed.length > 0) {
+          sourceLineChanges.push({ path, removedLines: removed, addedLines: added });
+        }
       }
       continue;
     }
@@ -275,6 +288,7 @@ export async function extractDependencyChanges(
     lockfilesChanged,
     manifestsWithoutLockfileChange,
     changedSourceFiles,
+    sourceLineChanges,
     limitations,
   };
 }

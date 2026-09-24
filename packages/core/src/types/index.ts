@@ -82,6 +82,34 @@ export interface Usage {
   via?: "import" | "script" | "config" | "convention";
   /** The API surface observed, e.g. ["get", "post"] for axios.get/axios.post. */
   symbols: string[];
+  /**
+   * PR mode (#101): this usage is on a line the pull request removed, found
+   * in AdapterContext.pullRequestSourceChanges. `file` and `line` point at
+   * the base-side line. It is evidence of a removal, not usage at head:
+   * policy never counts it as "used". Absent means false. Additive, so no
+   * adapterApiVersion bump (same precedent as `via`, #130).
+   */
+  removedInPr?: boolean;
+}
+
+/** One changed line in a pull request diff. */
+export interface ChangedLine {
+  /** 1-based line number: base file for removed lines, head file for added lines. */
+  line: number;
+  text: string;
+}
+
+/**
+ * Source lines a pull request removed and added in one non-dependency file
+ * (#101). Built by extractDependencyChanges; passed to the engine as
+ * AnalyseOptions.pullRequestSourceChanges and on to adapters, which match
+ * removed lines against dependencies. Core stays ecosystem-free.
+ */
+export interface SourceLineChanges {
+  /** Head path; the base path for a deleted file. Repository-relative. */
+  path: string;
+  removedLines: ChangedLine[];
+  addedLines: ChangedLine[];
 }
 
 /** A piece of evidence supporting (or weakening) a finding. */
