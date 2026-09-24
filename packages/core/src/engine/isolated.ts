@@ -14,6 +14,7 @@
  * the scan - cheap while adapter count is small, and it keeps untrusted
  * parsing out of the main thread entirely.
  */
+import { MAX_ADAPTER_NOTES } from "./adapter-notes.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,6 +111,8 @@ export interface IsolatedAnalyseOptions {
 }
 
 /** Truncate a worker-posted outcome to OUTCOME_CAPS, recording overflow as limitations. */
+const MAX_RAW_ADAPTER_NOTES = MAX_ADAPTER_NOTES * 4;
+
 export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
   const limitations: string[] = [];
   let dependencies = outcome.dependencies;
@@ -179,6 +182,12 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
     );
     findings = findings.slice(0, OUTCOME_CAPS.maxFindings);
   }
+  // Adapter notes (#205) are capped again at assembly; bound the raw array
+  // here so a worker can't ship an unbounded one. Losing extra notes never
+  // caps the run, so no limitation is recorded for it.
+  if (Array.isArray(outcome.adapterNotes) && outcome.adapterNotes.length > MAX_RAW_ADAPTER_NOTES) {
+    outcome = { ...outcome, adapterNotes: outcome.adapterNotes.slice(0, MAX_RAW_ADAPTER_NOTES) };
+  }
   if (limitations.length === 0) return { ...outcome, referenceAnalysed };
   return {
     ...outcome,
@@ -204,7 +213,7 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
 }
 
 interface WorkerMessage {
-  type: "loaded" | "stage" | "outcome" | "run-error";
+  type: "loaded" | "stage" | "partial" | "outcome" | "run-error";
   ecosystem?: string;
   stage?: string;
   outcome?: AdapterOutcome;
@@ -373,6 +382,18 @@ export function runAdapterIsolated(
       clearTimeout(watchdog);
       resolve(outcome);
     };
+    // Posted just before the notes stage (#205). If the worker then hangs,
+    // dies or errors while in that stage, keep the analysis and report the
+    // lost notes as an incomplete note instead of dropping the outcome.
+    let beforeNotes: AdapterOutcome | undefined;
+    const failed = (error: unknown): AdapterOutcome => {
+      const failure = adapterFailure({ ecosystem }, stage, error);
+      if (beforeNotes !== undefined && stage === "notes") {
+        const kept = capOutcome(beforeNotes);
+        return { ...kept, findings: [...kept.findings, failure] };
+      }
+      return emptyOutcome(ecosystem, failure);
+    };
 
     // A stage past its budget (plus reporting headroom) means the worker's
     // event loop is stuck in synchronous work: async waits are bounded
@@ -382,9 +403,7 @@ export function runAdapterIsolated(
       clearTimeout(watchdog);
       watchdog = setTimeout(() => {
         kill();
-        finish(
-          emptyOutcome(ecosystem, adapterFailure({ ecosystem }, stage, new StageTimeout(stage))),
-        );
+        finish(failed(new StageTimeout(stage)));
       }, timeoutMs + WATCHDOG_GRACE_MS);
       watchdog.unref();
     };
@@ -396,21 +415,18 @@ export function runAdapterIsolated(
       } else if (message.type === "stage" && message.stage !== undefined) {
         stage = message.stage;
         armWatchdog();
+      } else if (message.type === "partial" && message.outcome !== undefined) {
+        beforeNotes = message.outcome;
       } else if (message.type === "outcome" && message.outcome !== undefined) {
         completed = capOutcome(message.outcome);
       } else if (message.type === "run-error") {
-        finish(
-          emptyOutcome(
-            ecosystem,
-            adapterFailure({ ecosystem }, stage, new Error(message.message ?? "worker failed")),
-          ),
-        );
+        finish(failed(new Error(message.message ?? "worker failed")));
       }
     });
     // Heap-ceiling death and uncaught worker exceptions arrive here.
     worker.on("error", (error: Error) => {
       kill();
-      finish(emptyOutcome(ecosystem, adapterFailure({ ecosystem }, stage, error)));
+      finish(failed(error));
     });
     worker.on("exit", (code: number) => {
       if (settled) return;
@@ -418,19 +434,9 @@ export function runAdapterIsolated(
         finish(completed);
       } else if (code === 0) {
         // Clean exit without an outcome should not happen; report it.
-        finish(
-          emptyOutcome(
-            ecosystem,
-            adapterFailure({ ecosystem }, stage, new Error("worker exited without a result")),
-          ),
-        );
+        finish(failed(new Error("worker exited without a result")));
       } else {
-        finish(
-          emptyOutcome(
-            ecosystem,
-            adapterFailure({ ecosystem }, stage, new Error(`worker exited with code ${code}`)),
-          ),
-        );
+        finish(failed(new Error(`worker exited with code ${code}`)));
       }
     });
   });

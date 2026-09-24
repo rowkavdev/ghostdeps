@@ -141,6 +141,11 @@ export interface AdapterOutcome {
    * (cap-and-note, #154).
    */
   scanCompleteness?: Finding[];
+  /**
+   * Raw EcosystemAdapter.notes() output (#205), untrusted and unvalidated.
+   * assembleAnalysisResult sanitises, dedupes and caps it.
+   */
+  adapterNotes?: unknown;
 }
 
 /**
@@ -223,6 +228,12 @@ export async function runAdapter(
    * at most MAX_UNSNIFFED_NOTES notes in total.
    */
   unsniffed: Set<string> = new Set(),
+  /**
+   * Called with the outcome so far just before the notes stage (#205). The
+   * worker tier posts it, so a notes() that hangs or kills the worker
+   * loses only the notes, never the analysis before it.
+   */
+  onBeforeNotes?: (outcome: AdapterOutcome) => void,
 ): Promise<AdapterOutcome> {
   const outcome: AdapterOutcome = {
     ecosystem: adapter.ecosystem,
@@ -348,5 +359,22 @@ export async function runAdapter(
       : Promise.resolve();
 
   await Promise.all([graphStage, usageStage]);
+
+  if (adapter.notes && !controller.signal.aborted) {
+    onBeforeNotes?.(outcome);
+    onStage?.("notes");
+    try {
+      outcome.adapterNotes = await withTimeout(
+        () => adapter.notes!(context, detection.projects),
+        timeoutMs,
+        "notes",
+        controller,
+      );
+    } catch (error) {
+      // Keep everything analysed so far; the lost notes are reported as an
+      // incomplete note (unmarked info, findingGroup "incomplete").
+      outcome.findings.push(adapterFailure(adapter, "notes", error));
+    }
+  }
   return outcome;
 }

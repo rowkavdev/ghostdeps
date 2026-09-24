@@ -14,6 +14,7 @@
  * - Output is deterministic: the same facts always produce the same result.
  * - Recommendation policy lives in core and is injected here; adapters report facts.
  */
+import { adapterNoteFindings } from "./adapter-notes.js";
 import { type EcosystemAdapter } from "../adapter.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
@@ -401,6 +402,21 @@ export async function assembleAnalysisResult(
   // and after the strip above so they keep `awareness`. In a PR, only
   // packages the PR added are reported.
   for (const finding of crossEcosystemOverlaps(dependencies, pullRequestChanges)) {
+    findings.push({ ...finding, severity: severityOf(finding) });
+  }
+
+  // Adapter notes (#205): non-capping, added after the policy and the strip
+  // above, like the overlap notes. Engine-mapped markers decide the group:
+  // capability notes are awareness, run-level notes are "note".
+  for (const finding of adapterNoteFindings(
+    outcomes
+      .filter((outcome) => outcome.detected !== undefined)
+      .map((outcome) => ({
+        ecosystem: outcome.ecosystem,
+        notes: outcome.adapterNotes,
+        dependencies: outcome.dependencies,
+      })),
+  )) {
     findings.push({ ...finding, severity: severityOf(finding) });
   }
 
