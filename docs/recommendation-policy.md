@@ -56,6 +56,11 @@ createDefaultPolicy({
 });
 ```
 
-Reporters derive severity from kind and confidence, not from the rule id.
+Reporters derive severity from kind and confidence, not from the rule id. `unused` is capped at `medium` severity (`UNUSED_SEVERITY_CAP`, #173)
+until the pinned corpus check (#172) has been green on every nightly run for 14
+consecutive days. The cap is the kind's ceiling, and confidence still drops rungs
+below it: high → medium, medium → low, low → info. Lifting it is a one-line change
+plus the contract test in `severity.test.ts`. A regression after the lift does
+not bring the cap back by itself; that needs a fresh decision.
 `summariseFindings` returns counts by kind, rule and confidence for check-run
 summaries.

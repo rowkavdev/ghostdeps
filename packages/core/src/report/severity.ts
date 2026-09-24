@@ -17,13 +17,27 @@ export function parseSeverity(text: string): Severity | undefined {
 }
 
 /**
+ * Shipping gate for `unused` (#173, ADR-0004): a false "unused" is the worst
+ * output ghostdeps can produce, so until the pinned corpus check (#172) has
+ * been green on every nightly run for 14 consecutive days, `unused` findings
+ * can never reach high or critical and so cannot gate CI at `--fail-on high`.
+ * The cap is the kind's ceiling; confidence still drops rungs below it.
+ *
+ * Lifting it is a one-line change: set this to "high" (the kind's default)
+ * and update the contract test in severity.test.ts in the same PR. If the
+ * corpus regresses after the lift, the cap does not return by itself - that
+ * needs a fresh decision.
+ */
+export const UNUSED_SEVERITY_CAP: Severity = "medium";
+
+/**
  * The worst a finding of each kind can be. Every FindingKind needs an
  * explicit entry - the Record type fails typecheck otherwise, and
  * severity.test.ts asserts completeness at runtime - so a new kind must be
  * placed deliberately, never silently inherit a severity.
  */
 const kindCeiling: Record<FindingKind, Severity> = {
-  unused: "high",
+  unused: UNUSED_SEVERITY_CAP,
   "should-be-dev": "medium",
   "type-only": "medium",
   "duplicate-capability": "medium",

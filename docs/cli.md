@@ -98,7 +98,9 @@ exit code becomes 1 when any finding reaches the threshold. Severity derives
 from finding kind + confidence (`severityOf` in core). Info findings - the
 scan-completeness notes from #110 and the no-recommendations notice - are
 always severity `info`, so they cannot trip `--fail-on high` (or any
-threshold above `info`). Policy behaviour is adjustable per run (repeatable flags): `--disable-rule
+threshold above `info`). Until the pinned corpus check (#172) has been
+green for 14 consecutive days, `unused` findings are capped at `medium`
+severity (#173), so they cannot trip `--fail-on high` either. Policy behaviour is adjustable per run (repeatable flags): `--disable-rule
 <id>` turns a rule off, `--downgrade <rule>=<confidence>` caps a rule's
 confidence (never raises it), and `--allowlist <ecosystem>:<name>` marks a
 tooling package as expected (trailing `*` for a prefix). These mirror core's
