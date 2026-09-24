@@ -36,6 +36,12 @@ export const DEFAULT_ADAPTER_HEAP_MB = 512;
 export interface IsolatedAnalyseOptions {
   /** Module specifiers; each module's default or "adapter" export is the adapter. */
   adapters: readonly string[];
+  /**
+   * Drain for adapter stdout/stderr lines. Worker output is NEVER inherited
+   * by the parent process (it would corrupt `ghostdeps scan --json`); it is
+   * captured and passed here instead. Omit to discard it.
+   */
+  debugLog?: (line: string) => void;
   /** Defaults to offline. */
   network?: NetworkPolicy;
   detectionThreshold?: number;
@@ -79,6 +85,7 @@ export function runAdapterIsolated(
   timeoutMs: number,
   usageConcurrency: number,
   heapMb: number,
+  debugLog?: (line: string) => void,
 ): Promise<AdapterOutcome> {
   return new Promise((resolve) => {
     // The name shown in findings before the worker tells us the ecosystem.
@@ -97,14 +104,47 @@ export function runAdapterIsolated(
         usageConcurrency,
       },
       resourceLimits: { maxOldGenerationSizeMb: heapMb },
+      // Capture adapter output instead of inheriting the parent's streams:
+      // a stray adapter log line must not corrupt JSON output on stdout.
+      stdout: true,
+      stderr: true,
     });
 
+    // Drain both captured streams as lines, tagged with the adapter name.
+    if (debugLog !== undefined) {
+      for (const [stream, tag] of [
+        [worker.stdout, "stdout"],
+        [worker.stderr, "stderr"],
+      ] as const) {
+        let pending = "";
+        stream?.on("data", (chunk: Buffer) => {
+          pending += chunk.toString("utf8");
+          const lines = pending.split("\n");
+          pending = lines.pop() ?? "";
+          for (const line of lines) debugLog(`${ecosystem} ${tag}: ${line}`);
+        });
+        stream?.on("end", () => {
+          if (pending.length > 0) debugLog(`${ecosystem} ${tag}: ${pending}`);
+        });
+      }
+    } else {
+      // Discard, but still read so the worker never blocks on a full pipe.
+      worker.stdout?.resume();
+      worker.stderr?.resume();
+    }
+
     let watchdog: NodeJS.Timeout;
+    const kill = (): void => {
+      void worker.terminate();
+    };
+    // A worker that posted an outcome resolves at exit, so captured
+    // stdout/stderr has drained to debugLog by the time callers see the
+    // result. Failure paths (watchdog, error, non-zero exit) resolve now.
+    let completed: AdapterOutcome | undefined;
     const finish = (outcome: AdapterOutcome): void => {
       if (settled) return;
       settled = true;
       clearTimeout(watchdog);
-      void worker.terminate();
       resolve(outcome);
     };
 
@@ -115,6 +155,7 @@ export function runAdapterIsolated(
     const armWatchdog = (): void => {
       clearTimeout(watchdog);
       watchdog = setTimeout(() => {
+        kill();
         finish(
           emptyOutcome(ecosystem, adapterFailure({ ecosystem }, stage, new StageTimeout(stage))),
         );
@@ -130,7 +171,7 @@ export function runAdapterIsolated(
         stage = message.stage;
         armWatchdog();
       } else if (message.type === "outcome" && message.outcome !== undefined) {
-        finish(message.outcome);
+        completed = message.outcome;
       } else if (message.type === "run-error") {
         finish(
           emptyOutcome(
@@ -142,10 +183,22 @@ export function runAdapterIsolated(
     });
     // Heap-ceiling death and uncaught worker exceptions arrive here.
     worker.on("error", (error: Error) => {
+      kill();
       finish(emptyOutcome(ecosystem, adapterFailure({ ecosystem }, stage, error)));
     });
     worker.on("exit", (code: number) => {
-      if (code !== 0 && !settled) {
+      if (settled) return;
+      if (code === 0 && completed !== undefined) {
+        finish(completed);
+      } else if (code === 0) {
+        // Clean exit without an outcome should not happen; report it.
+        finish(
+          emptyOutcome(
+            ecosystem,
+            adapterFailure({ ecosystem }, stage, new Error("worker exited without a result")),
+          ),
+        );
+      } else {
         finish(
           emptyOutcome(
             ecosystem,
@@ -191,6 +244,7 @@ export async function analyseRepositoryIsolated(
         timeoutMs,
         usageConcurrency,
         heapMb,
+        options.debugLog,
       ),
     ),
   );

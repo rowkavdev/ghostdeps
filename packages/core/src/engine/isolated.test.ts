@@ -94,6 +94,42 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("adapter stdout/stderr is captured to debugLog, never inherited by the parent", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const lines: string[] = [];
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("chatty.mjs")],
+        adapterTimeoutMs: 10_000,
+        debugLog: (line) => lines.push(line),
+      });
+      assert.equal(result.detected[0]?.ecosystem, "chatty");
+      assert.ok(
+        lines.some((line) => line === "chatty stdout: chatty detection log line"),
+        `stdout line missing from debugLog: ${JSON.stringify(lines)}`,
+      );
+      assert.ok(
+        lines.some((line) => line === "chatty stderr: chatty detection error line"),
+        `stderr line missing from debugLog: ${JSON.stringify(lines)}`,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("discards adapter output without a debugLog and still completes", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("chatty.mjs")],
+        adapterTimeoutMs: 10_000,
+      });
+      assert.equal(result.detected[0]?.ecosystem, "chatty");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("a module without an adapter export becomes an info finding, not a crash", async () => {
     const { dir, handle } = await fixtureRepo();
     try {
