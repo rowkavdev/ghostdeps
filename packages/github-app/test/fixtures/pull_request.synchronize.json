@@ -1,0 +1,75 @@
+{
+  "action": "synchronize",
+  "number": 42,
+  "pull_request": {
+    "id": 1296269,
+    "number": 42,
+    "state": "open",
+    "title": "Add left-pad",
+    "head": {
+      "ref": "feature/left-pad",
+      "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "repo": {
+        "id": 872001,
+        "node_id": "R_kgDOExample",
+        "name": "example-app",
+        "full_name": "octo-org/example-app",
+        "private": false,
+        "owner": {
+          "login": "octo-org",
+          "id": 9001,
+          "type": "Organization"
+        },
+        "default_branch": "main",
+        "fork": false
+      }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b",
+      "repo": {
+        "id": 872001,
+        "node_id": "R_kgDOExample",
+        "name": "example-app",
+        "full_name": "octo-org/example-app",
+        "private": false,
+        "owner": {
+          "login": "octo-org",
+          "id": 9001,
+          "type": "Organization"
+        },
+        "default_branch": "main",
+        "fork": false
+      }
+    },
+    "user": {
+      "login": "octocat",
+      "id": 583231,
+      "type": "User"
+    },
+    "draft": false
+  },
+  "repository": {
+    "id": 872001,
+    "node_id": "R_kgDOExample",
+    "name": "example-app",
+    "full_name": "octo-org/example-app",
+    "private": false,
+    "owner": {
+      "login": "octo-org",
+      "id": 9001,
+      "type": "Organization"
+    },
+    "default_branch": "main",
+    "fork": false
+  },
+  "installation": {
+    "id": 55501,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNTU1MDE="
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 583231,
+    "type": "User"
+  }
+}

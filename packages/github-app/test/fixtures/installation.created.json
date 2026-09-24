@@ -1,0 +1,35 @@
+{
+  "action": "created",
+  "installation": {
+    "id": 55501,
+    "account": {
+      "login": "octo-org",
+      "id": 9001,
+      "type": "Organization"
+    },
+    "repository_selection": "selected",
+    "permissions": {
+      "checks": "write",
+      "contents": "read",
+      "metadata": "read",
+      "pull_requests": "read"
+    },
+    "events": [
+      "pull_request",
+      "push"
+    ]
+  },
+  "repositories": [
+    {
+      "id": 872001,
+      "name": "example-app",
+      "full_name": "octo-org/example-app",
+      "private": false
+    }
+  ],
+  "sender": {
+    "login": "octocat",
+    "id": 583231,
+    "type": "User"
+  }
+}
