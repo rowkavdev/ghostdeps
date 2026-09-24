@@ -4,5 +4,6 @@
  */
 export * from "./types/index.js";
 export * from "./adapter.js";
+export * from "./checkout/index.js";
 export * from "./native-rules/index.js";
 export { runAdapterContractTests } from "./contract-tests/index.js";

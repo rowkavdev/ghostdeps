@@ -75,4 +75,5 @@ No premature optimisation, with deliberate design headroom: cached lockfile pars
 | CLI                                           | `packages/cli/`                                                     |
 | GitHub App                                    | `packages/github-app/`                                              |
 | Test fixture repositories                     | `fixtures/`                                                         |
+| Inert codeload archive extraction             | `packages/core/src/checkout/`                                       |
 | Decisions                                     | `docs/adr/`                                                         |
