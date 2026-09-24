@@ -85,10 +85,12 @@ describe("GhostDeps GitHub App", () => {
     nock.enableNetConnect();
   });
 
-  beforeEach(async () => {
+  async function listen(options: { sourcePrTrigger?: boolean } = {}) {
     queue = new RecordingQueue();
     const probot = new Probot({ appId: 123, privateKey, secret: SECRET, logLevel: "fatal" });
-    const middleware = await createNodeMiddleware(createGhostDepsApp({ queue }), { probot });
+    const middleware = await createNodeMiddleware(createGhostDepsApp({ queue, ...options }), {
+      probot,
+    });
     server = createServer((req, res) => {
       void middleware(req, res, () => {
         res.writeHead(404).end();
@@ -96,6 +98,10 @@ describe("GhostDeps GitHub App", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+
+  beforeEach(async () => {
+    await listen();
   });
 
   afterEach(async () => {
@@ -190,9 +196,28 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(queue.jobs.length, 0);
   });
 
-  it("skips a pull request that touches no dependency files", async () => {
+  it("skips a source-only pull request while the source trigger is off (default)", async () => {
     mockInstallationToken();
     mockPrFiles(["src/index.js", "README.md"]);
+    const res = await deliver("pull_request", await fixture("pull_request.opened"));
+    assert.equal(res.status, 200);
+    assert.equal(queue.jobs.length, 0);
+  });
+
+  it("analyses a source-only pull request with the source trigger on (#101)", async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await listen({ sourcePrTrigger: true });
+    mockInstallationToken();
+    mockPrFiles(["src/index.js", "README.md"]);
+    const res = await deliver("pull_request", await fixture("pull_request.opened"));
+    assert.equal(res.status, 200);
+    assert.equal(queue.jobs.length, 1);
+    assert.equal(queue.jobs[0]?.trigger.kind, "pull_request");
+  });
+
+  it("skips a pull request that touches no dependency files or analysable source", async () => {
+    mockInstallationToken();
+    mockPrFiles(["README.md", "docs/guide.md", "dist/index.js"]);
     const res = await deliver("pull_request", await fixture("pull_request.opened"));
     assert.equal(res.status, 200);
     assert.equal(queue.jobs.length, 0);
