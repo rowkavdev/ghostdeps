@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseGoMod } from "./gomod.js";
+import { MAX_GOMOD_BYTES, parseGoMod } from "./gomod.js";
 
 describe("parseGoMod", () => {
   it("reads module, go, toolchain and a require block with indirect markers", () => {
@@ -155,6 +155,53 @@ describe("parseGoMod", () => {
   it("returns an empty result for empty input", () => {
     const mod = parseGoMod("");
     assert.equal(mod.module, undefined);
+    assert.deepEqual(mod.require, []);
+    assert.deepEqual(mod.errors, []);
+  });
+
+  it("rejects paren lines inside a block instead of reading fake requirements (#227)", () => {
+    const mod = parseGoMod(
+      [
+        "module m",
+        "require (",
+        "\ta.example/x v1.0.0",
+        "\trequire (",
+        "\tb.example/y v1.0.0",
+        ")",
+        "replace (",
+        "\tc.example/z ( => ./z",
+        ")",
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      mod.require.map((r) => r.path),
+      ["a.example/x", "b.example/y"],
+    );
+    assert.deepEqual(mod.replace, []);
+    assert.deepEqual(
+      mod.errors.map((e) => e.line),
+      [4, 8],
+    );
+  });
+
+  it('does not take a quoted "=>" as the replace arrow (#227)', () => {
+    const mod = parseGoMod('module m\nreplace a.example/x "=>" ./x\n');
+    assert.deepEqual(mod.replace, []);
+    assert.equal(mod.errors.length, 1);
+  });
+
+  it("reports a go.mod over the size cap without parsing it (#227)", () => {
+    const big = "module m\n" + "// pad\n".repeat(MAX_GOMOD_BYTES / 7 + 1);
+    const mod = parseGoMod(big);
+    assert.equal(mod.module, undefined);
+    assert.deepEqual(
+      mod.errors.map((e) => e.line),
+      [0],
+    );
+  });
+
+  it("accepts a one-line empty block: require () (#227)", () => {
+    const mod = parseGoMod("module m\nrequire ()\nreplace ( )\n");
     assert.deepEqual(mod.require, []);
     assert.deepEqual(mod.errors, []);
   });
