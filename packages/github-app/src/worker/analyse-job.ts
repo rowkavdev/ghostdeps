@@ -30,7 +30,7 @@ import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/re
 import type { AnalysisJob, JobWorker } from "../jobs.js";
 import { pullRequestContext, type PullRequestClient } from "../pull-request/changes.js";
 import { isRateLimitError } from "../github/rate-limit.js";
-import type { NpmMetadataService } from "./npm-metadata.js";
+import type { NpmMetadataService, RunMetadataProvider } from "./npm-metadata.js";
 import { isCacheable, ResultCache, resultCacheKey } from "./result-cache.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
@@ -265,6 +265,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       );
       let added: AddedLines = new Map();
       const appNotes: string[] = [];
+      const footprint: RunMetadataProvider | undefined = options.metadata?.forRun();
       const run: {
         pullRequestChanges?: readonly DependencyChange[];
         pullRequestSourceChanges?: readonly SourceLineChanges[];
@@ -272,7 +273,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         metadata?: PackageMetadataProvider;
       } = {
         ...(options.recommend ? { recommend: options.recommend } : {}),
-        ...(options.metadata ? { metadata: options.metadata.forRun() } : {}),
+        ...(footprint ? { metadata: footprint } : {}),
       };
       // baseSha is from the payload at enqueue time. If the base branch has
       // moved since, base...head still diffs from the merge base, so the
@@ -310,7 +311,10 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       }
       const result = await analyse(await checkoutRoot(destDir), adapterModules, run);
       const posted = await reporter.complete(target, checkRunId, result, added, appNotes);
-      if (cache && isCacheable(result, appNotes)) {
+      // A footprint cut short (budget, deadline, registry error) is fine to
+      // post but never cached: a cached truncation would under-report on
+      // every re-run of this head (#313 review, ADR 0004).
+      if (cache && isCacheable(result, appNotes) && (footprint?.complete ?? true)) {
         cache.set(job.repository.id, cacheKey, posted);
       }
       options.log?.info({ job: job.key, findings: result.findings.length }, "analysis complete");

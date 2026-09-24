@@ -20,6 +20,7 @@ async function* chunks(text: string) {
 function registry(replies: Record<string, Reply>) {
   const urls: string[] = [];
   let chunksRead = 0;
+  const cancelled: string[] = [];
   const inits: Parameters<FetchLike>[1][] = [];
   const fetch: FetchLike = async (url, init) => {
     urls.push(url);
@@ -32,7 +33,9 @@ function registry(replies: Record<string, Reply>) {
         get: (n: string) =>
           n === "content-length" && length !== undefined ? String(length) : null,
       },
-      body: chunks(body),
+      body: Object.assign(chunks(body), {
+        cancel: async () => void cancelled.push(path),
+      }),
     });
     if (reply === "throw") throw new Error("network down");
     if (reply === "hang")
@@ -57,7 +60,7 @@ function registry(replies: Record<string, Reply>) {
       };
     return res(200, JSON.stringify({ name: "x", dist: { unpackedSize: reply } }));
   };
-  return { fetch, urls, inits, chunksRead: () => chunksRead };
+  return { fetch, urls, inits, cancelled, chunksRead: () => chunksRead };
 }
 
 const NPM_PUBLIC_ORIGIN = "https://registry.npmjs.org";
@@ -247,6 +250,46 @@ describe("npm footprint metadata (#174)", () => {
     assert.equal(r.chunksRead(), 5);
     await ask(service, [ref("a", "1.0.0")]);
     assert.equal(r.urls.length, 2);
+  });
+
+  it("cancels bodies it won't read (404, non-200, oversized)", async () => {
+    const r = registry({ "a/1.0.0": 1, "b/1.0.0": "500", "c/1.0.0": "big" });
+    const service = new NpmMetadataService({ fetch: r.fetch, maxResponseBytes: 1024 });
+    await ask(
+      service,
+      ["a", "b", "c", "gone"].map((n) => ref(n, "1.0.0")),
+    );
+    assert.deepEqual(r.cancelled.sort(), ["b/1.0.0", "c/1.0.0", "gone/1.0.0"]);
+  });
+
+  it("reports whether a run's answers were complete", async () => {
+    const r = registry({ "a/1.0.0": 1, "b/1.0.0": "500" });
+    const service = new NpmMetadataService({ fetch: r.fetch });
+    const quiet = service.forRun();
+    assert.equal(quiet.complete, true); // never asked
+    const good = service.forRun();
+    await good.installSizes({
+      ecosystem: NPM_ECOSYSTEM,
+      packages: [{ ...ref("a", "1.0.0"), origin: NPM_PUBLIC_ORIGIN }],
+    });
+    assert.equal(good.complete, true);
+    const bad = service.forRun();
+    const pending = bad.installSizes({
+      ecosystem: NPM_ECOSYSTEM,
+      packages: [
+        { ...ref("a", "1.0.0"), origin: NPM_PUBLIC_ORIGIN },
+        { ...ref("b", "1.0.0"), origin: NPM_PUBLIC_ORIGIN },
+      ],
+    });
+    assert.equal(bad.complete, false); // still pending
+    await pending;
+    assert.equal(bad.complete, false); // b failed: truncated
+    const budget = new NpmMetadataService({ fetch: r.fetch, fetchBudget: 0 }).forRun();
+    await budget.installSizes({
+      ecosystem: NPM_ECOSYSTEM,
+      packages: [{ ...ref("z", "1.0.0"), origin: NPM_PUBLIC_ORIGIN }],
+    });
+    assert.equal(budget.complete, false);
   });
 
   it("stops at the run deadline", async () => {
