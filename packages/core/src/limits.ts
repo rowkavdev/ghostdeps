@@ -116,3 +116,11 @@ export const PR_SOURCE_CHANGE_LIMITS = {
   /** Total UTF-16 code units of paths plus line text across the payload. */
   maxTotalChars: 8 * 1024 * 1024,
 } as const;
+
+/**
+ * Hard cap on one bounded head read (RepositoryHandle.readFileHead, #113).
+ * Head reads skip the per-file ceiling, so they need their own bound: a
+ * larger maxBytes is clamped to this. 64 KiB is far more than any format
+ * sniff needs (the berry check reads 512 bytes).
+ */
+export const MAX_HEAD_READ_BYTES = 64 * 1024;

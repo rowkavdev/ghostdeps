@@ -523,3 +523,64 @@ describe("analyseRepository", () => {
     assert.equal(detectionConfidence(0.1), "low");
   });
 });
+
+describe("head reads inside the engine (#113)", () => {
+  const project: ProjectRef = { path: ".", ecosystem: "js", packageManagers: [] };
+  const sniffer = (paths: string[], heads: (string | undefined)[]): EcosystemAdapter => ({
+    ecosystem: "js",
+    apiVersion: adapterApiVersion,
+    capabilities: new Set(),
+    async detect(ctx) {
+      for (const p of paths) heads.push(await ctx.repository.readFileHead?.(p, 16));
+      return { confidence: 1, projects: [project], evidence: [{ kind: "k", statement: "s" }] };
+    },
+    async listDirectDependencies() {
+      return [];
+    },
+  });
+  const tooLarge = Object.assign(new Error("too-large: yarn.lock"), { code: "too-large" });
+  const bare: RepositoryHandle = {
+    async listFiles() {
+      return ["yarn.lock", "small.lock"];
+    },
+    async readFile(p) {
+      if (p === "yarn.lock") throw tooLarge;
+      if (p === "small.lock") return "__metadata:\n  version: 8\n";
+      throw new Error(`not found: ${p}`);
+    },
+    async exists() {
+      return true;
+    },
+  };
+
+  it("gives a handle without readFileHead the fallback, and notes files over the ceiling", async () => {
+    const heads: (string | undefined)[] = [];
+    const result = await analyseRepository(bare, {
+      adapters: [sniffer(["small.lock", "yarn.lock", "yarn.lock", "missing"], heads)],
+    });
+    assert.deepEqual(heads, ["__metadata:\n  ve", undefined, undefined, undefined]);
+    const notes = result.findings.filter((f) => f.rule === "file-not-sniffed");
+    // One note per file, none for plain not-found.
+    assert.equal(notes.length, 1);
+    assert.deepEqual(notes[0]?.affectedFiles, ["yarn.lock"]);
+    // Treated as scan incompleteness (#154 cap-and-note).
+    assert.ok(result.findings.some((f) => f.summary.startsWith("all verdicts in this result")));
+  });
+
+  it("notes each unsniffed file once per run, across adapters", async () => {
+    const result = await analyseRepository(bare, {
+      adapters: [sniffer(["yarn.lock"], []), { ...sniffer(["yarn.lock"], []), ecosystem: "py" }],
+    });
+    assert.equal(result.findings.filter((f) => f.rule === "file-not-sniffed").length, 1);
+  });
+
+  it("passes a handle that has readFileHead straight through, with no notes", async () => {
+    const heads: (string | undefined)[] = [];
+    const withHead: RepositoryHandle = { ...bare, readFileHead: async () => "own" };
+    const result = await analyseRepository(withHead, {
+      adapters: [sniffer(["yarn.lock"], heads)],
+    });
+    assert.deepEqual(heads, ["own"]);
+    assert.ok(!result.findings.some((f) => f.rule === "file-not-sniffed"));
+  });
+});

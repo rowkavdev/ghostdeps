@@ -183,6 +183,22 @@ export interface RepositoryHandle {
   listFiles(): Promise<string[]>;
   /** Read a file as UTF-8 text. Throws for missing/binary-oversized files. */
   readFile(path: string): Promise<string>;
+  /**
+   * Optional (#113): read at most `maxBytes` source bytes from the start of
+   * the file and return the decoded prefix, with any trailing partial UTF-8
+   * sequence dropped. Resolve undefined where readFile would fail with
+   * not-found. Core feature-detects this method and never branches on
+   * adapterApiVersion; call it through readRepositoryFileHead, which falls
+   * back to readFile plus a byte slice. The prefix need not end on a line.
+   * The returned prefix is at most `maxBytes`, but implementations may read
+   * up to max(maxBytes, 8 KiB) source bytes (the binary sniff window), so
+   * callers must tolerate that much I/O: `maxBytes` is a floor on the read
+   * size, not a strict cap. FsRepositoryHandle clamps maxBytes to
+   * MAX_HEAD_READ_BYTES (64 KiB). Inside the engine every adapter's handle has
+   * readFileHead; a file the fallback cannot read because it is over the
+   * size ceiling becomes a scan-completeness note.
+   */
+  readFileHead?(path: string, maxBytes: number): Promise<string | undefined>;
   exists(path: string): Promise<boolean>;
 }
 

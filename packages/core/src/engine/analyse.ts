@@ -249,7 +249,11 @@ export async function assembleAnalysisResult(
     notes?: readonly Finding[];
   } = {},
 ): Promise<AnalysisResult> {
-  const scanNotes = context.scanCompleteness ?? [];
+  // Caller notes plus notes adapters raised while running (#113).
+  const scanNotes = [
+    ...(context.scanCompleteness ?? []),
+    ...outcomes.flatMap((outcome) => outcome.scanCompleteness ?? []),
+  ];
   const scanIncomplete = context.scanIncomplete === true || scanNotes.length > 0;
   const projects = new Map<string, ProjectRef>();
   const dependencies: Dependency[] = [];
@@ -421,6 +425,8 @@ export async function analyseRepository(
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
   const sourceChanges = boundPullRequestSourceChanges(options);
 
+  // One set per run: each unsniffed file is noted once, capped run-wide.
+  const unsniffed = new Set<string>();
   const outcomes = await Promise.all(
     options.adapters.map((adapter) =>
       runAdapter(
@@ -432,6 +438,7 @@ export async function analyseRepository(
         usageConcurrency,
         undefined,
         sourceChanges.changes,
+        unsniffed,
       ).catch((error: unknown): AdapterOutcome => ({
         ecosystem: adapter.ecosystem,
         dependencies: [],

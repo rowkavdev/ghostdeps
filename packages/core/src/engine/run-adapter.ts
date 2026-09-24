@@ -10,6 +10,7 @@ import {
   type AdapterContext,
   type EcosystemAdapter,
 } from "../adapter.js";
+import { utf8Head } from "../repository-head.js";
 import type {
   Dependency,
   DependencyGraph,
@@ -132,6 +133,13 @@ export interface AdapterOutcome {
    */
   referenceAnalysed?: boolean;
   findings: Finding[];
+  /**
+   * Scan-completeness notes raised while the adapter ran (#113): a file the
+   * adapter wanted to sniff was over the read ceiling and the handle had no
+   * readFileHead. The engine treats them like AnalyseOptions.scanCompleteness
+   * (cap-and-note, #154).
+   */
+  scanCompleteness?: Finding[];
 }
 
 /**
@@ -141,6 +149,62 @@ export interface AdapterOutcome {
  * work cannot be preempted from inside the worker).
  */
 export type StageObserver = (stage: string) => void;
+
+/** Most unsniffed-file notes one analysis run records, across all adapters. */
+const MAX_UNSNIFFED_NOTES = 100;
+
+const isTooLarge = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error as { code?: unknown }).code === "too-large";
+
+/**
+ * Give every adapter a readFileHead (#113). A handle that has one is passed
+ * through untouched. For one without, the fallback reads the whole file and
+ * slices it by bytes. When that fails because the file is over the read
+ * ceiling, the file was never sniffed: record a scan-completeness note, so
+ * the result is incomplete but never silently incomplete.
+ */
+function withHeadReads(
+  repository: RepositoryHandle,
+  outcome: AdapterOutcome,
+  noted: Set<string>,
+): RepositoryHandle {
+  if (typeof repository.readFileHead === "function") return repository;
+  return {
+    listFiles: () => repository.listFiles(),
+    readFile: (path) => repository.readFile(path),
+    exists: (path) => repository.exists(path),
+    async readFileHead(path, maxBytes) {
+      try {
+        return utf8Head(Buffer.from(await repository.readFile(path), "utf8"), maxBytes);
+      } catch (error) {
+        if (isTooLarge(error) && !noted.has(path) && noted.size < MAX_UNSNIFFED_NOTES) {
+          noted.add(path);
+          (outcome.scanCompleteness ??= []).push({
+            kind: "info",
+            rule: "file-not-sniffed",
+            summary: `${path} is over the read ceiling and was not sniffed (the repository handle has no readFileHead)`,
+            recommendation:
+              "Manual review recommended: detection that depends on the start of this file may be missing.",
+            evidence: [
+              {
+                kind: "file-not-sniffed",
+                statement: `${outcome.ecosystem} adapter (first to ask) could not read the head of ${path}`,
+                file: path,
+              },
+            ],
+            confidence: "high",
+            limitations: ["The repository scan is incomplete for this file."],
+            affectedFiles: [path],
+          });
+        }
+        return undefined;
+      }
+    },
+  };
+}
 
 export async function runAdapter(
   adapter: EcosystemAdapter,
@@ -152,6 +216,12 @@ export async function runAdapter(
   onStage?: StageObserver,
   /** PR mode (#101): already bounded by the engine. */
   pullRequestSourceChanges?: readonly SourceLineChanges[],
+  /**
+   * Files already noted as not sniffed in this analysis run. Share one set
+   * across a run's adapters so each file is noted once and the run records
+   * at most MAX_UNSNIFFED_NOTES notes in total.
+   */
+  unsniffed: Set<string> = new Set(),
 ): Promise<AdapterOutcome> {
   const outcome: AdapterOutcome = {
     ecosystem: adapter.ecosystem,
@@ -162,7 +232,11 @@ export async function runAdapter(
     findings: [],
   };
   const controller = new AbortController();
-  const context: AdapterContext = { repository, network, signal: controller.signal };
+  const context: AdapterContext = {
+    repository: withHeadReads(repository, outcome, unsniffed),
+    network,
+    signal: controller.signal,
+  };
   if (pullRequestSourceChanges) context.pullRequestSourceChanges = pullRequestSourceChanges;
 
   if (!apiCompatible(adapter.apiVersion)) {

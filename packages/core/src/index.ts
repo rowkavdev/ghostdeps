@@ -5,6 +5,7 @@
 export * from "./types/index.js";
 export * from "./limits.js";
 export * from "./adapter.js";
+export * from "./repository-head.js";
 export * from "./checkout/index.js";
 export * from "./native-rules/index.js";
 export * from "./report/index.js";
