@@ -1,9 +1,24 @@
 {
   "description": "go.mod with two malformed require lines. The valid require is still listed; the bad lines must surface as scan incompleteness, and nothing may be called unused for this project because the declared set is not fully known.",
-  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "verdictNote": "Go never reports unused in M2 (arch lead ruling, 2026-09-24): tools.go and blank imports, build tags and the edgeless module graph cannot tell not-imported from not-seen. The Go adapter does not declare referenceAnalysis, so no dependency here may get an unused verdict.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
   "dependencies": [
-    { "name": "github.com/google/uuid", "kind": "runtime", "constraint": "v1.6.0", "declaredIn": "go.mod" }
+    {
+      "name": "github.com/google/uuid",
+      "kind": "runtime",
+      "constraint": "v1.6.0",
+      "declaredIn": "go.mod"
+    }
   ],
   "findings": [],
-  "mustNotFind": [{ "kind": "unused" }]
+  "mustNotFind": [
+    {
+      "kind": "unused"
+    }
+  ]
 }

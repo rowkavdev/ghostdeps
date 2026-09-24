@@ -1,21 +1,69 @@
 {
   "description": "One module. uuid and yaml.v3 are imported; github.com/pkg/errors is required but never imported; golang.org/x/sys is // indirect and must not be listed as a direct dependency.",
-  "detection": { "minConfidence": 0.5, "projects": ["."] },
+  "verdictNote": "Go never reports unused in M2 (arch lead ruling, 2026-09-24): tools.go and blank imports, build tags and the edgeless module graph cannot tell not-imported from not-seen. The Go adapter does not declare referenceAnalysis, so no dependency here may get an unused verdict.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
   "dependencies": [
-    { "name": "github.com/google/uuid", "kind": "runtime", "constraint": "v1.6.0", "declaredIn": "go.mod" },
-    { "name": "github.com/pkg/errors", "kind": "runtime", "constraint": "v0.9.1", "declaredIn": "go.mod" },
-    { "name": "gopkg.in/yaml.v3", "kind": "runtime", "constraint": "v3.0.1", "declaredIn": "go.mod" }
+    {
+      "name": "github.com/google/uuid",
+      "kind": "runtime",
+      "constraint": "v1.6.0",
+      "declaredIn": "go.mod"
+    },
+    {
+      "name": "github.com/pkg/errors",
+      "kind": "runtime",
+      "constraint": "v0.9.1",
+      "declaredIn": "go.mod"
+    },
+    {
+      "name": "gopkg.in/yaml.v3",
+      "kind": "runtime",
+      "constraint": "v3.0.1",
+      "declaredIn": "go.mod"
+    }
   ],
   "graph": {
     "incomplete": true,
-    "nodes": ["github.com/google/uuid", "github.com/pkg/errors", "golang.org/x/sys", "gopkg.in/yaml.v3"],
-    "indirect": ["golang.org/x/sys"]
+    "nodes": [
+      "github.com/google/uuid",
+      "github.com/pkg/errors",
+      "golang.org/x/sys",
+      "gopkg.in/yaml.v3"
+    ],
+    "indirect": [
+      "golang.org/x/sys"
+    ]
   },
   "usages": {
-    "github.com/google/uuid": [{ "file": "main.go", "line": 6, "symbols": ["New"] }],
-    "gopkg.in/yaml.v3": [{ "file": "main.go", "line": 7, "symbols": ["Marshal"] }],
+    "github.com/google/uuid": [
+      {
+        "file": "main.go",
+        "line": 6,
+        "symbols": [
+          "New"
+        ]
+      }
+    ],
+    "gopkg.in/yaml.v3": [
+      {
+        "file": "main.go",
+        "line": 7,
+        "symbols": [
+          "Marshal"
+        ]
+      }
+    ],
     "github.com/pkg/errors": []
   },
   "findings": [],
-  "mustNotFind": [{ "kind": "unused", "dependency": "golang.org/x/sys" }]
+  "mustNotFind": [
+    {
+      "kind": "unused"
+    }
+  ]
 }
