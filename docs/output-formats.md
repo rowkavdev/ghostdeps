@@ -162,6 +162,12 @@ No significant dependency issues found.
 - Findings carry confidence and evidence; uncertainty downgrades.
 - Every finding in the JSON output carries `severity`, stamped by core (#188).
   Renderers and gates read it and never re-derive it from `confidence`.
+- A finding with `awareness: true` (#234) is for awareness only: presenters
+  list it in an awareness section, and it never affects a check conclusion,
+  title, count or exit code. Only core sets it, from the rule that emits the
+  finding (today only `cross-ecosystem-capability-overlap`). Absent means not
+  awareness: other info findings stay in Notes and keep their neutral
+  meaning. Marking another rule awareness needs arbiter sign-off.
 - Check conclusions: `success` when quiet, `neutral` with findings,
   never `failure`. GhostDeps advises, it does not gate.
 - PR comments only when a finding cannot be expressed as a check annotation.

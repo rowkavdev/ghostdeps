@@ -72,6 +72,7 @@
       "affectedFiles": [
         "package.json"
       ],
+      "awareness": true,
       "confidence": "high",
       "dependency": "axios",
       "evidence": [
@@ -93,6 +94,7 @@
       "affectedFiles": [
         "services/api/pyproject.toml"
       ],
+      "awareness": true,
       "confidence": "high",
       "dependency": "requests",
       "evidence": [

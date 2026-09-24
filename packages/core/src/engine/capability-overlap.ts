@@ -63,6 +63,7 @@ export function crossEcosystemOverlaps(
           kind: "info",
           rule: CROSS_ECOSYSTEM_OVERLAP_RULE,
           dependency: name,
+          awareness: true,
           summary: `${name} (${eco}) covers the same capability (${cluster.label}) as ${others.join("; ")}`,
           recommendation:
             "For awareness only. Packages in different ecosystems can't replace each other; no change is suggested.",

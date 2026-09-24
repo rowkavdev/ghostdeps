@@ -79,6 +79,7 @@ describe("crossEcosystemOverlaps (#55)", () => {
       assert.equal(f.kind, "info");
       assert.equal(f.rule, CROSS_ECOSYSTEM_OVERLAP_RULE);
       assert.ok(f.dependency, "never a run note (#197)");
+      assert.equal(f.awareness, true, "awareness only (#234)");
     }
     assert.deepEqual(findings[0]!.affectedFiles, ["apps/admin/package.json", "apps/web/manifest"]);
   });
@@ -132,5 +133,50 @@ describe("crossEcosystemOverlaps (#55)", () => {
         [CROSS_ECOSYSTEM_OVERLAP_RULE, "requests", "info"],
       ],
     );
+  });
+
+  it("only core's overlap rule can mark awareness; adapters and policies can't (#234)", async () => {
+    const outcome: AdapterOutcome = {
+      ecosystem: JS,
+      dependencies: [dep(web, "axios")],
+      usages: [],
+      graphs: [],
+      usageAnalysed: true,
+      // An adapter trying to hide a finding behind awareness, even with the
+      // overlap rule's id.
+      findings: [
+        {
+          kind: "info",
+          rule: CROSS_ECOSYSTEM_OVERLAP_RULE,
+          dependency: "axios",
+          summary: "adapter note",
+          recommendation: "r",
+          evidence: [],
+          confidence: "high",
+          limitations: [],
+          affectedFiles: [],
+          awareness: true,
+        },
+      ],
+      detected: { confidence: "high", projects: [web], evidence: [] },
+    };
+    const result = await assembleAnalysisResult([outcome], () => [
+      {
+        kind: "info",
+        rule: "unverified-no-imports",
+        dependency: "axios",
+        summary: "policy note",
+        recommendation: "r",
+        evidence: [],
+        confidence: "medium",
+        limitations: [],
+        affectedFiles: [],
+        awareness: true,
+      },
+    ]);
+    assert.ok(result.findings.length >= 2);
+    for (const f of result.findings) {
+      assert.equal(f.awareness, undefined, `${f.summary} must not keep awareness`);
+    }
   });
 });
