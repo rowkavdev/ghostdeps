@@ -3,7 +3,7 @@
  * packages, with file/line evidence. Reads files through the read-only
  * RepositoryHandle only; never executes or resolves anything.
  */
-import { DEFAULT_EXCLUDED_DIRECTORIES, DEFAULT_EXCLUDED_FILE_SUFFIXES } from "@ghostdeps/core";
+import { EXCLUDED_FILE_SUFFIXES, MAX_FILE_READ_BYTES, hasExcludedSegment } from "@ghostdeps/core";
 import type {
   AdapterContext,
   Dependency,
@@ -14,8 +14,13 @@ import type {
 import { scanSource, scriptKindFor } from "./scan.js";
 import type { FileScanResult } from "./scan.js";
 
-/** Files larger than this are skipped and reported, not parsed (security-model: parser input limits). */
-export const MAX_SOURCE_BYTES = 1_000_000;
+/**
+ * Source files larger than this are skipped and reported, not parsed
+ * (security-model: parser input limits). Deliberately stricter than core's
+ * read cap: a full TypeScript AST costs far more per byte than reading, and
+ * 1 MB covers any hand-written module. Never above core's read cap.
+ */
+export const MAX_SOURCE_BYTES = Math.min(1_000_000, MAX_FILE_READ_BYTES);
 
 /** Unresolved dynamic-import limitations recorded individually per file; the rest are summarised. */
 export const MAX_UNRESOLVED_PER_FILE = 20;
@@ -43,12 +48,12 @@ function dirname(path: string): string {
 
 /**
  * The RepositoryHandle already applies the scanner's exclusions (#73). This
- * applies the same core lists again so handles that list more (test
+ * applies core's shared lists (limits.ts, #106) again so handles that list more (test
  * handles, custom callers) never pull vendored or generated code into usage.
  */
 function isSkipped(path: string): boolean {
-  if (DEFAULT_EXCLUDED_FILE_SUFFIXES.some((suffix) => path.endsWith(suffix))) return true;
-  return path.split("/").some((seg) => DEFAULT_EXCLUDED_DIRECTORIES.has(seg));
+  if (EXCLUDED_FILE_SUFFIXES.some((suffix) => path.endsWith(suffix))) return true;
+  return hasExcludedSegment(path);
 }
 
 /** Deepest directory containing a package.json that is an ancestor of `file`. */

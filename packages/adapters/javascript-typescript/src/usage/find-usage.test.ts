@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { MAX_FILE_READ_BYTES } from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
 import {
@@ -236,5 +237,9 @@ describe("findUsage", () => {
       (await usageLimitations(context, "packages/a")).some((e) => e.kind === "file-too-large"),
     );
     assert.deepEqual(await usageLimitations(context, "packages/b"), []);
+  });
+
+  it("parse cap never exceeds core's read cap", () => {
+    assert.ok(MAX_SOURCE_BYTES <= MAX_FILE_READ_BYTES);
   });
 });
