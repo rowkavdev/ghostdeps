@@ -3,3 +3,5 @@ dist/
 coverage/
 pnpm-lock.yaml
 fixtures/
+# Golden files are byte-exact reporter output; formatting them would break the tests.
+packages/*/test/golden/

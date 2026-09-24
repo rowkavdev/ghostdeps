@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "constraint": "^1.3.0",
+      "declaredIn": "package.json",
+      "kind": "runtime",
+      "name": "left-pad",
+      "project": {
+        "ecosystem": "javascript-typescript",
+        "packageManagers": [
+          {
+            "name": "npm"
+          }
+        ],
+        "path": "."
+      },
+      "specifier": {
+        "type": "registry"
+      }
+    }
+  ],
+  "detected": [
+    {
+      "confidence": "high",
+      "ecosystem": "javascript-typescript",
+      "evidence": [
+        {
+          "file": "package.json",
+          "kind": "manifest-found",
+          "statement": "package.json"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "affectedFiles": [
+        "package.json"
+      ],
+      "confidence": "high",
+      "dependency": "left-pad",
+      "evidence": [
+        {
+          "file": "package.json",
+          "kind": "declared",
+          "line": 6,
+          "statement": "declared in dependencies"
+        },
+        {
+          "kind": "no-import-found",
+          "statement": "no import or require of left-pad in 1 source file"
+        }
+      ],
+      "kind": "unused",
+      "limitations": [],
+      "recommendation": "Consider whether left-pad is needed; nothing imports it.",
+      "summary": "left-pad is declared but never imported."
+    }
+  ],
+  "projects": [
+    {
+      "ecosystem": "javascript-typescript",
+      "packageManagers": [
+        {
+          "name": "npm"
+        }
+      ],
+      "path": "."
+    }
+  ],
+  "surface": [
+    {
+      "direct": 1,
+      "ecosystem": "javascript-typescript",
+      "transitive": 1
+    }
+  ],
+  "usages": []
+}
