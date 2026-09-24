@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, stat, lstat, readdir, readlink } from "node:fs/promises";
+import { readFile, stat, lstat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -96,61 +96,65 @@ describe("extractTarball", () => {
     await expectRejects([{ name: "‥/evil.txt", data: "x" }], "UNICODE_PATH_FOLDING");
   });
 
-  it("rejects symlinks escaping the root, keeping internal ones", async () => {
-    await expectRejects([{ name: "a", type: "symlink", linkName: "/etc" }], "ABSOLUTE_PATH");
-    await expectRejects(
-      [{ name: "dir/a", type: "symlink", linkName: "../../outside" }],
-      "LINK_ESCAPE",
-    );
-    await expectRejects([{ name: "a", type: "symlink", linkName: ".." }], "LINK_ESCAPE");
-
-    // Internal relative links are fine and stay relative on disk.
-    const { dir } = await extract([
+  it("records symlinks as metadata and never materialises them", async () => {
+    // Links are data for the RepositoryHandle: absolute, escaping, broken
+    // and looping targets are all recorded verbatim, and nothing appears
+    // on disk that anything could follow.
+    const { summary, dir } = await extract([
       { name: "pkg/real.txt", data: "content" },
       { name: "pkg/alias", type: "symlink", linkName: "real.txt" },
-      { name: "up", type: "symlink", linkName: "pkg/../pkg/real.txt" },
+      { name: "abs", type: "symlink", linkName: "/etc/passwd" },
+      { name: "esc", type: "symlink", linkName: "../../../outside" },
+      { name: "broken", type: "symlink", linkName: "no/such/file" },
     ]);
-    assert.equal(await readlink(join(dir, "pkg/alias")), "real.txt");
-    assert.equal((await lstat(join(dir, "up"))).isSymbolicLink(), true);
+    assert.equal(summary.symlinks, 4);
+    assert.deepEqual(summary.links, [
+      { path: "pkg/alias", target: "real.txt" },
+      { path: "abs", target: "/etc/passwd" },
+      { path: "esc", target: "../../../outside" },
+      { path: "broken", target: "no/such/file" },
+    ]);
+    // The file extracted; none of the links exist on disk.
+    assert.equal(await readFile(join(dir, "pkg/real.txt"), "utf8"), "content");
+    for (const linkPath of ["pkg/alias", "abs", "esc", "broken"]) {
+      await assert.rejects(lstat(join(dir, linkPath)), /ENOENT/);
+    }
   });
 
-  it("rejects writes through a symlink that redirect within-root only", async () => {
-    // b -> sub is internal; writing b/x lands in sub/x.
+  it("is immune to resolution-order escapes by construction (independent-review PoCs)", async () => {
+    // First PoC: deep link pointing at the root, later target 'L/../..'.
+    // Second: link target whose meaning changes when a later link lands.
+    // Both archives now extract: links are metadata, so there is nothing
+    // on disk to follow and no resolution order to get wrong.
+    const first = await extract([
+      { name: "a/b/c/L", type: "symlink", linkName: "../../.." },
+      { name: "a/b/c/M", type: "symlink", linkName: "L/../.." },
+    ]);
+    assert.equal(first.summary.symlinks, 2);
+    await assert.rejects(lstat(join(first.dir, "a/b/c/L")), /ENOENT/);
+    await assert.rejects(lstat(join(first.dir, "a/b/c/M")), /ENOENT/);
+
+    const second = await extract([
+      { name: "L", type: "symlink", linkName: "x/y/z" },
+      { name: "x", type: "symlink", linkName: "." },
+      { name: "M", type: "symlink", linkName: "L/../../.." },
+    ]);
+    assert.equal(second.summary.symlinks, 3);
+    for (const linkPath of ["L", "x", "M"]) {
+      await assert.rejects(lstat(join(second.dir, linkPath)), /ENOENT/);
+    }
+  });
+
+  it("treats writes under a recorded link's path as literal paths", async () => {
+    // b is recorded as a link; b/x.txt is a separate literal entry and is
+    // written literally (real archives carry both when the tree has both).
     const { dir } = await extract([
       { name: "sub/", type: "directory" },
       { name: "b", type: "symlink", linkName: "sub" },
-      { name: "b/x.txt", data: "through-link" },
+      { name: "b/x.txt", data: "literal" },
     ]);
-    assert.equal(await readFile(join(dir, "sub/x.txt"), "utf8"), "through-link");
-  });
-
-  it("rejects links climbing out via a shallower link plus '..' (independent-review PoC)", async () => {
-    // L sits at a/b/c but points at the root; M's target 'L/../..' resolves
-    // physically: L -> root, '..' -> above root, '..' -> escape. A lexical
-    // check that pops 'L' as one segment wrongly allows this.
-    await expectRejects(
-      [
-        { name: "a/b/c/L", type: "symlink", linkName: "../../.." },
-        { name: "a/b/c/M", type: "symlink", linkName: "L/../.." },
-      ],
-      "LINK_ESCAPE",
-    );
-    // Same shape with a real directory in between.
-    await expectRejects(
-      [
-        { name: "x/", type: "directory" },
-        { name: "a", type: "symlink", linkName: "." },
-        { name: "evil", type: "symlink", linkName: "a/x/../../etc" },
-      ],
-      "LINK_ESCAPE",
-    );
-    // The benign version of the same pattern stays allowed.
-    const { dir } = await extract([
-      { name: "sub/real.txt", data: "content" },
-      { name: "a/b/c/L", type: "symlink", linkName: "../../.." },
-      { name: "a/b/c/M", type: "symlink", linkName: "L/sub/real.txt" },
-    ]);
-    assert.equal(await readlink(join(dir, "a/b/c/M")), "L/sub/real.txt");
+    assert.equal(await readFile(join(dir, "b/x.txt"), "utf8"), "literal");
+    await assert.rejects(lstat(join(dir, "sub/x.txt")), /ENOENT/);
   });
 
   it("treats case-only and Unicode-normalisation collisions as duplicates", async () => {
@@ -169,17 +173,6 @@ describe("extractTarball", () => {
         { name: "cafe\u0301.txt", data: "nfd" },
       ],
       "DUPLICATE_PATH",
-    );
-  });
-
-  it("detects symlink loops when writing through them", async () => {
-    await expectRejects(
-      [
-        { name: "a", type: "symlink", linkName: "b" },
-        { name: "b", type: "symlink", linkName: "a" },
-        { name: "a/evil.txt", data: "x" },
-      ],
-      "LINK_LOOP",
     );
   });
 

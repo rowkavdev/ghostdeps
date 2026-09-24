@@ -23,10 +23,6 @@ export const EXTRACTION_ERROR_CODES = [
   "TOO_DEEP",
   /** A path segment NFKC-folds into a separator or dot-segment. */
   "UNICODE_PATH_FOLDING",
-  /** A link target resolves outside the extraction root. */
-  "LINK_ESCAPE",
-  /** Resolving a path through extracted symlinks exceeded the link cap. */
-  "LINK_LOOP",
   /** A hardlink points at something not already extracted as a regular file. */
   "LINK_TARGET_MISSING",
   /** Two entries resolve to the same destination path. */
