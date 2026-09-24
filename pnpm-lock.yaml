@@ -219,6 +219,9 @@ importers:
 
   packages/github-app:
     dependencies:
+      '@ghostdeps/core':
+        specifier: workspace:*
+        version: link:../core
       probot:
         specifier: ^14.3.2
         version: 14.3.2
