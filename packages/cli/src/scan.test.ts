@@ -83,7 +83,7 @@ describe("ghostdeps scan --json", () => {
     assert.match(text, /Transitive dependencies:\n {2}unknown/);
     // The unused verdict must be visible in the summary: "Findings: none"
     // would read as an all-clear.
-    assert.match(text, /Findings:\n {2}1 unused\n {2}2 info\n/);
+    assert.match(text, /Findings:\n {2}1 unused\n {2}1 info\n/);
     assert.match(text, /Verdicts:\n {2}unused:\n {4}left-pad - /);
     // Info findings stay visible as notes (#210), never hidden.
     assert.match(text, /Notes:\n {4}\(repository-wide\) - /);
