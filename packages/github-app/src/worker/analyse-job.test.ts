@@ -10,6 +10,7 @@ import {
   analyseCheckout,
   createAnalysisWorker,
   DEFAULT_ADAPTER_MODULES,
+  failureReason,
   type AnalyseRunOptions,
   type RepositoryClient,
 } from "./analyse-job.js";
@@ -762,5 +763,17 @@ describe("analyseCheckout: recommendation policy on the app path", () => {
     });
     await worker(job());
     assert.equal(seen?.recommend, recommend);
+  });
+});
+
+describe("failureReason", () => {
+  it("says a rate-limited run should be re-run later (#255)", () => {
+    const limited = {
+      status: 403,
+      message: "API rate limit exceeded",
+      response: { headers: { "x-ratelimit-remaining": "0" } },
+    };
+    assert.match(failureReason(limited), /rate limit was reached\. Wait a few minutes/);
+    assert.equal(failureReason(new Error("boom")), "an internal error stopped the analysis.");
   });
 });

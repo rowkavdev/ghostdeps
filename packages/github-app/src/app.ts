@@ -14,6 +14,7 @@ import {
 import { decideRerequest } from "./events/rerequested.js";
 import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
+import { WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./github/rate-limit.js";
 import { repoScopedClients } from "./worker/github-client.js";
 
 export const HEALTH_PATH = "/healthz";
@@ -53,7 +54,13 @@ function changedFilesLookup(context: {
 }): ChangedFilesLookup {
   return async (candidate) => {
     try {
-      return await changedFiles(context.octokit, candidate);
+      // The webhook never waits on a rate limit (#255): past the deadline the
+      // lookup counts as failed and the event takes the analyse-anyway path.
+      return await withDeadline(
+        changedFiles(context.octokit, candidate),
+        WEBHOOK_LOOKUP_DEADLINE_MS,
+        "changed-files lookup",
+      );
     } catch (error) {
       context.log.warn(
         { delivery: context.id, err: error },

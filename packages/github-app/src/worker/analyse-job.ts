@@ -28,6 +28,7 @@ import type { AddedLines } from "../checks/diff.js";
 import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
 import type { AnalysisJob, JobWorker } from "../jobs.js";
 import { pullRequestContext, type PullRequestClient } from "../pull-request/changes.js";
+import { isRateLimitError } from "../github/rate-limit.js";
 import { isCacheable, ResultCache, resultCacheKey } from "./result-cache.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
@@ -169,6 +170,9 @@ export function failureReason(error: unknown): string {
     return error.code === "TOO_LARGE"
       ? "the repository archive is larger than GhostDeps will download."
       : "the repository archive could not be downloaded.";
+  }
+  if (isRateLimitError(error)) {
+    return "GitHub's API rate limit was reached. Wait a few minutes before re-running.";
   }
   if (error instanceof Error && error.name === "TimeoutError") {
     return "downloading the repository archive took too long.";

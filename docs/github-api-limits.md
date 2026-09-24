@@ -47,7 +47,7 @@ At that rate, the 5,000-an-hour primary limit covers several hundred analyses pe
 
 ## Gaps
 
-1. **The worker's rate-limit retries have no limit.** In Probot 14.3.2 (the locked version) the two clients get different throttle handlers.
+1. **The worker's rate-limit retries have no limit.** Fixed by #255: see the app docs. In Probot 14.3.2 (the locked version) the two clients get different throttle handlers.
    - The webhook client comes from the Probot instance (`getOctokitThrottleOptions`). It retries a primary limit while `retryCount <= 2`, waiting for the reset each time, and doesn't retry a secondary limit at all (it only logs). Retries are bounded, but one wait for a primary reset can still run past GitHub's 10-second delivery timeout while the PR file list is being read.
    - The worker builds its client with `new ProbotOctokit(...)`, which uses the class defaults. Those `onRateLimit` and `onSecondaryRateLimit` handlers always return `true`. So a worker job that hits the primary limit waits until the reset, up to an hour, holding one of the 2 worker slots, and it keeps retrying for as long as the limit lasts.
 

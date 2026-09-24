@@ -5,6 +5,7 @@
  */
 import type { Probot } from "probot";
 import { ProbotOctokit } from "probot";
+import { boundedThrottle } from "../github/rate-limit.js";
 import type { AnalysisJob } from "../jobs.js";
 import type { RepositoryClient } from "./analyse-job.js";
 
@@ -20,7 +21,9 @@ export function repoScopedClients(app: Probot): (job: AnalysisJob) => Promise<Re
       repositoryIds: [job.repository.id],
       permissions: WORKER_PERMISSIONS,
     })) as { token: string };
-    const octokit = new ProbotOctokit({ auth: { token }, log: app.log.child({ job: job.key }) });
+    const log = app.log.child({ job: job.key });
+    // Bounded rate-limit retries (#255): Probot's class defaults retry forever.
+    const octokit = new ProbotOctokit({ auth: { token }, log, throttle: boundedThrottle(log) });
     return {
       checks: octokit.rest.checks as unknown as RepositoryClient["checks"],
       request: octokit.request as unknown as RepositoryClient["request"],
