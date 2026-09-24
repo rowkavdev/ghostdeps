@@ -162,7 +162,20 @@ function isIndirect(comment: string): boolean {
   return /^indirect(\s*;|\s*$)/.test(comment);
 }
 
-/** Parse go.mod text. Never throws. */
+const isParen = (t: Token): boolean => !t.quoted && (t.text === "(" || t.text === ")");
+
+/**
+ * Largest go.mod parsed (#227). Real files are a few KB; a bigger one is
+ * reported as an error instead of being tokenised. This is a backstop:
+ * callers must still bound the read itself (RepositoryHandle's read
+ * ceiling or readFileHead) before handing text to parseGoMod.
+ */
+export const MAX_GOMOD_BYTES = 1024 * 1024;
+
+/**
+ * Parse go.mod text. Never throws. Callers must apply the byte cap to the
+ * read; text over MAX_GOMOD_BYTES is refused with an error.
+ */
 export function parseGoMod(text: string): GoModFile {
   const out: GoModFile = {
     require: [],
@@ -172,6 +185,13 @@ export function parseGoMod(text: string): GoModFile {
     tool: [],
     errors: [],
   };
+  if (Buffer.byteLength(text, "utf8") > MAX_GOMOD_BYTES) {
+    out.errors.push({
+      line: 0,
+      message: `go.mod is over the ${MAX_GOMOD_BYTES}-byte size cap and was not parsed`,
+    });
+    return out;
+  }
   const error = (line: number, message: string): void => {
     out.errors.push({ line, message });
   };
@@ -193,6 +213,12 @@ export function parseGoMod(text: string): GoModFile {
         block = undefined;
         continue;
       }
+      // A paren inside a block (a nested `require (`, a stray `(`) is never
+      // a module path or version: reject the line instead of reading it (#227).
+      if (l.tokens.some(isParen)) {
+        error(l.line, `unexpected parenthesis in ${block.verb} block`);
+        continue;
+      }
       directive(block.verb, l.tokens, l);
       continue;
     }
@@ -207,7 +233,16 @@ export function parseGoMod(text: string): GoModFile {
       block = { verb, line: l.line };
       continue;
     }
-    if (args.some((t) => !t.quoted && (t.text === "(" || t.text === ")"))) {
+    // `require ()` on one line is a legal empty block.
+    if (
+      args.length === 2 &&
+      args[0]!.text === "(" &&
+      args[1]!.text === ")" &&
+      args.every(isParen)
+    ) {
+      continue;
+    }
+    if (args.some(isParen)) {
       error(l.line, "unexpected parenthesis");
       continue;
     }
@@ -254,7 +289,8 @@ export function parseGoMod(text: string): GoModFile {
         return;
       }
       case "replace": {
-        const arrow = words.indexOf("=>");
+        // Only a bare => is the operator; a quoted "=>" is a (bad) path (#227).
+        const arrow = args.findIndex((t) => !t.quoted && t.text === "=>");
         const lhs = arrow < 0 ? [] : words.slice(0, arrow);
         const rhs = arrow < 0 ? [] : words.slice(arrow + 1);
         if (lhs.length < 1 || lhs.length > 2 || rhs.length < 1 || rhs.length > 2) {
