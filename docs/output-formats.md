@@ -165,7 +165,8 @@ No significant dependency issues found.
 - A finding with `awareness: true` (#234) is for awareness only: presenters
   list it in an awareness section, and it never affects a check conclusion,
   title, count or exit code. Only core sets it, from the rule that emits the
-  finding (today only `cross-ecosystem-capability-overlap`). Absent means not
+  finding (today `cross-ecosystem-capability-overlap` and the adapter
+  capability notes, `adapter-capability`, #205). Absent means not
   awareness: other info findings stay in Notes and keep their neutral
   meaning. Marking another rule awareness needs arbiter sign-off.
 - Presenters group findings with core's `findingGroup(f)` (#239) and own
@@ -175,8 +176,9 @@ No significant dependency issues found.
   - `"incomplete"`: engine cap and incompleteness notes, and any other info
     finding without a marker. Listed in Notes; a run whose only notes are
     these is neutral "Analysis incomplete".
-  - `"note"`: non-capping run-level adapter notes (`adapterNote: true`, set
-    by the engine, #205). Listed in Notes; the check stays success.
+  - `"note"`: non-capping run-level adapter notes (rule `adapter-note`,
+    `adapterNote: true`, set by the engine, #205). Listed in Notes; the check
+    stays success.
   - `"awareness"`: `awareness: true`. Awareness section, never affects
     anything.
     Only an explicit `true` marker moves an info finding out of

@@ -30,6 +30,18 @@ recommendation policy lives in core.
 - **Evidence or silence.** Usage findings carry file and line. Missing
   lockfiles produce `incomplete` graphs and reduced confidence, never
   resolution.
+- **Notes, never caps (#205).** The optional `notes(context, projects)`
+  runs after the graph and usage stages and returns `{ statement, dependency? }[]`.
+  A note with `dependency` (a name this adapter listed) is a capability note:
+  core emits it as an `adapter-capability` awareness finding. A note without
+  one is a run-level note: core emits it as an `adapter-note` in Notes
+  (`adapterNote: true`). Neither caps verdicts, confidence or severity, so
+  never use a note for missing coverage. Coverage gaps that should cap stay
+  engine-owned (scan completeness, #154). Output is untrusted: malformed
+  notes and unknown dependencies are dropped, statements are cleaned and cut
+  to 300 characters, duplicates are merged, and a run keeps at most 100
+  notes. If `notes` throws or times out, only the notes are lost. Additive,
+  so there's no `adapterApiVersion` bump.
 - **Monorepo-native.** Results are per `ProjectRef`, not repo-wide guesses.
 
 ## Status

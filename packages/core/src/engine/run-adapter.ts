@@ -141,6 +141,11 @@ export interface AdapterOutcome {
    * (cap-and-note, #154).
    */
   scanCompleteness?: Finding[];
+  /**
+   * Raw EcosystemAdapter.notes() output (#205), untrusted and unvalidated.
+   * assembleAnalysisResult sanitises, dedupes and caps it.
+   */
+  adapterNotes?: unknown;
 }
 
 /**
@@ -348,5 +353,20 @@ export async function runAdapter(
       : Promise.resolve();
 
   await Promise.all([graphStage, usageStage]);
+
+  if (adapter.notes && !controller.signal.aborted) {
+    onStage?.("notes");
+    try {
+      outcome.adapterNotes = await withTimeout(
+        () => adapter.notes!(context, detection.projects),
+        timeoutMs,
+        "notes",
+        controller,
+      );
+    } catch {
+      // Notes never cap and never carry a verdict, so losing them costs
+      // nothing but the notes: no adapter-failure finding.
+    }
+  }
   return outcome;
 }

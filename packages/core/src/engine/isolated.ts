@@ -14,6 +14,7 @@
  * the scan - cheap while adapter count is small, and it keeps untrusted
  * parsing out of the main thread entirely.
  */
+import { MAX_ADAPTER_NOTES } from "./adapter-notes.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,6 +111,8 @@ export interface IsolatedAnalyseOptions {
 }
 
 /** Truncate a worker-posted outcome to OUTCOME_CAPS, recording overflow as limitations. */
+const MAX_RAW_ADAPTER_NOTES = MAX_ADAPTER_NOTES * 4;
+
 export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
   const limitations: string[] = [];
   let dependencies = outcome.dependencies;
@@ -178,6 +181,12 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
       `Adapter posted ${findings.length} findings; capped at ${OUTCOME_CAPS.maxFindings}.`,
     );
     findings = findings.slice(0, OUTCOME_CAPS.maxFindings);
+  }
+  // Adapter notes (#205) are capped again at assembly; bound the raw array
+  // here so a worker can't ship an unbounded one. Losing extra notes never
+  // caps the run, so no limitation is recorded for it.
+  if (Array.isArray(outcome.adapterNotes) && outcome.adapterNotes.length > MAX_RAW_ADAPTER_NOTES) {
+    outcome = { ...outcome, adapterNotes: outcome.adapterNotes.slice(0, MAX_RAW_ADAPTER_NOTES) };
   }
   if (limitations.length === 0) return { ...outcome, referenceAnalysed };
   return {

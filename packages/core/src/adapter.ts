@@ -114,6 +114,25 @@ export function normaliseUsageResult(result: UsageAnalysisResult): {
   };
 }
 
+/**
+ * A note an adapter adds to the run (#205). Never caps anything: no effect
+ * on verdicts, confidence, severity or reference analysis.
+ *
+ * - With `dependency` (a name this adapter listed): a capability note, e.g.
+ *   "credited by a string in vite.config.ts". Shown as awareness, no change
+ *   suggested.
+ * - Without `dependency`: a run-level note, e.g. "graph edges unavailable".
+ *   Shown in the run's Notes, still non-capping. Coverage gaps that SHOULD
+ *   cap belong in the engine's scan-completeness notes instead (#154).
+ *
+ * Adapter output is untrusted: malformed notes are dropped, statements are
+ * length-bounded, and at most MAX_ADAPTER_NOTES are kept per run.
+ */
+export interface AdapterNote {
+  statement: string;
+  dependency?: string;
+}
+
 export interface EcosystemAdapter {
   /** e.g. "javascript-typescript", "python", "rust", "go". */
   readonly ecosystem: string;
@@ -147,6 +166,13 @@ export interface EcosystemAdapter {
 
   /** Factual health signals via core's metadata service. Requires "health". */
   analyseHealth?(context: AdapterContext, dependency: Dependency): Promise<PackageHealth>;
+
+  /**
+   * Notes for this run (#205), called after the graph and usage stages.
+   * Optional and additive (no adapterApiVersion bump). A failure or timeout
+   * here only loses the notes: it is not an adapter failure.
+   */
+  notes?(context: AdapterContext, projects: ProjectRef[]): Promise<AdapterNote[]>;
 }
 
 /** What the core needs from an adapter to assemble an AnalysisResult. */
