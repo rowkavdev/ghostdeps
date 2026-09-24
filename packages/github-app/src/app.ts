@@ -124,6 +124,11 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
       new InProcessJobQueue({
         worker,
         onError: (job, error) => app.log.error({ job: job.key, err: error }, "analysis job failed"),
+        onSuperseded: (dropped, by) =>
+          app.log.info(
+            { job: dropped.key, supersededBy: by.key, repository: dropped.repository.id },
+            "queued analysis dropped: a newer head of the pull request arrived",
+          ),
       });
 
     addHandler((req, res) => {

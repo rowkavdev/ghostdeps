@@ -80,4 +80,92 @@ describe("InProcessJobQueue", () => {
     await queue.onIdle();
     assert.equal(queue.enqueue(job("extra")), "queued");
   });
+
+  describe("superseded PR heads (#257)", () => {
+    const prJob = (sha: string, pr = 5, repo = 1): AnalysisJob => ({
+      ...job(sha),
+      key: analysisJobKey(repo, sha),
+      repository: { id: repo, owner: "o", name: "r" },
+      trigger: { kind: "pull_request", number: pr, action: "synchronize", baseSha: "base" },
+    });
+    // A worker that blocks until released, so later jobs stay queued.
+    function blockingQueue(onSuperseded?: (d: AnalysisJob, b: AnalysisJob) => void) {
+      const ran: string[] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const queue = new InProcessJobQueue({
+        concurrency: 1,
+        worker: async (j) => {
+          ran.push(j.headSha);
+          if (j.headSha === "busy") await gate;
+        },
+        ...(onSuperseded ? { onSuperseded } : {}),
+      });
+      queue.enqueue(job("busy"));
+      return { queue, ran, release };
+    }
+
+    it("drops a queued older head when a newer head of the same PR arrives", async () => {
+      const dropped: string[] = [];
+      const { queue, ran, release } = blockingQueue((d, b) =>
+        dropped.push(`${d.headSha}>${b.headSha}`),
+      );
+      queue.enqueue(prJob("old"));
+      assert.equal(queue.enqueue(prJob("new")), "queued");
+      release();
+      await queue.onIdle();
+      assert.deepEqual(ran, ["busy", "new"]);
+      assert.deepEqual(dropped, ["old>new"]);
+    });
+
+    it("keeps other PRs, other repositories and non-PR jobs", async () => {
+      const { queue, ran, release } = blockingQueue();
+      queue.enqueue(prJob("a", 5));
+      queue.enqueue(prJob("b", 6));
+      queue.enqueue(prJob("c", 5, 2));
+      queue.enqueue(job("push"));
+      queue.enqueue(prJob("d", 5));
+      release();
+      await queue.onIdle();
+      assert.deepEqual(ran, ["busy", "b", "c", "push", "d"]);
+    });
+
+    it("never drops a running job, and a re-run never supersedes", async () => {
+      const ran: string[] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const queue = new InProcessJobQueue({
+        concurrency: 1,
+        worker: async (j) => {
+          ran.push(j.headSha);
+          if (j.headSha === "old") await gate;
+        },
+      });
+      queue.enqueue(prJob("old")); // starts running
+      queue.enqueue(prJob("mid"));
+      const rerun: AnalysisJob = {
+        ...job("older"),
+        key: "1:older:rerun",
+        trigger: {
+          kind: "rerequested",
+          checkRunId: 9,
+          pullRequest: { number: 5, baseSha: "base" },
+        },
+      };
+      queue.enqueue(rerun);
+      release();
+      await queue.onIdle();
+      assert.deepEqual(ran, ["old", "mid", "older"]);
+    });
+
+    it("forgets a dropped job's key so that head can be queued again", async () => {
+      const { queue, ran, release } = blockingQueue();
+      queue.enqueue(prJob("x"));
+      queue.enqueue(prJob("y")); // drops x
+      assert.equal(queue.enqueue(prJob("x")), "queued"); // force-push back; drops y
+      release();
+      await queue.onIdle();
+      assert.deepEqual(ran, ["busy", "x"]);
+    });
+  });
 });

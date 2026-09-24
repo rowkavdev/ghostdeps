@@ -81,6 +81,15 @@ export interface InProcessJobQueueOptions {
   /** Maximum jobs waiting to run. Beyond this, enqueue returns "overloaded". Default 500. */
   readonly maxPending?: number;
   readonly onError?: (job: AnalysisJob, error: unknown) => void;
+  /** Called for each queued job dropped because a newer head of its PR arrived (#257). */
+  readonly onSuperseded?: (dropped: AnalysisJob, by: AnalysisJob) => void;
+}
+
+/** The PR a job belongs to, when it has one. */
+function pullRequestOf(job: AnalysisJob): number | undefined {
+  if (job.trigger.kind === "pull_request") return job.trigger.number;
+  if (job.trigger.kind === "rerequested") return job.trigger.pullRequest?.number;
+  return undefined;
 }
 
 /** v0.1 queue: in memory, bounded concurrency, duplicate keys collapse. */
@@ -90,6 +99,7 @@ export class InProcessJobQueue implements JobQueue {
   readonly #dedupeWindow: number;
   readonly #maxPending: number;
   readonly #onError: (job: AnalysisJob, error: unknown) => void;
+  readonly #onSuperseded: (dropped: AnalysisJob, by: AnalysisJob) => void;
   readonly #pending: AnalysisJob[] = [];
   readonly #seen = new Set<string>();
   #running = 0;
@@ -101,10 +111,12 @@ export class InProcessJobQueue implements JobQueue {
     this.#dedupeWindow = Math.max(1, options.dedupeWindow ?? 1000);
     this.#maxPending = Math.max(1, options.maxPending ?? 500);
     this.#onError = options.onError ?? (() => {});
+    this.#onSuperseded = options.onSuperseded ?? (() => {});
   }
 
   enqueue(job: AnalysisJob): EnqueueResult {
     if (this.#seen.has(job.key)) return "duplicate";
+    this.#dropSuperseded(job);
     if (this.#pending.length >= this.#maxPending) return "overloaded";
     this.#seen.add(job.key);
     if (this.#seen.size > this.#dedupeWindow) {
@@ -124,6 +136,31 @@ export class InProcessJobQueue implements JobQueue {
   onIdle(): Promise<void> {
     if (this.size === 0) return Promise.resolve();
     return new Promise((resolve) => this.#idleWaiters.push(resolve));
+  }
+
+  /**
+   * A new head for a PR (#257): queued jobs for an older head of the same PR
+   * would analyse a commit whose check is already superseded, so drop them.
+   * Only pull_request events supersede; a re-run the user asked for never
+   * drops other work. Running jobs are left to finish. A dropped job never
+   * created its check run, so nothing needs cleaning up, and its key is
+   * forgotten so the old head can be queued again later.
+   */
+  #dropSuperseded(job: AnalysisJob): void {
+    if (job.trigger.kind !== "pull_request") return;
+    const pr = job.trigger.number;
+    for (let i = this.#pending.length - 1; i >= 0; i--) {
+      const queued = this.#pending[i]!;
+      if (
+        queued.repository.id === job.repository.id &&
+        pullRequestOf(queued) === pr &&
+        queued.headSha !== job.headSha
+      ) {
+        this.#pending.splice(i, 1);
+        this.#seen.delete(queued.key);
+        this.#onSuperseded(queued, job);
+      }
+    }
   }
 
   #drain(): void {
