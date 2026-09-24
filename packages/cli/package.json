@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@ghostdeps/core": "workspace:*",
+    "@ghostdeps/go": "workspace:*",
     "@ghostdeps/javascript-typescript": "workspace:*",
     "@ghostdeps/rust": "workspace:*"
   },

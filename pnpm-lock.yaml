@@ -250,6 +250,9 @@ importers:
       '@ghostdeps/core':
         specifier: workspace:*
         version: link:../core
+      '@ghostdeps/go':
+        specifier: workspace:*
+        version: link:../adapters/go
       '@ghostdeps/javascript-typescript':
         specifier: workspace:*
         version: link:../adapters/javascript-typescript
@@ -272,6 +275,9 @@ importers:
       '@ghostdeps/core':
         specifier: workspace:*
         version: link:../core
+      '@ghostdeps/go':
+        specifier: workspace:*
+        version: link:../adapters/go
       '@ghostdeps/javascript-typescript':
         specifier: workspace:*
         version: link:../adapters/javascript-typescript

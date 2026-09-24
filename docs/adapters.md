@@ -34,10 +34,11 @@ recommendation policy lives in core.
 
 ## Status
 
-| Adapter                            | Ecosystem                                    | Status                                                                                                                                                      |
-| ---------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@ghostdeps/javascript-typescript` | JavaScript/TypeScript (npm, pnpm, Yarn, Bun) | detection (#24), package-manager detection (#25), manifest parsing (#26), lockfile graphs (#27), usage scanning (#28); fixtures (#30) adds the scenario set |
-| `@ghostdeps/rust`                  | Rust (Cargo)                                 | detection and Cargo.toml parsing incl. workspaces and feature flags (#49), Cargo.lock graphs and tree-sitter usage scanning (#50); fixtures (#51)           |
-| (none yet)                         | Python, Go                                   | contracts only - implementations start from the M1/M2 issues                                                                                                |
+| Adapter                            | Ecosystem                                    | Status                                                                                                                                                                    |
+| ---------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@ghostdeps/javascript-typescript` | JavaScript/TypeScript (npm, pnpm, Yarn, Bun) | detection (#24), package-manager detection (#25), manifest parsing (#26), lockfile graphs (#27), usage scanning (#28); fixtures (#30) adds the scenario set               |
+| `@ghostdeps/rust`                  | Rust (Cargo)                                 | detection and Cargo.toml parsing incl. workspaces and feature flags (#49), Cargo.lock graphs and tree-sitter usage scanning (#50); fixtures (#51)                         |
+| `@ghostdeps/go`                    | Go (modules)                                 | go.mod parsing and detection incl. go.work/vendor, edgeless module graph marked incomplete (#52), import usage scanning (#53); fixtures (#54); never reports unused in M2 |
+| (none yet)                         | Python                                       | contracts only - implementations start from the M1/M2 issues                                                                                                              |
 
 New adapters: read [contributing-adapters.md](contributing-adapters.md).
