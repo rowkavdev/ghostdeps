@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { MAX_FILE_READ_BYTES } from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
-import { MAX_SOURCE_BYTES, findUsage, usageLimitations } from "./find-usage.js";
+import {
+  MAX_SOURCE_BYTES,
+  MAX_OUTSIDE_PROJECT_RECORDS,
+  MAX_UNRESOLVED_PER_FILE,
+  findUsage,
+  usageLimitations,
+} from "./find-usage.js";
 
 const project = (path: string): ProjectRef => ({
   path,
@@ -137,5 +144,102 @@ describe("findUsage", () => {
     });
     const usages = await findUsage(context, dep("pwn"));
     assert.equal(usages.length, 1);
+  });
+
+  it("skips core-excluded directories and minified bundles", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "dist/index.js": `require("from-dist");`,
+      "vendor/lib.js": `require("from-vendor");`,
+      "public/app.min.js": `require("from-min");`,
+      "src/index.js": `require("from-src");`,
+    });
+    for (const name of ["from-dist", "from-vendor", "from-min"]) {
+      assert.deepEqual(await findUsage(context, dep(name)), [], name);
+    }
+    assert.equal((await findUsage(context, dep("from-src"))).length, 1);
+  });
+
+  it("does not attribute files outside every package.json project, and says so", async () => {
+    const context = ctx({
+      "scripts/tool.js": `require("stray");`,
+      "packages/a/package.json": "{}",
+      "packages/a/index.js": `require("stray");`,
+    });
+    assert.deepEqual(await findUsage(context, dep("stray")), []);
+    assert.deepEqual(
+      (await findUsage(context, dep("stray", "packages/a"))).map((u) => u.file),
+      ["packages/a/index.js"],
+    );
+    const limits = await usageLimitations(context, "packages/a");
+    assert.ok(
+      limits.some((e) => e.kind === "file-outside-project" && e.file === "scripts/tool.js"),
+    );
+  });
+
+  it("caps unresolved dynamic-import limitations per file and summarises the rest", async () => {
+    const extra = 7;
+    const lines = Array.from(
+      { length: MAX_UNRESOLVED_PER_FILE + extra },
+      (_, i) => `import(name${i});`,
+    );
+    const context = ctx({ "package.json": "{}", "many.js": lines.join("\n") });
+    const limits = await usageLimitations(context, ".");
+    assert.equal(
+      limits.filter((e) => e.kind === "dynamic-import-unresolved").length,
+      MAX_UNRESOLVED_PER_FILE,
+    );
+    const summary = limits.filter((e) => e.kind === "dynamic-import-unresolved-summary");
+    assert.equal(summary.length, 1);
+    assert.match(summary[0]!.statement, new RegExp(`^${extra} more`));
+  });
+
+  it("scopes the scan cache to the analysis context, not the handle", async () => {
+    const files: Record<string, string> = { "package.json": "{}", "a.js": `require("first");` };
+    const repository = memoryHandle(files);
+    const job1: AdapterContext = { repository, network: { mode: "offline" } };
+    assert.equal((await findUsage(job1, dep("first"))).length, 1);
+    files["a.js"] = `require("second");`;
+    // Same job: memoised. New job on the same long-lived handle: rescanned.
+    assert.equal((await findUsage(job1, dep("second"))).length, 0);
+    const job2: AdapterContext = { repository, network: { mode: "offline" } };
+    assert.equal((await findUsage(job2, dep("second"))).length, 1);
+    assert.equal((await findUsage(job2, dep("first"))).length, 0);
+  });
+
+  it("bounds outside-project limitations: 1,000 unowned files x 5 projects", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 1000; i++) files[`generated/f${i}.js`] = `require("x");`;
+    const projects = ["a", "b", "c", "d", "e"].map((p) => `packages/${p}`);
+    for (const p of projects) {
+      files[`${p}/package.json`] = "{}";
+      files[`${p}/index.js`] = `require("y");`;
+    }
+    const context = ctx(files);
+    for (const p of projects) {
+      const limits = await usageLimitations(context, p);
+      const outside = limits.filter((e) => e.kind === "file-outside-project");
+      assert.equal(outside.length, MAX_OUTSIDE_PROJECT_RECORDS, p);
+      const summary = limits.filter((e) => e.kind === "file-outside-project-summary");
+      assert.equal(summary.length, 1, p);
+      assert.match(summary[0]!.statement, /^1000 source files/);
+      assert.ok(limits.length <= MAX_OUTSIDE_PROJECT_RECORDS + 1, p);
+    }
+  });
+
+  it("attributes unreadable and oversized files to their owning project only", async () => {
+    const context = ctx({
+      "packages/a/package.json": "{}",
+      "packages/a/big.js": " ".repeat(MAX_SOURCE_BYTES + 1),
+      "packages/b/package.json": "{}",
+    });
+    assert.ok(
+      (await usageLimitations(context, "packages/a")).some((e) => e.kind === "file-too-large"),
+    );
+    assert.deepEqual(await usageLimitations(context, "packages/b"), []);
+  });
+
+  it("parse cap never exceeds core's read cap", () => {
+    assert.ok(MAX_SOURCE_BYTES <= MAX_FILE_READ_BYTES);
   });
 });

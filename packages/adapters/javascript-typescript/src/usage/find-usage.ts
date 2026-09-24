@@ -3,6 +3,7 @@
  * packages, with file/line evidence. Reads files through the read-only
  * RepositoryHandle only; never executes or resolves anything.
  */
+import { EXCLUDED_FILE_SUFFIXES, MAX_FILE_READ_BYTES, hasExcludedSegment } from "@ghostdeps/core";
 import type {
   AdapterContext,
   Dependency,
@@ -13,19 +14,31 @@ import type {
 import { scanSource, scriptKindFor } from "./scan.js";
 import type { FileScanResult } from "./scan.js";
 
-/** Files larger than this are skipped and reported, not parsed (security-model: parser input limits). */
-export const MAX_SOURCE_BYTES = 1_000_000;
+/**
+ * Source files larger than this are skipped and reported, not parsed
+ * (security-model: parser input limits). Deliberately stricter than core's
+ * read cap: a full TypeScript AST costs far more per byte than reading, and
+ * 1 MB covers any hand-written module. Never above core's read cap.
+ */
+export const MAX_SOURCE_BYTES = Math.min(1_000_000, MAX_FILE_READ_BYTES);
 
-/** Directories never scanned even if the handle lists them. */
-const SKIP_SEGMENTS = new Set(["node_modules", ".git", "bower_components", "jspm_packages"]);
+/** Unresolved dynamic-import limitations recorded individually per file; the rest are summarised. */
+export const MAX_UNRESOLVED_PER_FILE = 20;
+
+/** Files outside every project recorded individually per scan; the rest are counted in one summary. */
+export const MAX_OUTSIDE_PROJECT_RECORDS = 20;
 
 export interface RepositoryScan {
   /** Parsed files keyed by repository-relative path. */
   files: Map<string, FileScanResult>;
-  /** Project root ("." or a workspace dir) that owns each scanned file. */
+  /** Project root ("." or a workspace dir) that owns each scanned file. Files outside every root have no entry. */
   owner: Map<string, string>;
   /** Evidence that weakens completeness: unresolvable dynamic imports, skipped files, parse errors. */
   limitations: Evidence[];
+  /** The same limitations grouped by owning project root. */
+  byProject: Map<string, Evidence[]>;
+  /** Bounded limitations that apply to every project (files outside all projects). */
+  shared: Evidence[];
 }
 
 function dirname(path: string): string {
@@ -33,8 +46,14 @@ function dirname(path: string): string {
   return i < 0 ? "." : path.slice(0, i);
 }
 
+/**
+ * The RepositoryHandle already applies the scanner's exclusions (#73). This
+ * applies core's shared lists (limits.ts, #106) again so handles that list more (test
+ * handles, custom callers) never pull vendored or generated code into usage.
+ */
 function isSkipped(path: string): boolean {
-  return path.split("/").some((seg) => SKIP_SEGMENTS.has(seg));
+  if (EXCLUDED_FILE_SUFFIXES.some((suffix) => path.endsWith(suffix))) return true;
+  return hasExcludedSegment(path);
 }
 
 /** Deepest directory containing a package.json that is an ancestor of `file`. */
@@ -47,16 +66,29 @@ function owningRoot(file: string, roots: Set<string>): string | undefined {
   }
 }
 
-const cache = new WeakMap<RepositoryHandle, Promise<RepositoryScan>>();
+/**
+ * Memoised per AdapterContext: one analysis job builds one context, so a
+ * long-lived handle reused across jobs is rescanned each job and never serves
+ * stale results. Entries die with the context.
+ */
+const cache = new WeakMap<AdapterContext, Promise<RepositoryScan>>();
 
-/** Scan every JS/TS source file once per repository handle (memoised). */
-export function scanRepository(repository: RepositoryHandle): Promise<RepositoryScan> {
-  let pending = cache.get(repository);
+/** Scan every JS/TS source file once per analysis context. */
+export function scanForContext(context: AdapterContext): Promise<RepositoryScan> {
+  let pending = cache.get(context);
   if (!pending) {
-    pending = doScan(repository);
-    cache.set(repository, pending);
+    pending = scanRepository(context.repository);
+    cache.set(context, pending);
   }
   return pending;
+}
+
+/**
+ * Scan every JS/TS source file in `repository`. Not memoised: adapter code
+ * paths (findUsage, usageLimitations) go through scanForContext.
+ */
+export function scanRepository(repository: RepositoryHandle): Promise<RepositoryScan> {
+  return doScan(repository);
 }
 
 async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
@@ -67,19 +99,42 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     if (f === "package.json") roots.add(".");
     else if (f.endsWith("/package.json")) roots.add(dirname(f));
   }
-  const scan: RepositoryScan = { files: new Map(), owner: new Map(), limitations: [] };
+  const scan: RepositoryScan = {
+    files: new Map(),
+    owner: new Map(),
+    limitations: [],
+    byProject: new Map(),
+    shared: [],
+  };
+  let outside = 0;
   for (const file of all) {
     if (isSkipped(file) || !scriptKindFor(file)) continue;
-    const root = owningRoot(file, roots) ?? ".";
+    const root = owningRoot(file, roots);
+    if (root === undefined) {
+      // No package.json above it: no project declares its imports, so it is
+      // attributed to nobody rather than guessed into the root. Bounded: a
+      // large unowned area must not flood every project's evidence.
+      outside += 1;
+      if (outside <= MAX_OUTSIDE_PROJECT_RECORDS) {
+        scan.shared.push({
+          kind: "file-outside-project",
+          statement: `${file} is not inside any package.json project and was not attributed`,
+          file,
+        });
+      }
+      continue;
+    }
+    const limitations = scan.byProject.get(root) ?? [];
+    scan.byProject.set(root, limitations);
     let text: string;
     try {
       text = await repository.readFile(file);
     } catch {
-      scan.limitations.push({ kind: "file-unreadable", statement: `could not read ${file}`, file });
+      limitations.push({ kind: "file-unreadable", statement: `could not read ${file}`, file });
       continue;
     }
     if (Buffer.byteLength(text, "utf8") > MAX_SOURCE_BYTES) {
-      scan.limitations.push({
+      limitations.push({
         kind: "file-too-large",
         statement: `${file} exceeds ${MAX_SOURCE_BYTES} bytes and was not scanned`,
         file,
@@ -90,15 +145,18 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     scan.files.set(file, result);
     scan.owner.set(file, root);
     if (result.parseErrors) {
-      scan.limitations.push({
+      limitations.push({
         kind: "parse-error",
         statement: `${file} has syntax errors; imports found may be incomplete`,
         file,
       });
     }
+    let unresolved = 0;
     for (const ref of result.references) {
       if (ref.specifier === undefined) {
-        scan.limitations.push({
+        unresolved += 1;
+        if (unresolved > MAX_UNRESOLVED_PER_FILE) continue;
+        limitations.push({
           kind: "dynamic-import-unresolved",
           statement:
             `${ref.form === "unknown" ? "non-literal" : ""} import/require target in ${file}:${ref.line} cannot be resolved statically`.trim(),
@@ -107,7 +165,21 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
         });
       }
     }
+    if (unresolved > MAX_UNRESOLVED_PER_FILE) {
+      limitations.push({
+        kind: "dynamic-import-unresolved-summary",
+        statement: `${unresolved - MAX_UNRESOLVED_PER_FILE} more unresolvable import/require targets in ${file} were not listed individually`,
+        file,
+      });
+    }
   }
+  if (outside > MAX_OUTSIDE_PROJECT_RECORDS) {
+    scan.shared.push({
+      kind: "file-outside-project-summary",
+      statement: `${outside} source files are outside every package.json project and were not attributed; ${MAX_OUTSIDE_PROJECT_RECORDS} are listed individually`,
+    });
+  }
+  scan.limitations = [...[...scan.byProject.values()].flat(), ...scan.shared];
   return scan;
 }
 
@@ -116,7 +188,7 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
  * nested workspace package are attributed to that package, not the root.
  */
 export async function findUsage(context: AdapterContext, dependency: Dependency): Promise<Usage[]> {
-  const scan = await scanRepository(context.repository);
+  const scan = await scanForContext(context);
   const project = dependency.project.path.replace(/^\.\//, "").replace(/\/$/, "") || ".";
   const usages: Usage[] = [];
   for (const [file, result] of scan.files) {
@@ -138,12 +210,16 @@ export async function findUsage(context: AdapterContext, dependency: Dependency)
   return usages.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
 }
 
-/** Limitations relevant to one project (unresolved dynamic imports, skipped or broken files). */
+/**
+ * Limitations relevant to one project (unresolved dynamic imports, skipped
+ * or broken files), plus the bounded shared set for files outside every
+ * project, which weakens every project's completeness. O(1) lookup per call.
+ */
 export async function usageLimitations(
   context: AdapterContext,
   projectPath: string,
 ): Promise<Evidence[]> {
-  const scan = await scanRepository(context.repository);
+  const scan = await scanForContext(context);
   const project = projectPath.replace(/^\.\//, "").replace(/\/$/, "") || ".";
-  return scan.limitations.filter((e) => !e.file || (scan.owner.get(e.file) ?? project) === project);
+  return [...(scan.byProject.get(project) ?? []), ...scan.shared];
 }
