@@ -21,6 +21,7 @@ import type {
   AnalysisResult,
   Dependency,
   DependencyGraph,
+  GraphCompleteness,
   Finding,
   NetworkPolicy,
   ProjectRef,
@@ -202,6 +203,24 @@ function isPlainData(value: unknown, depth = 32): boolean {
 }
 
 /**
+ * Classify how far an ecosystem's graphs cover its detected projects (#114).
+ * An empty graph marked incomplete (no lockfile, or one that could not be
+ * parsed) carries no transitive evidence: if every graph is like that the
+ * surface is "none". Next to a usable graph it still makes the total partial.
+ */
+function graphCompleteness(
+  projects: readonly ProjectRef[],
+  graphs: readonly DependencyGraph[],
+): GraphCompleteness {
+  const usable = graphs.filter((g) => !(g.incomplete && g.nodes.length === 0));
+  if (usable.length === 0) return "none";
+  if (graphs.some((g) => g.incomplete)) return "partial";
+  const covered = new Set(graphs.map((g) => `${g.project.path}\0${g.project.ecosystem}`));
+  const allCovered = projects.every((p) => covered.has(`${p.path}\0${p.ecosystem}`));
+  return allCovered ? "complete" : "partial";
+}
+
+/**
  * Turn per-adapter outcomes (however they were produced - in-process or in
  * workers) into one AnalysisResult: merge facts, apply recommendation
  * policy, normalise ordering. Shared by analyse.ts and isolated.ts.
@@ -247,6 +266,7 @@ export async function assembleAnalysisResult(
       ecosystem: outcome.ecosystem,
       direct: new Set(outcome.dependencies.map((d) => d.name)).size,
       transitive: transitive.size,
+      graphs: graphCompleteness(outcome.detected.projects, outcome.graphs),
     });
   }
 

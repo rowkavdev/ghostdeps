@@ -61,7 +61,7 @@ const basicUnused: AnalysisResult = {
       evidence: [{ kind: "manifest-found", statement: "package.json", file: "package.json" }],
     },
   ],
-  surface: [{ ecosystem: "javascript-typescript", direct: 1, transitive: 1 }],
+  surface: [{ ecosystem: "javascript-typescript", direct: 1, transitive: 1, graphs: "complete" }],
 };
 
 describe("renderJsonReport", () => {

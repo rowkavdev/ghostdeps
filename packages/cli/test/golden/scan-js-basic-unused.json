@@ -70,6 +70,7 @@
     {
       "direct": 1,
       "ecosystem": "javascript-typescript",
+      "graphs": "none",
       "transitive": 0
     }
   ],

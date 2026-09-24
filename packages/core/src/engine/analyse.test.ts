@@ -4,7 +4,13 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { adapterApiVersion, type AdapterCapability, type EcosystemAdapter } from "../adapter.js";
-import type { Dependency, Finding, ProjectRef, RepositoryHandle } from "../types/index.js";
+import type {
+  Dependency,
+  DependencyGraph,
+  Finding,
+  ProjectRef,
+  RepositoryHandle,
+} from "../types/index.js";
 import { analyseRepository, detectionConfidence } from "./analyse.js";
 
 // dist/engine -> repository root
@@ -47,6 +53,10 @@ interface MockSpec {
   failUsage?: boolean;
   hangDetect?: boolean;
   delayMs?: number;
+  /** Replace the default complete graph (needs the dependencyGraph capability). */
+  graphs?: (project: ProjectRef) => DependencyGraph[];
+  /** A second detected project, to test graph coverage. */
+  extraProject?: ProjectRef;
 }
 
 function mockAdapter(spec: MockSpec): EcosystemAdapter & { calls: string[] } {
@@ -73,7 +83,7 @@ function mockAdapter(spec: MockSpec): EcosystemAdapter & { calls: string[] } {
       const hasManifest = await ctx.repository.exists("package.json");
       return {
         confidence: spec.confidence ?? (hasManifest ? 0.9 : 0),
-        projects: [project],
+        projects: spec.extraProject ? [project, spec.extraProject] : [project],
         evidence: [{ kind: "manifest-found", statement: `${spec.ecosystem} manifest` }],
       };
     },
@@ -92,22 +102,97 @@ function mockAdapter(spec: MockSpec): EcosystemAdapter & { calls: string[] } {
     };
   }
   if (caps.has("dependencyGraph")) {
-    adapter.buildDependencyGraph = async () => [
-      {
-        project,
-        nodes: [
-          { name: "used", version: "1.0.0", dependencies: ["t1"], dev: false },
-          { name: "t1", version: "1.0.0", dependencies: [], dev: false },
-        ],
-        transitiveClosure: { used: ["t1"] },
-        incomplete: false,
-      },
-    ];
+    adapter.buildDependencyGraph = async () =>
+      spec.graphs
+        ? spec.graphs(project)
+        : [
+            {
+              project,
+              nodes: [
+                { name: "used", version: "1.0.0", dependencies: ["t1"], dev: false },
+                { name: "t1", version: "1.0.0", dependencies: [], dev: false },
+              ],
+              transitiveClosure: { used: ["t1"] },
+              incomplete: false,
+            },
+          ];
   }
   return adapter;
 }
 
 describe("analyseRepository", () => {
+  describe("surface graph completeness (#114)", () => {
+    const node = (name: string) => ({ name, version: "1.0.0", dependencies: [], dev: false });
+    const graph = (project: ProjectRef, names: string[], incomplete: boolean): DependencyGraph => ({
+      project,
+      nodes: names.map(node),
+      transitiveClosure: {},
+      incomplete,
+    });
+    const surfaceFor = async (graphs: (project: ProjectRef) => DependencyGraph[]) => {
+      const repo = await fixtureHandle(fixture);
+      const adapter = mockAdapter({
+        ecosystem: "js",
+        confidence: 1,
+        deps: ["a"],
+        capabilities: ["dependencyGraph"],
+        graphs,
+      });
+      return (await analyseRepository(repo, { adapters: [adapter] })).surface;
+    };
+
+    it("reads an empty incomplete graph (no lockfile) as none, not zero", async () => {
+      assert.deepEqual(await surfaceFor((p) => [graph(p, [], true)]), [
+        { ecosystem: "js", direct: 1, transitive: 0, graphs: "none" },
+      ]);
+    });
+
+    it("reads no graphs at all as none", async () => {
+      assert.deepEqual(await surfaceFor(() => []), [
+        { ecosystem: "js", direct: 1, transitive: 0, graphs: "none" },
+      ]);
+    });
+
+    it("reads a graph marked incomplete as partial", async () => {
+      assert.deepEqual(await surfaceFor((p) => [graph(p, ["a", "b"], true)]), [
+        { ecosystem: "js", direct: 1, transitive: 2, graphs: "partial" },
+      ]);
+    });
+
+    it("reads a usable graph next to a project with no lockfile as partial", async () => {
+      const other: ProjectRef = { path: "packages/lib", ecosystem: "js", packageManagers: [] };
+      assert.deepEqual(await surfaceFor((p) => [graph(p, ["a"], false), graph(other, [], true)]), [
+        { ecosystem: "js", direct: 1, transitive: 1, graphs: "partial" },
+      ]);
+    });
+
+    it("reads a detected project with no graph returned as partial", async () => {
+      const repo = await fixtureHandle(fixture);
+      const adapter = mockAdapter({
+        ecosystem: "js",
+        confidence: 1,
+        deps: ["a"],
+        capabilities: ["dependencyGraph"],
+        extraProject: { path: "packages/lib", ecosystem: "js", packageManagers: [] },
+        graphs: (p) => [graph(p, ["a"], false)],
+      });
+      const result = await analyseRepository(repo, { adapters: [adapter] });
+      assert.equal(result.surface[0]?.graphs, "partial");
+    });
+
+    it("reads a complete graph for every project as complete", async () => {
+      assert.deepEqual(await surfaceFor((p) => [graph(p, ["a"], false)]), [
+        { ecosystem: "js", direct: 1, transitive: 1, graphs: "complete" },
+      ]);
+    });
+
+    it("reads an empty complete graph as a real zero", async () => {
+      assert.deepEqual(await surfaceFor((p) => [graph(p, [], false)]), [
+        { ecosystem: "js", direct: 1, transitive: 0, graphs: "complete" },
+      ]);
+    });
+  });
+
   it("runs detected adapters over a fixture and assembles one result", async () => {
     const repo = await fixtureHandle(fixture);
     const js = mockAdapter({
@@ -130,7 +215,7 @@ describe("analyseRepository", () => {
       },
     ]);
     assert.deepEqual(result.surface, [
-      { ecosystem: "javascript-typescript", direct: 2, transitive: 2 },
+      { ecosystem: "javascript-typescript", direct: 2, transitive: 2, graphs: "complete" },
     ]);
     assert.deepEqual(result.findings, []);
   });
@@ -161,7 +246,9 @@ describe("analyseRepository", () => {
       },
     });
     assert.deepEqual(factsOnly.calls, ["detect", "list"]);
-    assert.deepEqual(result.surface, [{ ecosystem: "rust", direct: 1, transitive: 0 }]);
+    assert.deepEqual(result.surface, [
+      { ecosystem: "rust", direct: 1, transitive: 0, graphs: "none" },
+    ]);
     assert.equal(seen?.has("rust"), false);
   });
 
