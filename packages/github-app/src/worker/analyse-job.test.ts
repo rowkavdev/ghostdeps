@@ -395,7 +395,30 @@ index 3333333..4444444 100644
       }),
     );
     assert.deepEqual(seen, { pullRequestChanges: [] });
+    // The app made the skip, so the app says so; the run isn't a clean green (#195).
+    const out = rec.updated[0]?.output as { title?: string; summary?: string };
+    const text = (out.summary ?? "").replace(/\\/g, ""); // summary text is Markdown-escaped
+    assert.equal(rec.updated[0]?.conclusion, "neutral");
+    assert.equal(out.title, "Analysis incomplete - see notes");
+    assert.match(text, /Removed-usage check skipped: this pull request's diff was too large/);
+    assert.equal(text.match(/Removed-usage check skipped/g)?.length, 1);
+  });
+
+  it("adds no app note when the diff was read in full", async () => {
+    const { client, rec } = fakeClient({ diff: DIFF, files });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+      analyse: async () => emptyResult,
+    });
+    await worker(prJob);
     assert.equal(rec.updated[0]?.conclusion, "success");
+    assert.doesNotMatch(
+      ((rec.updated[0]?.output as { summary?: string }).summary ?? "").replace(/\\/g, ""),
+      /Removed-usage check skipped/,
+    );
   });
 
   it("analyses the full repository when the changes cannot be read in full", async () => {
