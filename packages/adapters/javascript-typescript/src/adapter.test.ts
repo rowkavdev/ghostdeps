@@ -14,8 +14,12 @@ const root: ProjectRef = { path: ".", ecosystem: "javascript-typescript", packag
 describe("createJavaScriptTypeScriptAdapter wiring", () => {
   const adapter = createJavaScriptTypeScriptAdapter();
 
-  it("declares dependencyGraph and usageAnalysis, and implements both", () => {
-    assert.deepEqual([...adapter.capabilities].sort(), ["dependencyGraph", "usageAnalysis"]);
+  it("declares dependencyGraph, usageAnalysis and referenceAnalysis, and implements them", () => {
+    assert.deepEqual([...adapter.capabilities].sort(), [
+      "dependencyGraph",
+      "referenceAnalysis",
+      "usageAnalysis",
+    ]);
     assert.equal(typeof adapter.buildDependencyGraph, "function");
     assert.equal(typeof adapter.findUsage, "function");
   });
