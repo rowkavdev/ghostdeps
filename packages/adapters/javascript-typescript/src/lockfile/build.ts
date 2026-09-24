@@ -9,6 +9,7 @@ import { loadNpmLockfile, parseNpmLockfile } from "./npm.js";
 import { loadPnpmLockfile, parsePnpmLockfile } from "./pnpm.js";
 import { loadYarnLockfile, parseYarnLockfile } from "./yarn.js";
 import { loadBunLockfile, parseBunLockfile } from "./bun.js";
+import { MAX_NPMRC_BYTES, mergeBindings, scopedRegistries } from "./origin.js";
 
 /**
  * Lockfiles above this size are not parsed; the oversize lockfile is
@@ -224,6 +225,39 @@ function loadLockfile(
   return pending;
 }
 
+/** .npmrc scoped registry bindings per analysis run, keyed by directory. */
+const npmrcCaches = new WeakMap<AdapterContext, Map<string, Promise<Map<string, string | null>>>>();
+
+/**
+ * Scoped registry bindings from `<dir>/.npmrc` (origin.ts), or an empty map
+ * when there is none, it can't be read, or it is oversize. Only
+ * `@scope:registry=` lines are parsed; nothing else from the file is kept.
+ */
+function npmrcBindings(context: AdapterContext, dir: string): Promise<Map<string, string | null>> {
+  let cache = npmrcCaches.get(context);
+  if (!cache) {
+    cache = new Map();
+    npmrcCaches.set(context, cache);
+  }
+  let pending = cache.get(dir);
+  if (!pending) {
+    pending = (async () => {
+      const path = join(dir, ".npmrc");
+      try {
+        if (!(await context.repository.exists(path))) return new Map<string, string | null>();
+        const text = await context.repository.readFile(path);
+        if (Buffer.byteLength(text, "utf8") > MAX_NPMRC_BYTES)
+          return new Map<string, string | null>();
+        return scopedRegistries(text);
+      } catch {
+        return new Map<string, string | null>();
+      }
+    })();
+    cache.set(dir, pending);
+  }
+  return pending;
+}
+
 /** Build the lockfile graph for one project, with evidence. Never throws on bad input. */
 export async function buildLockfileGraph(
   context: AdapterContext,
@@ -254,6 +288,16 @@ export async function buildLockfileGraph(
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
   const rel = relative(lock.dir, projectDir);
+  // pnpm-lock.yaml has no per-package URL: scoped .npmrc bindings are the
+  // only registry evidence (the lockfile's directory, not contradicted by
+  // the member's own .npmrc).
+  const scopes =
+    lock.format === "pnpm"
+      ? mergeBindings(
+          await npmrcBindings(context, lock.dir),
+          projectDir === lock.dir ? undefined : await npmrcBindings(context, projectDir),
+        )
+      : undefined;
   let parsed: ParsedLockfile;
   try {
     const source = loaded.lockfile;
@@ -261,7 +305,7 @@ export async function buildLockfileGraph(
       lock.format === "npm"
         ? parseNpmLockfile(source, lock.path, rel === "." ? "" : rel, declared)
         : lock.format === "pnpm"
-          ? parsePnpmLockfile(source, lock.path, rel, declared)
+          ? parsePnpmLockfile(source, lock.path, rel, declared, scopes)
           : lock.format === "yarn"
             ? parseYarnLockfile(source, lock.path, rel, declared)
             : parseBunLockfile(source, lock.path, rel, declared);

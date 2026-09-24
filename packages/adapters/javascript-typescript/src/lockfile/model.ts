@@ -11,6 +11,8 @@ export interface ResolvedPackage {
   version: string;
   /** Ids of the packages this one depends on (already resolved by the parser). */
   dependencies: string[];
+  /** GraphNode.registryOrigin (#174 step 3); set only from explicit evidence (see origin.ts). */
+  registryOrigin?: string;
 }
 
 /** What a lockfile parser produces for one project. */
@@ -130,6 +132,7 @@ export function assembleGraph(
       version: pkg.version,
       dependencies: [...deps].sort(),
       dev: !reachableProd.has(id),
+      ...(pkg.registryOrigin === undefined ? {} : { registryOrigin: pkg.registryOrigin }),
     });
   }
   return { graph: { project, nodes, transitiveClosure, incomplete: false }, evidence: [] };

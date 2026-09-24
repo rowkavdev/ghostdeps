@@ -11,6 +11,7 @@ import {
   buildDependencyGraph,
   buildLockfileGraph,
 } from "./build.js";
+import { MAX_NPMRC_BYTES } from "./origin.js";
 
 const project = (p = ".", pm: string[] = []): ProjectRef => ({
   path: p,
@@ -516,5 +517,269 @@ describe("shared workspace lockfile is parsed once per run (#170)", () => {
       assert.equal(res.graph.incomplete, true);
     }
     assert.equal(reads, 1);
+  });
+});
+
+describe("registryOrigin from lockfile evidence (#174 step 3)", () => {
+  const origins = (nodes: { name: string; version: string; registryOrigin?: string }[]) =>
+    Object.fromEntries(nodes.map((n) => [`${n.name}@${n.version}`, n.registryOrigin ?? null]));
+  const manifest = (deps: Record<string, string>) => JSON.stringify({ dependencies: deps });
+
+  it("package-lock v3: resolved registry tarballs only; hostile resolved values stay absent", async () => {
+    const pkg = (name: string, resolved?: unknown) => ({
+      version: "1.0.0",
+      ...(resolved === undefined ? {} : { resolved }),
+    });
+    const entries: Record<string, unknown> = {
+      "": { dependencies: {} },
+      "node_modules/ok": pkg("ok", "https://registry.npmjs.org/ok/-/ok-1.0.0.tgz"),
+      "node_modules/@acme/ui": pkg(
+        "@acme/ui",
+        "https://NPM.Acme.example:8443/@acme/ui/-/ui-1.0.0.tgz",
+      ),
+      "node_modules/creds": pkg("creds", "https://u:p@registry.npmjs.org/creds/-/creds-1.0.0.tgz"),
+      "node_modules/query": pkg("query", "https://registry.npmjs.org/query/-/query-1.0.0.tgz?t=1"),
+      "node_modules/frag": pkg("frag", "https://registry.npmjs.org/frag/-/frag-1.0.0.tgz#x"),
+      "node_modules/git": pkg("git", "git+ssh://git@github.com/a/git.git#abc"),
+      "node_modules/file": pkg("file", "file:../file-1.0.0.tgz"),
+      "node_modules/badurl": pkg("badurl", "https://exa mple.com/badurl/-/badurl-1.0.0.tgz"),
+      "node_modules/nonstr": pkg("nonstr", { href: "https://registry.npmjs.org" }),
+      "node_modules/codeload": pkg("codeload", "https://codeload.github.com/a/codeload/tar.gz/abc"),
+      "node_modules/missing": pkg("missing"),
+    };
+    const names = Object.keys(entries)
+      .filter((k) => k)
+      .map((k) => k.slice("node_modules/".length));
+    (entries[""] as { dependencies: Record<string, string> }).dependencies = Object.fromEntries(
+      names.map((n) => [n, "1.0.0"]),
+    );
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": manifest(Object.fromEntries(names.map((n) => [n, "1.0.0"]))),
+          "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: entries }),
+        }),
+      ),
+      project(),
+    );
+    assert.deepEqual(origins(res.graph.nodes), {
+      "@acme/ui@1.0.0": "https://npm.acme.example:8443",
+      "badurl@1.0.0": null,
+      "codeload@1.0.0": null,
+      "creds@1.0.0": null,
+      "file@1.0.0": null,
+      "frag@1.0.0": null,
+      "git@1.0.0": null,
+      "missing@1.0.0": null,
+      "nonstr@1.0.0": null,
+      "ok@1.0.0": "https://registry.npmjs.org",
+      "query@1.0.0": null,
+    });
+  });
+
+  it("package-lock v1 nested entries use resolved too", async () => {
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": manifest({ a: "1.0.0", b: "1.0.0" }),
+          "package-lock.json": JSON.stringify({
+            lockfileVersion: 1,
+            dependencies: {
+              a: { version: "1.0.0", resolved: "https://registry.npmjs.org/a/-/a-1.0.0.tgz" },
+              b: { version: "1.0.0", resolved: "http://127.0.0.1:4873/b/-/b-1.0.0.tgz?x" },
+            },
+          }),
+        }),
+      ),
+      project(),
+    );
+    assert.deepEqual(origins(res.graph.nodes), {
+      "a@1.0.0": "https://registry.npmjs.org",
+      "b@1.0.0": null,
+    });
+  });
+
+  it("yarn classic: resolved with its #sha1 fragment; hostile values absent; Berry absent", async () => {
+    const classic = [
+      "ok@^1.0.0:",
+      '  version "1.0.0"',
+      '  resolved "https://registry.yarnpkg.com/ok/-/ok-1.0.0.tgz#0123abcd"',
+      "",
+      "creds@^1.0.0:",
+      '  version "1.0.0"',
+      '  resolved "https://tok@registry.yarnpkg.com/creds/-/creds-1.0.0.tgz#0123"',
+      "",
+      "gh@^1.0.0:",
+      '  version "1.0.0"',
+      '  resolved "https://codeload.github.com/a/gh/tar.gz/abc"',
+      "",
+      "ssh@^1.0.0:",
+      '  version "1.0.0"',
+      '  resolved "git+ssh://git@github.com/a/ssh.git#abc"',
+      "",
+      "q@^1.0.0:",
+      '  version "1.0.0"',
+      '  resolved "https://registry.yarnpkg.com/q/-/q-1.0.0.tgz?x=1#0123"',
+      "",
+    ].join("\n");
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": manifest({
+            ok: "^1.0.0",
+            creds: "^1.0.0",
+            gh: "^1.0.0",
+            ssh: "^1.0.0",
+            q: "^1.0.0",
+          }),
+          "yarn.lock": classic,
+        }),
+      ),
+      project(),
+    );
+    assert.deepEqual(origins(res.graph.nodes), {
+      "creds@1.0.0": null,
+      "gh@1.0.0": null,
+      "ok@1.0.0": "https://registry.yarnpkg.com",
+      "q@1.0.0": null,
+      "ssh@1.0.0": null,
+    });
+
+    const berry = [
+      "__metadata:",
+      "  version: 8",
+      "",
+      '"ok@npm:^1.0.0":',
+      "  version: 1.0.0",
+      '  resolution: "ok@npm:1.0.0"',
+      '  resolved: "https://registry.yarnpkg.com/ok/-/ok-1.0.0.tgz"',
+      "",
+      '"app@workspace:.":',
+      "  version: 0.0.0",
+      '  resolution: "app@workspace:."',
+      "  dependencies:",
+      "    ok: ^1.0.0",
+      "",
+    ].join("\n");
+    const b = await buildLockfileGraph(
+      ctx(memoryHandle({ "package.json": manifest({ ok: "^1.0.0" }), "yarn.lock": berry })),
+      project(),
+    );
+    assert.deepEqual(origins(b.graph.nodes), { "ok@1.0.0": null });
+  });
+
+  const pnpmLock = [
+    "lockfileVersion: '9.0'",
+    "importers:",
+    "  .:",
+    "    dependencies:",
+    "      '@acme/ui': {specifier: 1.0.0, version: 1.0.0}",
+    "      '@dup/x': {specifier: 1.0.0, version: 1.0.0}",
+    "      '@tar/x': {specifier: 1.0.0, version: 1.0.0}",
+    "      '@git/x': {specifier: 1.0.0, version: 1.0.0}",
+    "      left-pad: {specifier: 1.3.0, version: 1.3.0}",
+    "  packages/web:",
+    "    dependencies:",
+    "      '@acme/ui': {specifier: 1.0.0, version: 1.0.0}",
+    "packages:",
+    "  '@acme/ui@1.0.0': {resolution: {integrity: sha512-a}}",
+    "  '@dup/x@1.0.0': {resolution: {integrity: sha512-b}}",
+    "  '@tar/x@1.0.0': {resolution: {integrity: sha512-c, tarball: 'https://u:p@t.example/@tar/x/-/x-1.0.0.tgz'}}",
+    "  '@git/x@1.0.0': {resolution: {type: git, repo: 'https://github.com/g/x', commit: abc}}",
+    "  left-pad@1.3.0: {resolution: {integrity: sha512-d}}",
+    "snapshots:",
+    "  '@acme/ui@1.0.0': {}",
+    "  '@dup/x@1.0.0': {}",
+    "  '@tar/x@1.0.0': {}",
+    "  '@git/x@1.0.0': {}",
+    "  left-pad@1.3.0: {}",
+    "",
+  ].join("\n");
+
+  it("pnpm: only a scoped .npmrc binding that unambiguously matches; bare registry= is not evidence", async () => {
+    const npmrc = [
+      "registry=https://registry.npmjs.org/",
+      "@acme:registry=https://npm.acme.example/",
+      "@dup:registry=https://a.example/",
+      "@dup:registry=https://b.example/",
+      "@git:registry=https://registry.npmjs.org/",
+      "//npm.acme.example/:_authToken=secret",
+    ].join("\n");
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": manifest({
+            "@acme/ui": "1.0.0",
+            "@dup/x": "1.0.0",
+            "@tar/x": "1.0.0",
+            "@git/x": "1.0.0",
+            "left-pad": "1.3.0",
+          }),
+          "pnpm-lock.yaml": pnpmLock,
+          ".npmrc": npmrc,
+        }),
+      ),
+      project(".", ["pnpm"]),
+    );
+    assert.deepEqual(origins(res.graph.nodes), {
+      "@acme/ui@1.0.0": "https://npm.acme.example",
+      "@dup/x@1.0.0": null,
+      // An explicit tarball wins over .npmrc, and here it carries credentials.
+      "@tar/x@1.0.0": null,
+      "@git/x@1.0.0": null,
+      "left-pad@1.3.0": null,
+    });
+    assert.ok(!JSON.stringify(res).includes("secret"));
+  });
+
+  it("pnpm: no .npmrc, or a member .npmrc that contradicts the root, means absent", async () => {
+    const files = {
+      "package.json": manifest({}),
+      "packages/web/package.json": manifest({ "@acme/ui": "1.0.0" }),
+      "pnpm-lock.yaml": pnpmLock,
+    };
+    const none = await buildLockfileGraph(
+      ctx(memoryHandle(files)),
+      project("packages/web", ["pnpm"]),
+    );
+    assert.deepEqual(origins(none.graph.nodes), { "@acme/ui@1.0.0": null });
+
+    const contradicted = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          ...files,
+          ".npmrc": "@acme:registry=https://npm.acme.example/",
+          "packages/web/.npmrc": "@acme:registry=https://registry.npmjs.org/",
+        }),
+      ),
+      project("packages/web", ["pnpm"]),
+    );
+    assert.deepEqual(origins(contradicted.graph.nodes), { "@acme/ui@1.0.0": null });
+
+    const agreed = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          ...files,
+          ".npmrc": "@acme:registry=https://npm.acme.example/",
+          "packages/web/.npmrc": "@acme:registry=https://npm.acme.example",
+        }),
+      ),
+      project("packages/web", ["pnpm"]),
+    );
+    assert.deepEqual(origins(agreed.graph.nodes), { "@acme/ui@1.0.0": "https://npm.acme.example" });
+  });
+
+  it("pnpm: an oversize .npmrc is ignored", async () => {
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": manifest({ "@acme/ui": "1.0.0" }),
+          "pnpm-lock.yaml": pnpmLock,
+          ".npmrc": `@acme:registry=https://npm.acme.example/\n#${"x".repeat(MAX_NPMRC_BYTES)}`,
+        }),
+      ),
+      project(".", ["pnpm"]),
+    );
+    assert.equal(res.graph.nodes.find((n) => n.name === "@acme/ui")?.registryOrigin, undefined);
   });
 });
