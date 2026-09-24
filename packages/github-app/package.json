@@ -1,0 +1,27 @@
+{
+  "name": "@ghostdeps/github-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "probot run ./dist/index.js"
+  },
+  "dependencies": {
+    "probot": "^14.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "nock": "^14.0.17",
+    "typescript": "^5.9.3"
+  }
+}
