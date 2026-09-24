@@ -18,6 +18,7 @@ import { type EcosystemAdapter } from "../adapter.js";
 import type { DependencyChange } from "../diff/dependency-changes.js";
 import { normaliseAnalysisResult } from "../report/json.js";
 import { UNUSED_CONFIDENCE_CAP, capConfidence, severityOf } from "../report/severity.js";
+import { buildProjectTree } from "./project-tree.js";
 import { boundSourceChanges } from "./source-changes.js";
 import type {
   AnalysisResult,
@@ -415,6 +416,7 @@ export async function assembleAnalysisResult(
   return normaliseAnalysisResult({
     schemaVersion: 1,
     projects: [...projects.values()],
+    projectTree: buildProjectTree([...projects.values()]),
     dependencies,
     usages,
     findings,

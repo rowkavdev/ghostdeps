@@ -221,9 +221,35 @@ export interface NetworkPolicy {
 }
 
 /** The full result of analysing a repository. Schema-versioned for JSON output. */
+/**
+ * One project in the repository-wide project tree (#55). Projects come from
+ * every adapter; core only relates them by path, so a Python project inside
+ * a JS workspace root is one tree.
+ */
+export interface ProjectNode {
+  /** Deterministic id: "<ecosystem>:<path>", e.g. "javascript-typescript:packages/web". */
+  id: string;
+  path: string;
+  ecosystem: string;
+  /**
+   * Id of the nearest enclosing project of any ecosystem: the deepest
+   * project whose path is a strict ancestor directory of this one. Ties
+   * (several ecosystems at that path) go to the lowest ecosystem name.
+   * Absent for top-level projects. Projects at the same path never parent
+   * each other.
+   */
+  parent?: string;
+}
+
 export interface AnalysisResult {
   schemaVersion: 1;
   projects: ProjectRef[];
+  /**
+   * Every detected project with its enclosing project (#55). The engine
+   * always sets it; results written before it existed omit it. Additive:
+   * schemaVersion stays 1.
+   */
+  projectTree?: ProjectNode[];
   dependencies: Dependency[];
   usages: Usage[];
   findings: Finding[];

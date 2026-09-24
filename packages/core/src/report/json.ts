@@ -39,7 +39,7 @@ function by<T>(...keys: ((item: T) => string | number)[]): (a: T, b: T) => numbe
   };
 }
 
-const projectOrder = by<ProjectRef>(
+const projectOrder = by<Pick<ProjectRef, "path" | "ecosystem">>(
   (p) => p.path,
   (p) => p.ecosystem,
 );
@@ -133,6 +133,7 @@ export function normaliseAnalysisResult(result: AnalysisResult): AnalysisResult 
   return {
     ...result,
     projects: [...result.projects].sort(projectOrder),
+    ...(result.projectTree ? { projectTree: [...result.projectTree].sort(projectOrder) } : {}),
     dependencies: [...result.dependencies].sort(dependencyOrder),
     usages: [...result.usages].sort(usageOrder),
     findings: [...result.findings].sort(findingOrder),
