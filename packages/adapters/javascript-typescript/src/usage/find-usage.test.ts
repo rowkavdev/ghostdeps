@@ -445,7 +445,9 @@ describe("findRemovedUsages (#168, PR mode)", () => {
   });
 
   it("marks static imports, re-exports and literal requires on removed lines", async () => {
-    const context = prCtx({ "package.json": "{}", "src/a.ts": "" }, [
+    // Head keeps lines 1-2, 4-6 and 8 of the base file.
+    const head = ["// a", "", "const a = 1;", "", "", "export {};"].join("\n");
+    const context = prCtx({ "package.json": "{}", "src/a.ts": head }, [
       removed("src/a.ts", [
         [3, `import d from "dropped";`],
         [7, `export { x } from "dropped/sub";`],
@@ -464,7 +466,8 @@ describe("findRemovedUsages (#168, PR mode)", () => {
   });
 
   it("recognises a multi-line import removed as consecutive lines", async () => {
-    const context = prCtx({ "package.json": "{}" }, [
+    const head = Array.from({ length: 19 }, (_, i) => `// ${i + 1}`).join("\n");
+    const context = prCtx({ "package.json": "{}", "src/gone.ts": head }, [
       removed("src/gone.ts", [
         [20, "import {"],
         [21, "  a,"],
@@ -475,6 +478,36 @@ describe("findRemovedUsages (#168, PR mode)", () => {
     const u = await findRemovedUsages(context, dep("multi"));
     assert.deepEqual(at(u), ["src/gone.ts:20:static:true"]);
     assert.deepEqual(u[0]?.symbols, ["a", "b"]);
+  });
+
+  it("a partly removed multi-line import is cited at its first line (#189)", async () => {
+    const head = ["import {", "  a,", `} from "multi";`, "a;"].join("\n");
+    const context = prCtx({ "package.json": "{}", "src/a.ts": head }, [
+      removed("src/a.ts", [[3, "  b,"]]),
+    ]);
+    assert.deepEqual(at(await findRemovedUsages(context, dep("multi"))), [
+      "src/a.ts:1:static:true",
+    ]);
+  });
+
+  it("deleting the middle of a comment or template literal is not a removed import (#189)", async () => {
+    const head = ["/*", " * Example:", " */", "const t = `", "`;", "export {};"].join("\n");
+    const context = prCtx({ "package.json": "{}", "src/a.ts": head }, [
+      removed("src/a.ts", [
+        [3, ` *   import x from "in-comment";`],
+        [6, `import y from "in-template";`],
+      ]),
+    ]);
+    for (const name of ["in-comment", "in-template"]) {
+      assert.deepEqual(await findRemovedUsages(context, dep(name)), [], name);
+    }
+  });
+
+  it("records nothing when the diff does not fit the head file (capped or malformed)", async () => {
+    const context = prCtx({ "package.json": "{}", "src/a.ts": "one line" }, [
+      removed("src/a.ts", [[50, `import z from "misplaced";`]]),
+    ]);
+    assert.deepEqual(await findRemovedUsages(context, dep("misplaced")), []);
   });
 
   it("never matches dynamic imports, strings, comments or non-source files", async () => {

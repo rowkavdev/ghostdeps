@@ -477,10 +477,45 @@ const STATIC_FORMS = new Set<Usage["form"]>(["static", "require"]);
 const removedCaches = new WeakMap<AdapterContext, Promise<Map<string, IndexEntry[]>>>();
 
 /**
- * Parse the lines a pull request removed from JS/TS files (#101, #168).
- * Consecutive removed lines are parsed together so a removed multi-line
- * import is still recognised. The diff text is data only: it is parsed,
- * never evaluated, and core has already capped it.
+ * The file as it was at the PR's base, rebuilt from the head file and the
+ * diff: removed lines go back at their base line numbers, added lines come
+ * out, everything else is shared. Undefined when the lines do not fit
+ * together (a capped or malformed diff, or an unreadable head file), so the
+ * caller records no evidence rather than guessing the surrounding code.
+ */
+export function reconstructBase(
+  head: readonly string[],
+  change: SourceLineChanges,
+): string[] | undefined {
+  const removed = new Map<number, string>();
+  for (const l of change.removedLines) removed.set(l.line, l.text);
+  const added = new Set(change.addedLines.map((l) => l.line));
+  for (const n of added) if (n > head.length) return undefined;
+  const lastRemoved = Math.max(0, ...removed.keys());
+  const base: string[] = [];
+  let h = 0; // index into head (0-based)
+  for (let n = 1; ; n++) {
+    if (removed.has(n)) {
+      base.push(removed.get(n)!);
+      continue;
+    }
+    while (h < head.length && added.has(h + 1)) h++;
+    if (h >= head.length) {
+      // Head is used up: every removed line must already be placed.
+      return n > lastRemoved ? base : undefined;
+    }
+    base.push(head[h]!);
+    h++;
+  }
+}
+
+/**
+ * Removed-line references (#101, #168, #189). The base version of each
+ * changed JS/TS file is rebuilt and parsed whole, so only real
+ * import/require statements count: import-like text inside a comment or a
+ * template literal never becomes evidence. A statement counts when any of
+ * its lines was removed, and is cited at its first line. The diff text is
+ * data only: parsed, never evaluated, and already capped by core.
  */
 function removedReferences(
   context: AdapterContext,
@@ -493,28 +528,33 @@ function removedReferences(
       const index = new Map<string, IndexEntry[]>();
       for (const change of changes) {
         const file = change.path.replace(/^\.\//, "");
-        if (isSkipped(file) || !scriptKindFor(file)) continue;
-        const lines = [...change.removedLines].sort((a, b) => a.line - b.line);
-        let start = 0;
-        while (start < lines.length) {
-          let end = start + 1;
-          while (end < lines.length && lines[end]!.line === lines[end - 1]!.line + 1) end++;
-          const first = lines[start]!.line;
-          const text = lines
-            .slice(start, end)
-            .map((l) => l.text)
-            .join("\n");
-          start = end;
-          const result = scanSource(file, text);
-          await applyAliases(scan.aliases, file, result);
-          for (const ref of result.references) {
-            if (ref.packageName === undefined || ref.specifier === undefined) continue;
-            if (!STATIC_FORMS.has(ref.form)) continue;
-            ref.line += first - 1;
-            const list = index.get(ref.packageName);
-            if (list) list.push({ file, ref });
-            else index.set(ref.packageName, [{ file, ref }]);
+        if (isSkipped(file) || !scriptKindFor(file) || change.removedLines.length === 0) continue;
+        let head: string[] = [];
+        try {
+          if (await context.repository.exists(file)) {
+            const text = await context.repository.readFile(file);
+            if (Buffer.byteLength(text, "utf8") > MAX_SOURCE_BYTES) continue;
+            head = text.split(/\r?\n/);
           }
+        } catch {
+          continue;
+        }
+        const base = reconstructBase(head, change);
+        if (base === undefined) continue;
+        const removedLines = new Set(change.removedLines.map((l) => l.line));
+        const result = scanSource(file, base.join("\n"));
+        await applyAliases(scan.aliases, file, result);
+        for (const ref of result.references) {
+          if (ref.packageName === undefined || ref.specifier === undefined) continue;
+          if (!STATIC_FORMS.has(ref.form) || ref.stringReference) continue;
+          let touched = false;
+          for (let n = ref.line; n <= (ref.endLine ?? ref.line) && !touched; n++) {
+            touched = removedLines.has(n);
+          }
+          if (!touched) continue;
+          const list = index.get(ref.packageName);
+          if (list) list.push({ file, ref });
+          else index.set(ref.packageName, [{ file, ref }]);
         }
       }
       return index;

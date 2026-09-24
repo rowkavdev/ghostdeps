@@ -18,6 +18,8 @@ export interface ImportReference {
   form: Usage["form"];
   /** 1-based line of the import/require/import() expression. */
   line: number;
+  /** 1-based last line of that expression (multi-line imports). */
+  endLine?: number;
   /** Imported names; "default" and "*" for default/namespace bindings, plus member names accessed on those bindings. */
   symbols: string[];
   /** `import type` / `export type` - erased at runtime. */
@@ -103,6 +105,7 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     const ref: ImportReference = {
       form,
       line: lineOf(node),
+      endLine: sf.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
       symbols,
       typeOnly: opts.typeOnly ?? false,
       reExport: opts.reExport ?? false,
