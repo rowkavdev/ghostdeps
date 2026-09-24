@@ -5,7 +5,7 @@
  */
 import type { AnalysisResult } from "@ghostdeps/core";
 import type { AddedLines } from "./diff.js";
-import { busyCheck, checkName, renderCheck, type CheckOutput } from "./render.js";
+import { busyCheck, checkName, failedCheck, renderCheck, type CheckOutput } from "./render.js";
 
 /** external_id prefix for runs that only say the app was too busy. */
 export const BUSY_PREFIX = "busy:";
@@ -107,9 +107,23 @@ export class CheckReporter {
     }
   }
 
+  /**
+   * Re-run (check_run.rerequested, #97): always creates a new in_progress run.
+   * GitHub's model for re-runs is a fresh run with the same name; `find`
+   * (filter: latest) then treats it as current, and the old run's
+   * annotations are left behind rather than appended to.
+   */
+  async restart(target: CheckTarget): Promise<number> {
+    return (await this.#create(target)).checkRunId;
+  }
+
   async #claim(target: CheckTarget): Promise<{ checkRunId: number; created: boolean }> {
     const existing = await this.find(target);
     if (existing !== undefined) return { checkRunId: existing, created: false };
+    return this.#create(target);
+  }
+
+  async #create(target: CheckTarget): Promise<{ checkRunId: number; created: boolean }> {
     const { data } = await this.client.checks.create({
       owner: target.owner,
       repo: target.repo,
@@ -144,6 +158,20 @@ export class CheckReporter {
       external_id: `${BUSY_PREFIX}${target.externalId}`,
     });
     return data.id;
+  }
+
+  /** Completes the run as neutral with a plain explanation of why analysis did not finish. */
+  async fail(target: CheckTarget, checkRunId: number, reason: string): Promise<void> {
+    const { conclusion, output } = failedCheck(reason);
+    await this.client.checks.update({
+      owner: target.owner,
+      repo: target.repo,
+      check_run_id: checkRunId,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      conclusion,
+      output,
+    });
   }
 
   /** Completes the run with a success/neutral conclusion in one request. */

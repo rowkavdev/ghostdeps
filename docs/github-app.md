@@ -48,6 +48,19 @@ Renamed files count under both their old and new names. When a file list was cap
 
 `check_suite.requested` is deliberately not used as a trigger: `push` already covers it, and using both would double jobs.
 
+## Analysis worker
+
+`packages/github-app/src/worker/` turns each queued job into a check run:
+
+1. Mint an installation token scoped to the one repository and to `contents: read` + `checks: write` (the worker never sees the private key).
+2. Claim the SHA through the reporter. A SHA that already has our run is skipped; re-runs (`check_run.rerequested`) always get a fresh run.
+3. Ask the API for the tarball and follow the redirect only to `https://codeload.github.com`. The body is streamed under a 512 MiB compressed ceiling and a 5 minute timeout.
+4. Extract only through core `extractTarball` (no git, no hooks, nothing executed; see the security model).
+5. Run `analyseRepositoryIsolated` with the JS/TS adapter in a worker thread (#112).
+6. Complete the run. Any failure ends as a `neutral` run titled "GhostDeps could not run" with a plain reason, never a crash or a silent drop. The checkout directory is always removed.
+
+PR-scoped annotation lines and dependency-change context arrive with #115.
+
 ## Development
 
 Local development uses [smee.io](https://smee.io) or a tunnel for webhook delivery; credentials come from a development-only GitHub App registration, never the production app. Setup steps will land here with the app skeleton (M0).
