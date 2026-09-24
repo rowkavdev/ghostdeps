@@ -84,7 +84,7 @@ describe("app manifest", () => {
     const { manifest, doc } = await load();
     const expected = [...documentedEvents(doc)].filter((e) => !IMPLICIT_EVENTS.has(e)).sort();
     assert.deepEqual([...manifest.default_events].sort(), expected);
-    assert.deepEqual(expected, ["pull_request", "push"]);
+    assert.deepEqual(expected, ["check_run", "pull_request", "push"]);
   });
 
   it("documents the implicit installation events", async () => {

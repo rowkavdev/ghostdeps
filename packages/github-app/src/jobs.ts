@@ -19,10 +19,20 @@ export type AnalysisTrigger =
       readonly baseSha: string;
     }
   | { readonly kind: "push"; readonly ref: string; readonly beforeSha: string }
-  | { readonly kind: "full_scan"; readonly reason: "installation" | "explicit" };
+  | { readonly kind: "full_scan"; readonly reason: "installation" | "explicit" }
+  | {
+      /** A user re-ran the GhostDeps check from the UI (check_run.rerequested). */
+      readonly kind: "rerequested";
+      readonly checkRunId: number;
+      /** Present when GitHub linked the run to a PR in the same repository (not for forks). */
+      readonly pullRequest?: { readonly number: number; readonly baseSha: string };
+    };
 
 export interface AnalysisJob {
-  /** Idempotency key: one analysis per (repository id, head SHA). */
+  /**
+   * Idempotency key: one analysis per (repository id, head SHA). Re-runs
+   * (trigger "rerequested") extend it so they are not collapsed; see rerequestKey.
+   */
   readonly key: string;
   /** X-GitHub-Delivery GUID of the webhook that produced the job. */
   readonly deliveryId: string;
