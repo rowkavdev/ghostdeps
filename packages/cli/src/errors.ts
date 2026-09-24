@@ -3,7 +3,10 @@
  * rely on them, so they only ever change deliberately.
  */
 export const EXIT_OK = 0;
-export const EXIT_ERROR = 1;
+/** scan only: a finding at or above the --fail-on threshold is present. */
+export const EXIT_THRESHOLD = 1;
+/** The scan itself failed (bad path, engine error). Shares 2 with usage. */
+export const EXIT_ERROR = 2;
 export const EXIT_USAGE = 2;
 export const EXIT_NOT_IMPLEMENTED = 3;
 

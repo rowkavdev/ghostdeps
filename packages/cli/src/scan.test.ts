@@ -59,7 +59,7 @@ describe("ghostdeps scan --json", () => {
   it("reports a missing path as a JSON error, never an empty result", async () => {
     const { io, out } = capture();
     const code = await run(["scan", "--json", fixture("does-not-exist")], io);
-    assert.equal(code, 1);
+    assert.equal(code, 2);
     const body = JSON.parse(out.join("\n")) as Record<string, unknown>;
     assert.equal((body["error"] as Record<string, unknown>)["code"], "error");
     assert.equal(body["schemaVersion"], undefined);
@@ -81,11 +81,57 @@ describe("ghostdeps scan --json", () => {
     assert.match(text, /Findings:\n {2}\d+ info/);
   });
 
-  it("reports a missing path as one clear error line, exit 1", async () => {
+  it("reports a missing path as one clear error line, exit 2", async () => {
     const { io, out, err } = capture();
     const code = await run(["scan", fixture("does-not-exist")], io);
-    assert.equal(code, 1);
+    assert.equal(code, 2);
     assert.deepEqual(out, []);
     assert.match(err.join(" "), /path is not a directory: .*does-not-exist/);
+  });
+});
+
+describe("ghostdeps scan --fail-on / --severity", () => {
+  it("exits 1 when a finding meets --fail-on, and still prints the report", async () => {
+    const { io, out, err } = capture();
+    const code = await run(["scan", "--fail-on", "info", fixture("basic-unused")], io);
+    assert.equal(code, 1);
+    assert.ok(out.join("\n").startsWith("GhostDeps\n"));
+    assert.deepEqual(err, []);
+  });
+
+  it("exits 0 under --fail-on high: info completeness notes never gate (#110)", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--fail-on", "high", fixture("basic-unused")], io);
+    assert.equal(code, 0, err.join("\n"));
+  });
+
+  it("rejects an unknown severity as a usage error", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--fail-on", "bogus", fixture("basic-unused")], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /unknown severity: bogus/);
+  });
+
+  it("--severity filters the human findings and says so", async () => {
+    const { io, out } = capture();
+    const code = await run(["scan", "--severity", "high", fixture("basic-unused")], io);
+    assert.equal(code, 0);
+    const text = out.join("\n");
+    assert.match(text, /Findings:\n {2}none/);
+    assert.match(text, /\(\d+ findings? below the --severity high filter hidden\)/);
+  });
+
+  it("--json always prints the complete result; --severity with it is a usage error", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", "--severity", "high", "--json", fixture("basic-unused")], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /--severity filters human output only/);
+  });
+
+  it("--fail-on only applies to scan", async () => {
+    const { io, err } = capture();
+    const code = await run(["languages", "--fail-on", "high"], io);
+    assert.equal(code, 2);
+    assert.match(err.join(" "), /--fail-on and --severity only apply to ghostdeps scan/);
   });
 });

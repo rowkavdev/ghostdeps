@@ -10,6 +10,7 @@ import {
   UsageError,
 } from "./errors.js";
 import { commandHelp, helpText } from "./help.js";
+import { parseSeverity, type Severity } from "@ghostdeps/core";
 import { errorJson } from "./output/json.js";
 import { cliVersion } from "./version.js";
 
@@ -23,6 +24,9 @@ interface ParsedArgs {
   json: boolean;
   help: boolean;
   version: boolean;
+  /** Raw --fail-on / --severity values; validated against Severity in buildConfig. */
+  failOn?: string | undefined;
+  severity?: string | undefined;
   positionals: string[];
   /** `--` was used: every positional is explicitly a path/argument, never a command typo. */
   sawDoubleDash: boolean;
@@ -34,9 +38,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
   let json = false;
   let help = false;
   let version = false;
+  let failOn: string | undefined;
+  let severity: string | undefined;
   let positionalOnly = false;
   let sawDoubleDash = false;
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === undefined) break;
     if (positionalOnly) {
       positionals.push(arg);
     } else if (arg === "--") {
@@ -48,13 +56,25 @@ export function parseArgs(argv: string[]): ParsedArgs {
       help = true;
     } else if (arg === "--version" || arg === "-V") {
       version = true;
+    } else if (arg === "--fail-on" || arg === "--severity") {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith("-")) {
+        throw new UsageError(`${arg} needs a severity (critical, high, medium, low or info)`);
+      }
+      if (arg === "--fail-on") failOn = value;
+      else severity = value;
+      i++;
+    } else if (arg.startsWith("--fail-on=")) {
+      failOn = arg.slice("--fail-on=".length);
+    } else if (arg.startsWith("--severity=")) {
+      severity = arg.slice("--severity=".length);
     } else if (arg.startsWith("-")) {
       throw new UsageError(`unknown option: ${arg}`);
     } else {
       positionals.push(arg);
     }
   }
-  return { json, help, version, positionals, sawDoubleDash };
+  return { json, help, version, failOn, severity, positionals, sawDoubleDash };
 }
 
 /** Does the erroring invocation ask for JSON? (Options after `--` don't count.) */
@@ -83,12 +103,40 @@ function unknownCommand(word: string): UsageError {
   return new UsageError(`unknown command: ${word}${hint}`);
 }
 
-function buildConfig(command: string, args: string[], json: boolean): CliConfig {
+function severityFlag(name: string, value: string | undefined): Severity | undefined {
+  if (value === undefined) return undefined;
+  const parsed = parseSeverity(value);
+  if (parsed === undefined) {
+    throw new UsageError(
+      `unknown severity: ${value} (expected critical, high, medium, low or info)`,
+    );
+  }
+  return parsed;
+}
+
+function buildConfig(
+  command: string,
+  args: string[],
+  json: boolean,
+  flags: { failOn?: string | undefined; severity?: string | undefined },
+): CliConfig {
+  const failOn = severityFlag("--fail-on", flags.failOn);
+  const severity = severityFlag("--severity", flags.severity);
+  if ((failOn !== undefined || severity !== undefined) && command !== "scan") {
+    throw new UsageError("--fail-on and --severity only apply to ghostdeps scan");
+  }
+  if (severity !== undefined && json) {
+    // --json is always the complete schema-stable result; a display filter
+    // has no meaning there and silently ignoring it would lie.
+    throw new UsageError(
+      "--severity filters human output only; --json always prints the complete result",
+    );
+  }
   if (repoCommands.has(command)) {
     if (args.length > 1) {
       throw new UsageError(`ghostdeps ${command} takes at most one path argument`);
     }
-    return { command, json, path: args[0] ?? "." };
+    return { command, json, path: args[0] ?? ".", failOn, severity };
   }
   if (packageCommands.has(command)) {
     const packageName = args[0];
@@ -144,7 +192,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       return EXIT_OK;
     }
 
-    const config = buildConfig(command, args, parsed.json);
+    const config = buildConfig(command, args, parsed.json, parsed);
     const entry = findCommand(command);
     if (entry === undefined) {
       throw unknownCommand(command);
