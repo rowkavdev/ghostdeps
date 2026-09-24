@@ -79,9 +79,10 @@ function renderVerdict(finding: Finding): string[] {
 
 /**
  * Verdicts are the non-info findings, grouped by kind in canonical order.
- * Info findings (scan completeness, coverage gaps) are caveats about the
- * analysis, not verdicts on dependencies - they render as Awareness notes
- * below. The section is omitted when there is nothing to say.
+ * Info findings (scan completeness, coverage gaps, awareness-only notes)
+ * are caveats about the analysis, not verdicts on dependencies - they
+ * render as Notes and Awareness notes below. The section is omitted when
+ * there is nothing to say.
  */
 function renderVerdicts(findings: readonly Finding[]): string[] {
   const verdicts = findings.filter((finding) => finding.kind !== "info");
@@ -100,13 +101,27 @@ function renderVerdicts(findings: readonly Finding[]): string[] {
 }
 
 /**
- * Awareness notes are the info findings, one line each with evidence. They
- * are always visible (same analysis, same picture on every surface) and
- * never affect the verdict, the counts or the exit code. Omitted when there
- * are no info findings.
+ * Notes are the info findings that say the analysis itself was incomplete -
+ * run-level gaps (partial scans, adapter failures, cap notices) and
+ * manual-review notes such as unverified-no-imports. They are always
+ * visible (same analysis, same picture on every surface) and keep their
+ * neutral meaning: they never change the verdict lines or the exit code.
+ * Omitted when there are none.
+ */
+function renderNotes(findings: readonly Finding[]): string[] {
+  const notes = findings.filter((finding) => finding.kind === "info" && finding.awareness !== true);
+  if (notes.length === 0) return [];
+  return ["", "Notes:", ...notes.flatMap((note) => renderVerdict(note))];
+}
+
+/**
+ * Awareness notes are the no-action info findings core explicitly flags
+ * with `awareness: true` (#234, fail-closed: absent means NOT awareness).
+ * They are always visible and never affect the verdicts, the counts or the
+ * exit code. Omitted when there are none.
  */
 function renderAwarenessNotes(findings: readonly Finding[]): string[] {
-  const notes = findings.filter((finding) => finding.kind === "info");
+  const notes = findings.filter((finding) => finding.kind === "info" && finding.awareness === true);
   if (notes.length === 0) return [];
   return ["", "Awareness notes:", ...notes.flatMap((note) => renderVerdict(note))];
 }
@@ -168,6 +183,7 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     "Findings:",
     ...(findingLines.length > 0 ? findingLines : ["  none"]),
     ...renderVerdicts(result.findings),
+    ...renderNotes(result.findings),
     ...renderAwarenessNotes(result.findings),
   ].join("\n");
 }

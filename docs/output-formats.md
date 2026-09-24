@@ -41,10 +41,14 @@ Verdicts:
     typescript - imported only from tests and build config (high confidence, rule: should-be-dev)
       - imports found only under test/ and build/
 
-Awareness notes:
+Notes:
     eslint - no imports of eslint found; scripts and config were not checked (low confidence, rule: unverified-no-imports)
       - no import of eslint found
     (repository-wide) - unused confidence capped pending corpus validation (high confidence)
+
+Awareness notes:
+    left-pad - left-pad provides the same capability as left_pad (pip) (high confidence, rule: cross-ecosystem-capability-overlap)
+      - same capability in npm and pip
 ```
 
 `Transitive dependencies` reads the per-ecosystem graph completeness
@@ -59,12 +63,14 @@ confidence and rule id, then evidence lines (capped, with a "+N more" note
 when truncated). The section is omitted when there are no verdicts.
 Everything verdict-derived is terminal-escaped.
 
-`Awareness notes` lists the info findings - caveats about the analysis
-itself (scan completeness, coverage gaps, cap notices) - in the same line
-shape as verdicts. One presentation rule across surfaces (#206 review):
-they are always visible, and they never affect the verdicts, the counts'
-meaning, or the exit code. The section is omitted when there are no info
-findings.
+`Notes` lists the info findings that say the analysis itself was
+incomplete - run-level gaps (partial scans, adapter failures, cap notices)
+and manual-review notes such as `unverified-no-imports` - in the same line
+shape as verdicts. `Awareness notes` lists the no-action info findings core
+explicitly flags with `awareness: true` (#234; absent means not awareness).
+One presentation rule across surfaces (#206 review): both sections are
+always visible, and neither affects the verdicts, the counts' meaning, or
+the exit code. Each section is omitted when it has nothing to show.
 
 ## Per-dependency report (CLI `inspect`/`explain`, check annotations)
 
