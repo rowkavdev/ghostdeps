@@ -39,3 +39,13 @@ Scan limits that could hide the project's own files become `info` findings, so a
 When any of these is reported, `unused` and `potentially-unnecessary` findings are capped at `medium` confidence and each carries a limitation saying the scan was incomplete, so a skipped file can never produce a confident false "not needed".
 
 Skips that are by design (excluded vendor/generated directories, generated files, symlinks, special files) are not reported. `scanCompletenessFindings(scan)` is exported for callers that scan on their own.
+
+## Pull-request mode (#128)
+
+`AnalyseOptions.pullRequestChanges` (and the same field on `analyseRepositoryIsolated`) takes the `DependencyChange[]` built by the GitHub App from the PR diff: `parseUnifiedDiff`, `listDirectDependencies` over base/head manifests, then `extractDependencyChanges` (#31, wired in #115). It is versioned with `@ghostdeps/core`, not the adapter contract, so `adapterApiVersion` is unchanged.
+
+- **Absent: full scan.** Policy gets `mode: "full"` and gives verdicts over every dependency.
+- **Present: PR scan.** Policy gets `mode: "pull-request"` plus the changes. It scopes findings to the dependencies those changes touch: unchanged dependencies produce no findings, and findings about removed dependencies are allowed only when the evidence covers them. An empty array means a source-only PR (#101).
+- **Coverage.** An added or changed dependency in an ecosystem nobody analysed, or one the adapter did not list from that manifest, becomes an `info` finding. It is never silently dropped.
+
+`runRecommendationPolicyContractTests(name, policy)` in the contract-test kit checks any policy against `policyContractFixtures` in both modes: evidence on every verdict, no `unused` where usage was not analysed, and PR-mode findings limited to touched dependencies.

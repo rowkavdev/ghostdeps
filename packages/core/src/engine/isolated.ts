@@ -15,6 +15,7 @@
  * parsing out of the main thread entirely.
  */
 import { Worker } from "node:worker_threads";
+import type { DependencyChange } from "../diff/dependency-changes.js";
 import type { AnalysisResult, NetworkPolicy } from "../types/index.js";
 import {
   assembleAnalysisResult,
@@ -93,6 +94,8 @@ export interface IsolatedAnalyseOptions {
   maxParallelAdapters?: number;
   /** Omit to emit facts only (no recommendation findings). */
   recommend?: RecommendationPolicy;
+  /** Dependency changes in the pull request under analysis; see AnalyseOptions. */
+  pullRequestChanges?: readonly DependencyChange[];
 }
 
 /** Truncate a worker-posted outcome to OUTCOME_CAPS, recording overflow as limitations. */
@@ -393,5 +396,5 @@ export async function analyseRepositoryIsolated(
     Array.from({ length: Math.min(maxParallel, options.adapters.length) }, () => lane()),
   );
 
-  return assembleAnalysisResult(outcomes, options.recommend);
+  return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges);
 }
