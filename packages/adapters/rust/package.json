@@ -15,7 +15,9 @@
     "typecheck": "pnpm --filter @ghostdeps/core run build && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "smol-toml": "1.9.0"
+    "smol-toml": "1.9.0",
+    "tree-sitter-rust": "0.24.0",
+    "web-tree-sitter": "0.27.0"
   },
   "devDependencies": {
     "@ghostdeps/core": "workspace:*",
