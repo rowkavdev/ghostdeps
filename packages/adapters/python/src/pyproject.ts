@@ -80,8 +80,9 @@ class Collector {
       if (existing.dependency.constraint === "*" && constraint.length > 0) {
         existing.dependency.constraint = constraint;
       }
-      // Any unconditional declaration makes the merged requirement unconditional.
-      if (options.marker === undefined) delete existing.marker;
+      const marker = mergeMarkers(existing.marker, options.marker);
+      if (marker === undefined) delete existing.marker;
+      else existing.marker = marker;
       return;
     }
     const dependency: Dependency = {
@@ -120,6 +121,16 @@ class Collector {
     this.add(req.rawName, req.url ?? req.specifier, kind, req.extras, options);
     return req.name;
   }
+}
+
+/**
+ * Combine the markers of two declarations of one requirement. Either one
+ * unconditional makes the result unconditional; two conditions are OR-ed.
+ */
+export function mergeMarkers(a: string | undefined, b: string | undefined): string | undefined {
+  if (a === undefined || b === undefined) return undefined;
+  if (a === b) return a;
+  return `(${a}) or (${b})`;
 }
 
 /** Direct references are recorded, never fetched. */
