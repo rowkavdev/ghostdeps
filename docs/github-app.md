@@ -65,6 +65,10 @@ Renamed files count under both their old and new names. When a file list was cap
 
 For pull request jobs (and re-runs GitHub links to a same-repo PR), the worker also reads the PR's dependency changes (#115). It fetches the `base...head` compare diff (the same token, `contents: read` only), reads each changed `package.json` at both SHAs as raw text, parses it statically with the JS/TS adapter, and runs core `extractDependencyChanges`. The result goes to core as `AnalyseOptions.pullRequestChanges`, so the policy scopes findings to the dependencies the PR touched, and annotations go only on lines the PR adds. If any part of that can't be read (diff too large, malformed or unreadable manifest), the worker analyses the full repository instead: scoping to a partial list could hide a finding. Fork re-runs carry no PR link and get a full analysis.
 
+## API rate limits
+
+What the app costs per analysis against GitHub's rate limits, what already protects it, and the open gaps: [github-api-limits.md](github-api-limits.md) (#37).
+
 ## Development
 
 Local development uses [smee.io](https://smee.io) or a tunnel for webhook delivery; credentials come from a development-only GitHub App registration, never the production app. Setup steps will land here with the app skeleton (M0).
