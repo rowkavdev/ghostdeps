@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose new behaviour for GhostDeps.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What dependency question can't GhostDeps answer today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should it do? Include example output if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: falsepositives
+    attributes:
+      label: False-positive risk
+      description: GhostDeps is conservative by design. How could this feature wrongly tell someone to remove a needed dependency, and how do we prevent that?

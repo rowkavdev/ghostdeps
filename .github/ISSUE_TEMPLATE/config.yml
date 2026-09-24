@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Architecture docs
+    url: https://github.com/rowkavdev/ghostdeps/tree/main/docs
+    about: Read the agreed architecture and ADRs before proposing large changes.
