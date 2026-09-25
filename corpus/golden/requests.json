@@ -1,0 +1,37 @@
+{
+  "repo": "requests",
+  "sha": "611c6162cbc4ac2020a2f91c7cfa4f3abf9bbb60",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "httpbin"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "httpbin"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pyright"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "requests"
+    }
+  ]
+}
