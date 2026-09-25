@@ -1,0 +1,41 @@
+{
+  "$comment": "Profiling-only repo set for perf/profile-worker.mjs (not part of the regression corpus). One real repo per non-JS adapter so rust/go/python are measured under real work, plus large JS codebases that push the scanner ceilings, the 512 MiB worker heap and the 60 s adapter stage budget. Pinned by full SHA on 2026-09-25.",
+  "repos": [
+    {
+      "name": "bat",
+      "url": "https://github.com/sharkdp/bat.git",
+      "sha": "4987f76709aae3a1c4db723c53874c9ddcb0c4fd",
+      "covers": "rust adapter under real work (Cargo.lock committed)"
+    },
+    {
+      "name": "flask",
+      "url": "https://github.com/pallets/flask.git",
+      "sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+      "covers": "python adapter under real work"
+    },
+    {
+      "name": "cobra",
+      "url": "https://github.com/spf13/cobra.git",
+      "sha": "adbc8813901bba65827259daa8e22ff94ec1f30e",
+      "covers": "go adapter under real work"
+    },
+    {
+      "name": "babel",
+      "url": "https://github.com/babel/babel.git",
+      "sha": "fd665901dece022a0eda2ae7adda03bc9baabd5e",
+      "covers": "large JS monorepo stress"
+    },
+    {
+      "name": "typescript",
+      "url": "https://github.com/microsoft/TypeScript.git",
+      "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05",
+      "covers": "very large single-package TS codebase"
+    },
+    {
+      "name": "nextjs",
+      "url": "https://github.com/vercel/next.js.git",
+      "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2",
+      "covers": "very large mixed JS/Rust monorepo"
+    }
+  ]
+}

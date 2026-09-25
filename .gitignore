@@ -9,3 +9,5 @@ coverage/
 Thumbs.db
 *.log
 .corpus-cache/
+perf/.cache/
+perf/results/raw/
