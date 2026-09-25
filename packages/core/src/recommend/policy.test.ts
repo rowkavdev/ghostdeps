@@ -218,7 +218,136 @@ describe("default recommendation policy", () => {
     assert.equal(findings.length, 1);
     assert.equal(findings[0]?.rule, "unverified-no-imports");
     assert.equal(findings[0]?.kind, "info");
-    assert.match(findings[0]?.summary ?? "", /react-dom depends on it/);
+    assert.match(findings[0]?.summary ?? "", /reachable through react-dom/);
+    assert.match(findings[0]?.evidence[1]?.statement ?? "", /transitive closure of react-dom/);
+  });
+
+  it("attributes a peer note to the exact host, not the first transitive closure (#395)", async () => {
+    const graph: DependencyGraph = {
+      project,
+      nodes: [],
+      transitiveClosure: {
+        "@vercel/analytics": ["next", "react-dom"],
+        next: ["react-dom"],
+        "react-dom": [],
+      },
+      directPeers: { "@vercel/analytics": ["next"], next: ["react-dom"] },
+      incomplete: false,
+    };
+    const findings = await run({
+      dependencies: [dep("@vercel/analytics"), dep("next"), dep("react-dom")],
+      usages: [use("next"), use("@vercel/analytics")],
+      graphs: [graph],
+    });
+    const peer = byDep(findings, "react-dom");
+    assert.equal(peer.length, 1);
+    assert.equal(peer[0]?.kind, "info");
+    assert.equal(peer[0]?.confidence, "low");
+    assert.match(peer[0]?.summary ?? "", /next declares it as a peer/);
+    assert.deepEqual(peer[0]?.evidence[1], {
+      kind: "required-by-peer-host",
+      statement: "next declares react-dom as a peer in the resolved lockfile",
+    });
+    assert.ok(!JSON.stringify(peer).includes("@vercel/analytics"));
+  });
+
+  it("does not attribute another workspace's exact peer host (#395 review)", async () => {
+    const appA: ProjectRef = { ...project, path: "apps/a" };
+    const appB: ProjectRef = { ...project, path: "apps/b" };
+    const graphA: DependencyGraph = {
+      project: appA,
+      nodes: [],
+      transitiveClosure: { next: ["react-dom"], "react-dom": [] },
+      directPeers: { next: ["react-dom"] },
+      incomplete: false,
+    };
+    const graphB: DependencyGraph = {
+      project: appB,
+      nodes: [],
+      transitiveClosure: { next: [], "react-dom": [] },
+      directPeers: { next: [] },
+      incomplete: false,
+    };
+    const findings = await run({
+      dependencies: [
+        dep("next", "runtime", { project: appA }),
+        dep("react-dom", "runtime", { project: appA }),
+        dep("next", "runtime", { project: appB }),
+        dep("react-dom", "runtime", { project: appB }),
+      ],
+      graphs: [graphA, graphB],
+    });
+    const peer = byDep(findings, "react-dom");
+    assert.equal(peer.length, 2);
+    assert.equal(
+      peer.filter((f) => f.evidence.some((e) => e.kind === "required-by-peer-host")).length,
+      1,
+    );
+    assert.equal(peer.filter((f) => f.kind === "unused").length, 1);
+  });
+
+  it("does not transfer an unresolved peer guard across workspaces", async () => {
+    const appA: ProjectRef = { ...project, path: "apps/a" };
+    const appB: ProjectRef = { ...project, path: "apps/b" };
+    const graphA: DependencyGraph = {
+      project: appA,
+      nodes: [],
+      transitiveClosure: { host: [], peer: [] },
+      unresolvedDirectPeers: { host: ["peer"] },
+      incomplete: false,
+    };
+    const graphB: DependencyGraph = {
+      project: appB,
+      nodes: [],
+      transitiveClosure: { host: [], peer: [] },
+      incomplete: false,
+    };
+    const findings = await run({
+      dependencies: [
+        dep("host", "runtime", { project: appA }),
+        dep("peer", "runtime", { project: appA }),
+        dep("host", "runtime", { project: appB }),
+        dep("peer", "runtime", { project: appB }),
+      ],
+      graphs: [graphA, graphB],
+    });
+    const peer = byDep(findings, "peer");
+    assert.equal(
+      peer.filter((f) => f.evidence.some((e) => e.kind === "unresolved-peer-host")).length,
+      1,
+    );
+    assert.equal(peer.filter((f) => f.kind === "unused").length, 1);
+  });
+
+  it("does not invent a peer host from closure alone", async () => {
+    const graph: DependencyGraph = {
+      project,
+      nodes: [],
+      transitiveClosure: { host: ["peer"], peer: [] },
+      incomplete: false,
+    };
+    const findings = await run({ dependencies: [dep("host"), dep("peer")], graphs: [graph] });
+    const note = byDep(findings, "peer")[0]!;
+    assert.equal(note.kind, "info");
+    assert.equal(note.evidence[1]?.kind, "required-by-direct-dependency");
+    assert.match(note.evidence[1]?.statement ?? "", /transitive closure/);
+    assert.ok(!note.evidence.some((e) => e.kind === "required-by-peer-host"));
+  });
+
+  it("unresolved peer edge never turns into a confident unused verdict", async () => {
+    const graph: DependencyGraph = {
+      project,
+      nodes: [],
+      transitiveClosure: { host: [], peer: [] },
+      unresolvedDirectPeers: { host: ["peer"] },
+      incomplete: false,
+    };
+    const findings = await run({ dependencies: [dep("host"), dep("peer")], graphs: [graph] });
+    const peer = byDep(findings, "peer");
+    assert.equal(peer.length, 1);
+    assert.equal(peer[0]?.kind, "info");
+    assert.equal(peer[0]?.evidence[1]?.kind, "unresolved-peer-host");
+    assert.ok(peer[0]?.limitations.length);
   });
 
   it("flags runtime deps imported only from non-shipped code as should-be-dev", async () => {

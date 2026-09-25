@@ -104,12 +104,23 @@ export function parseNpmLockfile(
         const id = lookup(key, d);
         if (id !== undefined) deps.push(id);
       }
+      const peers: string[] = [];
+      const unresolvedPeers: string[] = [];
+      if (isObject(e.peerDependencies)) {
+        for (const d of Object.keys(e.peerDependencies)) {
+          const id = lookup(key, d);
+          if (id !== undefined) peers.push(id);
+          else unresolvedPeers.push(d);
+        }
+      }
       const name = typeof e.name === "string" ? e.name : nameFromPath(key);
       const registryOrigin = tarballOrigin(e.resolved, name);
       packages.set(key, {
         name,
         version: typeof e.version === "string" ? e.version : "0.0.0",
         dependencies: deps,
+        peers,
+        unresolvedPeers,
         ...(registryOrigin === undefined ? {} : { registryOrigin }),
       });
     }

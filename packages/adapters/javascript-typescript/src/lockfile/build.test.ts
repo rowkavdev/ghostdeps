@@ -53,6 +53,64 @@ describe("buildLockfileGraph", () => {
     ]);
   });
 
+  for (const format of ["npm", "bun"] as const) {
+    it(`${format}: records only an exact direct host's resolved peer edge (#395)`, async () => {
+      const pkg = {
+        dependencies: { "@vercel/analytics": "1", next: "1", "react-dom": "19" },
+      };
+      const packages =
+        format === "npm"
+          ? {
+              "": pkg,
+              "node_modules/@vercel/analytics": { version: "1.0.0", dependencies: { next: "1" } },
+              "node_modules/next": { version: "1.0.0", peerDependencies: { "react-dom": "^19" } },
+              "node_modules/react-dom": { version: "19.0.0" },
+            }
+          : {
+              "@vercel/analytics": ["@vercel/analytics@1.0.0", "", { dependencies: { next: "1" } }],
+              next: ["next@1.0.0", "", { peerDependencies: { "react-dom": "^19" } }],
+              "react-dom": ["react-dom@19.0.0", "", {}],
+            };
+      const lock =
+        format === "npm"
+          ? { lockfileVersion: 3, packages }
+          : { lockfileVersion: 1, workspaces: { "": { ...pkg, name: "example" } }, packages };
+      const res = await buildLockfileGraph(
+        ctx(
+          memoryHandle({
+            "package.json": JSON.stringify(pkg),
+            [format === "npm" ? "package-lock.json" : "bun.lock"]: JSON.stringify(lock),
+          }),
+        ),
+        project(),
+      );
+      assert.equal(res.graph.incomplete, false);
+      assert.deepEqual(res.graph.directPeers?.next, ["react-dom"]);
+      assert.deepEqual(res.graph.directPeers?.["@vercel/analytics"], []);
+      assert.ok(res.graph.transitiveClosure["@vercel/analytics"]?.includes("react-dom"));
+    });
+  }
+
+  it("unresolved npm peer keeps a direct dependency out of unused without inventing a satisfied edge", async () => {
+    const res = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": JSON.stringify({ dependencies: { host: "1", peer: "1" } }),
+          "package-lock.json": JSON.stringify({
+            lockfileVersion: 3,
+            packages: {
+              "": { dependencies: { host: "1", peer: "1" } },
+              "node_modules/host": { version: "1.0.0", peerDependencies: { peer: "^2" } },
+            },
+          }),
+        }),
+      ),
+      project(),
+    );
+    assert.deepEqual(res.graph.directPeers?.host, []);
+    assert.deepEqual(res.graph.unresolvedDirectPeers?.host, ["peer"]);
+  });
+
   it("fixture js/lockfile-pnpm-v9: peer suffixes and npm: aliases resolve", async () => {
     const res = await checkFixture("lockfile-pnpm-v9");
     const reactDom = res.graph.nodes.find((n) => n.name === "react-dom");
