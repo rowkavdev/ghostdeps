@@ -166,6 +166,65 @@ describe("ghostdeps scan --fail-on / --severity", () => {
     assert.ok(!text.includes("hidden"), text);
   });
 
+  it("fact-only analysis neither gates --fail-on info nor inflates hidden count", async () => {
+    const baseline = capture();
+    const source = await runScan(
+      { command: "scan", json: false, path: polyglot },
+      baseline.io,
+      async () => ({
+        schemaVersion: 1,
+        projects: [],
+        dependencies: [],
+        usages: [],
+        findings: [
+          {
+            kind: "info",
+            healthFact: true,
+            rule: "locked-version-published",
+            summary: "locked version published",
+            recommendation: "review",
+            evidence: [],
+            confidence: "high",
+            limitations: [],
+            affectedFiles: [],
+          },
+        ],
+        detected: [],
+        surface: [],
+      }),
+    );
+    assert.equal(source, 0);
+    assert.match(baseline.out.join("\n"), /Findings:\n {2}none/);
+    const filtered = capture();
+    const code = await runScan(
+      { command: "scan", json: false, path: polyglot, failOn: "info", severity: "critical" },
+      filtered.io,
+      async () => ({
+        schemaVersion: 1,
+        projects: [],
+        dependencies: [],
+        usages: [],
+        findings: [
+          {
+            kind: "info",
+            healthFact: true,
+            rule: "locked-version-published",
+            summary: "locked version published",
+            recommendation: "review",
+            evidence: [],
+            confidence: "high",
+            limitations: [],
+            affectedFiles: [],
+          },
+        ],
+        detected: [],
+        surface: [],
+      }),
+    );
+    assert.equal(code, 0);
+    assert.ok(!filtered.out.join("\n").includes("hidden"));
+  });
+
   it("--json always prints the complete result; --severity with it is a usage error", async () => {
     const { io, err } = capture();
     const code = await run(["scan", "--severity", "high", "--json", fixture("basic-unused")], io);

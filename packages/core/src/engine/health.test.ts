@@ -8,6 +8,7 @@ import type {
   ProjectRef,
 } from "../types/index.js";
 import { healthFindings } from "./health.js";
+import { findingGroup } from "../types/finding-group.js";
 
 const project: ProjectRef = { path: ".", ecosystem: "javascript-typescript", packageManagers: [] };
 const dep: Dependency = {
@@ -56,7 +57,18 @@ describe("source-backed health signals (#61)", () => {
     );
     for (const finding of found) {
       assert.equal(finding.kind, "info");
+      assert.equal(finding.healthFact, true);
+      assert.equal(findingGroup(finding), "fact");
       assert.equal(finding.dependency, "example");
+      assert.deepEqual(finding.declaringManifest, {
+        ecosystem: project.ecosystem,
+        path: "package.json",
+      });
+      assert.ok(finding.source?.basis);
+      assert.equal(
+        finding.source.kind,
+        finding.rule === "repository-archived" ? "repository-host" : "registry",
+      );
       assert.match(finding.evidence[0]!.statement, /source:/);
       assert.doesNotMatch(
         finding.summary + finding.recommendation,

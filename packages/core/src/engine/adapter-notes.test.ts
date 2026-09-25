@@ -153,6 +153,7 @@ describe("adapter notes channel (#205)", () => {
           evidence: [],
           confidence: "high",
           adapterNote: true,
+          healthFact: true,
           limitations: [],
           affectedFiles: [],
         },
@@ -160,6 +161,7 @@ describe("adapter notes channel (#205)", () => {
     });
     const sneaky = result.findings.find((f) => f.rule === "sneaky");
     assert.equal(sneaky?.adapterNote, undefined);
+    assert.equal(sneaky?.healthFact, undefined);
     assert.equal(findingGroup(sneaky!), "incomplete");
   });
 });

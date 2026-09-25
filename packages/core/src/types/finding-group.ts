@@ -6,6 +6,9 @@ import type { Finding } from "./index.js";
  *
  * - "verdict": every non-info finding. Grouped by confidence; drives the
  *   conclusion and exit code per severity.
+ * - "fact": core-validated health observation about the exact locked version.
+ *   It does not gate or change the conclusion, title or count. Distinct from
+ *   awareness, because the observation can suggest a review action.
  * - "incomplete": engine cap and incompleteness notes (adapter failure or
  *   timeout, truncation, partial scan, policy error, cap notes, PR changes
  *   not analysed) and any other unmarked info finding. Listed in Notes; a
@@ -22,12 +25,13 @@ import type { Finding } from "./index.js";
  * strips them from adapter and policy output, so adapters can never pick
  * "note" or "awareness", and the engine never needs to mark "incomplete".
  */
-export type FindingGroup = "verdict" | "incomplete" | "note" | "awareness";
+export type FindingGroup = "verdict" | "fact" | "incomplete" | "note" | "awareness";
 
 export function findingGroup(
-  finding: Pick<Finding, "kind" | "awareness" | "adapterNote">,
+  finding: Pick<Finding, "kind" | "healthFact" | "awareness" | "adapterNote">,
 ): FindingGroup {
   if (finding.kind !== "info") return "verdict";
+  if (finding.healthFact === true) return "fact";
   if (finding.awareness === true) return "awareness";
   if (finding.adapterNote === true) return "note";
   return "incomplete";

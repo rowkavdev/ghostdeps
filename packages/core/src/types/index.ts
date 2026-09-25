@@ -196,6 +196,15 @@ export interface Finding {
    * unmarked info findings are "incomplete" (fail-closed).
    */
   adapterNote?: true;
+  /** Core-validated, source-backed fact about an exact locked package version.
+   * Engine-owned, never accepted from adapters or policy. Non-capping; unlike
+   * awareness it can suggest reviewing the observed status. */
+  healthFact?: true;
+  /** Optional typed origin of a core-produced fact. Evidence text remains
+   * readable; presenters must not parse it to recover provenance. */
+  source?: { kind: "registry" | "repository-host"; basis: string; url?: string };
+  /** Declaring manifest identity for duplicate names across workspaces. */
+  declaringManifest?: { ecosystem: string; path: string };
   /** Why this finding might be wrong; empty only when evidence is complete. */
   limitations: string[];
   /** Files likely affected by acting on the recommendation. */
