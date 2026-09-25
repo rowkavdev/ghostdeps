@@ -2,6 +2,7 @@ import type { Io } from "./cli.js";
 import type { CliConfig } from "./config.js";
 import { NotImplementedError } from "./errors.js";
 import { runScan } from "./scan.js";
+import { runFixPreview } from "./fix-preview.js";
 
 /** A CLI command in the router. */
 export interface Command {
@@ -22,6 +23,12 @@ export const commands: readonly Command[] = [
     summary: "Analyse a repository's dependencies",
     usage: "ghostdeps scan [path]",
     run: runScan,
+  },
+  {
+    name: "fix",
+    summary: "Preview a supported removal; never writes files",
+    usage: "ghostdeps fix <package> [path]",
+    run: runFixPreview,
   },
   {
     name: "inspect",

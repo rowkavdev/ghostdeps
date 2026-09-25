@@ -127,7 +127,7 @@ function wantsJson(argv: string[]): boolean {
 /** Commands that analyse a repository path: scan, languages, packages. */
 const repoCommands = new Set(["scan", "languages", "packages"]);
 /** Commands scoped to one dependency: inspect, graph, explain. */
-const packageCommands = new Set(["inspect", "graph", "explain"]);
+const packageCommands = new Set(["inspect", "graph", "explain", "fix"]);
 
 /**
  * A bare first word is only a path shorthand (`ghostdeps .`) when it looks

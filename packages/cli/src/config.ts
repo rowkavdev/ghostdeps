@@ -11,7 +11,7 @@ export interface CliConfig {
   json: boolean;
   /** Repository path to analyse, relative or absolute. */
   path: string;
-  /** Package name for package-scoped commands (inspect, graph, explain). */
+  /** Package name for package-scoped commands (inspect, graph, explain, fix). */
   packageName?: string;
   /** scan --fail-on: exit 1 when any finding is at or above this severity. */
   failOn?: Severity | undefined;
