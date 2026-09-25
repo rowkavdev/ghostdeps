@@ -11,7 +11,6 @@ Thanks for helping build GhostDeps. This project treats outside contributors as 
 5. **Docs travel with code.** If you change behaviour, update the relevant doc in `docs/` in the same PR.
 6. **Green CI or it doesn't merge.** All checks must pass.
 
-
 ## Merge protocol
 
 The merge gate keeps `main` green and every merge verdict auditable.
