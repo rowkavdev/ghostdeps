@@ -31,3 +31,4 @@ export {
   SAME_ECOSYSTEM_DUPLICATES_RULE,
 } from "./capability-duplicates.js";
 export { addFootprints, FOOTPRINT_TIMEOUT_MS, MAX_FOOTPRINT_PACKAGES } from "./footprint.js";
+export { previewNpmRemoval, type FixPreview } from "./fix-preview.js";
