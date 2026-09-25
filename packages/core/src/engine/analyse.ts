@@ -16,6 +16,7 @@
  */
 import { adapterNoteFindings } from "./adapter-notes.js";
 import { addFootprints } from "./footprint.js";
+import { healthFindings } from "./health.js";
 import { computeImpact, impactLimitedNote } from "./impact.js";
 import { manifestMalformedNotes } from "./manifest-malformed.js";
 import { type EcosystemAdapter } from "../adapter.js";
@@ -416,6 +417,24 @@ export async function assembleAnalysisResult(
     delete finding.awareness;
     delete finding.adapterNote;
     findings[i] = { ...finding, severity: severityOf(finding) };
+  }
+
+  // Metadata is fetched only through the caller's bounded provider, after the
+  // policy, so these factual observations cannot change removal verdicts.
+  // PR mode reports only newly added/changed dependencies.
+  const healthDependencies = pullRequestChanges
+    ? dependencies.filter((dependency) =>
+        pullRequestChanges.some(
+          (change) =>
+            change.change !== "removed" &&
+            change.ecosystem === dependency.project.ecosystem &&
+            change.name === dependency.name &&
+            change.manifest === dependency.declaredIn,
+        ),
+      )
+    : dependencies;
+  for (const finding of await healthFindings(healthDependencies, graphs, context.metadata)) {
+    findings.push({ ...finding, severity: severityOf(finding) });
   }
 
   // Cross-ecosystem capability overlap (#55): awareness-only info findings
