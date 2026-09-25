@@ -77,6 +77,54 @@ describe("computeImpact (#59)", () => {
     assert.deepEqual([r.PyYAML!.transitive, r.PyYAML!.exclusive], [null, null]);
   });
 
+  it("drops exclusive for the whole project when a direct dep is an npm alias (#277)", () => {
+    // foo is declared as an alias of bar: locked as bar, so it slips past the
+    // node check by its declared name and its closure would be missing from
+    // the reach counts. shared must not look exclusive to a.
+    const alias: Dependency = {
+      ...dep("foo"),
+      specifier: { type: "registry", detail: "npm alias: npm:bar@^1" },
+    };
+    const r = byName(
+      computeImpact([graph({ bar: ["shared"], a: ["shared", "x"] })], [alias, dep("a")]),
+    );
+    assert.deepEqual([r.a!.transitive, r.a!.exclusive], [2, null]);
+    assert.deepEqual([r.foo!.transitive, r.foo!.exclusive], [null, null]);
+  });
+
+  it("sees an alias specifier hidden by a duplicate plain declaration (#277)", () => {
+    // foo declared as an alias in dependencies and plainly in devDependencies:
+    // `unique` keeps the LAST declaration, so the guard must read the
+    // original declarations. Both orders null exclusive for the project.
+    const alias = (kind: "runtime" | "dev"): Dependency => ({
+      ...dep("foo"),
+      kind,
+      specifier: { type: "registry", detail: "npm alias: npm:bar@^1" },
+    });
+    const plain = (kind: "runtime" | "dev"): Dependency => ({ ...dep("foo"), kind });
+    const g = () => graph({ bar: ["shared"], a: ["shared", "x"] });
+    for (const deps of [
+      [alias("runtime"), plain("dev"), dep("a")],
+      [plain("runtime"), alias("dev"), dep("a")],
+    ]) {
+      const r = byName(computeImpact([g()], deps));
+      assert.deepEqual([r.a!.transitive, r.a!.exclusive], [2, null]);
+      assert.deepEqual([r.foo!.transitive, r.foo!.exclusive], [null, null]);
+    }
+  });
+
+  it("drops exclusive for the whole project on any non-registry specifier (#277)", () => {
+    const gitDep: Dependency = {
+      ...dep("foo"),
+      specifier: { type: "git", detail: "github:user/foo" },
+    };
+    const r = byName(
+      computeImpact([graph({ foo: ["shared"], a: ["shared", "x"] })], [gitDep, dep("a")]),
+    );
+    assert.deepEqual([r.a!.transitive, r.a!.exclusive], [2, null]);
+    assert.deepEqual([r.foo!.transitive, r.foo!.exclusive], [1, null]);
+  });
+
   it("ignores direct dependencies that are not graph nodes (e.g. build backends)", () => {
     // hatchling comes from [build-system] requires and is never locked.
     const r = byName(

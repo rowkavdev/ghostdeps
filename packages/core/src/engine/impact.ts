@@ -118,9 +118,27 @@ export function computeImpact(
     // nothing here and doesn't block it. Nodes are matched by a loose name
     // (case and runs of - _ . folded) so a spelling mismatch still counts.
     const nodeNames = new Set(usable.flatMap((g) => g.nodes.map((n) => looseName(n.name))));
-    const allClosures = [...closures.entries()].every(
-      ([name, set]) => set !== undefined || !nodeNames.has(looseName(name)),
+    // An npm alias ("foo": "npm:bar@^1") is declared under one name and
+    // locked under another, so neither the node check nor the closure lookup
+    // can find it by its declared name: its closure silently drops out of
+    // the reach counts and packages it shares with other direct deps can
+    // look exclusive (#277). The same holds for other non-registry
+    // specifiers (git/file/link/workspace), whose locked spelling the
+    // adapter records but never resolves. Conservative: any such specifier
+    // in the project nulls `exclusive` for the whole project.
+    // Checked on the pre-dedup declarations: `unique` is last-write-wins by
+    // name, so a plain registry declaration of the same name would hide an
+    // alias (or other non-registry) specifier declared in another section.
+    const hasUnmatchedSpecifier = deps.some(
+      (d) =>
+        d.specifier !== undefined &&
+        (d.specifier.type !== "registry" || d.specifier.detail?.startsWith("npm alias:")),
     );
+    const allClosures =
+      !hasUnmatchedSpecifier &&
+      [...closures.entries()].every(
+        ([name, set]) => set !== undefined || !nodeNames.has(looseName(name)),
+      );
     const direct = new Set(names);
     const reach = new Map<string, number>();
     for (const set of closures.values()) {
