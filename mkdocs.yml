@@ -28,6 +28,7 @@ nav:
           - Go module tooling: research/go-module-tools.md
           - Package cost: research/package-cost.md
           - SBOM tools: research/sbom-tools.md
+          - Dependency graphs: research/dependency-graph-tools.md
       - Recommendation policy: recommendation-policy.md
       - Transitive impact: transitive-impact.md
       - GitHub API limits: github-api-limits.md
