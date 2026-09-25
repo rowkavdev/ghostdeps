@@ -6,7 +6,14 @@
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch"],
+      "excludePackageNames": ["web-tree-sitter", "tree-sitter-*"],
       "groupName": "non-major dependencies",
+      "automerge": false
+    },
+    {
+      "matchPackageNames": ["web-tree-sitter", "tree-sitter-*"],
+      "groupName": "tree-sitter",
+      "groupSlug": "tree-sitter",
       "automerge": false
     }
   ]
