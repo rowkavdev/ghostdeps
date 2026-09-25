@@ -11,6 +11,7 @@ nav:
   - Home: index.md
   - Use GhostDeps:
       - GitHub App: github-app.md
+      - Self-hosting: deployment.md
       - CLI: cli.md
       - Output formats: output-formats.md
   - How it works:

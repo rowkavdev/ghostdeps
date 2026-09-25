@@ -1,0 +1,12 @@
+{
+  "repo": "ky",
+  "sha": "0d59458a0a58e1c3d7c6db0ab17ed5c7cd671e47",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    }
+  ]
+}

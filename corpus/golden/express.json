@@ -1,0 +1,12 @@
+{
+  "repo": "express",
+  "sha": "9a34acf03cb818ff3f8bc40e44176e277a25cbb9",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "hbs"
+    }
+  ]
+}
