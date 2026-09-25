@@ -19,7 +19,7 @@ import {
 import { decideRerequest } from "./events/rerequested.js";
 import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
-import { NpmMetadataService } from "./worker/npm-metadata.js";
+import { RegistryMetadataService } from "./worker/registry-metadata.js";
 import { noWaitThrottle, WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./github/rate-limit.js";
 import { repoScopedClients } from "./worker/github-client.js";
 
@@ -131,7 +131,7 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
               ? { recommend: createDefaultPolicy() }
               : {}),
             ...((options.footprint ?? footprintFromEnv())
-              ? { metadata: new NpmMetadataService() }
+              ? { metadata: new RegistryMetadataService() }
               : {}),
           }));
     const queue =
