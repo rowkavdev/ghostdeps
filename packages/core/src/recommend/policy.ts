@@ -55,6 +55,11 @@ export interface PolicyRule {
 const RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
 
 const key = (d: Dependency): string => `${d.project.ecosystem}\0${d.name}`;
+/** Lockfile attribution is per project, unlike the legacy ecosystem-wide usage index. */
+const graphKey = (ecosystem: string, projectPath: string, name: string): string =>
+  `${ecosystem}\0${projectPath}\0${name}`;
+const dependencyGraphKey = (d: Dependency): string =>
+  graphKey(d.project.ecosystem, d.project.path, d.name);
 
 function usagesOf(d: Dependency, context: PolicyContext): readonly Usage[] {
   return context.usagesByDependency.get(key(d)) ?? [];
@@ -126,7 +131,10 @@ const unusedRule: PolicyRule = {
   evaluate(d, context) {
     if (!hasNoUsageEvidence(d, context)) return undefined;
     if (!context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
-    if (context.requiredByOtherDirect.has(key(d)) || context.unresolvedPeerByDirect.has(key(d)))
+    if (
+      context.requiredByOtherDirect.has(dependencyGraphKey(d)) ||
+      context.unresolvedPeerByDirect.has(dependencyGraphKey(d))
+    )
       return undefined;
     return {
       kind: "unused",
@@ -171,7 +179,10 @@ const removedLastUsageRule: PolicyRule = {
     if (removed.length === 0) return undefined;
     if (!hasNoUsageEvidence(d, context)) return undefined;
     if (!context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
-    if (context.requiredByOtherDirect.has(key(d)) || context.unresolvedPeerByDirect.has(key(d)))
+    if (
+      context.requiredByOtherDirect.has(dependencyGraphKey(d)) ||
+      context.unresolvedPeerByDirect.has(dependencyGraphKey(d))
+    )
       return undefined;
     const shown = [...removed]
       .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
@@ -226,9 +237,9 @@ const unverifiedNoImportsRule: PolicyRule = {
       confidence: "low" as const,
       affectedFiles: [d.declaredIn],
     };
-    const peerHost = context.peerHostByDirect.get(key(d));
-    const requiredBy = context.requiredByOtherDirect.get(key(d));
-    const unresolvedPeer = context.unresolvedPeerByDirect.get(key(d));
+    const peerHost = context.peerHostByDirect.get(dependencyGraphKey(d));
+    const requiredBy = context.requiredByOtherDirect.get(dependencyGraphKey(d));
+    const unresolvedPeer = context.unresolvedPeerByDirect.get(dependencyGraphKey(d));
     if (peerHost) {
       return {
         ...base,
@@ -406,7 +417,7 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
     for (const [host, peers] of Object.entries(graph.directPeers ?? {}).sort()) {
       if (!directs.has(host)) continue;
       for (const name of peers) {
-        const k = `${ecosystem}\0${name}`;
+        const k = graphKey(ecosystem, graph.project.path, name);
         if (name !== host && directs.has(name) && !peerHostByDirect.has(k)) {
           peerHostByDirect.set(k, host);
         }
@@ -415,7 +426,7 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
     for (const [host, peers] of Object.entries(graph.unresolvedDirectPeers ?? {}).sort()) {
       if (!directs.has(host)) continue;
       for (const name of peers) {
-        const k = `${ecosystem}\0${name}`;
+        const k = graphKey(ecosystem, graph.project.path, name);
         if (name !== host && directs.has(name) && !unresolvedPeerByDirect.has(k)) {
           unresolvedPeerByDirect.set(k, host);
         }
@@ -424,7 +435,7 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
     for (const [direct, closure] of Object.entries(graph.transitiveClosure).sort()) {
       if (!directs.has(direct)) continue;
       for (const name of closure) {
-        const k = `${ecosystem}\0${name}`;
+        const k = graphKey(ecosystem, graph.project.path, name);
         if (name !== direct && directs.has(name) && !requiredByOtherDirect.has(k)) {
           requiredByOtherDirect.set(k, direct);
         }
