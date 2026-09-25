@@ -46,3 +46,12 @@ The interface is versioned (`adapterApiVersion` in the core package). Breaking c
 ## Amendment (2026-09-24): type-only imports
 
 `Usage` gained `typeOnly?: boolean`, orthogonal to `form`. A dependency imported only in type positions (`import type`, type-level `import()`) is evidence for a devDependency move, not runtime necessity - collapsing it into "static" would lose that signal. Additive change; no `adapterApiVersion` bump.
+
+## Addendum (2026-09-25): reference-analysis coverage
+
+The capability list above was the original decision. The interface now also
+includes `referenceAnalysis`, which declares that `findUsage` checks script,
+bin and config references. An `unused` recommendation requires this capability
+and `referenceAnalysisComplete: true` for every dependency in the ecosystem;
+without that proof, the policy does not issue an unused-removal verdict. See
+[recommendation policy](../recommendation-policy.md) for the full coverage gate.
