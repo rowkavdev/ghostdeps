@@ -16,9 +16,17 @@ export default tseslint.config(
   {
     // Repo scripts (corpus harness) and hostile/fixture adapter modules run
     // under Node, not the browser; give them the globals they use.
-    files: ["scripts/**/*.mjs", "**/test/isolated-adapters/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "perf/**/*.mjs", "**/test/isolated-adapters/**/*.mjs"],
     languageOptions: {
-      globals: { console: "readonly", process: "readonly", URL: "readonly" },
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        URL: "readonly",
+        performance: "readonly",
+        AbortSignal: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+      },
     },
   },
   ...tseslint.configs.recommended,

@@ -1,0 +1,2866 @@
+{
+  "env": {
+    "node": "v22.23.2"
+  },
+  "provenance": {
+    "engineSha": "cb30c3f35666450e65ed6b3edd0a319196a6ef36",
+    "engineNote": "All runs measured the analysis engine at cb30c3f. Commits after it during the sweep (b3b3808, 251d006, 546fb36 and their merges) touch only perf/ tooling, .gitignore and eslint.config.mjs - no packages/ code changed.",
+    "harnessRevisions": {
+      "initial": "all runs except concurrent-nextjs-typescript-rep3/rep4: stage records (ms, peakRssMiB) + findings counts",
+      "instrumented": "concurrent-nextjs-typescript-rep3/rep4: additionally usages counts and usage-timeout finding detail"
+    },
+    "sandbox": "2 vCPU, 2 GiB RAM (measurement environment; production box is the 4 GiB sizing under review)",
+    "measuredAt": "2026-09-25"
+  },
+  "runs": [
+    {
+      "runId": "adapter-bat-rust",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "bat",
+          "owner": "sharkdp",
+          "repo": "bat",
+          "sha": "4987f76709aae3a1c4db723c53874c9ddcb0c4fd"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 110,
+          "peakRssMiB": 58.2,
+          "files": 910,
+          "totalMiB": 7.3,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 750,
+          "peakRssMiB": 111.7,
+          "findings": 10,
+          "dependencies": 57,
+          "usages": 198
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 861,
+        "peakRssMiB": 112.7,
+        "endHeapUsedMiB": 8,
+        "maxRssGetrusageMiB": 112.7,
+        "cpuUserMs": 1124,
+        "cpuSysMs": 106
+      },
+      "sampleCount": 33
+    },
+    {
+      "runId": "adapter-chalk-go",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 90,
+          "peakRssMiB": 68.4,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 96,
+        "peakRssMiB": 70.2,
+        "endHeapUsedMiB": 6.8,
+        "maxRssGetrusageMiB": 70.2,
+        "cpuUserMs": 150,
+        "cpuSysMs": 21
+      },
+      "sampleCount": 3
+    },
+    {
+      "runId": "adapter-chalk-javascript-typescript",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 689,
+          "peakRssMiB": 133.3,
+          "findings": 2,
+          "dependencies": 11,
+          "usages": 18
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 696,
+        "peakRssMiB": 133.3,
+        "endHeapUsedMiB": 6.9,
+        "maxRssGetrusageMiB": 133.3,
+        "cpuUserMs": 903,
+        "cpuSysMs": 94
+      },
+      "sampleCount": 27
+    },
+    {
+      "runId": "adapter-chalk-python",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 97,
+          "peakRssMiB": 68.7,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 103,
+        "peakRssMiB": 71.1,
+        "endHeapUsedMiB": 6.7,
+        "maxRssGetrusageMiB": 71.1,
+        "cpuUserMs": 164,
+        "cpuSysMs": 19
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "adapter-chalk-rust",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 93,
+          "peakRssMiB": 70.1,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 99,
+        "peakRssMiB": 72.4,
+        "endHeapUsedMiB": 6.8,
+        "maxRssGetrusageMiB": 72.4,
+        "cpuUserMs": 166,
+        "cpuSysMs": 17
+      },
+      "sampleCount": 3
+    },
+    {
+      "runId": "adapter-cobra-go",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "cobra",
+          "owner": "spf13",
+          "repo": "cobra",
+          "sha": "adbc8813901bba65827259daa8e22ff94ec1f30e"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 8,
+          "peakRssMiB": null,
+          "files": 66,
+          "totalMiB": 0.7,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 202,
+          "peakRssMiB": 84.4,
+          "findings": 1,
+          "dependencies": 4,
+          "usages": 11
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 211,
+        "peakRssMiB": 85.4,
+        "endHeapUsedMiB": 7.1,
+        "maxRssGetrusageMiB": 85.4,
+        "cpuUserMs": 305,
+        "cpuSysMs": 50
+      },
+      "sampleCount": 8
+    },
+    {
+      "runId": "adapter-fastify-go",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 36,
+          "peakRssMiB": 57,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 102,
+          "peakRssMiB": 71.6,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 139,
+        "peakRssMiB": 72.9,
+        "endHeapUsedMiB": 7.5,
+        "maxRssGetrusageMiB": 72.9,
+        "cpuUserMs": 189,
+        "cpuSysMs": 72
+      },
+      "sampleCount": 5
+    },
+    {
+      "runId": "adapter-fastify-javascript-typescript",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 40,
+          "peakRssMiB": 57.2,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 2023,
+          "peakRssMiB": 141,
+          "findings": 4,
+          "dependencies": 53,
+          "usages": 219
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 2064,
+        "peakRssMiB": 141,
+        "endHeapUsedMiB": 7.2,
+        "maxRssGetrusageMiB": 141,
+        "cpuUserMs": 2891,
+        "cpuSysMs": 158
+      },
+      "sampleCount": 80
+    },
+    {
+      "runId": "adapter-fastify-python",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 38,
+          "peakRssMiB": 56.9,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 99,
+          "peakRssMiB": 72.6,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 138,
+        "peakRssMiB": 72.8,
+        "endHeapUsedMiB": 7.6,
+        "maxRssGetrusageMiB": 72.8,
+        "cpuUserMs": 164,
+        "cpuSysMs": 66
+      },
+      "sampleCount": 5
+    },
+    {
+      "runId": "adapter-fastify-rust",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 35,
+          "peakRssMiB": 57.3,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 108,
+          "peakRssMiB": 72.7,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 145,
+        "peakRssMiB": 74,
+        "endHeapUsedMiB": 7.5,
+        "maxRssGetrusageMiB": 74,
+        "cpuUserMs": 188,
+        "cpuSysMs": 50
+      },
+      "sampleCount": 5
+    },
+    {
+      "runId": "adapter-flask-python",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "flask",
+          "owner": "pallets",
+          "repo": "flask",
+          "sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 23,
+          "peakRssMiB": null,
+          "files": 236,
+          "totalMiB": 1.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 339,
+          "peakRssMiB": 91.4,
+          "findings": 21,
+          "dependencies": 58,
+          "usages": 185
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 363,
+        "peakRssMiB": 91.7,
+        "endHeapUsedMiB": 6.6,
+        "maxRssGetrusageMiB": 91.7,
+        "cpuUserMs": 451,
+        "cpuSysMs": 111
+      },
+      "sampleCount": 13
+    },
+    {
+      "runId": "adapter-got-go",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 15,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 92,
+          "peakRssMiB": 70,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 108,
+        "peakRssMiB": 72.6,
+        "endHeapUsedMiB": 7.4,
+        "maxRssGetrusageMiB": 72.6,
+        "cpuUserMs": 168,
+        "cpuSysMs": 35
+      },
+      "sampleCount": 3
+    },
+    {
+      "runId": "adapter-got-javascript-typescript",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 14,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1828,
+          "peakRssMiB": 157.4,
+          "findings": 6,
+          "dependencies": 50,
+          "usages": 243
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1843,
+        "peakRssMiB": 157.7,
+        "endHeapUsedMiB": 7,
+        "maxRssGetrusageMiB": 157.7,
+        "cpuUserMs": 2669,
+        "cpuSysMs": 187
+      },
+      "sampleCount": 71
+    },
+    {
+      "runId": "adapter-got-python",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 15,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 102,
+          "peakRssMiB": 70.7,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 119,
+        "peakRssMiB": 72,
+        "endHeapUsedMiB": 7.4,
+        "maxRssGetrusageMiB": 72,
+        "cpuUserMs": 165,
+        "cpuSysMs": 51
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "adapter-got-rust",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 23,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 147,
+          "peakRssMiB": 72.4,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 172,
+        "peakRssMiB": 73.2,
+        "endHeapUsedMiB": 7.3,
+        "maxRssGetrusageMiB": 73.2,
+        "cpuUserMs": 221,
+        "cpuSysMs": 51
+      },
+      "sampleCount": 6
+    },
+    {
+      "runId": "adapter-nanoid-go",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 7,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 96,
+          "peakRssMiB": 68.7,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 105,
+        "peakRssMiB": 71.7,
+        "endHeapUsedMiB": 6.9,
+        "maxRssGetrusageMiB": 71.7,
+        "cpuUserMs": 159,
+        "cpuSysMs": 38
+      },
+      "sampleCount": 3
+    },
+    {
+      "runId": "adapter-nanoid-javascript-typescript",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 7,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 777,
+          "peakRssMiB": 138,
+          "findings": 2,
+          "dependencies": 20,
+          "usages": 28
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 784,
+        "peakRssMiB": 139,
+        "endHeapUsedMiB": 7.7,
+        "maxRssGetrusageMiB": 139,
+        "cpuUserMs": 1053,
+        "cpuSysMs": 76
+      },
+      "sampleCount": 30
+    },
+    {
+      "runId": "adapter-nanoid-python",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 8,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 120,
+          "peakRssMiB": 69.1,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 129,
+        "peakRssMiB": 70.4,
+        "endHeapUsedMiB": 6.9,
+        "maxRssGetrusageMiB": 70.4,
+        "cpuUserMs": 191,
+        "cpuSysMs": 29
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "adapter-nanoid-rust",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 9,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 102,
+          "peakRssMiB": 71.6,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 112,
+        "peakRssMiB": 72.4,
+        "endHeapUsedMiB": 6.9,
+        "maxRssGetrusageMiB": 72.4,
+        "cpuUserMs": 187,
+        "cpuSysMs": 33
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "adapter-uuid-go",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 21,
+          "peakRssMiB": null,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 95,
+          "peakRssMiB": 70,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 118,
+        "peakRssMiB": 71.5,
+        "endHeapUsedMiB": 7.4,
+        "maxRssGetrusageMiB": 71.5,
+        "cpuUserMs": 192,
+        "cpuSysMs": 31
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "adapter-uuid-javascript-typescript",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 15,
+          "peakRssMiB": null,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1116,
+          "peakRssMiB": 143.7,
+          "findings": 5,
+          "dependencies": 35,
+          "usages": 67
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1133,
+        "peakRssMiB": 144,
+        "endHeapUsedMiB": 10.1,
+        "maxRssGetrusageMiB": 144,
+        "cpuUserMs": 1503,
+        "cpuSysMs": 130
+      },
+      "sampleCount": 43
+    },
+    {
+      "runId": "adapter-uuid-python",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 14,
+          "peakRssMiB": null,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 98,
+          "peakRssMiB": 71.9,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 113,
+        "peakRssMiB": 72.6,
+        "endHeapUsedMiB": 7.4,
+        "maxRssGetrusageMiB": 72.6,
+        "cpuUserMs": 157,
+        "cpuSysMs": 36
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "adapter-uuid-rust",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 14,
+          "peakRssMiB": null,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 101,
+          "peakRssMiB": 72.5,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 116,
+        "peakRssMiB": 73.6,
+        "endHeapUsedMiB": 7.4,
+        "maxRssGetrusageMiB": 73.6,
+        "cpuUserMs": 169,
+        "cpuSysMs": 28
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "adapter-vite-go",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 256,
+          "peakRssMiB": 60,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 84,
+          "peakRssMiB": 75.4,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 341,
+        "peakRssMiB": 75.9,
+        "endHeapUsedMiB": 8.1,
+        "maxRssGetrusageMiB": 75.9,
+        "cpuUserMs": 271,
+        "cpuSysMs": 156
+      },
+      "sampleCount": 13
+    },
+    {
+      "runId": "adapter-vite-javascript-typescript",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 260,
+          "peakRssMiB": 59.8,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 4888,
+          "peakRssMiB": 186.4,
+          "findings": 21,
+          "dependencies": 484,
+          "usages": 1615
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 5149,
+        "peakRssMiB": 187,
+        "endHeapUsedMiB": 9.8,
+        "maxRssGetrusageMiB": 187,
+        "cpuUserMs": 5815,
+        "cpuSysMs": 996
+      },
+      "sampleCount": 202
+    },
+    {
+      "runId": "adapter-vite-python",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 281,
+          "peakRssMiB": 59.5,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 97,
+          "peakRssMiB": 74.7,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 379,
+        "peakRssMiB": 76.5,
+        "endHeapUsedMiB": 8.1,
+        "maxRssGetrusageMiB": 76.5,
+        "cpuUserMs": 310,
+        "cpuSysMs": 149
+      },
+      "sampleCount": 15
+    },
+    {
+      "runId": "adapter-vite-rust",
+      "config": {
+        "mode": "adapter",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 290,
+          "peakRssMiB": 59.9,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 96,
+          "peakRssMiB": 77.6,
+          "findings": 0,
+          "dependencies": 0,
+          "usages": 0
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 387,
+        "peakRssMiB": 78.3,
+        "endHeapUsedMiB": 9.7,
+        "maxRssGetrusageMiB": 78.3,
+        "cpuUserMs": 324,
+        "cpuSysMs": 143
+      },
+      "sampleCount": 15
+    },
+    {
+      "runId": "concurrent-nextjs-typescript-rep1",
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 66015,
+          "peakRssMiB": 626.9,
+          "findings": [31, 6]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 72340,
+        "peakRssMiB": 627.2,
+        "endHeapUsedMiB": 63.9,
+        "maxRssGetrusageMiB": 627.2,
+        "cpuUserMs": 86486,
+        "cpuSysMs": 18099
+      },
+      "sampleCount": 2812
+    },
+    {
+      "runId": "concurrent-nextjs-typescript-rep2",
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 65911,
+          "peakRssMiB": 640.7,
+          "findings": [31, 6]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 72425,
+        "peakRssMiB": 641.2,
+        "endHeapUsedMiB": 64,
+        "maxRssGetrusageMiB": 641.2,
+        "cpuUserMs": 86794,
+        "cpuSysMs": 16414
+      },
+      "sampleCount": 2818
+    },
+    {
+      "runId": "concurrent-nextjs-typescript-rep3",
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 66529,
+          "peakRssMiB": 661.1,
+          "findings": [31, 6],
+          "usages": [13278, 227],
+          "usageTimeouts": [1, 0]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 72585,
+        "peakRssMiB": 661.4,
+        "endHeapUsedMiB": 53,
+        "maxRssGetrusageMiB": 661.4,
+        "cpuUserMs": 88512,
+        "cpuSysMs": 15476
+      },
+      "sampleCount": 2831
+    },
+    {
+      "runId": "concurrent-nextjs-typescript-rep4",
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 67441,
+          "peakRssMiB": 663.5,
+          "findings": [31, 6],
+          "usages": [13278, 227],
+          "usageTimeoutSummaries": [
+            "javascript-typescript analysis incomplete: usage analysis timed out"
+          ]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 73600,
+        "peakRssMiB": 664,
+        "endHeapUsedMiB": 57.9,
+        "maxRssGetrusageMiB": 664,
+        "cpuUserMs": 89707,
+        "cpuSysMs": 15927
+      },
+      "sampleCount": 2864
+    },
+    {
+      "runId": "concurrent-vite-got-rep1",
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "vite",
+            "owner": "vitejs",
+            "repo": "vite",
+            "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+          },
+          {
+            "name": "got",
+            "owner": "sindresorhus",
+            "repo": "got",
+            "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 5766,
+          "peakRssMiB": 268.7,
+          "findings": [21, 6]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 6034,
+        "peakRssMiB": 268.7,
+        "endHeapUsedMiB": 11.1,
+        "maxRssGetrusageMiB": 268.7,
+        "cpuUserMs": 8492,
+        "cpuSysMs": 1184
+      },
+      "sampleCount": 236
+    },
+    {
+      "runId": "concurrent-vite-got-rep2",
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "vite",
+            "owner": "vitejs",
+            "repo": "vite",
+            "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+          },
+          {
+            "name": "got",
+            "owner": "sindresorhus",
+            "repo": "got",
+            "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 5710,
+          "peakRssMiB": 269.4,
+          "findings": [21, 6]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 5983,
+        "peakRssMiB": 269.9,
+        "endHeapUsedMiB": 11.3,
+        "maxRssGetrusageMiB": 269.9,
+        "cpuUserMs": 8462,
+        "cpuSysMs": 1168
+      },
+      "sampleCount": 235
+    },
+    {
+      "runId": "footprint-chalk",
+      "config": {
+        "mode": "footprint",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        }
+      },
+      "stages": {
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 800,
+          "peakRssMiB": 133.6,
+          "findings": 2,
+          "dependencies": 11,
+          "usages": 18
+        }
+      },
+      "notes": [],
+      "footprint": {
+        "installSizesCalls": 0,
+        "packagesRequested": 0,
+        "packagesSized": 0,
+        "providerMs": 0,
+        "complete": true
+      },
+      "totals": {
+        "wallMs": 812,
+        "peakRssMiB": 135,
+        "endHeapUsedMiB": 7.8,
+        "maxRssGetrusageMiB": 135,
+        "cpuUserMs": 1139,
+        "cpuSysMs": 163
+      },
+      "sampleCount": 31
+    },
+    {
+      "runId": "footprint-fastify",
+      "config": {
+        "mode": "footprint",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        }
+      },
+      "stages": {
+        "scan": {
+          "ms": 36,
+          "peakRssMiB": 58.3,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1943,
+          "peakRssMiB": 155.9,
+          "findings": 4,
+          "dependencies": 53,
+          "usages": 219
+        }
+      },
+      "notes": [],
+      "footprint": {
+        "installSizesCalls": 0,
+        "packagesRequested": 0,
+        "packagesSized": 0,
+        "providerMs": 0,
+        "complete": true
+      },
+      "totals": {
+        "wallMs": 1990,
+        "peakRssMiB": 155.9,
+        "endHeapUsedMiB": 8.3,
+        "maxRssGetrusageMiB": 155.9,
+        "cpuUserMs": 2760,
+        "cpuSysMs": 277
+      },
+      "sampleCount": 78
+    },
+    {
+      "runId": "footprint-got",
+      "config": {
+        "mode": "footprint",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        }
+      },
+      "stages": {
+        "scan": {
+          "ms": 15,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1723,
+          "peakRssMiB": 162.7,
+          "findings": 6,
+          "dependencies": 50,
+          "usages": 243
+        }
+      },
+      "notes": [],
+      "footprint": {
+        "installSizesCalls": 0,
+        "packagesRequested": 0,
+        "packagesSized": 0,
+        "providerMs": 0,
+        "complete": true
+      },
+      "totals": {
+        "wallMs": 1744,
+        "peakRssMiB": 163,
+        "endHeapUsedMiB": 8.1,
+        "maxRssGetrusageMiB": 163,
+        "cpuUserMs": 2621,
+        "cpuSysMs": 164
+      },
+      "sampleCount": 68
+    },
+    {
+      "runId": "footprint-nanoid",
+      "config": {
+        "mode": "footprint",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        }
+      },
+      "stages": {
+        "scan": {
+          "ms": 7,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 890,
+          "peakRssMiB": 140.7,
+          "findings": 2,
+          "dependencies": 20,
+          "usages": 28
+        }
+      },
+      "notes": [],
+      "footprint": {
+        "installSizesCalls": 1,
+        "packagesRequested": 134,
+        "packagesSized": 0,
+        "providerMs": 0,
+        "complete": true
+      },
+      "totals": {
+        "wallMs": 903,
+        "peakRssMiB": 142.2,
+        "endHeapUsedMiB": 7.9,
+        "maxRssGetrusageMiB": 142.2,
+        "cpuUserMs": 1257,
+        "cpuSysMs": 151
+      },
+      "sampleCount": 35
+    },
+    {
+      "runId": "footprint-uuid",
+      "config": {
+        "mode": "footprint",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        }
+      },
+      "stages": {
+        "scan": {
+          "ms": 14,
+          "peakRssMiB": null,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 4535,
+          "peakRssMiB": 147.7,
+          "findings": 5,
+          "dependencies": 35,
+          "usages": 67
+        }
+      },
+      "notes": [],
+      "footprint": {
+        "installSizesCalls": 1,
+        "packagesRequested": 820,
+        "packagesSized": 292,
+        "providerMs": 3340,
+        "complete": false
+      },
+      "totals": {
+        "wallMs": 4555,
+        "peakRssMiB": 147.9,
+        "endHeapUsedMiB": 20.2,
+        "maxRssGetrusageMiB": 147.9,
+        "cpuUserMs": 2532,
+        "cpuSysMs": 267
+      },
+      "sampleCount": 172
+    },
+    {
+      "runId": "footprint-vite",
+      "config": {
+        "mode": "footprint",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        }
+      },
+      "stages": {
+        "scan": {
+          "ms": 261,
+          "peakRssMiB": 62,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 5066,
+          "peakRssMiB": 194.4,
+          "findings": 21,
+          "dependencies": 484,
+          "usages": 1615
+        }
+      },
+      "notes": [],
+      "footprint": {
+        "installSizesCalls": 0,
+        "packagesRequested": 0,
+        "packagesSized": 0,
+        "providerMs": 0,
+        "complete": true
+      },
+      "totals": {
+        "wallMs": 5334,
+        "peakRssMiB": 194.4,
+        "endHeapUsedMiB": 11.4,
+        "maxRssGetrusageMiB": 194.4,
+        "cpuUserMs": 6215,
+        "cpuSysMs": 1129
+      },
+      "sampleCount": 209
+    },
+    {
+      "runId": "pipeline-babel-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "babel",
+          "owner": "babel",
+          "repo": "babel",
+          "sha": "fd665901dece022a0eda2ae7adda03bc9baabd5e"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 10048,
+          "peakRssMiB": 107.5,
+          "compressedMiB": 7,
+          "extractedFiles": 27735
+        },
+        "scan": {
+          "ms": 2460,
+          "peakRssMiB": 113.1,
+          "files": 27640,
+          "totalMiB": 27.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 24285,
+          "peakRssMiB": 302.7,
+          "findings": 28,
+          "dependencies": 1095,
+          "usages": 718
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 36796,
+        "peakRssMiB": 360.8,
+        "endHeapUsedMiB": 94.1,
+        "maxRssGetrusageMiB": 360.8,
+        "cpuUserMs": 28174,
+        "cpuSysMs": 12185
+      },
+      "sampleCount": 1435
+    },
+    {
+      "runId": "pipeline-bat-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "bat",
+          "owner": "sharkdp",
+          "repo": "bat",
+          "sha": "4987f76709aae3a1c4db723c53874c9ddcb0c4fd"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 676,
+          "peakRssMiB": 84.3,
+          "compressedMiB": 2.1,
+          "extractedFiles": 914
+        },
+        "scan": {
+          "ms": 106,
+          "peakRssMiB": 83.6,
+          "files": 910,
+          "totalMiB": 7.3,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1154,
+          "peakRssMiB": 187.4,
+          "findings": 12,
+          "dependencies": 58,
+          "usages": 199
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1938,
+        "peakRssMiB": 192,
+        "endHeapUsedMiB": 10.5,
+        "maxRssGetrusageMiB": 192,
+        "cpuUserMs": 2420,
+        "cpuSysMs": 416
+      },
+      "sampleCount": 75
+    },
+    {
+      "runId": "pipeline-chalk-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 520,
+          "peakRssMiB": 80.5,
+          "compressedMiB": 0.3,
+          "extractedFiles": 35
+        },
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 991,
+          "peakRssMiB": 161.6,
+          "findings": 2,
+          "dependencies": 11,
+          "usages": 18
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1520,
+        "peakRssMiB": 161.9,
+        "endHeapUsedMiB": 12.1,
+        "maxRssGetrusageMiB": 161.9,
+        "cpuUserMs": 1724,
+        "cpuSysMs": 196
+      },
+      "sampleCount": 57
+    },
+    {
+      "runId": "pipeline-chalk-rep2",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 516,
+          "peakRssMiB": 81.7,
+          "compressedMiB": 0.3,
+          "extractedFiles": 35
+        },
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 823,
+          "peakRssMiB": 158.7,
+          "findings": 2,
+          "dependencies": 11,
+          "usages": 18
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1348,
+        "peakRssMiB": 159,
+        "endHeapUsedMiB": 12.5,
+        "maxRssGetrusageMiB": 159,
+        "cpuUserMs": 1437,
+        "cpuSysMs": 186
+      },
+      "sampleCount": 51
+    },
+    {
+      "runId": "pipeline-cobra-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "cobra",
+          "owner": "spf13",
+          "repo": "cobra",
+          "sha": "adbc8813901bba65827259daa8e22ff94ec1f30e"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 265,
+          "peakRssMiB": 77.4,
+          "compressedMiB": 0.2,
+          "extractedFiles": 66
+        },
+        "scan": {
+          "ms": 4,
+          "peakRssMiB": null,
+          "files": 66,
+          "totalMiB": 0.7,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 757,
+          "peakRssMiB": 150.8,
+          "findings": 1,
+          "dependencies": 4,
+          "usages": 11
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1028,
+        "peakRssMiB": 154.5,
+        "endHeapUsedMiB": 11.3,
+        "maxRssGetrusageMiB": 154.5,
+        "cpuUserMs": 1313,
+        "cpuSysMs": 193
+      },
+      "sampleCount": 39
+    },
+    {
+      "runId": "pipeline-fastify-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 694,
+          "peakRssMiB": 78.4,
+          "compressedMiB": 0.5,
+          "extractedFiles": 395
+        },
+        "scan": {
+          "ms": 31,
+          "peakRssMiB": 78.7,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 2047,
+          "peakRssMiB": 174.5,
+          "findings": 4,
+          "dependencies": 53,
+          "usages": 219
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 2772,
+        "peakRssMiB": 174.7,
+        "endHeapUsedMiB": 13.2,
+        "maxRssGetrusageMiB": 174.7,
+        "cpuUserMs": 3325,
+        "cpuSysMs": 315
+      },
+      "sampleCount": 107
+    },
+    {
+      "runId": "pipeline-fastify-rep2",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 531,
+          "peakRssMiB": 82.7,
+          "compressedMiB": 0.5,
+          "extractedFiles": 395
+        },
+        "scan": {
+          "ms": 35,
+          "peakRssMiB": 78.9,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 2089,
+          "peakRssMiB": 177.7,
+          "findings": 4,
+          "dependencies": 53,
+          "usages": 219
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 2689,
+        "peakRssMiB": 177.7,
+        "endHeapUsedMiB": 10.1,
+        "maxRssGetrusageMiB": 177.7,
+        "cpuUserMs": 3468,
+        "cpuSysMs": 357
+      },
+      "sampleCount": 103
+    },
+    {
+      "runId": "pipeline-flask-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "flask",
+          "owner": "pallets",
+          "repo": "flask",
+          "sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 339,
+          "peakRssMiB": 80.5,
+          "compressedMiB": 0.7,
+          "extractedFiles": 236
+        },
+        "scan": {
+          "ms": 25,
+          "peakRssMiB": 75.1,
+          "files": 236,
+          "totalMiB": 1.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 777,
+          "peakRssMiB": 177.5,
+          "findings": 21,
+          "dependencies": 58,
+          "usages": 185
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1143,
+        "peakRssMiB": 178.4,
+        "endHeapUsedMiB": 12.3,
+        "maxRssGetrusageMiB": 178.4,
+        "cpuUserMs": 1587,
+        "cpuSysMs": 197
+      },
+      "sampleCount": 43
+    },
+    {
+      "runId": "pipeline-got-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 718,
+          "peakRssMiB": 79.5,
+          "compressedMiB": 0.7,
+          "extractedFiles": 132
+        },
+        "scan": {
+          "ms": 12,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1730,
+          "peakRssMiB": 183.2,
+          "findings": 6,
+          "dependencies": 50,
+          "usages": 243
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 2461,
+        "peakRssMiB": 183.2,
+        "endHeapUsedMiB": 12.1,
+        "maxRssGetrusageMiB": 183.2,
+        "cpuUserMs": 2944,
+        "cpuSysMs": 261
+      },
+      "sampleCount": 96
+    },
+    {
+      "runId": "pipeline-got-rep2",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 314,
+          "peakRssMiB": 82.1,
+          "compressedMiB": 0.7,
+          "extractedFiles": 132
+        },
+        "scan": {
+          "ms": 15,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 2091,
+          "peakRssMiB": 184.2,
+          "findings": 6,
+          "dependencies": 50,
+          "usages": 243
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 2427,
+        "peakRssMiB": 184.4,
+        "endHeapUsedMiB": 10.2,
+        "maxRssGetrusageMiB": 184.4,
+        "cpuUserMs": 3325,
+        "cpuSysMs": 311
+      },
+      "sampleCount": 93
+    },
+    {
+      "runId": "pipeline-nanoid-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 321,
+          "peakRssMiB": 74.4,
+          "compressedMiB": 0.1,
+          "extractedFiles": 49
+        },
+        "scan": {
+          "ms": 7,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1080,
+          "peakRssMiB": 159.7,
+          "findings": 2,
+          "dependencies": 20,
+          "usages": 28
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1410,
+        "peakRssMiB": 159.9,
+        "endHeapUsedMiB": 10.9,
+        "maxRssGetrusageMiB": 159.9,
+        "cpuUserMs": 1809,
+        "cpuSysMs": 173
+      },
+      "sampleCount": 53
+    },
+    {
+      "runId": "pipeline-nanoid-rep2",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 361,
+          "peakRssMiB": 74.7,
+          "compressedMiB": 0.1,
+          "extractedFiles": 49
+        },
+        "scan": {
+          "ms": 4,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 902,
+          "peakRssMiB": 169,
+          "findings": 2,
+          "dependencies": 20,
+          "usages": 28
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1271,
+        "peakRssMiB": 169.3,
+        "endHeapUsedMiB": 11.2,
+        "maxRssGetrusageMiB": 169.3,
+        "cpuUserMs": 1368,
+        "cpuSysMs": 174
+      },
+      "sampleCount": 49
+    },
+    {
+      "runId": "pipeline-nextjs-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "nextjs",
+          "owner": "vercel",
+          "repo": "next.js",
+          "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 13461,
+          "peakRssMiB": 129.1,
+          "compressedMiB": 49.3,
+          "extractedFiles": 33175
+        },
+        "scan": {
+          "ms": 3094,
+          "peakRssMiB": 139,
+          "files": 31618,
+          "totalMiB": 130.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 62553,
+          "peakRssMiB": 462.9,
+          "findings": 31,
+          "dependencies": 4718,
+          "usages": 13278
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 79112,
+        "peakRssMiB": 464.1,
+        "endHeapUsedMiB": 53.2,
+        "maxRssGetrusageMiB": 464.1,
+        "cpuUserMs": 82275,
+        "cpuSysMs": 17200
+      },
+      "sampleCount": 3105
+    },
+    {
+      "runId": "pipeline-typescript-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "typescript",
+          "owner": "microsoft",
+          "repo": "TypeScript",
+          "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 21431,
+          "peakRssMiB": 124.1,
+          "compressedMiB": 24.5,
+          "extractedFiles": 66672
+        },
+        "scan": {
+          "ms": 3258,
+          "peakRssMiB": 137.5,
+          "files": 50000,
+          "totalMiB": 144.7,
+          "truncated": "max-files"
+        },
+        "analysis": {
+          "ms": 13465,
+          "peakRssMiB": 409.9,
+          "findings": 6,
+          "dependencies": 41,
+          "usages": 227
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 38158,
+        "peakRssMiB": 409.9,
+        "endHeapUsedMiB": 25.1,
+        "maxRssGetrusageMiB": 409.9,
+        "cpuUserMs": 28723,
+        "cpuSysMs": 15988
+      },
+      "sampleCount": 1509
+    },
+    {
+      "runId": "pipeline-uuid-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 315,
+          "peakRssMiB": 77.2,
+          "compressedMiB": 0.1,
+          "extractedFiles": 134
+        },
+        "scan": {
+          "ms": 13,
+          "peakRssMiB": 84,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1619,
+          "peakRssMiB": 168,
+          "findings": 5,
+          "dependencies": 35,
+          "usages": 67
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1948,
+        "peakRssMiB": 168.5,
+        "endHeapUsedMiB": 13.3,
+        "maxRssGetrusageMiB": 168.5,
+        "cpuUserMs": 2441,
+        "cpuSysMs": 246
+      },
+      "sampleCount": 75
+    },
+    {
+      "runId": "pipeline-uuid-rep2",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 314,
+          "peakRssMiB": 82.3,
+          "compressedMiB": 0.1,
+          "extractedFiles": 134
+        },
+        "scan": {
+          "ms": 13,
+          "peakRssMiB": 75.1,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1142,
+          "peakRssMiB": 168,
+          "findings": 5,
+          "dependencies": 35,
+          "usages": 67
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 1475,
+        "peakRssMiB": 169.4,
+        "endHeapUsedMiB": 13.6,
+        "maxRssGetrusageMiB": 169.4,
+        "cpuUserMs": 1852,
+        "cpuSysMs": 208
+      },
+      "sampleCount": 56
+    },
+    {
+      "runId": "pipeline-vite-rep1",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 1687,
+          "peakRssMiB": 91.3,
+          "compressedMiB": 12.4,
+          "extractedFiles": 2827
+        },
+        "scan": {
+          "ms": 295,
+          "peakRssMiB": 92.3,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 5051,
+          "peakRssMiB": 220.1,
+          "findings": 21,
+          "dependencies": 484,
+          "usages": 1615
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 7035,
+        "peakRssMiB": 220.1,
+        "endHeapUsedMiB": 16.6,
+        "maxRssGetrusageMiB": 220.1,
+        "cpuUserMs": 7455,
+        "cpuSysMs": 1584
+      },
+      "sampleCount": 276
+    },
+    {
+      "runId": "pipeline-vite-rep2",
+      "config": {
+        "mode": "pipeline",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        }
+      },
+      "stages": {
+        "download+extract(streaming)": {
+          "ms": 1556,
+          "peakRssMiB": 91.3,
+          "compressedMiB": 12.4,
+          "extractedFiles": 2827
+        },
+        "scan": {
+          "ms": 242,
+          "peakRssMiB": 91.3,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 4864,
+          "peakRssMiB": 218.3,
+          "findings": 21,
+          "dependencies": 484,
+          "usages": 1615
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 6775,
+        "peakRssMiB": 218.3,
+        "endHeapUsedMiB": 17,
+        "maxRssGetrusageMiB": 218.3,
+        "cpuUserMs": 7168,
+        "cpuSysMs": 1639
+      },
+      "sampleCount": 263
+    },
+    {
+      "runId": "stages-bat-rust",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "bat",
+          "owner": "sharkdp",
+          "repo": "bat",
+          "sha": "4987f76709aae3a1c4db723c53874c9ddcb0c4fd"
+        },
+        "adapter": "rust"
+      },
+      "stages": {
+        "scan": {
+          "ms": 106,
+          "peakRssMiB": 58.7,
+          "files": 910,
+          "totalMiB": 7.3,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 648,
+          "peakRssMiB": 100.2,
+          "findings": 10
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 24,
+        "listDirectDependencies": 2,
+        "buildDependencyGraph": 17,
+        "findUsage": 612,
+        "notes": 0
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 57,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 771,
+        "peakRssMiB": 100.8,
+        "endHeapUsedMiB": 18.4,
+        "maxRssGetrusageMiB": 100.8,
+        "cpuUserMs": 1053,
+        "cpuSysMs": 104
+      },
+      "sampleCount": 20
+    },
+    {
+      "runId": "stages-chalk-js",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "chalk",
+          "owner": "chalk",
+          "repo": "chalk",
+          "sha": "8960ada92ca0f9220c8863495bae78dcc0c323ee"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 5,
+          "peakRssMiB": null,
+          "files": 29,
+          "totalMiB": 0.4,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 136,
+          "peakRssMiB": 129,
+          "findings": 2
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 6,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 5,
+        "findUsage": 120,
+        "notes": 1
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 11,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 564,
+        "peakRssMiB": 129.2,
+        "endHeapUsedMiB": 36.1,
+        "maxRssGetrusageMiB": 129.2,
+        "cpuUserMs": 738,
+        "cpuSysMs": 72
+      },
+      "sampleCount": 5
+    },
+    {
+      "runId": "stages-cobra-go",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "cobra",
+          "owner": "spf13",
+          "repo": "cobra",
+          "sha": "adbc8813901bba65827259daa8e22ff94ec1f30e"
+        },
+        "adapter": "go"
+      },
+      "stages": {
+        "scan": {
+          "ms": 8,
+          "peakRssMiB": null,
+          "files": 66,
+          "totalMiB": 0.7,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 121,
+          "peakRssMiB": 71.6,
+          "findings": 1
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 2,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 10,
+        "findUsage": 112,
+        "notes": 0
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 4,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 136,
+        "peakRssMiB": 72.6,
+        "endHeapUsedMiB": 9.7,
+        "maxRssGetrusageMiB": 72.6,
+        "cpuUserMs": 212,
+        "cpuSysMs": 49
+      },
+      "sampleCount": 4
+    },
+    {
+      "runId": "stages-fastify-js",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "fastify",
+          "owner": "fastify",
+          "repo": "fastify",
+          "sha": "6ed472b6fe023cd0e6283badda231b84e45582d0"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 33,
+          "peakRssMiB": 57.3,
+          "files": 390,
+          "totalMiB": 2.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1307,
+          "peakRssMiB": 138.7,
+          "findings": 4
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 10,
+        "listDirectDependencies": 6,
+        "buildDependencyGraph": 60,
+        "findUsage": 1278,
+        "notes": 2
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 53,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 1768,
+        "peakRssMiB": 138.7,
+        "endHeapUsedMiB": 46.7,
+        "maxRssGetrusageMiB": 138.7,
+        "cpuUserMs": 2380,
+        "cpuSysMs": 191
+      },
+      "sampleCount": 44
+    },
+    {
+      "runId": "stages-flask-python",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "flask",
+          "owner": "pallets",
+          "repo": "flask",
+          "sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35"
+        },
+        "adapter": "python"
+      },
+      "stages": {
+        "scan": {
+          "ms": 23,
+          "peakRssMiB": null,
+          "files": 236,
+          "totalMiB": 1.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 253,
+          "peakRssMiB": 78.7,
+          "findings": 21
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 57,
+        "listDirectDependencies": 5,
+        "buildDependencyGraph": 70,
+        "findUsage": 176
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 58
+      },
+      "totals": {
+        "wallMs": 292,
+        "peakRssMiB": 79.5,
+        "endHeapUsedMiB": 14.8,
+        "maxRssGetrusageMiB": 79.5,
+        "cpuUserMs": 411,
+        "cpuSysMs": 74
+      },
+      "sampleCount": 9
+    },
+    {
+      "runId": "stages-got-js",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "got",
+          "owner": "sindresorhus",
+          "repo": "got",
+          "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 13,
+          "peakRssMiB": null,
+          "files": 132,
+          "totalMiB": 2.1,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 1134,
+          "peakRssMiB": 150.9,
+          "findings": 6
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 4,
+        "listDirectDependencies": 2,
+        "buildDependencyGraph": 10,
+        "findUsage": 1116,
+        "notes": 3
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 50,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 1592,
+        "peakRssMiB": 150.9,
+        "endHeapUsedMiB": 42.2,
+        "maxRssGetrusageMiB": 150.9,
+        "cpuUserMs": 2359,
+        "cpuSysMs": 111
+      },
+      "sampleCount": 28
+    },
+    {
+      "runId": "stages-nanoid-js",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "nanoid",
+          "owner": "ai",
+          "repo": "nanoid",
+          "sha": "bb68abcd59ebb86a849d634320726add6be54d47"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 7,
+          "peakRssMiB": null,
+          "files": 49,
+          "totalMiB": 0.2,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 234,
+          "peakRssMiB": 130.3,
+          "findings": 2
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 6,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 98,
+        "findUsage": 216,
+        "notes": 1
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 20,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 654,
+        "peakRssMiB": 130.7,
+        "endHeapUsedMiB": 40.8,
+        "maxRssGetrusageMiB": 130.7,
+        "cpuUserMs": 863,
+        "cpuSysMs": 85
+      },
+      "sampleCount": 5
+    },
+    {
+      "runId": "stages-nextjs-js",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "nextjs",
+          "owner": "vercel",
+          "repo": "next.js",
+          "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 2824,
+          "peakRssMiB": 76.7,
+          "files": 31618,
+          "totalMiB": 130.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 61746,
+          "peakRssMiB": 369.1,
+          "findings": 1
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 1009,
+        "listDirectDependencies": 331,
+        "buildDependencyGraph": 17844,
+        "findUsage": 59964
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 2398
+      },
+      "totals": {
+        "wallMs": 65024,
+        "peakRssMiB": 369.6,
+        "endHeapUsedMiB": 209,
+        "maxRssGetrusageMiB": 369.6,
+        "cpuUserMs": 63236,
+        "cpuSysMs": 11460
+      },
+      "sampleCount": 1865
+    },
+    {
+      "runId": "stages-uuid-js",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "uuid",
+          "owner": "uuidjs",
+          "repo": "uuid",
+          "sha": "dd8c173521bb3faacb11ff244233df4a0dcde545"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 15,
+          "peakRssMiB": null,
+          "files": 134,
+          "totalMiB": 0.6,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 470,
+          "peakRssMiB": 139.5,
+          "findings": 5
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 22,
+        "listDirectDependencies": 11,
+        "buildDependencyGraph": 189,
+        "findUsage": 405,
+        "notes": 9
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 35,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 964,
+        "peakRssMiB": 140.8,
+        "endHeapUsedMiB": 41.1,
+        "maxRssGetrusageMiB": 140.8,
+        "cpuUserMs": 1284,
+        "cpuSysMs": 126
+      },
+      "sampleCount": 16
+    },
+    {
+      "runId": "stages-vite-js",
+      "config": {
+        "mode": "stages",
+        "repo": {
+          "name": "vite",
+          "owner": "vitejs",
+          "repo": "vite",
+          "sha": "39ddf7ccf7e7469ff6a3ba37bca38c32ea804d6e"
+        },
+        "adapter": "javascript-typescript"
+      },
+      "stages": {
+        "scan": {
+          "ms": 263,
+          "peakRssMiB": 60.3,
+          "files": 2803,
+          "totalMiB": 16.8,
+          "truncated": null
+        },
+        "analysis": {
+          "ms": 4616,
+          "peakRssMiB": 162.7,
+          "findings": 21
+        }
+      },
+      "notes": [],
+      "stageMs": {
+        "detect": 386,
+        "listDirectDependencies": 160,
+        "buildDependencyGraph": 1259,
+        "findUsage": 3846,
+        "notes": 153
+      },
+      "stageCalls": {
+        "detect": 1,
+        "listDirectDependencies": 1,
+        "buildDependencyGraph": 1,
+        "findUsage": 484,
+        "notes": 1
+      },
+      "totals": {
+        "wallMs": 5300,
+        "peakRssMiB": 162.7,
+        "endHeapUsedMiB": 45.9,
+        "maxRssGetrusageMiB": 162.7,
+        "cpuUserMs": 5986,
+        "cpuSysMs": 1226
+      },
+      "sampleCount": 161
+    }
+  ]
+}
