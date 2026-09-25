@@ -92,6 +92,27 @@ describe("computeImpact (#59)", () => {
     assert.deepEqual([r.foo!.transitive, r.foo!.exclusive], [null, null]);
   });
 
+  it("sees an alias specifier hidden by a duplicate plain declaration (#277)", () => {
+    // foo declared as an alias in dependencies and plainly in devDependencies:
+    // `unique` keeps the LAST declaration, so the guard must read the
+    // original declarations. Both orders null exclusive for the project.
+    const alias = (kind: "runtime" | "dev"): Dependency => ({
+      ...dep("foo"),
+      kind,
+      specifier: { type: "registry", detail: "npm alias: npm:bar@^1" },
+    });
+    const plain = (kind: "runtime" | "dev"): Dependency => ({ ...dep("foo"), kind });
+    const g = () => graph({ bar: ["shared"], a: ["shared", "x"] });
+    for (const deps of [
+      [alias("runtime"), plain("dev"), dep("a")],
+      [plain("runtime"), alias("dev"), dep("a")],
+    ]) {
+      const r = byName(computeImpact([g()], deps));
+      assert.deepEqual([r.a!.transitive, r.a!.exclusive], [2, null]);
+      assert.deepEqual([r.foo!.transitive, r.foo!.exclusive], [null, null]);
+    }
+  });
+
   it("drops exclusive for the whole project on any non-registry specifier (#277)", () => {
     const gitDep: Dependency = {
       ...dep("foo"),

@@ -126,7 +126,10 @@ export function computeImpact(
     // specifiers (git/file/link/workspace), whose locked spelling the
     // adapter records but never resolves. Conservative: any such specifier
     // in the project nulls `exclusive` for the whole project.
-    const hasUnmatchedSpecifier = unique.some(
+    // Checked on the pre-dedup declarations: `unique` is last-write-wins by
+    // name, so a plain registry declaration of the same name would hide an
+    // alias (or other non-registry) specifier declared in another section.
+    const hasUnmatchedSpecifier = deps.some(
       (d) =>
         d.specifier !== undefined &&
         (d.specifier.type !== "registry" || d.specifier.detail?.startsWith("npm alias:")),
