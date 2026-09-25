@@ -340,20 +340,34 @@ export function runAdapterIsolated(
     // own messages, so an adapter's early output can arrive before the
     // `loaded` message that names the ecosystem. Buffer those lines and
     // flush them once the label is known (or with the specifier label if
-    // the worker never loads); bounded so a chatty adapter that never loads
-    // cannot grow the buffer without limit.
+    // the worker never loads). Past the cap, pre-load lines are dropped and
+    // counted - emitting them immediately would label them with the module
+    // specifier, which is exactly the mislabeling this buffer exists to
+    // prevent; the flush reports the drop count under the right label.
     const PRELOAD_LABEL_CAP = 100;
     let ecosystemKnown = false;
     let preLoad: string[] = [];
+    let droppedPreLoad = 0;
     const emitLog = (tagged: string): void => {
       if (debugLog === undefined) return;
-      if (ecosystemKnown || preLoad.length >= PRELOAD_LABEL_CAP) debugLog(`${ecosystem} ${tagged}`);
-      else preLoad.push(tagged);
+      if (ecosystemKnown) {
+        debugLog(`${ecosystem} ${tagged}`);
+      } else if (preLoad.length < PRELOAD_LABEL_CAP) {
+        preLoad.push(tagged);
+      } else {
+        droppedPreLoad += 1;
+      }
     };
     const flushPreLoad = (): void => {
-      if (debugLog === undefined || preLoad.length === 0) return;
+      if (debugLog === undefined) return;
       for (const tagged of preLoad) debugLog(`${ecosystem} ${tagged}`);
       preLoad = [];
+      if (droppedPreLoad > 0) {
+        debugLog(
+          `${ecosystem} debugLog: ${droppedPreLoad} pre-load adapter output line(s) dropped (buffer cap ${PRELOAD_LABEL_CAP})`,
+        );
+        droppedPreLoad = 0;
+      }
     };
 
     const worker = new Worker(new URL("./adapter-worker.js", import.meta.url), {
