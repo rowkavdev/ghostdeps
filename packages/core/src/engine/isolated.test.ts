@@ -88,6 +88,54 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("keeps sibling ecosystem usages when another times out without usage (#345)", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("empty-timeout.mjs"), fixture("sibling-usage.mjs")],
+        usageTimeoutMs: 300,
+        usageConcurrency: 1,
+        recommend: ({ dependencies, usageAnalysedEcosystems, referenceAnalysedEcosystems }) => {
+          assert.equal(usageAnalysedEcosystems.has("timed-out-js"), false);
+          assert.equal(referenceAnalysedEcosystems.has("timed-out-js"), false);
+          assert.equal(usageAnalysedEcosystems.has("sibling-rust"), true);
+          return dependencies.map((dep) => ({
+            kind: "unused" as const,
+            dependency: dep.name,
+            summary: `${dep.name} absent`,
+            recommendation: "Remove it.",
+            evidence: [{ kind: "no-import-found", statement: "no imports" }],
+            confidence: "high" as const,
+            limitations: [],
+            affectedFiles: [dep.declaredIn],
+          }));
+        },
+      });
+      assert.deepEqual(
+        result.usages.map((u) => u.dependency),
+        ["rust-dep"],
+      );
+      assert.deepEqual(
+        result.detected.map((d) => d.ecosystem),
+        ["sibling-rust", "timed-out-js"],
+      );
+      assert.ok(
+        result.findings.some(
+          (f) =>
+            f.summary === "timed-out-js analysis incomplete: usage analysis timed out" &&
+            findingGroup(f) === "incomplete",
+        ),
+      );
+      assert.equal(
+        result.findings.some((f) => f.kind === "unused"),
+        false,
+        "core rejects absence findings globally when a partial ecosystem makes attribution unsafe",
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("terminates a synchronous busy-loop adapter at the stage budget and reports it", async () => {
     const { dir, handle } = await fixtureRepo();
     try {
