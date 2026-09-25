@@ -1,10 +1,38 @@
 # Output formats (shared targets)
 
-Every lane renders the same information in the same shapes. These are the
-canonical formats from the product spec; when output work disagrees with
-this file, this file wins (or the file gets updated in the same PR).
+The CLI and GitHub Check share an analysis result, but not every example below
+is implemented. Current output is identified separately from proposed formats.
+When a proposed example differs from shipped code, do not treat it as a live
+capability.
 
-## Repository summary (full scan: CLI `scan`, installation scans)
+## Repository summary (full scan: CLI `scan`)
+
+The shipped CLI renderer produces this exact shape for an empty scan:
+
+```text
+GhostDeps
+
+Languages:
+  none detected
+
+Package managers:
+  none detected
+
+Direct dependencies:
+  0
+
+Transitive dependencies:
+  unknown
+
+Findings:
+  none
+```
+
+The following expanded example is **proposed**, not a sample of one currently
+shippable run. It combines future native/duplicate verdicts and a PR-only
+removed-last-usage finding with a full-scan title; current `unused` confidence
+is capped at medium. For today's verdicts and coverage gates, see
+[recommendation policy](recommendation-policy.md).
 
 ```text
 GhostDeps
@@ -87,7 +115,11 @@ findings never count (#234): they are excluded from the `Findings` tally,
 from the `--fail-on` threshold and from the `--severity` hidden count. Each
 section is omitted when it has nothing to show.
 
-## Per-dependency report (CLI `inspect`/`explain`, check annotations)
+## Per-dependency report (proposed CLI `inspect`/`explain`)
+
+The router recognises `inspect` and `explain`, but neither runs yet. The
+following per-dependency format and native alternative are **proposed**, not
+current CLI or Check output.
 
 ```text
 axios
@@ -151,6 +183,10 @@ Dynamic imports prevent complete analysis.
 
 ## GitHub Check output (PR analysis)
 
+The `axios` native-alternative example below is **proposed**. The shared
+Check renderer currently reports shipped findings and coverage notes through
+its summary and added-line annotations, not a native-replacement verdict.
+
 ```text
 GhostDeps — Dependency Analysis
 
@@ -200,6 +236,10 @@ No significant dependency issues found.
   capability notes, `adapter-capability`, #205). Absent means not
   awareness: other info findings stay in Notes and keep their neutral
   meaning. Marking another rule awareness needs arbiter sign-off.
+- Core also groups source-backed health observations as `"fact"`. They do
+  not affect counts, severity gates or check conclusions. A dedicated CLI
+  Package facts section is not shipped; presenter work remains a separate
+  follow-up, as the [interpreting-results guide](interpreting-results.md) notes.
 - Presenters group findings with core's `findingGroup(f)` (#239) and own
   only the formatting:
   - `"verdict"`: every non-info finding; drives the conclusion and exit code
