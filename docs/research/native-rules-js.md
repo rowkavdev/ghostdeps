@@ -1,0 +1,30 @@
+# Native replacement rules for JS/TS
+
+Research for [#64](https://github.com/rowkavdev/ghostdeps/issues/64), checked against GhostDeps main on 25 September 2026. This is a candidate rule set, not a list of dependencies GhostDeps can remove today. The [native-rule interface](https://github.com/rowkavdev/ghostdeps/blob/main/packages/core/src/native-rules/index.ts) records runtime floors, covered APIs, disqualifiers, semantic differences and sources; main does not yet ship a JS/TS rule dataset or a native-replacement verdict.
+
+## Candidate seeds
+
+| Dependency and covered use                     | Platform feature                          | Gate and decisive mismatch                                                                                                                                                                                                              |
+| ---------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node-fetch` or `axios`, simple requests       | `fetch`                                   | Node 18+ without the flag; stable since 21. Browser target needs its own check. `fetch` does not reject on HTTP error status; axios interceptors, transforms, adapters, progress, proxy handling and error objects are not equivalents. |
+| `uuid`, v4 generation alone                    | `crypto.randomUUID()`                     | Node `node:crypto` 14.17+ or 15.6+; browser secure context. Other UUID versions, parsing, validation and buffer/options use remain.                                                                                                     |
+| `lodash.clonedeep`, cloneable plain data alone | `structuredClone`                         | Node 17+; rejects functions, does not preserve arbitrary class prototypes, descriptors or accessors. Check fixtures for cycles, transferables and types in the actual call sites.                                                       |
+| `mkdirp`, recursive directory API              | `fs.mkdir({ recursive: true })`           | Node 10.12+; CLI invocation and return-value expectations need separate checks.                                                                                                                                                         |
+| `rimraf`, recursive removal API                | `fs.rm({ recursive: true, force: true })` | Node 14.14+; no blanket claim for CLI scripts or glob expansion.                                                                                                                                                                        |
+| `glob`, basic filesystem pattern iteration     | `fs.glob` / `fs.promises.glob`            | Added in Node 22 and stable in 22.17/24.0; iterator/callback semantics, negation, ignore rules and advanced glob options can differ.                                                                                                    |
+| `dotenv`, basic `.env` loading                 | `process.loadEnvFile` or `--env-file`     | Node 20.12+ / 20.6+ respectively; startup flags, expansion, override, ordering and multi-file use need review.                                                                                                                          |
+
+The [e18e module-replacements catalog](https://github.com/e18e/module-replacements) is useful for candidates, especially polyfills. Its `native.json` entries are not proof that an application's uses or supported targets qualify. `preferred.json` also contains **package-to-package** preferences, not native replacements. Do not import either wholesale as high-confidence rules. Keep attribution and pinned manifest provenance for any seed data.
+
+## Evidence required to fire
+
+1. Identify the direct dependency and every statically resolved import/call site, including wrappers, re-exports and scripts. A dynamic or unresolved use prevents a safe-removal claim.
+2. Establish the **deployment** floor for every target from authoritative `engines`, supported browser list, runtime configuration or release policy. A CI matrix by itself does not prove the production floor. Missing floor means no automatic replacement verdict.
+3. Match only the covered API and options; reject incompatible uses and report the behavioral difference. Confirm whether the package stays transitively installed before claiming an installation-size benefit.
+4. Attach source location, rule version and confidence. High confidence needs a proved floor and covered usage; ambiguous wrappers, targets or semantics need manual review. This still cannot override the [recommendation policy](../recommendation-policy.md) or incomplete reference coverage.
+
+The Node [globals](https://nodejs.org/api/globals.html), [crypto](https://nodejs.org/api/crypto.html), [filesystem](https://nodejs.org/api/fs.html) and [process](https://nodejs.org/api/process.html) API histories support the version gates above. Browser behavior needs browser-specific evidence; [MDN's structured clone documentation](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm) describes non-cloneable inputs. A testing-framework replacement such as Jest or Mocha to `node:test` is **manual research**, not a package-drop rule: transforms, plugins, browser emulation, snapshots and runner configuration require a separate migration check ([Node test runner](https://nodejs.org/api/test.html)).
+
+## Next implementation step
+
+Start with a few versioned, tested rules under `packages/core/src/native-rules/`, not the entire upstream catalog. Each rule needs positive and negative fixtures: a supported call, a below-floor runtime, a disqualifying API/option, an unresolved wrapper and a browser-only target. Gate the finding on complete evidence and keep the static-only rule: never execute repository code to decide it.
