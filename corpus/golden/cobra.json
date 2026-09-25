@@ -1,0 +1,12 @@
+{
+  "repo": "cobra",
+  "sha": "adbc8813901bba65827259daa8e22ff94ec1f30e",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    }
+  ]
+}

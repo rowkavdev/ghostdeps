@@ -1,0 +1,112 @@
+{
+  "repo": "flask",
+  "sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "amqp"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "async-timeout"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "billiard"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "click-didyoumean"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "click-plugins"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "click-repl"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "gha-update"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "kombu"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pre-commit-uv"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "prompt-toolkit"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pyright"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pytz"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "redis"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "six"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sphinx-autobuild"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sphinx-tabs"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sphinxcontrib-log-cabinet"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sphinx"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "tox-uv"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "vine"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "wcwidth"
+    }
+  ]
+}
