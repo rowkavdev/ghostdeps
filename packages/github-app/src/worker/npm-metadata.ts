@@ -15,7 +15,9 @@ import { createHash } from "node:crypto";
 import {
   isPublicNpmRegistryOrigin,
   normaliseRegistryOrigin,
+  PUBLIC_NPM_REGISTRY_ORIGINS,
   type PackageMetadataProvider,
+  type PackageRegistryFacts,
   type PackageVersionRef,
 } from "@ghostdeps/core";
 
@@ -42,6 +44,10 @@ export type FetchLike = (
  */
 export interface RunMetadataProvider extends PackageMetadataProvider {
   readonly complete: boolean;
+  packageFacts?(request: {
+    ecosystem: string;
+    packages: readonly PackageVersionRef[];
+  }): Promise<readonly PackageRegistryFacts[] | undefined>;
 }
 
 /** Drop a body we won't read, so the connection can be reused (#313 review). */
@@ -88,7 +94,10 @@ export interface NpmMetadataOptions {
   readonly concurrency?: number;
   /** Largest version document read, in bytes. Default 1 MiB. */
   readonly maxResponseBytes?: number;
-  readonly registry?: string;
+  /** Positive and known-missing version cache lifetime. Default 24 h. */
+  readonly versionTtlMs?: number;
+  /** Complete answer cache lifetime. Default 1 h. */
+  readonly answerTtlMs?: number;
   readonly fetch?: FetchLike;
 }
 
@@ -145,21 +154,28 @@ function timeoutSignal(ms: number): { signal: AbortSignal; clear: () => void } {
 }
 
 class Lru<V> {
-  readonly #map = new Map<string, V>();
-  constructor(readonly max: number) {}
+  readonly #map = new Map<string, { value: V; expires: number }>();
+  constructor(
+    readonly max: number,
+    readonly ttlMs: number,
+  ) {}
   get(key: string): V | undefined {
-    if (!this.#map.has(key)) return undefined;
-    const value = this.#map.get(key)!;
+    const entry = this.#map.get(key);
+    if (!entry) return undefined;
+    if (Date.now() >= entry.expires) {
+      this.#map.delete(key);
+      return undefined;
+    }
     this.#map.delete(key);
-    this.#map.set(key, value);
-    return value;
+    this.#map.set(key, entry);
+    return entry.value;
   }
   has(key: string): boolean {
     return this.#map.has(key);
   }
   set(key: string, value: V): void {
     this.#map.delete(key);
-    this.#map.set(key, value);
+    this.#map.set(key, { value, expires: Date.now() + this.ttlMs });
     while (this.#map.size > this.max) this.#map.delete(this.#map.keys().next().value!);
   }
   get size(): number {
@@ -173,20 +189,33 @@ class Lru<V> {
  */
 export class NpmMetadataService {
   // Known size in bytes, or null for a version the registry has no size for.
+  readonly publicOrigins = PUBLIC_NPM_REGISTRY_ORIGINS;
   readonly #versions: Lru<number | null>;
+  readonly #facts: Lru<PackageRegistryFacts | null>;
   readonly #answers: Lru<Answer>;
-  readonly #options: Required<Omit<NpmMetadataOptions, "maxVersions" | "maxAnswers">>;
+  readonly #options: Required<
+    Omit<NpmMetadataOptions, "maxVersions" | "maxAnswers" | "versionTtlMs" | "answerTtlMs">
+  >;
 
   constructor(options: NpmMetadataOptions = {}) {
-    this.#versions = new Lru(Math.max(1, options.maxVersions ?? 50_000));
-    this.#answers = new Lru(Math.max(1, options.maxAnswers ?? 256));
+    this.#versions = new Lru(
+      Math.max(1, options.maxVersions ?? 50_000),
+      Math.max(1, options.versionTtlMs ?? 86_400_000),
+    );
+    this.#facts = new Lru(
+      Math.max(1, options.maxVersions ?? 50_000),
+      Math.max(1, options.versionTtlMs ?? 86_400_000),
+    );
+    this.#answers = new Lru(
+      Math.max(1, options.maxAnswers ?? 256),
+      Math.max(1, options.answerTtlMs ?? 3_600_000),
+    );
     this.#options = {
       fetchBudget: Math.max(0, options.fetchBudget ?? 300),
       requestTimeoutMs: Math.max(1, options.requestTimeoutMs ?? 3_000),
       runTimeoutMs: Math.max(1, options.runTimeoutMs ?? 8_000),
       concurrency: Math.max(1, options.concurrency ?? 8),
       maxResponseBytes: Math.max(1, options.maxResponseBytes ?? 1024 * 1024),
-      registry: (options.registry ?? NPM_REGISTRY).replace(/\/+$/, ""),
       fetch: options.fetch ?? (globalThis.fetch as unknown as FetchLike),
     };
   }
@@ -199,6 +228,52 @@ export class NpmMetadataService {
     return {
       get complete() {
         return pending === 0 && !truncated;
+      },
+      packageFacts: async ({ ecosystem, packages }) => {
+        pending++;
+        try {
+          if (ecosystem !== NPM_ECOSYSTEM || !Array.isArray(packages)) return undefined;
+          const wanted = publicRefs(packages);
+          const out: PackageRegistryFacts[] = [];
+          const seen = new Set<string>();
+          const run = timeoutSignal(this.#options.runTimeoutMs);
+          try {
+            for (const ref of wanted) {
+              if (run.signal.aborted) {
+                truncated = true;
+                break;
+              }
+              const path = registryPath(ref);
+              if (!path || seen.has(path)) continue;
+              seen.add(path);
+              const cached = this.#facts.get(path);
+              if (cached !== undefined) {
+                if (cached) out.push(cached);
+                continue;
+              }
+              if (budget <= 0) {
+                truncated = true;
+                break;
+              }
+              budget--;
+              const result = await this.#fetchFacts(ref, path, run.signal);
+              if (result === "transient") {
+                truncated = true;
+                continue;
+              }
+              this.#facts.set(path, result);
+              if (result) out.push(result);
+            }
+          } finally {
+            run.clear();
+          }
+          return out;
+        } catch {
+          truncated = true;
+          return undefined;
+        } finally {
+          pending--;
+        }
       },
       installSizes: async ({ ecosystem, packages }) => {
         pending++;
@@ -279,12 +354,79 @@ export class NpmMetadataService {
     return { answer: { basis: NPM_SIZE_BASIS, sizes }, complete };
   }
 
+  /** The bounded packument carries version timestamps and deprecation. */
+  async #fetchFacts(
+    ref: PackageVersionRef,
+    path: string,
+    deadline: AbortSignal,
+  ): Promise<PackageRegistryFacts | null | "transient"> {
+    const request = timeoutSignal(this.#options.requestTimeoutMs);
+    try {
+      const namePath = path.slice(0, path.lastIndexOf("/"));
+      const res = await this.#options.fetch(`${NPM_REGISTRY}/${namePath}`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+        redirect: "error",
+        signal: AbortSignal.any([deadline, request.signal]),
+      });
+      if (res.status === 404) {
+        await discard(res.body);
+        return null;
+      }
+      if (res.status !== 200) {
+        await discard(res.body);
+        return "transient";
+      }
+      const length = Number(res.headers.get("content-length"));
+      if (Number.isFinite(length) && length > this.#options.maxResponseBytes) {
+        await discard(res.body);
+        return null;
+      }
+      const body = await readCapped(res.body, this.#options.maxResponseBytes);
+      if (body === undefined) return null;
+      const doc: unknown = JSON.parse(body);
+      if (!doc || typeof doc !== "object") return null;
+      const pack = doc as {
+        versions?: Record<string, { deprecated?: unknown }>;
+        time?: Record<string, unknown>;
+      };
+      const version = pack.versions?.[ref.version];
+      if (!version || typeof version !== "object") return null;
+      const publishedAt = pack.time?.[ref.version];
+      const deprecated = version.deprecated;
+      const validDate =
+        typeof publishedAt === "string" &&
+        Number.isFinite(Date.parse(publishedAt)) &&
+        /^\d{4}-\d\d-\d\dT/.test(publishedAt);
+      return {
+        name: ref.name,
+        version: ref.version,
+        ...(ref.origin ? { origin: ref.origin } : {}),
+        ...(validDate
+          ? { publishedAt: { value: publishedAt, basis: "npm registry time[version]" } }
+          : {}),
+        ...(typeof deprecated === "string"
+          ? {
+              deprecated: {
+                value: deprecated.length > 0,
+                basis: "npm registry versions[version].deprecated",
+              },
+            }
+          : {}),
+      };
+    } catch {
+      return "transient";
+    } finally {
+      request.clear();
+    }
+  }
+
   /** Size in bytes, null when the registry has none (cacheable), or "transient". */
   async #fetchSize(path: string, deadline: AbortSignal): Promise<number | null | "transient"> {
     const request = timeoutSignal(this.#options.requestTimeoutMs);
     const signal = AbortSignal.any([deadline, request.signal]);
     try {
-      const res = await this.#options.fetch(`${this.#options.registry}/${path}`, {
+      const res = await this.#options.fetch(`${NPM_REGISTRY}/${path}`, {
         method: "GET",
         // No credentials of any kind: the registry is public and read-only.
         headers: { accept: "application/json" },

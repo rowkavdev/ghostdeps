@@ -31,6 +31,7 @@ import type { AnalysisJob, JobWorker } from "../jobs.js";
 import { pullRequestContext, type PullRequestClient } from "../pull-request/changes.js";
 import { isRateLimitError } from "../github/rate-limit.js";
 import type { NpmMetadataService, RunMetadataProvider } from "./npm-metadata.js";
+import type { RegistryMetadataService } from "./registry-metadata.js";
 import { isCacheable, ResultCache, resultCacheKey } from "./result-cache.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
@@ -90,7 +91,7 @@ export interface AnalysisWorkerOptions {
    * provider with its own fetch budget. Only public-registry packages are
    * ever queried (docs/security-model.md).
    */
-  readonly metadata?: NpmMetadataService;
+  readonly metadata?: NpmMetadataService | RegistryMetadataService;
   /** Checkout scan limits/exclusions. Defaults to core's. */
   readonly scan?: CheckoutScanOptions;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
