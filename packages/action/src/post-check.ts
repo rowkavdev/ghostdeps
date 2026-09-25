@@ -117,11 +117,34 @@ async function pullRequestAddedLines(
   return { added: addedLinesFromFiles(files), notes: [] };
 }
 
+/** renderCheck with a neutral fallback: malformed findings must never crash the poster. */
+function safeRender(
+  parsed: AnalysisResult,
+  added: AddedLines,
+  notes: readonly string[],
+): CheckOutput {
+  try {
+    return renderCheck(parsed, added, notes);
+  } catch {
+    return failedCheck("ghostdeps output could not be rendered");
+  }
+}
+
 function isAnalysisResult(json: unknown): json is AnalysisResult {
+  if (typeof json !== "object" || json === null) return false;
+  const findings = (json as { findings?: unknown }).findings;
+  // Check membership, not just the array: [null] must not reach the renderer.
   return (
-    typeof json === "object" &&
-    json !== null &&
-    Array.isArray((json as { findings?: unknown }).findings)
+    Array.isArray(findings) &&
+    findings.every(
+      (f) =>
+        typeof f === "object" &&
+        f !== null &&
+        typeof (f as { kind?: unknown }).kind === "string" &&
+        typeof (f as { summary?: unknown }).summary === "string" &&
+        Array.isArray((f as { evidence?: unknown }).evidence) &&
+        Array.isArray((f as { limitations?: unknown }).limitations),
+    )
   );
 }
 
@@ -190,15 +213,15 @@ export async function main(resultPath: string): Promise<number> {
     // no annotations rather than failing.
     try {
       const r = await pullRequestAddedLines(e, pr.number);
-      rendered = renderCheck(parsed, r.added, r.notes);
+      rendered = safeRender(parsed, r.added, r.notes);
     } catch (err) {
       if (!pr.fork) throw err;
-      rendered = renderCheck(parsed, new Map(), [
+      rendered = safeRender(parsed, new Map(), [
         "Could not read the PR file list, so no annotations were posted.",
       ]);
     }
   } else {
-    rendered = renderCheck(parsed, new Map(), []);
+    rendered = safeRender(parsed, new Map(), []);
   }
 
   await setOutput("conclusion", rendered.conclusion);

@@ -185,6 +185,18 @@ describe("main", () => {
     assert.equal(code, 0);
   });
 
+  it("renders neutral could-not-run checks for malformed finding objects", async () => {
+    mockFetch(() => ({ status: 201, body: { id: 1 } }));
+    for (const bad of [{ findings: [null] }, { findings: [{ kind: "unused" }] }]) {
+      calls = [];
+      const code = await main(await writeResult(bad));
+      assert.equal(code, 0);
+      const body = calls[0]?.body as { conclusion: string; output: { title: string } };
+      assert.equal(body.conclusion, "neutral");
+      assert.equal(body.output.title, "GhostDeps could not run");
+    }
+  });
+
   it("renders a neutral could-not-run check for non-AnalysisResult JSON", async () => {
     mockFetch(() => ({ status: 201, body: { id: 1 } }));
     const code = await main(await writeResult({}));
