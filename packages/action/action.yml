@@ -73,6 +73,7 @@ runs:
         ACTION_ROOT: ${{ github.action_path }}/../..
         INPUT_NODE_VERSION: ${{ inputs.node-version }}
       run: |
+        echo "root=$(realpath "$ACTION_ROOT")" >> "$GITHUB_OUTPUT"
         if hash=$(bash "${{ github.action_path }}/scripts/cache-key.sh" "$ACTION_ROOT"); then
           echo "key=ghostdeps-action-${{ runner.os }}-node${INPUT_NODE_VERSION}-${hash}" >> "$GITHUB_OUTPUT"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -88,11 +89,11 @@ runs:
       with:
         key: ${{ steps.cache-key.outputs.key }}
         path: |
-          ${{ github.action_path }}/../../node_modules
-          ${{ github.action_path }}/../../packages/*/node_modules
-          ${{ github.action_path }}/../../packages/*/dist
-          ${{ github.action_path }}/../../packages/adapters/*/node_modules
-          ${{ github.action_path }}/../../packages/adapters/*/dist
+          ${{ steps.cache-key.outputs.root }}/node_modules
+          ${{ steps.cache-key.outputs.root }}/packages/*/node_modules
+          ${{ steps.cache-key.outputs.root }}/packages/*/dist
+          ${{ steps.cache-key.outputs.root }}/packages/adapters/*/node_modules
+          ${{ steps.cache-key.outputs.root }}/packages/adapters/*/dist
     - name: Build ghostdeps
       shell: bash
       working-directory: ${{ github.action_path }}/../..
@@ -119,11 +120,11 @@ runs:
       with:
         key: ${{ steps.cache-key.outputs.key }}
         path: |
-          ${{ github.action_path }}/../../node_modules
-          ${{ github.action_path }}/../../packages/*/node_modules
-          ${{ github.action_path }}/../../packages/*/dist
-          ${{ github.action_path }}/../../packages/adapters/*/node_modules
-          ${{ github.action_path }}/../../packages/adapters/*/dist
+          ${{ steps.cache-key.outputs.root }}/node_modules
+          ${{ steps.cache-key.outputs.root }}/packages/*/node_modules
+          ${{ steps.cache-key.outputs.root }}/packages/*/dist
+          ${{ steps.cache-key.outputs.root }}/packages/adapters/*/node_modules
+          ${{ steps.cache-key.outputs.root }}/packages/adapters/*/dist
     # Inputs reach the shell ONLY through env vars below - never through
     # ${{ }} interpolation, which would execute metacharacters in them.
     - name: Scan
