@@ -89,3 +89,20 @@ The pre-cap confidence is not part of the output. This note comes off with
 both caps in the lift PR.
 `summariseFindings` returns counts by kind, rule and confidence for check-run
 summaries.
+
+## Health observations (#61)
+
+Core consumes optional `packageFacts` from the caller's cached metadata provider
+at the analysis boundary. The policy and adapters never fetch metadata. Only
+exact locked direct dependencies with a single known registry origin and
+version are queried; the provider may omit any package or field. Missing,
+malformed, conflicting or timed-out facts produce no signal and do not block
+the scan. In PR mode, only added or changed dependencies get health observations.
+
+Explicit `deprecated: true` and repo-host-sourced `repositoryArchived: true`
+produce separate factual `info` findings with their source basis. A
+`publishedAt` date reports **when the locked version was published**, not the
+last release of the project. An old locked version does not mean the project
+is stale. No release cadence or "newer version available" claim is made from
+these fields. False or absent flags do not imply a positive health claim. None
+of these observations recommends removing a dependency.
