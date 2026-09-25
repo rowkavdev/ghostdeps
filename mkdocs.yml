@@ -10,6 +10,7 @@ theme:
 nav:
   - Home: index.md
   - Use GhostDeps:
+      - Interpreting results: interpreting-results.md
       - GitHub App: github-app.md
       - Self-hosting: deployment.md
       - CLI: cli.md

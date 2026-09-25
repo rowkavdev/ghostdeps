@@ -4,6 +4,7 @@
 
 GhostDeps is in early development. Features and language coverage are still changing. See the [GitHub App behaviour](github-app.md) and [CLI status](cli.md) before depending on a finding in CI. The GitHub App reports through checks and does not block merges; the CLI can opt into a failure threshold.
 
+- [Interpreting results](interpreting-results.md)
 - [Self-host the GitHub App](deployment.md)
 - [How the analysis works](architecture.md)
 - [Security and limits](security-model.md)
