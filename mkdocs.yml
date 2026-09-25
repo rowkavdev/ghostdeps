@@ -1,0 +1,34 @@
+site_name: GhostDeps
+site_description: Evidence-first dependency analysis for GitHub and the command line
+repo_url: https://github.com/rowkavdev/ghostdeps
+repo_name: rowkavdev/ghostdeps
+docs_dir: docs
+site_dir: site
+strict: true
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Use GhostDeps:
+      - GitHub App: github-app.md
+      - CLI: cli.md
+      - Output formats: output-formats.md
+  - How it works:
+      - Architecture: architecture.md
+      - Analysis engine: analysis-engine.md
+      - Repository scanner: repository-scanner.md
+      - Adapters: adapters.md
+      - Recommendation policy: recommendation-policy.md
+      - Transitive impact: transitive-impact.md
+      - GitHub API limits: github-api-limits.md
+      - Security model: security-model.md
+  - Build and contribute:
+      - Development: development.md
+      - Documentation site: site.md
+      - Contributing adapters: contributing-adapters.md
+      - Decisions:
+          - Index: adr/index.md
+          - Core language: adr/0001-core-language.md
+          - Adapter interface: adr/0002-adapter-interface.md
+          - GitHub App architecture: adr/0003-github-app-architecture.md
+          - Analysis sandboxing: adr/0004-analysis-sandboxing.md

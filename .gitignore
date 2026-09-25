@@ -11,3 +11,7 @@ Thumbs.db
 .corpus-cache/
 perf/.cache/
 perf/results/raw/
+
+# Local documentation build
+site/
+.venv-docs/
