@@ -20,6 +20,7 @@ nav:
       - Architecture: architecture.md
       - Analysis engine: analysis-engine.md
       - Repository scanner: repository-scanner.md
+      - Scan scope proposal: scan-scope-design.md
       - Adapters: adapters.md
       - Research:
           - Landscape: research/landscape.md
