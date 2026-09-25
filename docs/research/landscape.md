@@ -4,14 +4,14 @@ Research for [#21](https://github.com/rowkavdev/ghostdeps/issues/21). Based on t
 
 ## The landscape
 
-| Question | Specialist tools | GhostDeps boundary |
-| --- | --- | --- |
+| Question                                 | Specialist tools                                                                                                                                                         | GhostDeps boundary                                                                                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Which declared packages lack references? | [Knip](js-unused-dependencies.md), [cargo-machete/udeps](rust-unused-dependencies.md), [deptry/FawltyDeps](python-dependency-tools.md), [Go tooling](go-module-tools.md) | Static evidence across supported ecosystems, but an absence becomes an `unused` verdict only when reference analysis is complete. Today Rust, Python and Go do not claim that completeness. |
-| What does a package cost? | [Bundlephobia and Packagephobia](package-cost.md) | Lockfile-derived transitive/exclusive counts with completeness limits; optional npm install footprint, not browser bundle size. |
-| What components exist? | [Syft and cdxgen](sbom-tools.md) | No SBOM import/export. Inventory does not show whether a dependency is used. |
-| What connects to what? | [deps.dev and module graph tools](dependency-graph-tools.md) | Repository-specific lockfile graph and per-adapter source references, not a generic public-package resolution. |
-| What changed in a PR? | [GitHub Dependency Review API](github-dependency-review.md) | Own static compare/manifest diff with conservative fallback; no requirement for GitHub Advanced Security. |
-| Where are results shown? | [SARIF/code scanning](sarif.md) | GitHub Checks first, CLI human/JSON second; no SARIF today. |
+| What does a package cost?                | [Bundlephobia and Packagephobia](package-cost.md)                                                                                                                        | Lockfile-derived transitive/exclusive counts with completeness limits; optional npm install footprint, not browser bundle size.                                                             |
+| What components exist?                   | [Syft and cdxgen](sbom-tools.md)                                                                                                                                         | No SBOM import/export. Inventory does not show whether a dependency is used.                                                                                                                |
+| What connects to what?                   | [deps.dev and module graph tools](dependency-graph-tools.md)                                                                                                             | Repository-specific lockfile graph and per-adapter source references, not a generic public-package resolution.                                                                              |
+| What changed in a PR?                    | [GitHub Dependency Review API](github-dependency-review.md)                                                                                                              | Own static compare/manifest diff with conservative fallback; no requirement for GitHub Advanced Security.                                                                                   |
+| Where are results shown?                 | [SARIF/code scanning](sarif.md)                                                                                                                                          | GitHub Checks first, CLI human/JSON second; no SARIF today.                                                                                                                                 |
 
 ## What is distinct today
 
