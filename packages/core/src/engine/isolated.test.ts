@@ -111,10 +111,56 @@ describe("worker-thread adapter isolation (#90)", () => {
         lines.some((line) => line === "chatty stdout: chatty detection log line"),
         `stdout line missing from debugLog: ${JSON.stringify(lines)}`,
       );
+      // Emitted at module evaluation, before the worker's `loaded` message:
+      // must be buffered and labeled with the ecosystem, never the module
+      // URL (main CI run 36124774990 flaked on the racy label).
+      assert.ok(
+        lines.some((line) => line === "chatty stdout: chatty module load line"),
+        `module-load line missing or mislabeled in debugLog: ${JSON.stringify(lines)}`,
+      );
+      assert.ok(
+        !lines.some((line) => line.includes(".mjs stdout:")),
+        `a line was labeled with the module URL: ${JSON.stringify(lines)}`,
+      );
       assert.ok(
         lines.some((line) => line === "chatty stderr: chatty detection error line"),
         `stderr line missing from debugLog: ${JSON.stringify(lines)}`,
       );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("drops and counts pre-load output past the buffer cap, never mislabeled", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const lines: string[] = [];
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("floody.mjs")],
+        adapterTimeoutMs: 10_000,
+        debugLog: (line) => lines.push(line),
+      });
+      assert.equal(result.detected[0]?.ecosystem, "floody");
+      // floody.mjs writes 150 lines at module evaluation. Stream delivery
+      // straddles the `loaded` message at an unpredictable point, so the
+      // split between buffered-then-flushed and delivered-live varies - but
+      // every line must carry the ecosystem label, overflow must be dropped
+      // and counted, and the count must reconcile: present + dropped = 150.
+      assert.ok(lines.some((line) => line === "floody stdout: flood line 0"));
+      assert.ok(
+        !lines.some((line) => line.includes(".mjs stdout:")),
+        `a line was labeled with the module URL: ${JSON.stringify(lines)}`,
+      );
+      const present = lines.filter((line) => /^floody stdout: flood line \d+$/.test(line)).length;
+      const dropNote = lines.find((line) =>
+        line.includes("pre-load adapter output line(s) dropped"),
+      );
+      const dropped = dropNote === undefined ? 0 : Number(/: (\d+) pre-load/.exec(dropNote)?.[1]);
+      assert.ok(
+        dropNote === undefined || dropNote.startsWith("floody debugLog: "),
+        `drop note mislabeled: ${dropNote}`,
+      );
+      assert.equal(present + dropped, 150, `present ${present} + dropped ${dropped} != 150`);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

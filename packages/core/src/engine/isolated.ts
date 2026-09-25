@@ -336,6 +336,40 @@ export function runAdapterIsolated(
     let stage = "run";
     let settled = false;
 
+    // Worker stdout/stderr data events are not ordered against the worker's
+    // own messages, so an adapter's early output can arrive before the
+    // `loaded` message that names the ecosystem. Buffer those lines and
+    // flush them once the label is known (or with the specifier label if
+    // the worker never loads). Past the cap, pre-load lines are dropped and
+    // counted - emitting them immediately would label them with the module
+    // specifier, which is exactly the mislabeling this buffer exists to
+    // prevent; the flush reports the drop count under the right label.
+    const PRELOAD_LABEL_CAP = 100;
+    let ecosystemKnown = false;
+    let preLoad: string[] = [];
+    let droppedPreLoad = 0;
+    const emitLog = (tagged: string): void => {
+      if (debugLog === undefined) return;
+      if (ecosystemKnown) {
+        debugLog(`${ecosystem} ${tagged}`);
+      } else if (preLoad.length < PRELOAD_LABEL_CAP) {
+        preLoad.push(tagged);
+      } else {
+        droppedPreLoad += 1;
+      }
+    };
+    const flushPreLoad = (): void => {
+      if (debugLog === undefined) return;
+      for (const tagged of preLoad) debugLog(`${ecosystem} ${tagged}`);
+      preLoad = [];
+      if (droppedPreLoad > 0) {
+        debugLog(
+          `${ecosystem} debugLog: ${droppedPreLoad} pre-load adapter output line(s) dropped (buffer cap ${PRELOAD_LABEL_CAP})`,
+        );
+        droppedPreLoad = 0;
+      }
+    };
+
     const worker = new Worker(new URL("./adapter-worker.js", import.meta.url), {
       workerData: {
         specifier,
@@ -364,10 +398,10 @@ export function runAdapterIsolated(
           pending += chunk.toString("utf8");
           const lines = pending.split("\n");
           pending = lines.pop() ?? "";
-          for (const line of lines) debugLog(`${ecosystem} ${tag}: ${line}`);
+          for (const line of lines) emitLog(`${tag}: ${line}`);
         });
         stream?.on("end", () => {
-          if (pending.length > 0) debugLog(`${ecosystem} ${tag}: ${pending}`);
+          if (pending.length > 0) emitLog(`${tag}: ${pending}`);
         });
       }
     } else {
@@ -420,6 +454,8 @@ export function runAdapterIsolated(
     worker.on("message", (message: WorkerMessage) => {
       if (message.type === "loaded" && message.ecosystem !== undefined) {
         ecosystem = message.ecosystem;
+        ecosystemKnown = true;
+        flushPreLoad();
       } else if (message.type === "stage" && message.stage !== undefined) {
         stage = message.stage;
         armWatchdog();
@@ -437,6 +473,9 @@ export function runAdapterIsolated(
       finish(failed(error));
     });
     worker.on("exit", (code: number) => {
+      // Streams close before exit: anything still buffered never named its
+      // ecosystem, so it goes out under the specifier label.
+      flushPreLoad();
       if (settled) return;
       if (code === 0 && completed !== undefined) {
         finish(completed);
