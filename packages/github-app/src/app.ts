@@ -9,7 +9,7 @@ import {
   sourcePrTriggerFromEnv,
 } from "./config.js";
 import { changedFiles } from "./events/changed-files.js";
-import { checkName } from "./checks/render.js";
+import { checkName } from "@ghostdeps/checks-renderer";
 import {
   analysedEvents,
   decide,

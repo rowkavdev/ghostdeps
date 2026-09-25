@@ -17,6 +17,7 @@
     "start": "probot run ./dist/index.js"
   },
   "dependencies": {
+    "@ghostdeps/checks-renderer": "workspace:*",
     "@ghostdeps/core": "workspace:*",
     "@ghostdeps/go": "workspace:*",
     "@ghostdeps/javascript-typescript": "workspace:*",

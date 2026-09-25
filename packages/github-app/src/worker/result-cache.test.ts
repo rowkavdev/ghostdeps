@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AnalysisResult } from "@ghostdeps/core";
-import type { CheckOutput } from "../checks/render.js";
+import type { CheckOutput } from "@ghostdeps/checks-renderer";
 import type { AnalysisJob } from "../jobs.js";
 import {
   isCacheable,

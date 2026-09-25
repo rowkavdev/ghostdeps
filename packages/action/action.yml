@@ -1,0 +1,105 @@
+name: GhostDeps
+description: >-
+  Advisory dependency analysis (unused dependencies, native replacements,
+  duplicate capability) as a check run. Wraps the ghostdeps CLI in your own
+  Actions runner - no external service, nothing leaves the job.
+author: rowkavdev
+branding:
+  icon: package
+  color: purple
+inputs:
+  path:
+    description: Directory to scan, relative to the workspace.
+    required: false
+    default: "."
+  fail-on:
+    description: >-
+      Fail the step when any finding reaches this severity (critical, high,
+      medium, low, info). Empty means advisory-only: the step never fails on
+      findings, and the check run is still posted.
+    required: false
+    default: ""
+  severity:
+    description: Only show findings at or above this severity.
+    required: false
+    default: ""
+  disable-rule:
+    description: Comma-separated rule ids to turn off for the run.
+    required: false
+    default: ""
+  allowlist:
+    description: Comma-separated ecosystem:name entries to mark as expected tooling.
+    required: false
+    default: ""
+  check-name:
+    description: Name of the check run to create.
+    required: false
+    default: ghostdeps
+  node-version:
+    description: Node.js version to run the analysis with (ghostdeps requires >= 22).
+    required: false
+    default: "22"
+  github-token:
+    description: Token used to create the check run.
+    required: false
+    default: ${{ github.token }}
+outputs:
+  conclusion:
+    description: Check conclusion that was posted (success or neutral).
+    value: ${{ steps.post.outputs.conclusion }}
+  scan-exit:
+    description: Exit code of the ghostdeps CLI (0 = analysed, 1 = fail-on threshold hit).
+    value: ${{ steps.scan.outputs.exit }}
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+    - name: Build ghostdeps
+      shell: bash
+      working-directory: ${{ github.action_path }}/../..
+      run: |
+        pnpm install --frozen-lockfile
+        pnpm --filter @ghostdeps/cli... --filter @ghostdeps/action... build
+    - name: Scan
+      id: scan
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_ROOT: ${{ github.action_path }}/../..
+        RESULT: ${{ runner.temp }}/ghostdeps-result.json
+      run: |
+        args=(scan --json "${{ inputs.path }}")
+        if [ -n "${{ inputs.severity }}" ]; then args+=(--severity "${{ inputs.severity }}"); fi
+        if [ -n "${{ inputs.fail-on }}" ]; then args+=(--fail-on "${{ inputs.fail-on }}"); fi
+        IFS=',' read -ra rules <<< "${{ inputs.disable-rule }}"
+        for r in "${rules[@]}"; do [ -n "$r" ] && args+=(--disable-rule "$r"); done
+        IFS=',' read -ra allow <<< "${{ inputs.allowlist }}"
+        for a in "${allow[@]}"; do [ -n "$a" ] && args+=(--allowlist "$a"); done
+        set +e
+        node "$ACTION_ROOT/packages/cli/dist/main.js" "${args[@]}" > "$RESULT"
+        echo "exit=$?" >> "$GITHUB_OUTPUT"
+        exit 0
+    - name: Post check run
+      id: post
+      if: always()
+      shell: bash
+      env:
+        GHOSTDEPS_GITHUB_TOKEN: ${{ inputs.github-token }}
+        GHOSTDEPS_CHECK_NAME: ${{ inputs.check-name }}
+      run: node "${{ github.action_path }}/dist/post-check.js" "${{ runner.temp }}/ghostdeps-result.json"
+    - name: Enforce --fail-on
+      if: always()
+      shell: bash
+      run: |
+        code="${{ steps.scan.outputs.exit }}"
+        if [ "$code" = "1" ] && [ -n "${{ inputs.fail-on }}" ]; then
+          echo "ghostdeps: findings at or above '${{ inputs.fail-on }}' (--fail-on)"
+          exit 1
+        fi
+        if [ "$code" != "0" ]; then
+          echo "::warning::ghostdeps exited $code - analysis did not complete; see the check run"
+        fi
+        exit 0

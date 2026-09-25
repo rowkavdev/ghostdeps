@@ -4,8 +4,14 @@
  * Two writes per analysis: create in_progress, then complete.
  */
 import type { AnalysisResult } from "@ghostdeps/core";
-import type { AddedLines } from "./diff.js";
-import { busyCheck, checkName, failedCheck, renderCheck, type CheckOutput } from "./render.js";
+import type { AddedLines } from "@ghostdeps/checks-renderer";
+import {
+  busyCheck,
+  checkName,
+  failedCheck,
+  renderCheck,
+  type CheckOutput,
+} from "@ghostdeps/checks-renderer";
 
 /** external_id prefix for runs that only say the app was too busy. */
 export const BUSY_PREFIX = "busy:";

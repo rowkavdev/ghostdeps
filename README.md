@@ -35,6 +35,7 @@ Ecosystem support lands incrementally and is never advertised before it works:
 
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security-model.md)
+- [GitHub Action](docs/github-action.md)
 - [Architecture Decision Records](docs/adr/)
 - [Contributing](CONTRIBUTING.md)
 

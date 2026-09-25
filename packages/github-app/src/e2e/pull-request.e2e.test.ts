@@ -19,7 +19,7 @@ import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import nock from "nock";
 import { createNodeMiddleware, Probot } from "probot";
 import { createGhostDepsApp } from "../app.js";
-import { checkName } from "../checks/render.js";
+import { checkName } from "@ghostdeps/checks-renderer";
 import { tarGz, type TarEntry } from "../worker/test-tar.js";
 
 const SECRET = "test-only-webhook-secret";
