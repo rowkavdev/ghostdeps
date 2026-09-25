@@ -4,7 +4,7 @@
 - Date: 2026-09-25
 - Scope: Human-in-the-loop removal on an existing PR branch, not automatic remediation or merging
 
-Rowan proposed the PR comment and maintainer-ticked commit flow at 21:11 BST on 2026-09-25, then explicitly directed work on that goal at 21:12 BST. The architecture lead accepted this App/Action design on [#387](https://github.com/rowkavdev/ghostdeps/pull/387) after review. Acceptance of this delivery design does **not** flip [ADR 0005](adr/0005-fix-generation-and-verification.md) to Accepted. Core eligibility/preview may proceed under the owner directive; user-facing comment and apply rollout still waits for that ADR's Accepted flip and the slice-2 evidence gates.
+Rowan proposed the PR comment and maintainer-ticked commit flow at 21:11 BST on 2026-09-25, then explicitly directed work on that goal at 21:12 BST. The architecture lead accepted this App/Action design on [#387](https://github.com/rowkavdev/ghostdeps/pull/387) after review. Acceptance of this delivery design does **not** flip [ADR 0005](adr/0005-fix-generation-and-verification.md) to Accepted. The architecture lead permits only an inert, diff-only core eligibility/preview slice while ADR 0005 is Proposed, as a sequencing interpretation of Rowan's goal directive, **not** an owner waiver of ADR acceptance. User-facing comment and apply rollout still waits for that ADR's Accepted flip and the slice-2 evidence gates.
 
 ## Decision
 
@@ -40,7 +40,7 @@ Permission delta for opt-in App installs: `issues: write` to create/edit the sin
 ## Slices and acceptance
 
 1. **Design gate (met on #387):** reviewer-1 checked the proposal and the architecture lead accepted the App/Action boundary, first ecosystem, same-repo-first fork policy and signed envelope/consumer-App commit model. ADR 0005 remains Proposed; its Accepted flip is a separate owner decision.
-2. **Core eligibility/preview:** ADR 0005's versioned finding key, independent `FixEligibilityEvidence`, exact declarative edit validation, static re-analysis, supported npm manifest/lockfile consistency and dry-run CLI, with corpus/adversarial fixtures. No comment and no write permission.
+2. **Core eligibility/preview (inert, diff-only while ADR 0005 is Proposed):** ADR 0005's versioned finding key, independent `FixEligibilityEvidence`, exact declarative edit validation, static re-analysis, supported npm manifest/lockfile consistency and dry-run CLI, with corpus/adversarial fixtures. No comment and no write permission.
 3. **Comment-only App (gated on ADR 0005 Accepted and slice-2 evidence):** same-result renderer, one-comment discovery/update, bounded parser, editor permission checks, stale re-scan and refusal behaviour. Permission/manifest/docs/security changes land together and reapproval is documented. No dispatch until safe workflow available.
 4. **Opt-in same-repo apply Action (gated on ADR 0005 Accepted and slice-2 evidence):** signed dispatch, trusted default-branch runner, pinned toolchain, head compare-and-swap, lockfile regeneration and one-commit batch. Dedicated tests for replay, crashes and every refusal path. Fork mode remains disabled until its separate live capability and security gate passes.
 5. **Fork gate and other ecosystems:** prove the exact cross-fork write path or keep diff-only. Add pnpm/yarn and other ecosystems only with package-manager-specific lockfile, workspace and runner threat tests.
