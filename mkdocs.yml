@@ -30,6 +30,7 @@ nav:
           - SBOM tools: research/sbom-tools.md
           - Dependency graphs: research/dependency-graph-tools.md
           - GitHub Dependency Review API: research/github-dependency-review.md
+          - SARIF and code scanning: research/sarif.md
       - Recommendation policy: recommendation-policy.md
       - Transitive impact: transitive-impact.md
       - GitHub API limits: github-api-limits.md
