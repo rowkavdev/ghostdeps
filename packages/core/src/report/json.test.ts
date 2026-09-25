@@ -73,6 +73,31 @@ describe("renderJsonReport", () => {
     assertGolden("js-basic-unused.json", out);
   });
 
+  it("preserves a core health-fact marker in deterministic schema-1 JSON", () => {
+    const fact = {
+      ...basicUnused.findings[0]!,
+      kind: "info" as const,
+      rule: "locked-version-published",
+      healthFact: true as const,
+      source: { kind: "registry" as const, basis: "npm registry time[version]" },
+      declaringManifest: { ecosystem: "javascript-typescript", path: "package.json" },
+      dependency: "left-pad",
+      summary: "left-pad locked version 1.3.0 published 2022-01-02T00:00:00Z",
+      evidence: [
+        { kind: "locked-version-published", statement: "source: npm registry time[version]" },
+      ],
+    };
+    const result: AnalysisResult = { ...basicUnused, findings: [fact] };
+    const a = renderJsonReport(result);
+    const b = renderJsonReport({
+      ...result,
+      findings: [{ ...fact, evidence: [...fact.evidence] }],
+    });
+    assert.equal(a, b);
+    assert.deepEqual(JSON.parse(a).findings, [fact]);
+    assert.equal(JSON.parse(a).schemaVersion, 1);
+  });
+
   it("round-trips to the same data", () => {
     const parsed = JSON.parse(renderJsonReport(basicUnused)) as AnalysisResult;
     assert.deepEqual(parsed, basicUnused);

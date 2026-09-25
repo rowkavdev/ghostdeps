@@ -51,11 +51,11 @@ export async function runScan(
         ? result
         : { ...result, findings: result.findings.filter((f) => atOrAboveSeverity(f, min)) };
     io.stdout(renderRepositorySummary(shown));
-    // Awareness findings never count (#234): hiding them under the filter
-    // must not read as findings swept out of sight either.
+    // Non-capping awareness and source-backed facts do not count as hidden
+    // findings; presentation of facts gets its own follow-up (#350).
     const hidden =
-      result.findings.filter((f) => findingGroup(f) !== "awareness").length -
-      shown.findings.filter((f) => findingGroup(f) !== "awareness").length;
+      result.findings.filter((f) => counted(f)).length -
+      shown.findings.filter((f) => counted(f)).length;
     if (hidden > 0) {
       // Filtering must never read as a clean "Findings: none" all-clear.
       io.stdout(
@@ -64,10 +64,10 @@ export async function runScan(
     }
   }
   const failOn = config.failOn;
-  // Awareness findings never affect the exit code (#234).
+  // Awareness and factual health observations never affect the exit code.
   if (
     failOn !== undefined &&
-    result.findings.some((f) => findingGroup(f) !== "awareness" && atOrAboveSeverity(f, failOn))
+    result.findings.some((f) => counted(f) && atOrAboveSeverity(f, failOn))
   ) {
     return EXIT_THRESHOLD;
   }
@@ -80,4 +80,10 @@ async function assertDirectory(path: string): Promise<void> {
   if (st === undefined || !st.isDirectory()) {
     throw new Error(`path is not a directory: ${path}`);
   }
+}
+
+/** Gating/count contract: neither awareness nor health facts are verdicts. */
+function counted(finding: AnalysisResult["findings"][number]): boolean {
+  const group = findingGroup(finding);
+  return group !== "awareness" && group !== "fact";
 }

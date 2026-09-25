@@ -416,6 +416,7 @@ export async function assembleAnalysisResult(
     const finding: Finding = { ...findings[i]! };
     delete finding.awareness;
     delete finding.adapterNote;
+    delete finding.healthFact;
     findings[i] = { ...finding, severity: severityOf(finding) };
   }
 

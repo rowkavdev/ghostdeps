@@ -74,3 +74,22 @@ describe("findingGroup (#239)", () => {
     }
   });
 });
+
+describe("health fact grouping (#350)", () => {
+  it("a marked info health observation is a distinct non-capping fact", () => {
+    assert.equal(findingGroup(finding("info", { healthFact: true })), "fact");
+    assert.equal(
+      findingGroup(finding("info", { healthFact: true, awareness: true, adapterNote: true })),
+      "fact",
+    );
+  });
+  it("unmarked or forged non-true marker remains incomplete", () => {
+    assert.equal(findingGroup(finding("info", { rule: "locked-version-published" })), "incomplete");
+    for (const odd of [false, "true", 1, null, {}] as unknown[]) {
+      assert.equal(findingGroup({ kind: "info", healthFact: odd as true }), "incomplete");
+    }
+  });
+  it("non-info is a verdict even with a marker", () => {
+    assert.equal(findingGroup(finding("unused", { healthFact: true })), "verdict");
+  });
+});

@@ -25,16 +25,25 @@ function basis<T>(fact: MetadataFact<T> | undefined): string | undefined {
 }
 
 /** Only explicitly true signals. false and absent facts say nothing about risk. */
-function signals(name: string, facts: PackageRegistryFacts): Finding[] {
+function signals(dependency: Dependency, facts: PackageRegistryFacts): Finding[] {
+  const name = dependency.name;
   const result: Finding[] = [];
-  const add = (rule: string, summary: string, source: string): void => {
+  const add = (
+    rule: string,
+    summary: string,
+    basis: string,
+    kind: "registry" | "repository-host",
+  ): void => {
     result.push({
       kind: "info",
+      healthFact: true,
+      source: { kind, basis },
+      declaringManifest: { ecosystem: dependency.project.ecosystem, path: dependency.declaredIn },
       rule,
       dependency: name,
       summary,
       recommendation: "Review the source-backed status before changing this dependency.",
-      evidence: [{ kind: rule, statement: `${summary} (source: ${source})` }],
+      evidence: [{ kind: rule, statement: `${summary} (source: ${basis})` }],
       confidence: "high",
       limitations: [],
       affectedFiles: [],
@@ -42,14 +51,19 @@ function signals(name: string, facts: PackageRegistryFacts): Finding[] {
   };
   const deprecatedSource = basis(facts.deprecated);
   if (facts.deprecated?.value === true && deprecatedSource)
-    add("registry-deprecated", `${name} is marked deprecated`, deprecatedSource);
+    add("registry-deprecated", `${name} is marked deprecated`, deprecatedSource, "registry");
   const archivedSource = basis(facts.repositoryArchived);
   if (
     facts.repositoryArchived?.value === true &&
     facts.repositoryArchived.sourceKind === "repository-host" &&
     archivedSource
   )
-    add("repository-archived", `${name}'s repository is archived`, archivedSource);
+    add(
+      "repository-archived",
+      `${name}'s repository is archived`,
+      archivedSource,
+      "repository-host",
+    );
   // publishedAt names only the locked version, never project staleness.
   const publishedSource = basis(facts.publishedAt);
   const date = facts.publishedAt?.value;
@@ -63,6 +77,7 @@ function signals(name: string, facts: PackageRegistryFacts): Finding[] {
       "locked-version-published",
       `${name} locked version ${facts.version} published ${date}`,
       publishedSource,
+      "registry",
     );
   }
   // No "last release", "newer available", or cadence from this field.
@@ -85,7 +100,8 @@ export async function healthFindings(
     graphsByProject.set(id, list);
   }
   const requested = new Map<string, Map<string, PackageVersionRef>>();
-  const targets: { name: string; ecosystem: string; version: string; origin: string }[] = [];
+  const targets: { dependency: Dependency; ecosystem: string; version: string; origin: string }[] =
+    [];
   for (const dep of dependencies) {
     if (dep.specifier && dep.specifier.type !== "registry") continue;
     // Only a single unambiguous public-registry origin and locked version.
@@ -105,7 +121,7 @@ export async function healthFindings(
     const byVersion = requested.get(ecosystem) ?? new Map<string, PackageVersionRef>();
     byVersion.set(key(dep.name, version), { name: dep.name, version, origin: origin! });
     requested.set(ecosystem, byVersion);
-    targets.push({ name: dep.name, ecosystem, version, origin: origin! });
+    targets.push({ dependency: dep, ecosystem, version, origin: origin! });
   }
   const answers = new Map<string, Map<string, PackageRegistryFacts>>();
   for (const ecosystem of [...requested.keys()].sort()) {
@@ -147,8 +163,8 @@ export async function healthFindings(
       if (timer !== undefined) clearTimeout(timer);
     }
   }
-  return targets.flatMap(({ name, ecosystem, version, origin }) => {
-    const fact = answers.get(ecosystem)?.get(key(name, version));
-    return fact && normaliseRegistryOrigin(fact.origin) === origin ? signals(name, fact) : [];
+  return targets.flatMap(({ dependency, ecosystem, version, origin }) => {
+    const fact = answers.get(ecosystem)?.get(key(dependency.name, version));
+    return fact && normaliseRegistryOrigin(fact.origin) === origin ? signals(dependency, fact) : [];
   });
 }
