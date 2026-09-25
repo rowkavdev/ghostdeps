@@ -46,6 +46,48 @@ describe("worker-thread adapter isolation (#90)", () => {
     }
   });
 
+  it("salvages settled usage facts but never absence verdicts after usage timeout (#331)", async () => {
+    const { dir, handle } = await fixtureRepo();
+    try {
+      const result = await analyseRepositoryIsolated(handle, {
+        adapters: [fixture("partial-usage.mjs")],
+        adapterTimeoutMs: 1_000,
+        usageTimeoutMs: 250,
+        usageConcurrency: 1,
+        recommend: ({ dependencies, usageAnalysedEcosystems, referenceAnalysedEcosystems }) => {
+          assert.equal(usageAnalysedEcosystems.has("partial-fixture"), false);
+          assert.equal(referenceAnalysedEcosystems.has("partial-fixture"), false);
+          return dependencies.map((dep) => ({
+            kind: "unused" as const,
+            dependency: dep.name,
+            summary: `${dep.name} absent`,
+            recommendation: "Remove it.",
+            evidence: [{ kind: "no-import-found", statement: "no imports" }],
+            confidence: "high" as const,
+            limitations: [],
+            affectedFiles: [dep.declaredIn],
+          }));
+        },
+      });
+      assert.deepEqual(
+        result.usages.map((u) => u.dependency),
+        ["used"],
+      );
+      assert.equal(result.dependencies.length, 2);
+      assert.ok(
+        result.findings.some(
+          (f) => f.summary.includes("usage analysis timed out") && findingGroup(f) === "incomplete",
+        ),
+      );
+      assert.equal(
+        result.findings.some((f) => f.kind === "unused"),
+        false,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("terminates a synchronous busy-loop adapter at the stage budget and reports it", async () => {
     const { dir, handle } = await fixtureRepo();
     try {

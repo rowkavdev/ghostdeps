@@ -59,6 +59,8 @@ export { detectionConfidence, DEFAULT_DETECTION_THRESHOLD };
  * preemptively with terminate().
  */
 export const DEFAULT_ADAPTER_TIMEOUT_MS = 60_000;
+/** Usage analysis at large-repo scale needs a separate wall-clock budget (#331). */
+export const DEFAULT_USAGE_TIMEOUT_MS = 300_000;
 
 /** Maximum concurrent findUsage calls per adapter. */
 export const DEFAULT_USAGE_CONCURRENCY = 8;
@@ -95,6 +97,8 @@ export interface AnalyseOptions {
   network?: NetworkPolicy;
   detectionThreshold?: number;
   adapterTimeoutMs?: number;
+  /** Dedicated usage-stage budget; defaults to five minutes (or adapterTimeoutMs when overridden). */
+  usageTimeoutMs?: number;
   /** Maximum concurrent findUsage calls per adapter. */
   usageConcurrency?: number;
   /** Omit to emit facts only (no recommendation findings). */
@@ -292,6 +296,7 @@ export async function assembleAnalysisResult(
   const surface: AnalysisResult["surface"] = [];
   const usageAnalysedEcosystems = new Set<string>();
   const referenceAnalysedEcosystems = new Set<string>();
+  const partialUsageEcosystems = new Set<string>();
 
   findings.push(...(context.notes ?? []));
   for (const outcome of outcomes) {
@@ -303,6 +308,7 @@ export async function assembleAnalysisResult(
     dependencies.push(...outcome.dependencies);
     usages.push(...outcome.usages);
     graphs.push(...outcome.graphs);
+    if (outcome.usageIncomplete) partialUsageEcosystems.add(outcome.ecosystem);
     if (outcome.usageAnalysed) usageAnalysedEcosystems.add(outcome.ecosystem);
     if (outcome.usageAnalysed && outcome.referenceAnalysed === true && !scanIncomplete) {
       referenceAnalysedEcosystems.add(outcome.ecosystem);
@@ -366,6 +372,16 @@ export async function assembleAnalysisResult(
         limitations: ["Findings other than facts and adapter notes are missing."],
         affectedFiles: [],
       });
+    }
+  }
+
+  if (partialUsageEcosystems.size > 0) {
+    // Do not allow even a caller-supplied policy to turn missing references
+    // in partial usage into an absence verdict. Positive usage facts survive.
+    // Names may collide across projects/ecosystems; fail closed rather than
+    // guessing which same-name dependency a policy finding refers to.
+    for (let i = findings.length - 1; i >= 0; i--) {
+      if (ABSENCE_KINDS.has(findings[i]!.kind)) findings.splice(i, 1);
     }
   }
 
@@ -510,6 +526,8 @@ export async function analyseRepository(
   const threshold = options.detectionThreshold ?? DEFAULT_DETECTION_THRESHOLD;
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
+  const usageTimeoutMs =
+    options.usageTimeoutMs ?? options.adapterTimeoutMs ?? DEFAULT_USAGE_TIMEOUT_MS;
   const sourceChanges = boundPullRequestSourceChanges(options);
 
   // One set per run: each unsniffed file is noted once, capped run-wide.
@@ -526,6 +544,8 @@ export async function analyseRepository(
         undefined,
         sourceChanges.changes,
         unsniffed,
+        undefined,
+        usageTimeoutMs,
       ).catch((error: unknown): AdapterOutcome => ({
         ecosystem: adapter.ecosystem,
         dependencies: [],

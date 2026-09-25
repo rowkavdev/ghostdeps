@@ -31,6 +31,7 @@ export interface AdapterWorkerData {
   network: NetworkPolicy;
   detectionThreshold: number;
   adapterTimeoutMs: number;
+  usageTimeoutMs?: number;
   usageConcurrency: number;
   /** PR mode (#101): bounded by the main thread before cloning. */
   pullRequestSourceChanges?: SourceLineChanges[];
@@ -78,6 +79,11 @@ async function main(): Promise<void> {
     data.pullRequestSourceChanges,
     undefined,
     (partial) => port.postMessage({ type: "partial", outcome: partial }),
+    data.usageTimeoutMs ?? data.adapterTimeoutMs,
+    (usages) => {
+      if (usages.length > 0) port.postMessage({ type: "usage-progress", usages });
+    },
+    (partial) => port.postMessage({ type: "usage-start", outcome: partial }),
   );
   port.postMessage({ type: "outcome", outcome });
 }

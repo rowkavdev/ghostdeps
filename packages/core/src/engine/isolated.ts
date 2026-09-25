@@ -32,6 +32,7 @@ import {
   boundPullRequestSourceChanges,
   DEFAULT_ADAPTER_TIMEOUT_MS,
   DEFAULT_USAGE_CONCURRENCY,
+  DEFAULT_USAGE_TIMEOUT_MS,
   type RecommendationPolicy,
 } from "./analyse.js";
 import {
@@ -99,8 +100,10 @@ export interface IsolatedAnalyseOptions {
   /** Defaults to offline. */
   network?: NetworkPolicy;
   detectionThreshold?: number;
-  /** Per-stage wall-clock budget; a stage past it is terminate()d. */
+  /** Per-stage wall-clock budget except usage. */
   adapterTimeoutMs?: number;
+  /** Dedicated usage-stage budget (default five minutes, or adapterTimeoutMs if overridden). */
+  usageTimeoutMs?: number;
   usageConcurrency?: number;
   /** Per-worker heap ceiling in MiB (old generation). */
   adapterHeapMb?: number;
@@ -145,6 +148,7 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
     // high-confidence false "unused" finding the engine guards against.
     usageAnalysed = false;
     referenceAnalysed = false;
+    outcome = { ...outcome, usageIncomplete: true };
   }
   let graphs = outcome.graphs;
   // Closure entries count against the same budget as nodes, and a graph
@@ -221,11 +225,12 @@ export function capOutcome(outcome: AdapterOutcome): AdapterOutcome {
 }
 
 interface WorkerMessage {
-  type: "loaded" | "stage" | "partial" | "outcome" | "run-error";
+  type: "loaded" | "stage" | "usage-start" | "usage-progress" | "partial" | "outcome" | "run-error";
   ecosystem?: string;
   stage?: string;
   outcome?: AdapterOutcome;
   message?: string;
+  usages?: AdapterOutcome["usages"];
 }
 
 function emptyOutcome(
@@ -308,6 +313,7 @@ export function runAdapterIsolated(
   network: NetworkPolicy,
   threshold: number,
   timeoutMs: number,
+  usageTimeoutMs: number,
   usageConcurrency: number,
   heapMb: number,
   debugLog?: (line: string) => void,
@@ -343,6 +349,7 @@ export function runAdapterIsolated(
         network,
         detectionThreshold: threshold,
         adapterTimeoutMs: timeoutMs,
+        usageTimeoutMs,
         usageConcurrency,
         ...(pullRequestSourceChanges ? { pullRequestSourceChanges } : {}),
       },
@@ -394,11 +401,29 @@ export function runAdapterIsolated(
     // dies or errors while in that stage, keep the analysis and report the
     // lost notes as an incomplete note instead of dropping the outcome.
     let beforeNotes: AdapterOutcome | undefined;
+    const partialUsages: AdapterOutcome["usages"] = [];
+    let partialDependencies: AdapterOutcome["dependencies"] = [];
+    let partialDetected: AdapterOutcome["detected"];
     const failed = (error: unknown): AdapterOutcome => {
       const failure = adapterFailure({ ecosystem }, stage, error);
       if (beforeNotes !== undefined && stage === "notes") {
         const kept = capOutcome(beforeNotes);
         return { ...kept, findings: [...kept.findings, failure] };
+      }
+      if (stage === "usage analysis" && partialDetected !== undefined) {
+        // A synchronous stall or worker death may prevent its own timeout
+        // handler from returning. Recovered positive facts are incomplete.
+        return capOutcome({
+          ecosystem,
+          dependencies: partialDependencies,
+          usages: partialUsages,
+          graphs: [],
+          usageAnalysed: false,
+          referenceAnalysed: false,
+          usageIncomplete: true,
+          findings: [failure],
+          ...(partialDetected ? { detected: partialDetected } : {}),
+        });
       }
       return emptyOutcome(ecosystem, failure);
     };
@@ -409,10 +434,13 @@ export function runAdapterIsolated(
     // reports first. The watchdog must not keep the process alive.
     const armWatchdog = (): void => {
       clearTimeout(watchdog);
-      watchdog = setTimeout(() => {
-        kill();
-        finish(failed(new StageTimeout(stage)));
-      }, timeoutMs + WATCHDOG_GRACE_MS);
+      watchdog = setTimeout(
+        () => {
+          kill();
+          finish(failed(new StageTimeout(stage)));
+        },
+        (stage === "usage analysis" ? usageTimeoutMs : timeoutMs) + WATCHDOG_GRACE_MS,
+      );
       watchdog.unref();
     };
     armWatchdog();
@@ -423,6 +451,13 @@ export function runAdapterIsolated(
       } else if (message.type === "stage" && message.stage !== undefined) {
         stage = message.stage;
         armWatchdog();
+      } else if (message.type === "usage-start" && message.outcome !== undefined) {
+        partialDependencies = message.outcome.dependencies;
+        partialDetected = message.outcome.detected;
+      } else if (message.type === "usage-progress" && message.usages !== undefined) {
+        partialUsages.push(
+          ...message.usages.slice(0, Math.max(0, OUTCOME_CAPS.maxUsages - partialUsages.length)),
+        );
       } else if (message.type === "partial" && message.outcome !== undefined) {
         beforeNotes = message.outcome;
       } else if (message.type === "outcome" && message.outcome !== undefined) {
@@ -472,6 +507,8 @@ export async function analyseRepositoryIsolated(
   const threshold = options.detectionThreshold ?? DEFAULT_DETECTION_THRESHOLD;
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
+  const usageTimeoutMs =
+    options.usageTimeoutMs ?? options.adapterTimeoutMs ?? DEFAULT_USAGE_TIMEOUT_MS;
   const heapMb = options.adapterHeapMb ?? DEFAULT_ADAPTER_HEAP_MB;
   const sourceChanges = boundPullRequestSourceChanges(options);
   // Guard non-numeric input: Math.max(1, Math.floor(NaN)) is NaN, which
@@ -493,6 +530,7 @@ export async function analyseRepositoryIsolated(
         network,
         threshold,
         timeoutMs,
+        usageTimeoutMs,
         usageConcurrency,
         heapMb,
         options.debugLog,

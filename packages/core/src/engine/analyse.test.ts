@@ -384,6 +384,50 @@ describe("analyseRepository", () => {
     assert.equal(seen?.has("js"), false, "policy must not treat failed usage as 'no usage'");
   });
 
+  it("keeps completed per-dependency usage on timeout and rejects absence findings (#331)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const adapter = mockAdapter({
+      ecosystem: "js",
+      confidence: 1,
+      deps: ["unknown", "used"],
+      capabilities: ["usageAnalysis", "referenceAnalysis"],
+    });
+    adapter.findUsage = async (_ctx, dep) => {
+      if (dep.name === "unknown") await new Promise(() => {});
+      return [{ dependency: dep.name, file: "src/index.js", line: 1, form: "static", symbols: [] }];
+    };
+    const result = await analyseRepository(repo, {
+      adapters: [adapter],
+      adapterTimeoutMs: 1_000,
+      usageTimeoutMs: 20,
+      usageConcurrency: 1,
+      recommend: ({ dependencies, usageAnalysedEcosystems, referenceAnalysedEcosystems }) => {
+        assert.equal(usageAnalysedEcosystems.has("js"), false);
+        assert.equal(referenceAnalysedEcosystems.has("js"), false);
+        return dependencies.map((dep) => ({
+          kind: "potentially-unnecessary" as const,
+          dependency: dep.name,
+          summary: "no usage",
+          recommendation: "Remove it.",
+          evidence: [{ kind: "no-import-found", statement: "none" }],
+          confidence: "high" as const,
+          limitations: [],
+          affectedFiles: [dep.declaredIn],
+        }));
+      },
+    });
+    assert.deepEqual(
+      result.usages.map((u) => u.dependency),
+      ["used"],
+    );
+    assert.equal(result.dependencies.length, 2);
+    assert.ok(result.findings.some((f) => f.summary.includes("usage analysis timed out")));
+    assert.equal(
+      result.findings.some((f) => f.kind === "potentially-unnecessary"),
+      false,
+    );
+  });
+
   it("times out a hanging adapter", async () => {
     const repo = await fixtureHandle(fixture);
     const result = await analyseRepository(repo, {
