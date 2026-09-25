@@ -1,12 +1,20 @@
 {
   "env": {
-    "node": "v22.23.2",
+    "node": "v22.23.2"
+  },
+  "provenance": {
+    "engineSha": "cb30c3f35666450e65ed6b3edd0a319196a6ef36",
+    "engineNote": "All runs measured the analysis engine at cb30c3f. Commits after it during the sweep (b3b3808, 251d006, 546fb36 and their merges) touch only perf/ tooling, .gitignore and eslint.config.mjs - no packages/ code changed.",
+    "harnessRevisions": {
+      "initial": "all runs except concurrent-nextjs-typescript-rep3/rep4: stage records (ms, peakRssMiB) + findings counts",
+      "instrumented": "concurrent-nextjs-typescript-rep3/rep4: additionally usages counts and usage-timeout finding detail"
+    },
     "sandbox": "2 vCPU, 2 GiB RAM (measurement environment; production box is the 4 GiB sizing under review)",
-    "repoSha": "251d006fecdca225a5503fc092beedb1cf46653d",
     "measuredAt": "2026-09-25"
   },
   "runs": [
     {
+      "runId": "adapter-bat-rust",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -45,6 +53,7 @@
       "sampleCount": 33
     },
     {
+      "runId": "adapter-chalk-go",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -83,6 +92,7 @@
       "sampleCount": 3
     },
     {
+      "runId": "adapter-chalk-javascript-typescript",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -121,6 +131,7 @@
       "sampleCount": 27
     },
     {
+      "runId": "adapter-chalk-python",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -159,6 +170,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "adapter-chalk-rust",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -197,6 +209,7 @@
       "sampleCount": 3
     },
     {
+      "runId": "adapter-cobra-go",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -235,6 +248,7 @@
       "sampleCount": 8
     },
     {
+      "runId": "adapter-fastify-go",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -273,6 +287,7 @@
       "sampleCount": 5
     },
     {
+      "runId": "adapter-fastify-javascript-typescript",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -311,6 +326,7 @@
       "sampleCount": 80
     },
     {
+      "runId": "adapter-fastify-python",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -349,6 +365,7 @@
       "sampleCount": 5
     },
     {
+      "runId": "adapter-fastify-rust",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -387,6 +404,7 @@
       "sampleCount": 5
     },
     {
+      "runId": "adapter-flask-python",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -425,6 +443,7 @@
       "sampleCount": 13
     },
     {
+      "runId": "adapter-got-go",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -463,6 +482,7 @@
       "sampleCount": 3
     },
     {
+      "runId": "adapter-got-javascript-typescript",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -501,6 +521,7 @@
       "sampleCount": 71
     },
     {
+      "runId": "adapter-got-python",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -539,6 +560,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "adapter-got-rust",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -577,6 +599,7 @@
       "sampleCount": 6
     },
     {
+      "runId": "adapter-nanoid-go",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -615,6 +638,7 @@
       "sampleCount": 3
     },
     {
+      "runId": "adapter-nanoid-javascript-typescript",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -653,6 +677,7 @@
       "sampleCount": 30
     },
     {
+      "runId": "adapter-nanoid-python",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -691,6 +716,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "adapter-nanoid-rust",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -729,6 +755,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "adapter-uuid-go",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -767,6 +794,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "adapter-uuid-javascript-typescript",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -805,6 +833,7 @@
       "sampleCount": 43
     },
     {
+      "runId": "adapter-uuid-python",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -843,6 +872,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "adapter-uuid-rust",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -881,6 +911,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "adapter-vite-go",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -919,6 +950,7 @@
       "sampleCount": 13
     },
     {
+      "runId": "adapter-vite-javascript-typescript",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -957,6 +989,7 @@
       "sampleCount": 202
     },
     {
+      "runId": "adapter-vite-python",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -995,6 +1028,7 @@
       "sampleCount": 15
     },
     {
+      "runId": "adapter-vite-rust",
       "config": {
         "mode": "adapter",
         "repo": {
@@ -1033,6 +1067,7 @@
       "sampleCount": 15
     },
     {
+      "runId": "concurrent-nextjs-typescript-rep1",
       "config": {
         "mode": "concurrent",
         "pair": [
@@ -1069,6 +1104,7 @@
       "sampleCount": 2812
     },
     {
+      "runId": "concurrent-nextjs-typescript-rep2",
       "config": {
         "mode": "concurrent",
         "pair": [
@@ -1105,6 +1141,7 @@
       "sampleCount": 2818
     },
     {
+      "runId": "concurrent-nextjs-typescript-rep3",
       "config": {
         "mode": "concurrent",
         "pair": [
@@ -1143,6 +1180,7 @@
       "sampleCount": 2831
     },
     {
+      "runId": "concurrent-nextjs-typescript-rep4",
       "config": {
         "mode": "concurrent",
         "pair": [
@@ -1183,6 +1221,7 @@
       "sampleCount": 2864
     },
     {
+      "runId": "concurrent-vite-got-rep1",
       "config": {
         "mode": "concurrent",
         "pair": [
@@ -1219,6 +1258,7 @@
       "sampleCount": 236
     },
     {
+      "runId": "concurrent-vite-got-rep2",
       "config": {
         "mode": "concurrent",
         "pair": [
@@ -1255,6 +1295,7 @@
       "sampleCount": 235
     },
     {
+      "runId": "footprint-chalk",
       "config": {
         "mode": "footprint",
         "repo": {
@@ -1299,6 +1340,7 @@
       "sampleCount": 31
     },
     {
+      "runId": "footprint-fastify",
       "config": {
         "mode": "footprint",
         "repo": {
@@ -1343,6 +1385,7 @@
       "sampleCount": 78
     },
     {
+      "runId": "footprint-got",
       "config": {
         "mode": "footprint",
         "repo": {
@@ -1387,6 +1430,7 @@
       "sampleCount": 68
     },
     {
+      "runId": "footprint-nanoid",
       "config": {
         "mode": "footprint",
         "repo": {
@@ -1431,6 +1475,7 @@
       "sampleCount": 35
     },
     {
+      "runId": "footprint-uuid",
       "config": {
         "mode": "footprint",
         "repo": {
@@ -1475,6 +1520,7 @@
       "sampleCount": 172
     },
     {
+      "runId": "footprint-vite",
       "config": {
         "mode": "footprint",
         "repo": {
@@ -1519,6 +1565,7 @@
       "sampleCount": 209
     },
     {
+      "runId": "pipeline-babel-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1562,6 +1609,7 @@
       "sampleCount": 1435
     },
     {
+      "runId": "pipeline-bat-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1605,6 +1653,7 @@
       "sampleCount": 75
     },
     {
+      "runId": "pipeline-chalk-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1648,6 +1697,7 @@
       "sampleCount": 57
     },
     {
+      "runId": "pipeline-chalk-rep2",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1691,6 +1741,7 @@
       "sampleCount": 51
     },
     {
+      "runId": "pipeline-cobra-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1734,6 +1785,7 @@
       "sampleCount": 39
     },
     {
+      "runId": "pipeline-fastify-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1777,6 +1829,7 @@
       "sampleCount": 107
     },
     {
+      "runId": "pipeline-fastify-rep2",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1820,6 +1873,7 @@
       "sampleCount": 103
     },
     {
+      "runId": "pipeline-flask-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1863,6 +1917,7 @@
       "sampleCount": 43
     },
     {
+      "runId": "pipeline-got-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1906,6 +1961,7 @@
       "sampleCount": 96
     },
     {
+      "runId": "pipeline-got-rep2",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1949,6 +2005,7 @@
       "sampleCount": 93
     },
     {
+      "runId": "pipeline-nanoid-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -1992,6 +2049,7 @@
       "sampleCount": 53
     },
     {
+      "runId": "pipeline-nanoid-rep2",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -2035,6 +2093,7 @@
       "sampleCount": 49
     },
     {
+      "runId": "pipeline-nextjs-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -2078,6 +2137,7 @@
       "sampleCount": 3105
     },
     {
+      "runId": "pipeline-typescript-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -2121,6 +2181,7 @@
       "sampleCount": 1509
     },
     {
+      "runId": "pipeline-uuid-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -2164,6 +2225,7 @@
       "sampleCount": 75
     },
     {
+      "runId": "pipeline-uuid-rep2",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -2207,6 +2269,7 @@
       "sampleCount": 56
     },
     {
+      "runId": "pipeline-vite-rep1",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -2250,6 +2313,7 @@
       "sampleCount": 276
     },
     {
+      "runId": "pipeline-vite-rep2",
       "config": {
         "mode": "pipeline",
         "repo": {
@@ -2293,6 +2357,7 @@
       "sampleCount": 263
     },
     {
+      "runId": "stages-bat-rust",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2343,6 +2408,7 @@
       "sampleCount": 20
     },
     {
+      "runId": "stages-chalk-js",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2393,6 +2459,7 @@
       "sampleCount": 5
     },
     {
+      "runId": "stages-cobra-go",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2443,6 +2510,7 @@
       "sampleCount": 4
     },
     {
+      "runId": "stages-fastify-js",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2493,6 +2561,7 @@
       "sampleCount": 44
     },
     {
+      "runId": "stages-flask-python",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2541,6 +2610,7 @@
       "sampleCount": 9
     },
     {
+      "runId": "stages-got-js",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2591,6 +2661,7 @@
       "sampleCount": 28
     },
     {
+      "runId": "stages-nanoid-js",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2641,6 +2712,7 @@
       "sampleCount": 5
     },
     {
+      "runId": "stages-nextjs-js",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2689,6 +2761,7 @@
       "sampleCount": 1865
     },
     {
+      "runId": "stages-uuid-js",
       "config": {
         "mode": "stages",
         "repo": {
@@ -2739,6 +2812,7 @@
       "sampleCount": 16
     },
     {
+      "runId": "stages-vite-js",
       "config": {
         "mode": "stages",
         "repo": {
