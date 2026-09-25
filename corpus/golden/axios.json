@@ -1,0 +1,27 @@
+{
+  "repo": "axios",
+  "sha": "961241f6c19798eff16b0869486c125430a17961",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@splidejs/splide"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@vitest/browser"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "dayjs"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "axios"
+    }
+  ]
+}
