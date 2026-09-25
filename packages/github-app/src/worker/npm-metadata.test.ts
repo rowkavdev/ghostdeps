@@ -215,6 +215,50 @@ describe("npm footprint metadata (#174)", () => {
     assert.equal(r.urls.length, 3);
   });
 
+  it("scales the default budget for a large distinct version set, then caches it", async () => {
+    const urls: string[] = [];
+    let active = 0;
+    let peak = 0;
+    const fetch: FetchLike = async (url) => {
+      urls.push(url);
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      return {
+        status: 200,
+        headers: { get: () => null },
+        body: chunks(JSON.stringify({ dist: { unpackedSize: 1 } })),
+      };
+    };
+    const service = new NpmMetadataService({ fetch });
+    const packages = Array.from({ length: 820 }, (_, i) => ref(`package-${i}`, "1.0.0"));
+    const first = service.forRun();
+    const answer = await first.installSizes({
+      ecosystem: NPM_ECOSYSTEM,
+      packages: packages.map((p) => ({ ...p, origin: NPM_PUBLIC_ORIGIN })),
+    });
+    assert.equal(answer?.sizes.length, 820);
+    assert.equal(first.complete, true);
+    assert.equal(urls.length, 820);
+    assert.equal(peak, 16);
+    await ask(service, packages);
+    assert.equal(urls.length, 820);
+  });
+
+  it("caps an oversized set at 1,000 fetches, leaving the answer incomplete", async () => {
+    const r = registry({});
+    const service = new NpmMetadataService({ fetch: r.fetch });
+    const packages = Array.from({ length: 1_005 }, (_, i) => ref(`package-${i}`, "1.0.0"));
+    const first = service.forRun();
+    await first.installSizes({
+      ecosystem: NPM_ECOSYSTEM,
+      packages: packages.map((p) => ({ ...p, origin: NPM_PUBLIC_ORIGIN })),
+    });
+    assert.equal(first.complete, false);
+    assert.equal(r.urls.length, 1_000);
+  });
+
   it("fails quiet: errors and timeouts leave packages unsized and are retried later", async () => {
     const r = registry({
       "a/1.0.0": 1,

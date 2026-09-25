@@ -84,7 +84,7 @@ export interface NpmMetadataOptions {
   readonly maxVersions?: number;
   /** Cached whole answers keyed by the resolved dependency set. Default 256. */
   readonly maxAnswers?: number;
-  /** Registry requests allowed per run. Past it, the rest stay unsized. Default 300. */
+  /** Explicit hard cap on registry requests per run. By default scales from 300 to 1,000. */
   readonly fetchBudget?: number;
   /** Per-request timeout in ms. Default 3,000. */
   readonly requestTimeoutMs?: number;
@@ -190,6 +190,7 @@ class Lru<V> {
 export class NpmMetadataService {
   // Known size in bytes, or null for a version the registry has no size for.
   readonly publicOrigins = PUBLIC_NPM_REGISTRY_ORIGINS;
+  readonly #explicitFetchBudget: boolean;
   readonly #versions: Lru<number | null>;
   readonly #facts: Lru<PackageRegistryFacts | null>;
   readonly #answers: Lru<Answer>;
@@ -198,6 +199,7 @@ export class NpmMetadataService {
   >;
 
   constructor(options: NpmMetadataOptions = {}) {
+    this.#explicitFetchBudget = options.fetchBudget !== undefined;
     this.#versions = new Lru(
       Math.max(1, options.maxVersions ?? 50_000),
       Math.max(1, options.versionTtlMs ?? 86_400_000),
@@ -223,6 +225,21 @@ export class NpmMetadataService {
   /** A provider for one analysis run. */
   forRun(): RunMetadataProvider {
     let budget = this.#options.fetchBudget;
+    let spent = 0;
+    let limit = budget;
+    // Only the default budget scales. An explicitly configured cap remains a
+    // hard limit. The run deadline and concurrency limit still bound egress.
+    const expandBudget = (count: number) => {
+      if (this.#explicitFetchBudget) return;
+      limit = Math.max(limit, Math.min(1_000, spent + count));
+      budget = limit - spent;
+    };
+    const take = () => {
+      if (budget <= 0) return false;
+      budget--;
+      spent++;
+      return true;
+    };
     let pending = 0;
     let truncated = false;
     return {
@@ -235,6 +252,7 @@ export class NpmMetadataService {
           if (ecosystem !== NPM_ECOSYSTEM || !Array.isArray(packages)) return undefined;
           const wanted = publicRefs(packages);
           const out: PackageRegistryFacts[] = [];
+          expandBudget(new Set(wanted.map(registryPath).filter(Boolean)).size);
           const seen = new Set<string>();
           const run = timeoutSignal(this.#options.runTimeoutMs);
           try {
@@ -251,11 +269,10 @@ export class NpmMetadataService {
                 if (cached) out.push(cached);
                 continue;
               }
-              if (budget <= 0) {
+              if (!take()) {
                 truncated = true;
                 break;
               }
-              budget--;
               const result = await this.#fetchFacts(ref, path, run.signal);
               if (result === "transient") {
                 truncated = true;
@@ -286,7 +303,7 @@ export class NpmMetadataService {
           const key = answerKey(ecosystem, wanted);
           const cached = this.#answers.get(key);
           if (cached) return cached;
-          const take = () => (budget > 0 ? (budget--, true) : false);
+          expandBudget(new Set(wanted.map(registryPath).filter(Boolean)).size);
           const { answer, complete } = await this.#resolve(wanted, take);
           // Only a fully resolved answer stands for the whole set: one cut
           // short by the budget, deadline or a transient failure retries.
@@ -322,6 +339,7 @@ export class NpmMetadataService {
     let complete = true;
     const run = timeoutSignal(this.#options.runTimeoutMs);
     const deadline = run.signal;
+    const concurrency = Math.min(this.#options.concurrency * (missing.length > 300 ? 2 : 1), 16);
     let next = 0;
     const worker = async () => {
       while (next < missing.length && !deadline.aborted) {
@@ -342,9 +360,7 @@ export class NpmMetadataService {
       if (next < missing.length) complete = false;
     };
     try {
-      await Promise.all(
-        Array.from({ length: Math.min(this.#options.concurrency, missing.length) }, worker),
-      );
+      await Promise.all(Array.from({ length: Math.min(concurrency, missing.length) }, worker));
     } finally {
       run.clear();
     }
