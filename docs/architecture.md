@@ -1,6 +1,6 @@
 # GhostDeps architecture
 
-GhostDeps answers one question: **does this codebase actually need this dependency?** This document is the map of how the system is put together. Consequential decisions live in [adr/](adr/); this file stays current as the system evolves.
+GhostDeps answers one question: **does this codebase actually need this dependency?** This document is the map of how the system is put together. Consequential decisions live in [architecture decisions](adr/index.md); this file stays current as the system evolves.
 
 ## Big picture
 

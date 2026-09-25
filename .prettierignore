@@ -6,3 +6,5 @@ fixtures/
 # Golden files are byte-exact reporter output; formatting them would break the tests.
 packages/*/test/golden/
 .corpus-cache/
+
+site/

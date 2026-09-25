@@ -394,6 +394,21 @@ export interface PackageVersionRef {
  * B). Core never fetches; the GitHub App wires its cached metadata service
  * here, and the CLI offline and tests pass nothing. Adapters never see it.
  */
+/** Each optional registry fact names its source. Absence means unknown, never false. */
+export interface MetadataFact<T> {
+  value: T;
+  basis: string;
+}
+
+/** Facts about an exact public-registry package version, not a health verdict. */
+export interface PackageRegistryFacts extends PackageVersionRef {
+  publishedAt?: MetadataFact<string>;
+  latestVersion?: MetadataFact<string>;
+  deprecated?: MetadataFact<boolean>;
+  /** Repository host evidence only; do not infer from registry deprecation. */
+  repositoryArchived?: MetadataFact<boolean>;
+}
+
 export interface PackageMetadataProvider {
   /**
    * Registry-reported install sizes for exact versions of one ecosystem.
@@ -402,6 +417,11 @@ export interface PackageMetadataProvider {
    * size data (e.g. Go). A throw, a timeout or a malformed answer just
    * leaves `footprint` absent for that ecosystem.
    */
+  /** Optional health facts for exact versions. No provider or no fact means unknown. */
+  packageFacts?(request: {
+    ecosystem: string;
+    packages: readonly PackageVersionRef[];
+  }): Promise<readonly PackageRegistryFacts[] | undefined>;
   installSizes(request: {
     ecosystem: string;
     packages: readonly PackageVersionRef[];

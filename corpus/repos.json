@@ -79,6 +79,26 @@
       "sha": "adbc8813901bba65827259daa8e22ff94ec1f30e",
       "covers": "go; real-repo go adapter: module-graph limitation reported as info (go mod graph is never run), quiet otherwise",
       "mustNotBeUnused": ["github.com/spf13/pflag"]
+    },
+    {
+      "name": "express",
+      "url": "https://github.com/expressjs/express.git",
+      "sha": "9a34acf03cb818ff3f8bc40e44176e277a25cbb9",
+      "covers": "npm; dynamic-require hole class (#171 leftover): hbs held back as info - examples/mvc sets view engine 'hbs' from a dynamically required controller module (lib/boot.js obj.engine), and express's view layer requires the engine by name at render time",
+      "mustNotBeUnused": ["hbs"]
+    },
+    {
+      "name": "axios",
+      "url": "https://github.com/axios/axios.git",
+      "sha": "961241f6c19798eff16b0869486c125430a17961",
+      "covers": "npm; docs subproject shapes: vitepress markdown import (docs/index.md imports @splidejs/splide - md-import hole, reported info not unused), dayjs declared-but-unreferenced anywhere (info), should-be-dev true positive on the docs project's own axios runtime dep (docs/package.json, only docs/scripts imports it), transitive credit for @vitest/browser via @vitest/browser-playwright",
+      "mustNotBeUnused": ["@splidejs/splide"]
+    },
+    {
+      "name": "ky",
+      "url": "https://github.com/sindresorhus/ky.git",
+      "sha": "0d59458a0a58e1c3d7c6db0ab17ed5c7cd671e47",
+      "covers": "npm; node_modules-tsconfig-base gap class: tsconfig extends @sindresorhus/tsconfig from node_modules, reported as an explicit gap (info), never a silent hole or an unused verdict"
     }
   ]
 }

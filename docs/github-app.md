@@ -20,7 +20,7 @@ Explicitly **not** requested: `issues`, `actions`, `contents: write`, `pull_requ
 - `check_run` (rerequested: the re-run button on the GhostDeps check)
 - `installation`, `installation_repositories` (setup and initial scan)
 
-No other events are subscribed. The manifest ([`packages/github-app/app.yml`](../packages/github-app/app.yml)) lists `pull_request`, `push` and `check_run`. GitHub delivers `installation` and `installation_repositories` to every app automatically, so they cannot be listed. `checks: write` already subscribes the app to `check_run` and `check_suite`; `check_run` is listed anyway because re-runs depend on it, and GitHub sends `rerequested` only to the app that created the run ([GitHub docs](https://docs.github.com/en/webhooks/webhook-events-and-payloads#check_run)). `check_suite` is not used: `push` is the push trigger, and using both would double up jobs. A test in `packages/github-app` fails if the manifest and this page drift apart.
+No other events are subscribed. The manifest ([`packages/github-app/app.yml`](https://github.com/rowkavdev/ghostdeps/blob/main/packages/github-app/app.yml)) lists `pull_request`, `push` and `check_run`. GitHub delivers `installation` and `installation_repositories` to every app automatically, so they cannot be listed. `checks: write` already subscribes the app to `check_run` and `check_suite`; `check_run` is listed anyway because re-runs depend on it, and GitHub sends `rerequested` only to the app that created the run ([GitHub docs](https://docs.github.com/en/webhooks/webhook-events-and-payloads#check_run)). `check_suite` is not used: `push` is the push trigger, and using both would double up jobs. A test in `packages/github-app` fails if the manifest and this page drift apart.
 
 ## Behaviour
 
