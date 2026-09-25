@@ -20,6 +20,7 @@ nav:
       - Analysis engine: analysis-engine.md
       - Repository scanner: repository-scanner.md
       - Adapters: adapters.md
+      - Research: research/js-unused-dependencies.md
       - Recommendation policy: recommendation-policy.md
       - Transitive impact: transitive-impact.md
       - GitHub API limits: github-api-limits.md
