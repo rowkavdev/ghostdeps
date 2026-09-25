@@ -19,6 +19,7 @@ nav:
   - How it works:
       - Architecture: architecture.md
       - Analysis engine: analysis-engine.md
+      - Usage aggregation costs: usage-aggregation-costs.md
       - Repository scanner: repository-scanner.md
       - Scan scope proposal: scan-scope-design.md
       - PR comment and tick-to-apply proposal: pr-comment-apply-design.md
