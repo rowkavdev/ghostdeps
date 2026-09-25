@@ -25,6 +25,10 @@ import { noWaitThrottle, WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./gith
 import { repoScopedClients } from "./worker/github-client.js";
 
 export const HEALTH_PATH = "/healthz";
+/** A short deploy-supplied release tag, never arbitrary environment content. */
+export function healthReleaseId(raw: string | undefined): string | undefined {
+  return raw && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(raw) ? raw : undefined;
+}
 
 export interface GhostDepsAppOptions {
   /** Job boundary. Defaults to an in-process queue running the analysis worker. */
@@ -57,6 +61,8 @@ export interface GhostDepsAppOptions {
   readonly footprint?: boolean;
   /** Limits "busy" check runs when the queue is full. Defaults to one per repository per minute. */
   readonly busyLimiter?: BusyLimiter;
+  /** Deploy-supplied release identifier for /healthz; invalid values are omitted. */
+  readonly releaseId?: string;
 }
 
 type LookupOctokit = Parameters<typeof changedFiles>[0];
@@ -116,6 +122,8 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
     const appId = options.appId ?? appIdFromEnv();
     const sourcePrTrigger = options.sourcePrTrigger ?? sourcePrTriggerFromEnv();
     const busyLimiter = options.busyLimiter ?? new BusyLimiter();
+    // Capture deploy metadata once; never read env, a file, or request data in the handler.
+    const releaseId = healthReleaseId(options.releaseId ?? process.env.GHOSTDEPS_RELEASE_ID);
     const worker: JobWorker =
       options.worker ??
       (appId === undefined
@@ -149,8 +157,14 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
 
     addHandler((req, res) => {
       if (req.method !== "GET" || req.url?.split("?")[0] !== HEALTH_PATH) return false;
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ status: "ok" }));
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(
+        JSON.stringify({
+          status: "ok",
+          uptimeSeconds: Math.floor(process.uptime()),
+          ...(releaseId ? { version: releaseId } : {}),
+        }),
+      );
       return true;
     });
 
