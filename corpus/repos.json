@@ -99,6 +99,27 @@
       "url": "https://github.com/sindresorhus/ky.git",
       "sha": "0d59458a0a58e1c3d7c6db0ab17ed5c7cd671e47",
       "covers": "npm; node_modules-tsconfig-base gap class: tsconfig extends @sindresorhus/tsconfig from node_modules, reported as an explicit gap (info), never a silent hole or an unused verdict"
+    },
+    {
+      "name": "requests",
+      "url": "https://github.com/psf/requests.git",
+      "sha": "611c6162cbc4ac2020a2f91c7cfa4f3abf9bbb60",
+      "covers": "python; size-ceiling partial scan (tests/test_requests.py 108KB skipped, disclosed as partial), duplicate dev declaration across pyproject.toml and requirements-dev.txt (two httpbin infos, one per declaration), self-declaration with extra (requests[socks] dev dep; self-imports are not usage, correctly held at info)",
+      "mustNotBeUnused": ["httpbin", "requests"]
+    },
+    {
+      "name": "commander.js",
+      "url": "https://github.com/tj/commander.js.git",
+      "sha": "ba6d13ddb4243e5913367734f8c159089ffe7834",
+      "covers": "npm; quiet repo from the #171 sweep set - eslint flat config + prettier/tsd/typescript conventions all resolve, zero findings at pin; pins silence on a clean eslint-flat-config repo",
+      "mustNotBeUnused": ["eslint", "prettier"]
+    },
+    {
+      "name": "p-map",
+      "url": "https://github.com/sindresorhus/p-map.git",
+      "sha": "f0c43e358a449584c2045c89d1b9ae3cd5a9f293",
+      "covers": "npm; quiet repo from the #171 sweep set - ava/xo/tsd script conventions and test-file imports all resolve, zero findings at pin; pins silence on a small ava repo",
+      "mustNotBeUnused": ["ava", "delay", "random-int", "time-span", "xo"]
     }
   ]
 }
