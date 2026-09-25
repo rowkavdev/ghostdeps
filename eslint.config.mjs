@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       ".corpus-cache/",
       "**/dist/**",
+      "site/**",
       "**/coverage/**",
       "**/node_modules/**",
       "fixtures/**",

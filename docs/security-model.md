@@ -39,4 +39,4 @@ Besides GitHub, the app's worker makes one kind of outbound request, and only wh
 
 ## Reporting
 
-See [SECURITY.md](../SECURITY.md).
+See [SECURITY.md](https://github.com/rowkavdev/ghostdeps/blob/main/SECURITY.md).
