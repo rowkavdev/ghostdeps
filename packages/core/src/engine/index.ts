@@ -26,4 +26,8 @@ export {
   type AnalyseDirectoryOptions,
 } from "./analyse-directory.js";
 export { crossEcosystemOverlaps, CROSS_ECOSYSTEM_OVERLAP_RULE } from "./capability-overlap.js";
+export {
+  sameEcosystemDuplicates,
+  SAME_ECOSYSTEM_DUPLICATES_RULE,
+} from "./capability-duplicates.js";
 export { addFootprints, FOOTPRINT_TIMEOUT_MS, MAX_FOOTPRINT_PACKAGES } from "./footprint.js";
