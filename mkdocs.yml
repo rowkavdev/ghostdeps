@@ -24,6 +24,7 @@ nav:
       - Research:
           - JS/TS unused dependencies: research/js-unused-dependencies.md
           - Rust unused dependencies: research/rust-unused-dependencies.md
+          - Python dependency tools: research/python-dependency-tools.md
       - Recommendation policy: recommendation-policy.md
       - Transitive impact: transitive-impact.md
       - GitHub API limits: github-api-limits.md
