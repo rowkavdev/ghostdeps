@@ -11,6 +11,10 @@ export interface ResolvedPackage {
   version: string;
   /** Ids of the packages this one depends on (already resolved by the parser). */
   dependencies: string[];
+  /** Resolved peer ids, separate from ordinary dependency edges. */
+  peers?: string[];
+  /** Declared peers whose package edge could not be resolved. */
+  unresolvedPeers?: string[];
   /** GraphNode.registryOrigin (#174 step 3); set only from explicit evidence (see origin.ts). */
   registryOrigin?: string;
 }
@@ -94,11 +98,23 @@ export function assembleGraph(
   const reachableProd = new Set<string>();
   const reachableAll = new Set<string>();
   const transitiveClosure: Record<string, string[]> = {};
+  const directPeers: Record<string, string[]> = {};
+  const unresolvedDirectPeers: Record<string, string[]> = {};
   try {
     for (const d of parsed.direct) {
       if (!d.id || !parsed.packages.has(d.id)) {
         setOwn(transitiveClosure, d.name, []);
         continue;
+      }
+      const pkg = parsed.packages.get(d.id)!;
+      if (pkg.peers !== undefined) {
+        const peers = pkg.peers
+          .filter((id) => parsed.packages.has(id))
+          .map((id) => parsed.packages.get(id)!.name);
+        setOwn(directPeers, d.name, [...new Set(peers)].sort());
+      }
+      if (pkg.unresolvedPeers?.length) {
+        setOwn(unresolvedDirectPeers, d.name, [...new Set(pkg.unresolvedPeers)].sort());
       }
       const ids = closure(d.id);
       const names = new Set<string>();
@@ -135,7 +151,17 @@ export function assembleGraph(
       ...(pkg.registryOrigin === undefined ? {} : { registryOrigin: pkg.registryOrigin }),
     });
   }
-  return { graph: { project, nodes, transitiveClosure, incomplete: false }, evidence: [] };
+  return {
+    graph: {
+      project,
+      nodes,
+      transitiveClosure,
+      directPeers,
+      unresolvedDirectPeers,
+      incomplete: false,
+    },
+    evidence: [],
+  };
 }
 
 export function emptyGraph(project: ProjectRef): DependencyGraph {

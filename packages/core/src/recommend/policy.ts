@@ -40,6 +40,10 @@ export interface PolicyContext {
   referenceAnalysedEcosystems: ReadonlySet<string>;
   /** Direct dependency names another direct dependency pulls in (from lockfile graphs). */
   requiredByOtherDirect: ReadonlyMap<string, string>;
+  /** Direct host whose own resolved lockfile entry records this peer edge. */
+  peerHostByDirect: ReadonlyMap<string, string>;
+  /** Unknown peer edge from a declared direct host: no absence verdict. */
+  unresolvedPeerByDirect: ReadonlyMap<string, string>;
 }
 
 export interface PolicyRule {
@@ -122,7 +126,8 @@ const unusedRule: PolicyRule = {
   evaluate(d, context) {
     if (!hasNoUsageEvidence(d, context)) return undefined;
     if (!context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
-    if (context.requiredByOtherDirect.has(key(d))) return undefined;
+    if (context.requiredByOtherDirect.has(key(d)) || context.unresolvedPeerByDirect.has(key(d)))
+      return undefined;
     return {
       kind: "unused",
       rule: "unused",
@@ -166,7 +171,8 @@ const removedLastUsageRule: PolicyRule = {
     if (removed.length === 0) return undefined;
     if (!hasNoUsageEvidence(d, context)) return undefined;
     if (!context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
-    if (context.requiredByOtherDirect.has(key(d))) return undefined;
+    if (context.requiredByOtherDirect.has(key(d)) || context.unresolvedPeerByDirect.has(key(d)))
+      return undefined;
     const shown = [...removed]
       .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
       .slice(0, MAX_REMOVED_EVIDENCE);
@@ -220,20 +226,56 @@ const unverifiedNoImportsRule: PolicyRule = {
       confidence: "low" as const,
       affectedFiles: [d.declaredIn],
     };
+    const peerHost = context.peerHostByDirect.get(key(d));
     const requiredBy = context.requiredByOtherDirect.get(key(d));
+    const unresolvedPeer = context.unresolvedPeerByDirect.get(key(d));
+    if (peerHost) {
+      return {
+        ...base,
+        summary: `${d.name} is not imported directly, but ${peerHost} declares it as a peer`,
+        recommendation: `Keep ${d.name} while ${peerHost} requires it; review the peer version range manually.`,
+        evidence: [
+          noImportsEvidence(d),
+          {
+            kind: "required-by-peer-host",
+            statement: `${peerHost} declares ${d.name} as a peer in the resolved lockfile`,
+          },
+        ],
+        limitations: [
+          "Peer version compatibility and host usage were not established by this note.",
+        ],
+      };
+    }
+    if (unresolvedPeer) {
+      return {
+        ...base,
+        summary: `${d.name} may be required as a peer of ${unresolvedPeer}`,
+        recommendation: `Manual review recommended: verify the installed ${d.name} and the peer range of ${unresolvedPeer}.`,
+        evidence: [
+          noImportsEvidence(d),
+          {
+            kind: "unresolved-peer-host",
+            statement: `${unresolvedPeer} declares ${d.name} as a peer in the lockfile, but its resolved package edge was not established`,
+          },
+        ],
+        limitations: ["Peer resolution or version compatibility is not verified."],
+      };
+    }
     if (requiredBy) {
       return {
         ...base,
-        summary: `${d.name} is not imported directly, but ${requiredBy} depends on it`,
-        recommendation: `Manual review recommended: ${d.name} may be a peer dependency of ${requiredBy}.`,
+        summary: `${d.name} is not imported directly, but is reachable through ${requiredBy}`,
+        recommendation: `Manual review recommended: check why ${requiredBy} requires ${d.name}.`,
         evidence: [
           noImportsEvidence(d),
           {
             kind: "required-by-direct-dependency",
-            statement: `${requiredBy} depends on ${d.name}`,
+            statement: `${d.name} is in the resolved transitive closure of ${requiredBy}`,
           },
         ],
-        limitations: ["Peer dependency relationships are not analysed yet (#11)."],
+        limitations: [
+          "The edge type and actual use by the host are not established by this closure.",
+        ],
       };
     }
     if (context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
@@ -352,6 +394,8 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
 
   // A direct dependency reachable from another direct dependency's closure.
   const requiredByOtherDirect = new Map<string, string>();
+  const peerHostByDirect = new Map<string, string>();
+  const unresolvedPeerByDirect = new Map<string, string>();
   for (const graph of input.graphs) {
     const ecosystem = graph.project.ecosystem;
     const directs = new Set(
@@ -359,6 +403,24 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
         .filter((d) => d.project.ecosystem === ecosystem && d.project.path === graph.project.path)
         .map((d) => d.name),
     );
+    for (const [host, peers] of Object.entries(graph.directPeers ?? {}).sort()) {
+      if (!directs.has(host)) continue;
+      for (const name of peers) {
+        const k = `${ecosystem}\0${name}`;
+        if (name !== host && directs.has(name) && !peerHostByDirect.has(k)) {
+          peerHostByDirect.set(k, host);
+        }
+      }
+    }
+    for (const [host, peers] of Object.entries(graph.unresolvedDirectPeers ?? {}).sort()) {
+      if (!directs.has(host)) continue;
+      for (const name of peers) {
+        const k = `${ecosystem}\0${name}`;
+        if (name !== host && directs.has(name) && !unresolvedPeerByDirect.has(k)) {
+          unresolvedPeerByDirect.set(k, host);
+        }
+      }
+    }
     for (const [direct, closure] of Object.entries(graph.transitiveClosure).sort()) {
       if (!directs.has(direct)) continue;
       for (const name of closure) {
@@ -378,6 +440,8 @@ function buildContext(input: RecommendationInput, config: PolicyConfig): PolicyC
     typeStrippingEcosystems: new Set(config.typeStrippingEcosystems ?? ["javascript-typescript"]),
     referenceAnalysedEcosystems: input.referenceAnalysedEcosystems,
     requiredByOtherDirect,
+    peerHostByDirect,
+    unresolvedPeerByDirect,
   };
 }
 

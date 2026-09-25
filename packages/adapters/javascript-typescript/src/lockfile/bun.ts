@@ -97,7 +97,16 @@ export function parseBunLockfile(
         }
       }
     }
-    packages.set(key, { name, version, dependencies: deps });
+    const peers: string[] = [];
+    const unresolvedPeers: string[] = [];
+    if (meta && isObject(own(meta, "peerDependencies"))) {
+      for (const d of Object.keys(own(meta, "peerDependencies") as Rec)) {
+        const id = lookup(key, d);
+        if (id) peers.push(id);
+        else unresolvedPeers.push(d);
+      }
+    }
+    packages.set(key, { name, version, dependencies: deps, peers, unresolvedPeers });
   }
 
   const direct: ParsedLockfile["direct"] = declared.map((d) => ({ ...d, id: undefined }));

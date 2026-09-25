@@ -73,6 +73,10 @@ export interface DependencyGraph {
   nodes: GraphNode[];
   /** Direct dependency name -> full transitive closure (names). */
   transitiveClosure: Record<string, string[]>;
+  /** Direct host -> resolved peer names from its exact lockfile instance, when recorded. */
+  directPeers?: Record<string, string[]>;
+  /** Direct host -> peer names declared but not resolved to an installed package. */
+  unresolvedDirectPeers?: Record<string, string[]>;
   /** True when no lockfile existed and the graph is incomplete. */
   incomplete: boolean;
 }
