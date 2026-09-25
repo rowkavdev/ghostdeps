@@ -48,14 +48,14 @@ interface PackageMetadataProvider {
 
 ## Caps and notes
 
-- Work budget: the summed closure lengths across graphs are capped (proposed at 2,000,000). Past the cap, the remaining dependencies get `transitive`/`exclusive` = `null` with a `limited: true` flag. `impact` length is bounded by `dependencies`, which is already capped.
-- Missing impact never touches a verdict, so the proposal is **no finding** for it. The `null`s and the `graph` field carry it. **Open question 2** below.
+- Work budget: the summed closure lengths across graphs are capped at 2,000,000 (`MAX_IMPACT_CLOSURE_ENTRIES`). Past the cap, the remaining dependencies get `transitive`/`exclusive` = `null` with a `limited: true` flag. `impact` length is bounded by `dependencies`, which is already capped.
+- Missing impact never touches a verdict. When the work budget is exceeded, core emits one visible, non-capping `impact-limited` note; `null` counts and the `limited` flag identify the affected entries. No note is emitted when a metadata provider simply has no footprint data.
 
 ## Slices
 
-- **A (core, this PR)**: counts, JSON, docs and tests, plus goldens (the CLI/app e2e/corpus results gain `impact`).
-- **B (core)**: the footprint provider contract, offline behaviour and caching expectations.
-- **C (presenters)**: the CLI repository summary prints one `impact:` line under removal verdicts (see [output-formats.md](output-formats.md)). Other surfaces render from the same `impact[]` fields and wording rules.
+- **A (core, implemented)**: counts, JSON, docs and tests, plus goldens (the CLI/app e2e/corpus results gain `impact`).
+- **B (core, implemented)**: the footprint provider contract, offline behaviour and caching expectations.
+- **C (presenters, implemented for CLI)**: the CLI repository summary prints one `impact:` line under removal verdicts (see [output-formats.md](output-formats.md)). Other surfaces render from the same `impact[]` fields and wording rules.
 
 ## Rulings (lead, on #265)
 
