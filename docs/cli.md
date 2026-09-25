@@ -38,8 +38,8 @@ reporter (canonical ordering, escaping) - the CLI has no second JSON writer.
 
 Implementation status: `ghostdeps scan` runs the engine today. It calls
 core's `analyseDirectory`, which scans the directory through the inert
-`FsRepositoryHandle`, runs the JavaScript/TypeScript adapter (the only one
-wired so far) offline, and reports skipped files as scan-incompleteness `info`
+`FsRepositoryHandle`, runs the JavaScript/TypeScript, Rust, Go and Python adapters
+offline, and reports skipped files as scan-incompleteness `info`
 findings. `--json` prints the schema-stable `AnalysisResult`; without it, scan
 prints the canonical repository summary from docs/output-formats.md (#39,
 renderer from #109). Core's default recommendation policy (#136) turns the
@@ -109,8 +109,8 @@ PolicyConfig (#136); there is still no config file.
 `--severity <min>` only filters the human display
 (filtered findings are counted under the summary, never silently dropped);
 `--json` always prints the complete result, so `--severity` with `--json`
-is a usage error rather than a silent lie. `--fail-on` always evaluates
-every finding, shown or not.
+is a usage error rather than a silent lie. `--fail-on` evaluates all counted
+findings, shown or not; awareness and factual health observations do not count.
 
 Contract change in #155: scan errors moved from exit 1 to exit 2 (1 is now
 dedicated to the `--fail-on` threshold), and usage and scan errors share 2.
