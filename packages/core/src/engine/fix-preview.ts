@@ -91,6 +91,9 @@ async function snapshot(
   try {
     for (const path of paths) {
       const content = await handle.readFile(path);
+      // FsRepositoryHandle's decoder replaces malformed UTF-8 with U+FFFD.
+      // Refuse even a literal replacement character: decoded text cannot prove raw byte identity.
+      if (content.includes("\uFFFD")) return undefined;
       bytes += Buffer.byteLength(content);
       if (bytes > 8_000_000) return undefined;
       digest.update(JSON.stringify([path, content]));

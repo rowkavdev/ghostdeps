@@ -348,4 +348,44 @@ describe("npm removal preview (#389)", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+  it("refuses malformed UTF-8 bytes instead of treating distinct bytes as one decoded snapshot", async () => {
+    const { root } = await fixture(3);
+    try {
+      for (const byte of [0x80, 0x81]) {
+        await writeFile(join(root, "README.md"), Buffer.from([byte]));
+        const result = await previewNpmRemoval(
+          await FsRepositoryHandle.open(root),
+          [adapter],
+          "left-pad",
+        );
+        assert.equal(result.status, "blocked");
+        assert.match(result.reason!, /complete source snapshot cannot be bound/);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("refuses malformed UTF-8 introduced during overlay analysis", async () => {
+    const { root } = await fixture(3);
+    try {
+      await writeFile(join(root, "README.md"), "plain text\n");
+      let calls = 0;
+      const racy: EcosystemAdapter = {
+        ...adapter,
+        async buildDependencyGraph(ctx) {
+          if (++calls === 2) await writeFile(join(root, "README.md"), Buffer.from([0x80]));
+          return adapter.buildDependencyGraph!(ctx, [project]);
+        },
+      };
+      const result = await previewNpmRemoval(
+        await FsRepositoryHandle.open(root),
+        [racy],
+        "left-pad",
+      );
+      assert.equal(result.status, "blocked");
+      assert.match(result.reason!, /Source snapshot changed/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
