@@ -34,7 +34,7 @@ jobs:
           # fail-on: high   # opt in to gating; advisory by default
 ```
 
-The action posts one `ghostdeps` check run, and everything stays inside the job - no external service, nothing leaves the runner. Full input list and the known trade-offs versus the App: [GitHub Action](docs/github-action.md).
+The action runs the analysis inside your job; there is no external service to install. It reports through GitHub: a `ghostdeps` check run on your own branches, or workflow annotations and the job summary on fork pull requests, where `GITHUB_TOKEN` is read-only. `@main` follows the latest main - pin a full commit SHA (`rowkavdev/ghostdeps/packages/action@<sha>`) for production workflows. Full input list and the known trade-offs versus the App: [GitHub Action](docs/github-action.md).
 
 ## Use the CLI
 
