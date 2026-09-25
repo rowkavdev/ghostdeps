@@ -384,6 +384,126 @@ describe("analyseRepository", () => {
     assert.equal(seen?.has("js"), false, "policy must not treat failed usage as 'no usage'");
   });
 
+  it("attributes surviving usage facts to their ecosystem when a sibling's usage stage fails (#388)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [
+        mockAdapter({
+          ecosystem: "rust",
+          confidence: 1,
+          deps: ["used"],
+          capabilities: ["usageAnalysis"],
+        }),
+        mockAdapter({
+          ecosystem: "js",
+          confidence: 1,
+          deps: ["left-pad"],
+          capabilities: ["usageAnalysis"],
+          failUsage: true,
+        }),
+      ],
+    });
+    const note = result.findings.find((f) => f.rule === "usage-attribution");
+    assert.ok(note, "attribution note is emitted");
+    assert.equal(note.kind, "info");
+    assert.equal(note.adapterNote, true, "note group: shown in Notes, never a verdict");
+    assert.ok(
+      note.summary.includes("rust (1)"),
+      `names the source ecosystem and count: ${note.summary}`,
+    );
+    assert.ok(
+      note.summary.includes("js usage analysis did not complete"),
+      `names the incomplete ecosystem: ${note.summary}`,
+    );
+    // The sibling's own incomplete finding still makes the run incomplete;
+    // this note must not change that contract.
+    assert.ok(result.findings.some((f) => f.summary.includes("js analysis incomplete")));
+  });
+
+  it("emits no attribution note when no usage facts survive (#388)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [
+        mockAdapter({
+          ecosystem: "js",
+          confidence: 1,
+          deps: ["left-pad"],
+          capabilities: ["usageAnalysis"],
+          failUsage: true,
+        }),
+      ],
+    });
+    assert.equal(result.usages.length, 0);
+    assert.ok(!result.findings.some((f) => f.rule === "usage-attribution"));
+  });
+
+  it("emits no attribution note when every usage stage completes (#388)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [
+        mockAdapter({
+          ecosystem: "rust",
+          confidence: 1,
+          deps: ["used"],
+          capabilities: ["usageAnalysis"],
+        }),
+        mockAdapter({
+          ecosystem: "js",
+          confidence: 1,
+          deps: ["used"],
+          capabilities: ["usageAnalysis"],
+        }),
+      ],
+    });
+    assert.ok(!result.findings.some((f) => f.rule === "usage-attribution"));
+  });
+
+  it("emits no attribution note for an adapter without usage capability (#388)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [
+        mockAdapter({
+          ecosystem: "rust",
+          confidence: 1,
+          deps: ["used"],
+          capabilities: ["usageAnalysis"],
+        }),
+        mockAdapter({ ecosystem: "go", confidence: 1, deps: ["left-pad"] }),
+      ],
+    });
+    assert.ok(result.usages.length > 0);
+    assert.ok(!result.findings.some((f) => f.rule === "usage-attribution"));
+  });
+
+  it("attributes salvaged usage facts as partial when the stage times out (#388, #331)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const adapter = mockAdapter({
+      ecosystem: "js",
+      confidence: 1,
+      deps: ["used", "bad"],
+      capabilities: ["usageAnalysis"],
+    });
+    adapter.findUsage = async (_ctx, dep) => {
+      if (dep.name === "bad") throw new Error("parser exploded");
+      return [{ dependency: dep.name, file: "src/index.js", line: 1, form: "static", symbols: [] }];
+    };
+    const result = await analyseRepository(repo, { adapters: [adapter] });
+    assert.deepEqual(
+      result.usages.map((u) => u.dependency),
+      ["used"],
+      "settled facts are salvaged (#331)",
+    );
+    const note = result.findings.find((f) => f.rule === "usage-attribution");
+    assert.ok(note, "attribution note is emitted");
+    assert.ok(
+      note.summary.includes("js (1, partial)"),
+      `marks the salvaged count partial: ${note.summary}`,
+    );
+    assert.ok(
+      note.summary.includes("facts are partial"),
+      `never claims the ecosystem completed: ${note.summary}`,
+    );
+  });
   it("keeps completed per-dependency usage on timeout and rejects absence findings (#331)", async () => {
     const repo = await fixtureHandle(fixture);
     const adapter = mockAdapter({

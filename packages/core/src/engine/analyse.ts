@@ -255,6 +255,73 @@ function graphCompleteness(
 }
 
 /**
+ * Usage-fact attribution when a sibling ecosystem's usage stage failed
+ * (#388). result.usages merges every adapter's facts, so next to an
+ * "analysis incomplete" note the surviving facts can read as
+ * ecosystem-wide. This note names the ecosystems the facts actually came
+ * from, so the check output never implies the timed-out ecosystem
+ * completed. Salvaged facts (#331) are attributed too, marked partial.
+ * Marked `adapterNote` (findingGroup "note"): visible in Notes, never a
+ * verdict, and the completeness contract is unchanged.
+ */
+export function usageAttributionNote(outcomes: readonly AdapterOutcome[]): Finding | undefined {
+  const contributors = new Map<string, { count: number; complete: boolean }>();
+  const incomplete: string[] = [];
+  for (const outcome of outcomes) {
+    // usageIncomplete is set exactly on the usage-stage failure path, in
+    // both the in-process and worker tiers (#331); salvaged facts then sit
+    // in outcome.usages with usageAnalysed false.
+    const failed = outcome.detected !== undefined && outcome.usageIncomplete === true;
+    if (outcome.usages.length > 0) {
+      const prev = contributors.get(outcome.ecosystem) ?? { count: 0, complete: true };
+      contributors.set(outcome.ecosystem, {
+        count: prev.count + outcome.usages.length,
+        complete: prev.complete && outcome.usageAnalysed,
+      });
+    }
+    if (failed && !incomplete.includes(outcome.ecosystem)) incomplete.push(outcome.ecosystem);
+  }
+  if (incomplete.length === 0 || contributors.size === 0) return undefined;
+  const from = [...contributors.entries()]
+    .map(([eco, c]) => `${eco} (${c.count}${c.complete ? "" : ", partial"})`)
+    .join(", ");
+  const partial = incomplete.filter((eco) => contributors.has(eco));
+  const empty = incomplete.filter((eco) => !contributors.has(eco));
+  const clauses = [`usage facts come from ${from}`];
+  if (partial.length > 0) {
+    clauses.push(
+      `${partial.join(", ")} usage analysis did not complete, so ${
+        partial.length === 1 ? "that ecosystem's" : "those ecosystems'"
+      } facts are partial (settled before the failure)`,
+    );
+  }
+  if (empty.length > 0) {
+    clauses.push(
+      `${empty.join(", ")} usage analysis did not complete, so ${
+        empty.length === 1 ? "that ecosystem has" : "those ecosystems have"
+      } no usage facts in this result`,
+    );
+  }
+  const summary = clauses.join("; ");
+  return {
+    kind: "info",
+    rule: "usage-attribution",
+    summary,
+    recommendation: "For information; no verdict is affected.",
+    evidence: [
+      {
+        kind: "usage-attribution",
+        statement: `usage facts by ecosystem: ${from}; usage analysis incomplete: ${incomplete.join(", ")}`,
+      },
+    ],
+    confidence: "high",
+    adapterNote: true,
+    limitations: [],
+    affectedFiles: [],
+  };
+}
+
+/**
  * Turn per-adapter outcomes (however they were produced - in-process or in
  * workers) into one AnalysisResult: merge facts, apply recommendation
  * policy, normalise ordering. Shared by analyse.ts and isolated.ts.
@@ -476,6 +543,13 @@ export async function assembleAnalysisResult(
   )) {
     findings.push({ ...finding, severity: severityOf(finding) });
   }
+
+  // Usage-fact attribution (#388): names the ecosystems the surviving
+  // usage facts came from when a sibling's usage stage failed. Added after
+  // the marker strip, like the other core-emitted notes, so it keeps
+  // `adapterNote`.
+  const attribution = usageAttributionNote(outcomes);
+  if (attribution) findings.push({ ...attribution, severity: severityOf(attribution) });
 
   // Shipping gate (#178): until the corpus check proves recall, no unused
   // verdict claims more than UNUSED_CONFIDENCE_CAP, whoever produced it.
