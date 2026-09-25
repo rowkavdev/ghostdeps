@@ -53,12 +53,68 @@ runs:
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
+    # Build cache (#347). Correctness guards (lead):
+    #  - the key covers the action COMMIT (not the ref name, which moves),
+    #    the lockfile hash, the runner OS and the Node version, so a stale
+    #    cache can never silently feed a different analysis;
+    #  - exact key only, NO restore-keys: a partial match could serve a build
+    #    of a different commit or lockfile as fresh, which is exactly the
+    #    failure the key is designed against;
+    #  - fail-open: restore errors are ignored, a restore that fails the
+    #    smoke check below rebuilds from scratch, and save failures only warn.
+    - name: Compute cache key
+      id: cache-key
+      shell: bash
+      env:
+        ACTION_ROOT: ${{ github.action_path }}/../..
+        INPUT_NODE_VERSION: ${{ inputs.node-version }}
+      run: |
+        sha=$(git -C "$ACTION_ROOT" rev-parse HEAD 2>/dev/null || echo "unknown")
+        lock=$(sha256sum "$ACTION_ROOT/pnpm-lock.yaml" | cut -c1-16)
+        echo "key=ghostdeps-action-${{ runner.os }}-node${INPUT_NODE_VERSION}-${sha}-${lock}" >> "$GITHUB_OUTPUT"
+    - name: Restore ghostdeps build cache
+      id: cache
+      continue-on-error: true
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ steps.cache-key.outputs.key }}
+        path: |
+          ${{ github.action_path }}/../../node_modules
+          ${{ github.action_path }}/../../packages/*/node_modules
+          ${{ github.action_path }}/../../packages/*/dist
+          ${{ github.action_path }}/../../packages/adapters/*/node_modules
+          ${{ github.action_path }}/../../packages/adapters/*/dist
     - name: Build ghostdeps
       shell: bash
       working-directory: ${{ github.action_path }}/../..
+      env:
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
       run: |
+        if [ "$CACHE_HIT" = "true" ] &&
+           [ -f packages/cli/dist/main.js ] &&
+           [ -f packages/action/dist/post-check.js ] &&
+           [ -d node_modules/.pnpm ] &&
+           node packages/cli/dist/main.js --help > /dev/null 2>&1; then
+          echo "ghostdeps: using cached build"
+          exit 0
+        fi
+        if [ "$CACHE_HIT" = "true" ]; then
+          echo "::warning::ghostdeps: build cache failed verification - rebuilding from scratch"
+        fi
         pnpm install --frozen-lockfile
         pnpm --filter @ghostdeps/cli... --filter @ghostdeps/action... build
+    - name: Save ghostdeps build cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ steps.cache-key.outputs.key }}
+        path: |
+          ${{ github.action_path }}/../../node_modules
+          ${{ github.action_path }}/../../packages/*/node_modules
+          ${{ github.action_path }}/../../packages/*/dist
+          ${{ github.action_path }}/../../packages/adapters/*/node_modules
+          ${{ github.action_path }}/../../packages/adapters/*/dist
     # Inputs reach the shell ONLY through env vars below - never through
     # ${{ }} interpolation, which would execute metacharacters in them.
     - name: Scan
