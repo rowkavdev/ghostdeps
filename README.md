@@ -7,7 +7,7 @@ GhostDeps reads your manifests, lockfiles and source code and tells you which de
 
 ## Status
 
-Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` verdicts stay severity-capped until the nightly corpus check has been green for 14 consecutive days. GhostDeps says what it could not verify instead of guessing - see [Interpreting results](docs/interpreting-results.md) before acting on a finding.
+Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` confidence and severity stay capped at medium pending 14 consecutive green nightly corpus runs. GhostDeps says what it could not verify instead of guessing - see [Interpreting results](docs/interpreting-results.md) before acting on a finding.
 
 ## Use it as a GitHub Action
 
