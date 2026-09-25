@@ -2,8 +2,8 @@
   "env": {
     "node": "v22.23.2",
     "sandbox": "2 vCPU, 2 GiB RAM (measurement environment; production box is the 4 GiB sizing under review)",
-    "repoSha": "cb30c3f35666450e65ed6b3edd0a319196a6ef36",
-    "at": "2026-09-25T10:21:00Z/11:29+01:00 measurement window"
+    "repoSha": "251d006fecdca225a5503fc092beedb1cf46653d",
+    "measuredAt": "2026-09-25"
   },
   "runs": [
     {
@@ -1031,6 +1031,156 @@
         "cpuSysMs": 143
       },
       "sampleCount": 15
+    },
+    {
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 66015,
+          "peakRssMiB": 626.9,
+          "findings": [31, 6]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 72340,
+        "peakRssMiB": 627.2,
+        "endHeapUsedMiB": 63.9,
+        "maxRssGetrusageMiB": 627.2,
+        "cpuUserMs": 86486,
+        "cpuSysMs": 18099
+      },
+      "sampleCount": 2812
+    },
+    {
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 65911,
+          "peakRssMiB": 640.7,
+          "findings": [31, 6]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 72425,
+        "peakRssMiB": 641.2,
+        "endHeapUsedMiB": 64,
+        "maxRssGetrusageMiB": 641.2,
+        "cpuUserMs": 86794,
+        "cpuSysMs": 16414
+      },
+      "sampleCount": 2818
+    },
+    {
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 66529,
+          "peakRssMiB": 661.1,
+          "findings": [31, 6],
+          "usages": [13278, 227],
+          "usageTimeouts": [1, 0]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 72585,
+        "peakRssMiB": 661.4,
+        "endHeapUsedMiB": 53,
+        "maxRssGetrusageMiB": 661.4,
+        "cpuUserMs": 88512,
+        "cpuSysMs": 15476
+      },
+      "sampleCount": 2831
+    },
+    {
+      "config": {
+        "mode": "concurrent",
+        "pair": [
+          {
+            "name": "nextjs",
+            "owner": "vercel",
+            "repo": "next.js",
+            "sha": "3192e47e902419082a1cbaee0445d7ce996f78c2"
+          },
+          {
+            "name": "typescript",
+            "owner": "microsoft",
+            "repo": "TypeScript",
+            "sha": "cecc44acba99418857eb7ebda55b8f5e326e0d05"
+          }
+        ]
+      },
+      "stages": {
+        "analysis(x2 concurrent)": {
+          "ms": 67441,
+          "peakRssMiB": 663.5,
+          "findings": [31, 6],
+          "usages": [13278, 227],
+          "usageTimeoutSummaries": [
+            "javascript-typescript analysis incomplete: usage analysis timed out"
+          ]
+        }
+      },
+      "notes": [],
+      "totals": {
+        "wallMs": 73600,
+        "peakRssMiB": 664,
+        "endHeapUsedMiB": 57.9,
+        "maxRssGetrusageMiB": 664,
+        "cpuUserMs": 89707,
+        "cpuSysMs": 15927
+      },
+      "sampleCount": 2864
     },
     {
       "config": {

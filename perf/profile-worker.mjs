@@ -323,6 +323,11 @@ async function runChild(config) {
     mark("analysed");
     record("analysis(x2 concurrent)", "analyse", {
       findings: [ra.findings.length, rb.findings.length],
+      usages: [ra.usages.length, rb.usages.length],
+      usageTimeoutSummaries: [
+        ...ra.findings.map((f) => f.summary ?? "").filter((t) => /timed out/.test(t)),
+        ...rb.findings.map((f) => f.summary ?? "").filter((t) => /timed out/.test(t)),
+      ],
     });
   } else {
     throw new Error(`unknown child mode: ${config.mode}`);
