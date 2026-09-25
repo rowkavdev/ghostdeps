@@ -21,6 +21,7 @@ nav:
       - Recommendation policy: recommendation-policy.md
       - Transitive impact: transitive-impact.md
       - GitHub API limits: github-api-limits.md
+      - Durable queue fairness: durable-queue-fairness.md
       - Security model: security-model.md
   - Build and contribute:
       - Development: development.md
