@@ -2,10 +2,14 @@
  * Native replacement rule schema (docs/architecture.md, "Native replacement
  * rules"). Rules are data with tests, not vibes. Seed dataset research:
  * issue #64 (e18e/module-replacements, min versions from Node docs).
+ * No native replacement finding is shipped by this inert data contract. A
+ * source-validating producer must first establish runtime and semantic facts.
  */
 
 /** One native-replacement rule for one ecosystem. */
 export interface NativeRule {
+  /** Stable rule identity; version changes when coverage or semantics change. */
+  id: string;
   ecosystem: string;
   /** Package(s) this rule applies to (e.g. ["axios", "node-fetch", "cross-fetch"]). */
   packages: string[];
@@ -24,3 +28,9 @@ export interface NativeRule {
   /** Links to docs/specs justifying the mapping. */
   references: string[];
 }
+
+export {
+  evaluateNativeRule,
+  type NativeEligibilityEvidence,
+  type NativeDecision,
+} from "./evaluate.js";
