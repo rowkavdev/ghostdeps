@@ -347,11 +347,6 @@ async function runChild(config) {
 
 /* --------------------------------------------------------------- parent */
 
-function median(nums) {
-  const s = [...nums].sort((a, b) => a - b);
-  return s[Math.floor((s.length - 1) / 2)];
-}
-
 function runOne(config) {
   const raw = execFileSync(
     process.execPath,
