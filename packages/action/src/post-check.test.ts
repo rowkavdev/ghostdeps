@@ -41,6 +41,16 @@ let originalEnv: NodeJS.ProcessEnv;
 let originalFetch: typeof fetch;
 
 function setEnv(over: Record<string, string | undefined>): void {
+  // CI runners carry real GITHUB_* variables; a test that doesn't set one
+  // must see it ABSENT, never the runner's value (event payloads included).
+  for (const k of [
+    "GITHUB_EVENT_PATH",
+    "GITHUB_EVENT_NAME",
+    "GITHUB_API_URL",
+    "GHOSTDEPS_CHECK_NAME",
+  ]) {
+    delete process.env[k];
+  }
   const base: Record<string, string> = {
     GHOSTDEPS_GITHUB_TOKEN: "ghs_test",
     GITHUB_REPOSITORY: "acme/demo",
@@ -114,7 +124,7 @@ describe("main", () => {
     assert.equal(body.output.annotations.length, 0);
   });
 
-  it("on a PR, fetches added lines and checks the PR head SHA", async () => {
+  it("on a PR, fetches added lines and checks the analysed checkout SHA", async () => {
     const eventPath = await writeEvent({
       pull_request: { number: 7, head: { sha: "b".repeat(40), repo: { fork: false } } },
     });
@@ -136,7 +146,7 @@ describe("main", () => {
       conclusion: string;
       output: { annotations: { path: string; start_line: number }[] };
     };
-    assert.equal(body.head_sha, "b".repeat(40));
+    assert.equal(body.head_sha, "a".repeat(40), "labels the analysed checkout, not the PR head");
     assert.equal(body.conclusion, "neutral");
     assert.deepEqual(
       body.output.annotations.map((a) => [a.path, a.start_line]),
@@ -144,7 +154,28 @@ describe("main", () => {
     );
   });
 
-  it("skips the check run on fork PRs and exits 0", async () => {
+  it("skips only the check run on fork PRs; added lines are still read", async () => {
+    const eventPath = await writeEvent({
+      pull_request: { number: 7, head: { sha: "b".repeat(40), repo: { fork: true } } },
+    });
+    setEnv({ GITHUB_EVENT_NAME: "pull_request", GITHUB_EVENT_PATH: eventPath });
+    mockFetch((c) =>
+      c.url.includes("/pulls/7/files")
+        ? {
+            status: 200,
+            body: [{ filename: "package.json", patch: "@@ -10,4 +10,5 @@\n a\n-b\n+B\n+C\n d" }],
+          }
+        : { status: 403, body: { message: "Resource not accessible" } },
+    );
+    const code = await main(await writeResult({ ...cleanResult, findings: [unusedFinding] }));
+    assert.equal(code, 0);
+    assert.equal(calls.length, 1, "reads the file list, never creates a check run");
+    assert.match(calls[0]?.url ?? "", /\/pulls\/7\/files/);
+    const summary = await readFile(join(dir, "summary"), "utf8");
+    assert.match(summary, /dependency finding/);
+  });
+
+  it("degrades to no annotations when a fork's file list is unreadable", async () => {
     const eventPath = await writeEvent({
       pull_request: { number: 7, head: { sha: "b".repeat(40), repo: { fork: true } } },
     });
@@ -152,9 +183,15 @@ describe("main", () => {
     mockFetch(() => ({ status: 403, body: { message: "Resource not accessible" } }));
     const code = await main(await writeResult({ ...cleanResult, findings: [unusedFinding] }));
     assert.equal(code, 0);
-    assert.equal(calls.length, 0, "no API calls on fork PRs");
-    const summary = await readFile(join(dir, "summary"), "utf8");
-    assert.match(summary, /dependency finding/);
+  });
+
+  it("renders a neutral could-not-run check for non-AnalysisResult JSON", async () => {
+    mockFetch(() => ({ status: 201, body: { id: 1 } }));
+    const code = await main(await writeResult({}));
+    assert.equal(code, 0);
+    const body = calls[0]?.body as { conclusion: string; output: { title: string } };
+    assert.equal(body.conclusion, "neutral");
+    assert.equal(body.output.title, "GhostDeps could not run");
   });
 
   it("renders a CLI error object as a neutral could-not-run check", async () => {

@@ -62,15 +62,14 @@ async function readEnv(): Promise<Env> {
 
 interface PullRequestInfo {
   number: number;
-  headSha: string;
   fork: boolean;
 }
 
 function pullRequestInfo(event: Record<string, unknown>): PullRequestInfo | undefined {
   const pr = event.pull_request as
     { number?: number; head?: { sha?: string; repo?: { fork?: boolean } | null } } | undefined;
-  if (!pr?.head?.sha || typeof pr.number !== "number") return undefined;
-  return { number: pr.number, headSha: pr.head.sha, fork: pr.head.repo?.fork === true };
+  if (typeof pr?.number !== "number") return undefined;
+  return { number: pr.number, fork: pr.head?.repo?.fork === true };
 }
 
 async function api<T>(e: Env, method: string, path: string, body?: unknown): Promise<T> {
@@ -103,6 +102,7 @@ async function pullRequestAddedLines(
       "GET",
       `/repos/${e.owner}/${e.repo}/pulls/${pr}/files?per_page=100&page=${page}`,
     );
+    if (!Array.isArray(chunk)) throw new ActionError("unexpected PR files response");
     files.push(...chunk);
     if (chunk.length < 100) break;
     if (page === maxFilePages) {
@@ -115,6 +115,14 @@ async function pullRequestAddedLines(
     }
   }
   return { added: addedLinesFromFiles(files), notes: [] };
+}
+
+function isAnalysisResult(json: unknown): json is AnalysisResult {
+  return (
+    typeof json === "object" &&
+    json !== null &&
+    Array.isArray((json as { findings?: unknown }).findings)
+  );
 }
 
 function isCliError(json: unknown): json is { error: { code: string; message: string } } {
@@ -174,11 +182,23 @@ export async function main(resultPath: string): Promise<number> {
   let rendered: CheckOutput;
   if (isCliError(parsed)) {
     rendered = failedCheck(parsed.error.message);
-  } else if (pr && !pr.fork) {
-    const r = await pullRequestAddedLines(e, pr.number);
-    rendered = renderCheck(parsed as AnalysisResult, r.added, r.notes);
+  } else if (!isAnalysisResult(parsed)) {
+    rendered = failedCheck("ghostdeps output was not an AnalysisResult");
+  } else if (pr) {
+    // Added lines are read-only, so fork PRs get them too; only check-run
+    // creation needs write access. If the read fails on a fork, degrade to
+    // no annotations rather than failing.
+    try {
+      const r = await pullRequestAddedLines(e, pr.number);
+      rendered = renderCheck(parsed, r.added, r.notes);
+    } catch (err) {
+      if (!pr.fork) throw err;
+      rendered = renderCheck(parsed, new Map(), [
+        "Could not read the PR file list, so no annotations were posted.",
+      ]);
+    }
   } else {
-    rendered = renderCheck(parsed as AnalysisResult, new Map(), []);
+    rendered = renderCheck(parsed, new Map(), []);
   }
 
   await setOutput("conclusion", rendered.conclusion);
@@ -196,7 +216,7 @@ export async function main(resultPath: string): Promise<number> {
     return 0;
   }
 
-  await createCheckRun(e, pr?.headSha ?? e.sha, rendered);
+  await createCheckRun(e, e.sha, rendered);
   console.log(`ghostdeps: check run completed (${rendered.conclusion}).`);
   return 0;
 }
