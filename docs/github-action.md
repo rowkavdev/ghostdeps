@@ -74,8 +74,9 @@ a workflow, not bugs.
   build, scan and all - and the check run exists only as output of that run.
 - **No cross-run result cache.** The app serves repeat analyses of an
   unchanged head SHA from a cache (#174). The action analyses on every run.
-  The workspace build (`pnpm install` + package builds) is also uncached, so
-  budget a few minutes of cold-start per run.
+  The workspace build is cached per action commit + lockfile + runner OS +
+  Node version (#347), so repeat runs skip the install and build; the first
+  run on a cold cache still pays the full build.
 - **No installation model.** There is nothing to install and nothing that
   watches your repo: no push handling outside the workflows you write, no
   org-wide rollout, no per-installation settings. Configuration is the
