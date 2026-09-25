@@ -14,7 +14,7 @@ A software bill of materials (SBOM) inventories components in source trees, buil
 
 ## Techniques and limits
 
-[Package URL (purl)](https://github.com/package-url/purl-spec) is a portable component identifier with ecosystem type, name, version and optional qualifiers. It is useful when linking inventories or external metadata. It is not by itself proof of a dependency's role or a complete match across local, git, alias, workspace and registry declarations. SBOM contents can depend on what source, lockfile, build or image the generator scanned; record the source and completeness before comparing inventories.
+[Package URL (purl)](https://github.com/package-url/purl-spec) is a portable component identifier requiring a type and name; namespace, version, qualifiers and subpath are optional. It is useful when linking inventories or external metadata. It is not by itself proof of a dependency's role or a complete match across local, git, alias, workspace and registry declarations. SBOM contents can depend on what source, lockfile, build or image the generator scanned; record the source and completeness before comparing inventories.
 
 ## Fit with GhostDeps today
 
