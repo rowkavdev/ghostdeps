@@ -187,7 +187,15 @@ describe("main", () => {
 
   it("renders neutral could-not-run checks for malformed finding objects", async () => {
     mockFetch(() => ({ status: 201, body: { id: 1 } }));
-    for (const bad of [{ findings: [null] }, { findings: [{ kind: "unused" }] }]) {
+    for (const bad of [
+      { findings: [null] },
+      { findings: [{ kind: "unused" }] },
+      // Regression: an empty findings array ALONE is not a clean analysis -
+      // every other required field is missing.
+      { findings: [] },
+      { ...cleanResult, schemaVersion: 2 },
+      { ...cleanResult, detected: {} },
+    ]) {
       calls = [];
       const code = await main(await writeResult(bad));
       assert.equal(code, 0);

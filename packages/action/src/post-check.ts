@@ -130,21 +130,28 @@ function safeRender(
   }
 }
 
+/**
+ * Full-shape validation: a clean-looking partial result ({"findings": []})
+ * must never read as a clean analysis, so every required AnalysisResult
+ * field is checked, and every finding object structurally. Optional fields
+ * (projectTree, graph, impact) are engine-set and not required here.
+ */
 function isAnalysisResult(json: unknown): json is AnalysisResult {
   if (typeof json !== "object" || json === null) return false;
-  const findings = (json as { findings?: unknown }).findings;
+  const r = json as Record<string, unknown>;
+  if (r.schemaVersion !== 1) return false;
+  for (const key of ["projects", "dependencies", "usages", "findings", "detected", "surface"]) {
+    if (!Array.isArray(r[key])) return false;
+  }
   // Check membership, not just the array: [null] must not reach the renderer.
-  return (
-    Array.isArray(findings) &&
-    findings.every(
-      (f) =>
-        typeof f === "object" &&
-        f !== null &&
-        typeof (f as { kind?: unknown }).kind === "string" &&
-        typeof (f as { summary?: unknown }).summary === "string" &&
-        Array.isArray((f as { evidence?: unknown }).evidence) &&
-        Array.isArray((f as { limitations?: unknown }).limitations),
-    )
+  return (r.findings as unknown[]).every(
+    (f) =>
+      typeof f === "object" &&
+      f !== null &&
+      typeof (f as { kind?: unknown }).kind === "string" &&
+      typeof (f as { summary?: unknown }).summary === "string" &&
+      Array.isArray((f as { evidence?: unknown }).evidence) &&
+      Array.isArray((f as { limitations?: unknown }).limitations),
   );
 }
 
