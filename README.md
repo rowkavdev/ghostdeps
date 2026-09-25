@@ -1,42 +1,77 @@
 # GhostDeps
 
-**GhostDeps — find dependencies your code doesn't really need, in any language.**
+[![CI](https://github.com/rowkavdev/ghostdeps/actions/workflows/ci.yml/badge.svg)](https://github.com/rowkavdev/ghostdeps/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-GhostDeps is universal dependency intelligence for software repositories. It answers a question existing dependency tools don't answer well:
-
-> **Does this codebase actually need this dependency?**
-
-For each direct dependency, GhostDeps aims to determine whether it is used, where, which parts of it are used, whether the runtime now provides a native alternative, whether another dependency already covers the same capability, what it costs you in transitive packages and install size, how healthy it is, and what replacing it would take — with evidence and a confidence level attached to every claim.
-
-GhostDeps is conservative by design. A false positive that tells you to remove something necessary is far worse than no recommendation, so it says "manual review recommended" whenever it can't be sure.
+GhostDeps reads your manifests, lockfiles and source code and tells you which declared dependencies your code does not actually need, with the evidence and confidence behind every claim. It runs as a check on your pull requests (GitHub App or Action) and as a local CLI, and it never executes your code.
 
 ## Status
 
-Early development. The architecture is being laid down right now — see the [project board](https://github.com/orgs/rowkavdev/projects) and [docs/](docs/) for what's agreed and what's in flight.
+Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` confidence and severity stay capped at medium pending 14 consecutive green nightly corpus runs. GhostDeps says what it could not verify instead of guessing - see [Interpreting results](docs/interpreting-results.md) before acting on a finding.
 
-Ecosystem support lands incrementally and is never advertised before it works:
+## Use it as a GitHub Action
 
-- **First production-quality targets:** JavaScript/TypeScript (npm, pnpm, Yarn, Bun), Python (pip, Poetry, uv, Pipenv), Rust (Cargo), Go (Go Modules)
-- **Later:** Maven, Gradle, NuGet, Composer, Bundler, SwiftPM, Dart/pub, Conan, vcpkg and others
+```yaml
+name: ghostdeps
+on:
+  pull_request:
+  push:
+    branches: [main]
 
-## Interfaces
+permissions:
+  contents: read # actions/checkout
+  checks: write # create the ghostdeps check run
+  pull-requests: read # added-line lookup for PR annotations
 
-- **GitHub App (primary):** reacts to pull requests and pushes, analyses dependency changes in context, and reports through GitHub Checks with annotations. No noisy bot comments.
-- **CLI (secondary):** `ghostdeps scan`, `ghostdeps inspect <pkg>`, `ghostdeps explain <pkg>`, JSON output — the same analysis engine, no separate implementation.
+jobs:
+  ghostdeps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rowkavdev/ghostdeps/packages/action@main
+        with:
+          path: "."
+          # fail-on: high   # opt in to gating; advisory by default
+```
 
-## Principles
+The action runs the analysis inside your job; there is no external service to install. It reports through GitHub: a `ghostdeps` check run on your own branches, or workflow annotations and the job summary on fork pull requests, where `GITHUB_TOKEN` is read-only. `@main` follows the latest main - pin a full commit SHA (`rowkavdev/ghostdeps/packages/action@<sha>`) for production workflows. Full input list and the known trade-offs versus the App: [GitHub Action](docs/github-action.md).
 
-- **Deterministic first.** No LLM or API key is required. Deterministic evidence is the foundation; any future AI assistance is optional and additive.
-- **Static analysis only.** GhostDeps never executes repository code. Manifests, lockfiles and source files are treated as untrusted input. See [docs/security-model.md](docs/security-model.md).
-- **Evidence or silence.** Every recommendation carries evidence and a confidence level. See [docs/architecture.md](docs/architecture.md).
-- **Multi-language from day one.** Ecosystem adapters plug into a shared core; nothing is bolted on.
+## Use the CLI
+
+The CLI is not on npm yet; build it from source (Node 22+, pnpm via corepack):
+
+```bash
+git clone https://github.com/rowkavdev/ghostdeps.git
+cd ghostdeps
+corepack enable && pnpm install && pnpm build
+node packages/cli/dist/main.js scan .
+```
+
+`scan` prints findings with evidence and confidence. `--json` emits the schema-versioned result; `--fail-on high` opts into a non-zero exit for CI gating. Commands, flags and exit codes: [CLI](docs/cli.md).
+
+## What the check looks like
+
+Findings land on a `ghostdeps` check run with an advisory conclusion: `success` (quiet) or `neutral`, never a blocking failure. Annotations appear only on high-confidence findings whose evidence points at a line the PR added. Every finding carries its evidence, a confidence level and stated limitations, and an incomplete scan says what it could not verify rather than calling packages unused. How to read verdict kinds, confidence levels and notes: [Interpreting results](docs/interpreting-results.md).
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Security model](docs/security-model.md)
+**Use GhostDeps**
+
+- [GitHub App](docs/github-app.md) and [self-hosting it](docs/deployment.md)
 - [GitHub Action](docs/github-action.md)
-- [Architecture Decision Records](docs/adr/)
+- [CLI](docs/cli.md) and [output formats](docs/output-formats.md)
+- [Interpreting results](docs/interpreting-results.md)
+
+**How it works**
+
+- [Architecture](docs/architecture.md) and [analysis engine](docs/analysis-engine.md)
+- [Recommendation policy](docs/recommendation-policy.md)
+- [Security model](docs/security-model.md) - static analysis only, untrusted input, no code execution
+
+**Build and contribute**
+
+- [Development](docs/development.md) and [contributing adapters](docs/contributing-adapters.md)
+- [Decisions (ADRs)](docs/adr/)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

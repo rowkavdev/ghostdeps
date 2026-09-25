@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rowkavdev/ghostdeps/packages/action@v1
+      - uses: rowkavdev/ghostdeps/packages/action@main
         with:
           path: "."
           # fail-on: high   # opt in to gating; advisory by default
@@ -42,6 +42,10 @@ the default `actions/checkout` on `pull_request` that is the merge ref, so
 the run sits on the merge commit like any other CI check. To analyse the PR
 head instead, check out `${{ github.event.pull_request.head.sha }}`
 explicitly.
+
+The action is pre-release and has no version tags yet: `@main` follows the
+latest main. Pin a full commit SHA (`rowkavdev/ghostdeps/packages/action@<sha>`)
+for production workflows.
 
 ## Inputs
 
