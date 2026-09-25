@@ -25,7 +25,7 @@ import {
   type PackageMetadataProvider,
   type SourceLineChanges,
 } from "@ghostdeps/core";
-import type { AddedLines } from "../checks/diff.js";
+import type { AddedLines } from "@ghostdeps/checks-renderer";
 import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
 import type { AnalysisJob, JobWorker } from "../jobs.js";
 import { pullRequestContext, type PullRequestClient } from "../pull-request/changes.js";

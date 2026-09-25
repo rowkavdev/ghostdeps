@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@ghostdeps/core": ["../core/src/index.ts"],
+      "@ghostdeps/checks-renderer": ["../checks-renderer/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

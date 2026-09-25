@@ -20,7 +20,7 @@ import {
   type ReadDeclaredDependencies,
 } from "@ghostdeps/core";
 import { JS_ECOSYSTEM, parseManifestText } from "@ghostdeps/javascript-typescript";
-import type { AddedLines } from "../checks/diff.js";
+import type { AddedLines } from "@ghostdeps/checks-renderer";
 
 /** The slice of Octokit needed for the diff and raw file reads. */
 export interface PullRequestClient {
