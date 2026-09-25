@@ -1,0 +1,41 @@
+name: Dogfood
+
+# Runs the GhostDeps Action (packages/action) against this repository - the
+# action's first real consumer (#346). INFORMATIONAL ONLY until the signal
+# proves stable: every step after checkout continues on error, so a self-scan
+# flake can never gate a PR. The ghostdeps check run itself is the output.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: read
+
+jobs:
+  self-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GhostDeps self-scan
+        id: ghostdeps
+        # Non-blocking by design (see header): the check run reports the
+        # findings; the workflow outcome stays green while we validate it.
+        continue-on-error: true
+        uses: ./packages/action
+        with:
+          path: "."
+      - name: Report outcome
+        if: always()
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.ghostdeps.outcome }}
+          CONCLUSION: ${{ steps.ghostdeps.outputs.conclusion }}
+          SCAN_EXIT: ${{ steps.ghostdeps.outputs.scan-exit }}
+        run: |
+          echo "dogfood: step outcome=$OUTCOME check conclusion=$CONCLUSION scan exit=$SCAN_EXIT"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::warning::dogfood self-scan did not complete cleanly (non-blocking by design)"
+          fi
