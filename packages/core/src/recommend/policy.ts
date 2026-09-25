@@ -119,7 +119,9 @@ function hasNoUsageEvidence(d: Dependency, context: PolicyContext): boolean {
   if (d.specifier && d.specifier.type !== "registry") return false;
   if (usagesOf(d, context).length > 0) return false;
   if (isAllowlisted(d.name, ecosystem, context.allowlists)) return false;
-  if (typesCompanion(d, context)) return false;
+  // Compiler consumption is not an import; a configurable note rule cannot
+  // grant the generic absence rules permission to call @types/* removable.
+  if (ecosystem === "javascript-typescript" && d.name.startsWith("@types/")) return false;
   return true;
 }
 

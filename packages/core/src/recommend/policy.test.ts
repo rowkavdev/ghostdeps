@@ -222,6 +222,25 @@ describe("default recommendation policy", () => {
     );
   });
 
+  it("keeps @types no-absence safety across all generic paths when the ambient note is disabled", async () => {
+    const policy = createDefaultPolicy({ disabled: ["ambient-types-unverified"] });
+    const d = dep("@types/orphan", "dev");
+    const cases: Partial<RecommendationInput>[] = [
+      { dependencies: [d], usages: [] }, // unused
+      {
+        dependencies: [d],
+        usages: [use(d.name, "src/old.ts", { removedInPr: true })],
+        mode: "pull-request",
+        pullRequestChanges: [],
+      }, // removed-last-usage
+      { dependencies: [d], usages: [], referenceAnalysedEcosystems: new Set() }, // unverified-no-imports
+    ];
+    for (const candidate of cases) {
+      const findings = await run(candidate, policy);
+      assert.deepEqual(findings, [], JSON.stringify(candidate));
+    }
+  });
+
   it("does not manufacture an ambient note if usage analysis never ran", async () => {
     const findings = await run({
       dependencies: [dep("@types/node", "dev")],
