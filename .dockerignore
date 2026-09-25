@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+coverage
+.corpus-cache
+.env
+.env.*
+*.pem
+*.log
