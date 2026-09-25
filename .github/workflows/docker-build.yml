@@ -1,0 +1,30 @@
+name: Docker build
+
+# Build the self-hosted app image on PRs only. This workflow never publishes it.
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker-build.yml
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - packages/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image (no push)
+        run: docker build --tag ghostdeps:ci .
+      - name: Smoke-test bundled Probot CLI
+        run: docker run --rm --entrypoint ./node_modules/.bin/probot ghostdeps:ci --help
