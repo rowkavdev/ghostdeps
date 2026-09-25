@@ -164,7 +164,6 @@ describe("default recommendation policy", () => {
       "@typescript-eslint/parser",
       "vitest",
       "vite",
-      "@types/node",
       "prettier",
     ];
     const findings = await run({ dependencies: names.map((n) => dep(n, "dev")) });
@@ -189,7 +188,47 @@ describe("default recommendation policy", () => {
     });
     assert.deepEqual(byDep(findings, "@types/lodash"), []);
     assert.deepEqual(byDep(findings, "@types/scope__pkg"), []);
-    assert.equal(byDep(findings, "@types/orphan")[0]?.kind, "unused");
+    assert.equal(byDep(findings, "@types/orphan")[0]?.rule, "ambient-types-unverified");
+    assert.equal(byDep(findings, "@types/orphan")[0]?.kind, "info");
+  });
+
+  it("credits a declared runtime companion even when its import use is ambient", async () => {
+    const findings = await run({ dependencies: [dep("@types/react", "dev"), dep("react")] });
+    assert.deepEqual(byDep(findings, "@types/react"), []);
+    assert.equal(byDep(findings, "react")[0]?.kind, "unused");
+  });
+
+  it("scopes companion matching to the same project, not another workspace", async () => {
+    const other = { ...project, path: "packages/other" };
+    const findings = await run({
+      dependencies: [
+        dep("@types/react", "dev", { project: other, declaredIn: "packages/other/package.json" }),
+        dep("react"),
+      ],
+    });
+    assert.equal(byDep(findings, "@types/react")[0]?.rule, "ambient-types-unverified");
+  });
+
+  it("marks standalone ambient packages incomplete instead of an unused verdict", async () => {
+    const findings = await run({
+      dependencies: [dep("@types/node", "dev"), dep("@types/orphan", "dev")],
+    });
+    assert.deepEqual(
+      findings.map((f) => [f.dependency, f.kind, f.rule]),
+      [
+        ["@types/node", "info", "ambient-types-unverified"],
+        ["@types/orphan", "info", "ambient-types-unverified"],
+      ],
+    );
+  });
+
+  it("does not manufacture an ambient note if usage analysis never ran", async () => {
+    const findings = await run({
+      dependencies: [dep("@types/node", "dev")],
+      usageAnalysedEcosystems: new Set(),
+      referenceAnalysedEcosystems: new Set(),
+    });
+    assert.deepEqual(findings, []);
   });
 
   it("gives no verdict for peer, optional or non-registry dependencies", async () => {
