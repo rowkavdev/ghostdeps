@@ -134,6 +134,8 @@ export interface AdapterOutcome {
   usages: Usage[];
   graphs: DependencyGraph[];
   usageAnalysed: boolean;
+  /** True when usage facts were salvaged but the stage did not complete. */
+  usageIncomplete?: boolean;
   /**
    * Usage analysis completed, the adapter declares "referenceAnalysis", and
    * every findUsage result reported referenceAnalysisComplete: true.
@@ -240,6 +242,9 @@ export async function runAdapter(
    * loses only the notes, never the analysis before it.
    */
   onBeforeNotes?: (outcome: AdapterOutcome) => void,
+  usageTimeoutMs: number = timeoutMs,
+  onUsageProgress?: (usages: Usage[]) => void,
+  onBeforeUsage?: (outcome: AdapterOutcome) => void,
 ): Promise<AdapterOutcome> {
   const outcome: AdapterOutcome = {
     ecosystem: adapter.ecosystem,
@@ -333,31 +338,44 @@ export async function runAdapter(
   const usageStage =
     adapter.capabilities.has("usageAnalysis") && adapter.findUsage
       ? (() => {
+          onBeforeUsage?.(outcome);
           onStage?.("usage analysis");
+          const completed: Array<ReturnType<typeof normaliseUsageResult> | undefined> = new Array(
+            outcome.dependencies.length,
+          );
           return withTimeout(
             async () => {
-              const perDependency = await mapBounded(
-                outcome.dependencies,
+              // Keep settled per-dependency facts even if a later call times out.
+              // Never mark the ecosystem analysed until every call has completed.
+              await mapBounded(
+                outcome.dependencies.map((dep, index) => ({ dep, index })),
                 usageConcurrency,
                 controller.signal,
-                async (dep) => normaliseUsageResult(await adapter.findUsage!(context, dep)),
+                async ({ dep, index }) => {
+                  const result = normaliseUsageResult(await adapter.findUsage!(context, dep));
+                  completed[index] = result;
+                  onUsageProgress?.(result.usages);
+                  return result;
+                },
               );
-              return {
-                usages: perDependency.flatMap((result) => result.usages),
-                // One incomplete dependency clears the ecosystem for this run.
-                complete: perDependency.every((result) => result.referenceAnalysisComplete),
-              };
+              return completed as ReturnType<typeof normaliseUsageResult>[];
             },
-            timeoutMs,
+            usageTimeoutMs,
             "usage analysis",
             controller,
           ).then(
-            ({ usages, complete }) => {
-              outcome.usages = usages;
+            (perDependency) => {
+              outcome.usages = perDependency.flatMap((result) => result.usages);
               outcome.usageAnalysed = true;
-              outcome.referenceAnalysed = adapter.capabilities.has("referenceAnalysis") && complete;
+              outcome.referenceAnalysed =
+                adapter.capabilities.has("referenceAnalysis") &&
+                perDependency.every((result) => result.referenceAnalysisComplete);
             },
             (error: unknown) => {
+              outcome.usages = completed.flatMap((result) => result?.usages ?? []);
+              outcome.usageIncomplete = true;
+              outcome.usageAnalysed = false;
+              outcome.referenceAnalysed = false;
               outcome.findings.push(adapterFailure(adapter, "usage analysis", error));
             },
           );

@@ -60,6 +60,8 @@ export { detectionConfidence, DEFAULT_DETECTION_THRESHOLD };
  * preemptively with terminate().
  */
 export const DEFAULT_ADAPTER_TIMEOUT_MS = 60_000;
+/** Usage analysis at large-repo scale needs a separate wall-clock budget (#331). */
+export const DEFAULT_USAGE_TIMEOUT_MS = 300_000;
 
 /** Maximum concurrent findUsage calls per adapter. */
 export const DEFAULT_USAGE_CONCURRENCY = 8;
@@ -96,6 +98,8 @@ export interface AnalyseOptions {
   network?: NetworkPolicy;
   detectionThreshold?: number;
   adapterTimeoutMs?: number;
+  /** Dedicated usage-stage budget; defaults to five minutes (or adapterTimeoutMs when overridden). */
+  usageTimeoutMs?: number;
   /** Maximum concurrent findUsage calls per adapter. */
   usageConcurrency?: number;
   /** Omit to emit facts only (no recommendation findings). */
@@ -256,40 +260,53 @@ function graphCompleteness(
  * "analysis incomplete" note the surviving facts can read as
  * ecosystem-wide. This note names the ecosystems the facts actually came
  * from, so the check output never implies the timed-out ecosystem
- * completed. Marked `adapterNote` (findingGroup "note"): visible in
- * Notes, never a verdict, and the completeness contract is unchanged.
+ * completed. Salvaged facts (#331) are attributed too, marked partial.
+ * Marked `adapterNote` (findingGroup "note"): visible in Notes, never a
+ * verdict, and the completeness contract is unchanged.
  */
 export function usageAttributionNote(outcomes: readonly AdapterOutcome[]): Finding | undefined {
-  const contributors = new Map<string, number>();
+  const contributors = new Map<string, { count: number; complete: boolean }>();
   const incomplete: string[] = [];
   for (const outcome of outcomes) {
+    // usageIncomplete is set exactly on the usage-stage failure path, in
+    // both the in-process and worker tiers (#331); salvaged facts then sit
+    // in outcome.usages with usageAnalysed false.
+    const failed = outcome.detected !== undefined && outcome.usageIncomplete === true;
     if (outcome.usages.length > 0) {
-      contributors.set(
-        outcome.ecosystem,
-        (contributors.get(outcome.ecosystem) ?? 0) + outcome.usages.length,
-      );
+      const prev = contributors.get(outcome.ecosystem) ?? { count: 0, complete: true };
+      contributors.set(outcome.ecosystem, {
+        count: prev.count + outcome.usages.length,
+        complete: prev.complete && outcome.usageAnalysed,
+      });
     }
-    // The usage stage is the only way usages arrive; when it fails the
-    // outcome keeps zero usages and carries the adapter-error finding.
-    const usageStageFailed = outcome.findings.some((f) =>
-      f.evidence.some(
-        (e) =>
-          e.kind === "adapter-error" &&
-          e.statement === `${outcome.ecosystem} adapter usage analysis stage`,
-      ),
-    );
-    if (outcome.detected && !outcome.usageAnalysed && usageStageFailed) {
-      if (!incomplete.includes(outcome.ecosystem)) incomplete.push(outcome.ecosystem);
-    }
+    if (failed && !incomplete.includes(outcome.ecosystem)) incomplete.push(outcome.ecosystem);
   }
   if (incomplete.length === 0 || contributors.size === 0) return undefined;
-  const from = [...contributors.entries()].map(([eco, n]) => `${eco} (${n})`).join(", ");
+  const from = [...contributors.entries()]
+    .map(([eco, c]) => `${eco} (${c.count}${c.complete ? "" : ", partial"})`)
+    .join(", ");
+  const partial = incomplete.filter((eco) => contributors.has(eco));
+  const empty = incomplete.filter((eco) => !contributors.has(eco));
+  const clauses = [`usage facts come from ${from}`];
+  if (partial.length > 0) {
+    clauses.push(
+      `${partial.join(", ")} usage analysis did not complete, so ${
+        partial.length === 1 ? "that ecosystem's" : "those ecosystems'"
+      } facts are partial (settled before the failure)`,
+    );
+  }
+  if (empty.length > 0) {
+    clauses.push(
+      `${empty.join(", ")} usage analysis did not complete, so ${
+        empty.length === 1 ? "that ecosystem has" : "those ecosystems have"
+      } no usage facts in this result`,
+    );
+  }
+  const summary = clauses.join("; ");
   return {
     kind: "info",
     rule: "usage-attribution",
-    summary: `usage facts come from ${from}; ${incomplete.join(", ")} usage analysis did not complete, so ${
-      incomplete.length === 1 ? "that ecosystem has" : "those ecosystems have"
-    } no usage facts in this result`,
+    summary,
     recommendation: "For information; no verdict is affected.",
     evidence: [
       {
@@ -347,6 +364,7 @@ export async function assembleAnalysisResult(
   const surface: AnalysisResult["surface"] = [];
   const usageAnalysedEcosystems = new Set<string>();
   const referenceAnalysedEcosystems = new Set<string>();
+  const partialUsageEcosystems = new Set<string>();
 
   findings.push(...(context.notes ?? []));
   for (const outcome of outcomes) {
@@ -358,6 +376,7 @@ export async function assembleAnalysisResult(
     dependencies.push(...outcome.dependencies);
     usages.push(...outcome.usages);
     graphs.push(...outcome.graphs);
+    if (outcome.usageIncomplete) partialUsageEcosystems.add(outcome.ecosystem);
     if (outcome.usageAnalysed) usageAnalysedEcosystems.add(outcome.ecosystem);
     if (outcome.usageAnalysed && outcome.referenceAnalysed === true && !scanIncomplete) {
       referenceAnalysedEcosystems.add(outcome.ecosystem);
@@ -421,6 +440,16 @@ export async function assembleAnalysisResult(
         limitations: ["Findings other than facts and adapter notes are missing."],
         affectedFiles: [],
       });
+    }
+  }
+
+  if (partialUsageEcosystems.size > 0) {
+    // Do not allow even a caller-supplied policy to turn missing references
+    // in partial usage into an absence verdict. Positive usage facts survive.
+    // Names may collide across projects/ecosystems; fail closed rather than
+    // guessing which same-name dependency a policy finding refers to.
+    for (let i = findings.length - 1; i >= 0; i--) {
+      if (ABSENCE_KINDS.has(findings[i]!.kind)) findings.splice(i, 1);
     }
   }
 
@@ -591,6 +620,8 @@ export async function analyseRepository(
   const threshold = options.detectionThreshold ?? DEFAULT_DETECTION_THRESHOLD;
   const timeoutMs = options.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS;
   const usageConcurrency = options.usageConcurrency ?? DEFAULT_USAGE_CONCURRENCY;
+  const usageTimeoutMs =
+    options.usageTimeoutMs ?? options.adapterTimeoutMs ?? DEFAULT_USAGE_TIMEOUT_MS;
   const sourceChanges = boundPullRequestSourceChanges(options);
 
   // One set per run: each unsniffed file is noted once, capped run-wide.
@@ -607,6 +638,8 @@ export async function analyseRepository(
         undefined,
         sourceChanges.changes,
         unsniffed,
+        undefined,
+        usageTimeoutMs,
       ).catch((error: unknown): AdapterOutcome => ({
         ecosystem: adapter.ecosystem,
         dependencies: [],

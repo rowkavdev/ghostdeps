@@ -475,6 +475,79 @@ describe("analyseRepository", () => {
     assert.ok(!result.findings.some((f) => f.rule === "usage-attribution"));
   });
 
+  it("attributes salvaged usage facts as partial when the stage times out (#388, #331)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const adapter = mockAdapter({
+      ecosystem: "js",
+      confidence: 1,
+      deps: ["used", "bad"],
+      capabilities: ["usageAnalysis"],
+    });
+    adapter.findUsage = async (_ctx, dep) => {
+      if (dep.name === "bad") throw new Error("parser exploded");
+      return [{ dependency: dep.name, file: "src/index.js", line: 1, form: "static", symbols: [] }];
+    };
+    const result = await analyseRepository(repo, { adapters: [adapter] });
+    assert.deepEqual(
+      result.usages.map((u) => u.dependency),
+      ["used"],
+      "settled facts are salvaged (#331)",
+    );
+    const note = result.findings.find((f) => f.rule === "usage-attribution");
+    assert.ok(note, "attribution note is emitted");
+    assert.ok(
+      note.summary.includes("js (1, partial)"),
+      `marks the salvaged count partial: ${note.summary}`,
+    );
+    assert.ok(
+      note.summary.includes("facts are partial"),
+      `never claims the ecosystem completed: ${note.summary}`,
+    );
+  });
+  it("keeps completed per-dependency usage on timeout and rejects absence findings (#331)", async () => {
+    const repo = await fixtureHandle(fixture);
+    const adapter = mockAdapter({
+      ecosystem: "js",
+      confidence: 1,
+      deps: ["unknown", "used"],
+      capabilities: ["usageAnalysis", "referenceAnalysis"],
+    });
+    adapter.findUsage = async (_ctx, dep) => {
+      if (dep.name === "unknown") await new Promise(() => {});
+      return [{ dependency: dep.name, file: "src/index.js", line: 1, form: "static", symbols: [] }];
+    };
+    const result = await analyseRepository(repo, {
+      adapters: [adapter],
+      adapterTimeoutMs: 1_000,
+      usageTimeoutMs: 20,
+      usageConcurrency: 1,
+      recommend: ({ dependencies, usageAnalysedEcosystems, referenceAnalysedEcosystems }) => {
+        assert.equal(usageAnalysedEcosystems.has("js"), false);
+        assert.equal(referenceAnalysedEcosystems.has("js"), false);
+        return dependencies.map((dep) => ({
+          kind: "potentially-unnecessary" as const,
+          dependency: dep.name,
+          summary: "no usage",
+          recommendation: "Remove it.",
+          evidence: [{ kind: "no-import-found", statement: "none" }],
+          confidence: "high" as const,
+          limitations: [],
+          affectedFiles: [dep.declaredIn],
+        }));
+      },
+    });
+    assert.deepEqual(
+      result.usages.map((u) => u.dependency),
+      ["used"],
+    );
+    assert.equal(result.dependencies.length, 2);
+    assert.ok(result.findings.some((f) => f.summary.includes("usage analysis timed out")));
+    assert.equal(
+      result.findings.some((f) => f.kind === "potentially-unnecessary"),
+      false,
+    );
+  });
+
   it("times out a hanging adapter", async () => {
     const repo = await fixtureHandle(fixture);
     const result = await analyseRepository(repo, {
