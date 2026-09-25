@@ -4,7 +4,7 @@ The GitHub App delivery layer (Probot). Architecture: [ADR 0003](../../docs/adr/
 
 What is here (M0):
 
-- `src/app.ts` - the Probot app function. Webhook signatures are verified by Probot before any handler runs. `pull_request` `opened`/`synchronize`/`reopened` emit an `AnalysisJob`; every other action is ignored. `installation` and `installation_repositories` are logged and otherwise no-ops. `GET /healthz` returns `{"status":"ok"}`.
+- `src/app.ts` - the Probot app function. Webhook signatures are verified by Probot before any handler runs. `pull_request` `opened`/`synchronize`/`reopened` emit an `AnalysisJob`; every other action is ignored. `installation.created` and `installation_repositories.added` queue full scans of newly granted repositories. `GET /healthz` returns liveness only: status, integer uptimeSeconds, and an optional validated deploy-supplied version.
 - `src/jobs.ts` - the job boundary: `AnalysisJob`, the `JobQueue` interface, and the v0.1 `InProcessJobQueue` (bounded concurrency, duplicate (repository id, head SHA) keys collapse onto one job).
 - `test/fixtures/` - webhook payloads the tests sign and post through the real middleware.
 

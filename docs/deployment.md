@@ -8,7 +8,7 @@ The operator needs a host with outbound HTTPS to GitHub's API and codeload, a pu
 
 The app lane owns production registration and the installation itself. Use [`packages/github-app/app.yml`](https://github.com/rowkavdev/ghostdeps/blob/main/packages/github-app/app.yml) as the registration manifest, rather than manually requesting broader permissions. Record the resulting **App ID**, generate/download a **private key**, and set a random **webhook secret** in the GitHub App's settings. Set the webhook URL to `https://YOUR_HOST/api/github/webhooks` (Probot's default path); it must reach this one service through the TLS proxy. Select the repositories to install on in GitHub's App installation flow. The manifest requests read-only contents and pull requests, write access to Checks, and implicit metadata read. See [GitHub App permissions and triggers](github-app.md) for the exact table and expected checks.
 
-After installation, a new PR with a changed manifest or source file, or a qualifying push to the default branch, should produce a `ghostdeps` check. Installation events themselves log a no-op in v0.1. To verify delivery, inspect the GitHub App's recent deliveries for HTTP 2xx, then inspect the check on the commit. A 200 from `/healthz` proves the HTTP process is answering, not that GitHub auth, delivery or analysis succeeded.
+After installation, a new PR with a changed manifest or source file, or a qualifying push to the default branch, should produce a `ghostdeps` check. A new installation or a repository added later queues a full scan of that repository’s default branch head. To verify delivery, inspect the GitHub App's recent deliveries for HTTP 2xx, then inspect the check on the commit. A 200 from `/healthz` proves the HTTP process is answering, not that GitHub auth, delivery or analysis succeeded.
 
 ## Environment
 
@@ -24,6 +24,9 @@ After installation, a new PR with a changed manifest or source file, or a qualif
 | `GHOSTDEPS_SOURCE_PR_TRIGGER` | Optional    | `false`/`0` disables source-only PR analysis; default on.                                                                                          |
 | `GHOSTDEPS_RECOMMENDATIONS`   | Optional    | `false`/`0` disables verdicts and reports facts only; default on.                                                                                  |
 | `GHOSTDEPS_FOOTPRINT`         | Optional    | `true`/`1` opts in to public npm install-footprint lookups; default off.                                                                           |
+| `GHOSTDEPS_RELEASE_ID`        | Optional    | Deploy-supplied release tag for `/healthz` (1-64 ASCII letters, digits, `.`, `_`, `-`; starts alphanumeric). Invalid or absent tags are omitted.   |
+
+`/healthz` is an unauthenticated liveness probe: it returns HTTP 200 with `status: "ok"`, integer `uptimeSeconds`, and `version` only when a valid deploy-supplied release ID exists. It has `Cache-Control: no-store`. It does not reveal queue state, check GitHub auth, or claim that deliveries or analysis work. Readiness and shutdown/drain signaling would need a separate `/readyz` design. Do not add fields to this public response without review.
 
 Do not commit credentials or paste them into shell history. Use your platform's secret manager to inject env vars into the one running process. Rotate by setting the new GitHub key/webhook secret and changing the process environment together; restart, then check deliveries and a real analysis.
 

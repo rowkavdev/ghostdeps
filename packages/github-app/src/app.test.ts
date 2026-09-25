@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import nock from "nock";
 import { createNodeMiddleware, Probot } from "probot";
-import { createGhostDepsApp, HEALTH_PATH } from "./app.js";
+import { createGhostDepsApp, healthReleaseId, HEALTH_PATH } from "./app.js";
 import { BusyLimiter } from "./checks/busy-limiter.js";
 import type { AnalysisJob, EnqueueResult, JobQueue } from "./jobs.js";
 
@@ -85,7 +85,7 @@ describe("GhostDeps GitHub App", () => {
     nock.enableNetConnect();
   });
 
-  async function listen(options: { sourcePrTrigger?: boolean } = {}) {
+  async function listen(options: { sourcePrTrigger?: boolean; releaseId?: string } = {}) {
     queue = new RecordingQueue();
     const probot = new Probot({ appId: 123, privateKey, secret: SECRET, logLevel: "fatal" });
     const middleware = await createNodeMiddleware(createGhostDepsApp({ queue, ...options }), {
@@ -110,12 +110,44 @@ describe("GhostDeps GitHub App", () => {
     nock.cleanAll();
   });
 
-  it("serves a health endpoint", async () => {
+  it("serves a liveness-only health endpoint with a fixed public field set", async () => {
     const res = await fetch(`${baseUrl}${HEALTH_PATH}`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { status: "ok" });
-    const withQuery = await fetch(`${baseUrl}${HEALTH_PATH}?probe=1`);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const data = (await res.json()) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(data).sort(), ["status", "uptimeSeconds"]);
+    assert.equal(data.status, "ok");
+    assert.ok(Number.isSafeInteger(data.uptimeSeconds));
+    assert.ok((data.uptimeSeconds as number) >= 0);
+    const withQuery = await fetch(`${baseUrl}${HEALTH_PATH}?secret=do-not-reflect`, {
+      headers: { "x-health-secret": "do-not-reflect" },
+    });
     assert.equal(withQuery.status, 200);
+    const queryData = await withQuery.text();
+    assert.ok(!queryData.includes("do-not-reflect"));
+    assert.deepEqual(Object.keys(JSON.parse(queryData)).sort(), ["status", "uptimeSeconds"]);
+  });
+
+  it("includes only a validated deploy-supplied version", async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await listen({ releaseId: "v0.1.2-abc123" });
+    const versioned = (await (await fetch(`${baseUrl}${HEALTH_PATH}`)).json()) as Record<
+      string,
+      unknown
+    >;
+    assert.deepEqual(Object.keys(versioned).sort(), ["status", "uptimeSeconds", "version"]);
+    assert.equal(versioned.version, "v0.1.2-abc123");
+    assert.equal(healthReleaseId("/opt/ghostdeps/private"), undefined);
+    assert.equal(healthReleaseId("secret\nleak"), undefined);
+    assert.equal(healthReleaseId("a".repeat(65)), undefined);
+    assert.equal(healthReleaseId("abc_123.v2"), "abc_123.v2");
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await listen({ releaseId: "../private" });
+    const invalid = (await (await fetch(`${baseUrl}${HEALTH_PATH}`)).json()) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(Object.hasOwn(invalid, "version"), false);
   });
 
   it("rejects a delivery signed with the wrong secret", async () => {
