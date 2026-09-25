@@ -25,6 +25,7 @@ nav:
           - Landscape: research/landscape.md
           - JS/TS native replacements: research/native-rules-js.md
           - Rust native replacements: research/native-rules-rust.md
+          - Go native replacements: research/native-rules-go.md
           - JS/TS unused dependencies: research/js-unused-dependencies.md
           - Rust unused dependencies: research/rust-unused-dependencies.md
           - Python dependency tools: research/python-dependency-tools.md
