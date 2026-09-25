@@ -2,7 +2,13 @@
 
 - Status: Proposed (lead review required)
 - Date: 2026-09-25
-- Scope: M4 design for `ghostdeps fix`; no implementation is authorised by this document
+- Scope: M4 design for `ghostdeps fix`; this Proposed document alone does not authorise implementation (see the owner-directed core exception below)
+
+## Status and implementation sequencing (2026-09-25)
+
+Rowan proposed the PR-comment and tick-to-commit goal at 21:11 BST and explicitly directed work on it at 21:12 BST on 2026-09-25. The architecture lead accepted the separate [delivery design](../pr-comment-apply-design.md) on [#387](https://github.com/rowkavdev/ghostdeps/pull/387). **This ADR stays Proposed**: its Accepted flip is Rowan-gated and has not been granted by that directive or the delivery-design verdict.
+
+The owner directive authorises building this ADR's **core engine eligibility and dry-run preview** (slice 2) while the ADR is Proposed. The rollout condition below requiring M3 stability and ADR acceptance applies to **user-facing delivery** (comment and apply, slices 3 and 4), which remains blocked until the Accepted flip **and** slice-2 evidence gates pass. Slice 2 binds fix eligibility to the core-owned, locked five-group `findingGroup` taxonomy (`verdict`, `fact`, `incomplete`, `note`, `awareness`) and engine-stamped markers. It must not infer eligibility from display severity, adapter-supplied group claims or future M3 presentation changes. Core revalidates underlying evidence and refuses incomplete or ambiguous cases. This sequencing does not waive ADR 0004's execution boundary, security review or tests.
 
 ## Context
 
@@ -12,7 +18,7 @@ M4 should let someone inspect a proposed change without implying that every find
 
 ## Decision proposed
 
-**Generate a bounded, reviewable patch from a supported finding and verify it in separate stages. Never apply or merge it automatically.** The first release is an explicit, dry-run CLI proposal. App delivery and same-PR commits require the separate, opt-in workflow in the [PR comment and tick-to-apply design](../pr-comment-apply-design.md). M4 implementation waits until M3 is stable, this ADR and the isolation design are accepted, and the security gates below have tests. The proposal remains inert when the requirements are not met.
+**Generate a bounded, reviewable patch from a supported finding and verify it in separate stages. Never apply or merge it automatically.** The first release is an explicit, dry-run CLI proposal. App delivery and same-PR commits require the separate, opt-in workflow in the [PR comment and tick-to-apply design](../pr-comment-apply-design.md). User-facing delivery (the comment and apply slices) waits until M3 is stable, this ADR and the isolation design are accepted, and the security gates below have tests. The core eligibility/preview slice can be built under the owner directive recorded below, without making this Proposed ADR an Accepted delivery permission.
 
 A candidate has these states: `not-supported`, `blocked`, `generated`, `statically-checked`, `sandbox-verified`, `verification-failed`, `verification-unavailable`, `stale`. Only `sandbox-verified` means the configured commands completed in a sandbox; it does **not** mean behavioural equivalence. A static check alone must not be labelled verified. Show the verification scope and limitations beside the patch on every surface. Never infer the state from a check run's overall success or a finding's severity.
 
@@ -72,7 +78,7 @@ For the opt-in tick-to-apply flow, re-check the PR head and finding evidence imm
 
 ## Rollout and acceptance tests
 
-1. Stabilise M3, accept the ADR and resolve ADR 0004's execution policy. First release a dry-run, static-only JavaScript/TypeScript `package.json` + npm `package-lock.json` recipe (the deepest current evidence base, with a pinned corpus check), with a fail-closed unsupported result for all other formats.
+1. Core eligibility and dry-run preview may proceed under the 2026-09-25 owner directive while this ADR is Proposed. Before user-facing comment or apply slices, stabilise M3, accept this ADR and satisfy the ADR 0004 execution/security boundary and slice-2 evidence gates. First core slice is a dry-run, static-only JavaScript/TypeScript `package.json` + npm `package-lock.json` recipe (the deepest current evidence base, with a pinned corpus check), with a fail-closed unsupported result for all other formats.
 2. Contract fixtures for each supported rule and package manager: multiline and duplicate declarations, monorepos, name collisions, non-registry specs, malformed manifests and lockfiles, scripts/config/dynamic use, missing runtime floor, stale snapshot, renamed paths and an unchanged unrelated file. Assert exact bytes, hashes, diff, deterministic output and no write on preview.
 3. Adversarial fixtures: traversal, symlink and hardlink targets, control characters, huge files and diffs, adapter crashes/timeouts/malformed edits, overlay scan failure, network attempt, secret access, resource exhaustion and verifier logs containing instructions. Each must block or degrade, never report success.
 4. Before dynamic verification, security review the precise isolation implementation and prove network/token isolation and cleanup with executable tests. Ship disabled by default, observe failures and use an explicit opt-in. App tick-to-apply is a later permission-gated slice under the linked delivery design; test maintainer authorisation, head-pinned same-PR writes and stale-head rejection. No implementation lands as a single broad drop.
