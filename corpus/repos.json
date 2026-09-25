@@ -59,6 +59,26 @@
       "sha": "e1d87d2ced01d5b7d855a7dc8b091bf7b014a1e4",
       "covers": "npm; true positives in two more shapes: axios referenced only in commented-out code, bluebird only in docs (hand-verified in #171)",
       "mustBeUnused": ["axios", "bluebird"]
+    },
+    {
+      "name": "flask",
+      "url": "https://github.com/pallets/flask.git",
+      "sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+      "covers": "python; real-repo python adapter: pyproject runtime + optional/dev groups plus nested examples projects with pinned requirements.txt (transitive pins like amqp/kombu/redis surface as info, not unused); core runtime deps resolve clean",
+      "mustNotBeUnused": ["blinker", "click", "itsdangerous", "jinja2", "werkzeug"]
+    },
+    {
+      "name": "serde",
+      "url": "https://github.com/serde-rs/serde.git",
+      "sha": "6693a89cca77e0151437da1c7f890090b9ebf04c",
+      "covers": "rust; cargo workspace: should-be-dev on test_suite and test_suite/no_std manifests pinned as current behavior (serde is reached through serde_derive's derive expansion in no_std/src/main.rs - derive-expansion references are a known blind spot, the finding carries its own limitations), declaration-line-unavailable info"
+    },
+    {
+      "name": "cobra",
+      "url": "https://github.com/spf13/cobra.git",
+      "sha": "adbc8813901bba65827259daa8e22ff94ec1f30e",
+      "covers": "go; real-repo go adapter: module-graph limitation reported as info (go mod graph is never run), quiet otherwise",
+      "mustNotBeUnused": ["github.com/spf13/pflag"]
     }
   ]
 }

@@ -1,0 +1,22 @@
+{
+  "repo": "serde",
+  "sha": "6693a89cca77e0151437da1c7f890090b9ebf04c",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "serde"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "serde"
+    }
+  ]
+}
