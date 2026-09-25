@@ -23,6 +23,10 @@ Assume the author of an analysed repository is malicious and controls: all file 
 6. **Findings are data.** Report rendering never injects repository content into executable contexts (annotation text is plain; CLI output is escaped).
 7. **Hostile fixtures are first-class tests.** Traversal archives, symlink loops, giant lockfiles and malformed manifests are tested in `packages/core/src/checkout/`, `packages/core/src/engine/scanner/` and the adapters. Keep adding adversarial cases to CI.
 
+## WASM parser memory
+
+The Rust adapter parses untrusted source with web-tree-sitter in a worker. The default 512 MB worker limit (`resourceLimits.maxOldGenerationSizeMb`) bounds the JavaScript heap, **not** WASM linear memory. It is not an RSS cap. Rust source reads are limited to 2 MiB per file, and `withRustTree` deletes each parsed tree in a `finally` block, including when its visitor throws; tests check that no trees remain live between calls. These controls limit retained parser state, but they do not impose a strict process-memory ceiling. A larger-input parser would need its own memory guard.
+
 ## Outbound network from the GitHub App
 
 The app uses the GitHub API for jobs and check runs and fetches checkout tarballs directly from `https://codeload.github.com` after validating the API redirect (`github-app/worker/tarball.ts`). The only optional non-GitHub-network destination in the current app implementation is the public npm registry (`registry.npmjs.org`): with `GHOSTDEPS_FOOTPRINT` enabled (off by default), the metadata provider makes read-only `GET`s for exact package-version install sizes (#174). This describes the app's code paths, not a host firewall or an enforced egress policy.
