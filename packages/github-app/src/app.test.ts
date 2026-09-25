@@ -185,7 +185,17 @@ describe("GhostDeps GitHub App", () => {
     assert.equal(queue.jobs.length, 0);
   });
 
-  it("accepts installation and installation_repositories events as no-ops", async () => {
+  function mockDefaultBranch(owner: string, name: string, id: number, sha: string) {
+    nock(API).get(`/repos/${owner}/${name}`).reply(200, { id, default_branch: "main" });
+    nock(API).get(`/repos/${owner}/${name}/branches/main`).reply(200, { commit: { sha } });
+  }
+
+  it("queues the default branch head for every repo on creation or later addition", async () => {
+    const head = "a".repeat(40);
+    const addedHead = "b".repeat(40);
+    mockInstallationToken();
+    mockDefaultBranch("octo-org", "example-app", 872001, head);
+    mockDefaultBranch("octo-org", "api", 872002, addedHead);
     const a = await deliver("installation", await fixture("installation.created"));
     const b = await deliver(
       "installation_repositories",
@@ -193,6 +203,82 @@ describe("GhostDeps GitHub App", () => {
     );
     assert.equal(a.status, 200);
     assert.equal(b.status, 200);
+    assert.deepEqual(
+      queue.jobs.map((j) => ({
+        key: j.key,
+        repository: j.repository,
+        installationId: j.installationId,
+        trigger: j.trigger,
+      })),
+      [
+        {
+          key: `872001:${head}`,
+          repository: { id: 872001, owner: "octo-org", name: "example-app" },
+          installationId: 55501,
+          trigger: { kind: "full_scan", reason: "installation" },
+        },
+        {
+          key: `872002:${addedHead}`,
+          repository: { id: 872002, owner: "octo-org", name: "api" },
+          installationId: 55501,
+          trigger: { kind: "full_scan", reason: "installation" },
+        },
+      ],
+    );
+  });
+
+  it("scans each repository in a multi-repo installation once", async () => {
+    const payload = JSON.parse(await fixture("installation.created"));
+    payload.repositories.push({ id: 872002, name: "api", full_name: "octo-org/api" });
+    payload.repositories.push(payload.repositories[0]);
+    mockInstallationToken();
+    mockDefaultBranch("octo-org", "example-app", 872001, "a".repeat(40));
+    mockDefaultBranch("octo-org", "api", 872002, "b".repeat(40));
+    assert.equal((await deliver("installation", JSON.stringify(payload))).status, 200);
+    assert.deepEqual(queue.jobs.map((j) => j.repository.id).sort(), [872001, 872002]);
+  });
+
+  it("collapses an installation redelivery at the same head", async () => {
+    const head = "a".repeat(40);
+    mockInstallationToken();
+    mockDefaultBranch("octo-org", "example-app", 872001, head);
+    mockDefaultBranch("octo-org", "example-app", 872001, head);
+    const body = await fixture("installation.created");
+    await deliver("installation", body);
+    await deliver("installation", body);
+    assert.equal(queue.jobs.length, 1);
+  });
+
+  it("does not scan removed, suspended, or deleted installations", async () => {
+    const created = JSON.parse(await fixture("installation.created"));
+    const added = JSON.parse(await fixture("installation_repositories.added"));
+    for (const action of ["deleted", "suspend"]) {
+      assert.equal(
+        (await deliver("installation", JSON.stringify({ ...created, action }))).status,
+        200,
+      );
+    }
+    assert.equal(
+      (
+        await deliver(
+          "installation_repositories",
+          JSON.stringify({
+            ...added,
+            action: "removed",
+            repositories_removed: added.repositories_added,
+            repositories_added: [],
+          }),
+        )
+      ).status,
+      200,
+    );
+    assert.equal(queue.jobs.length, 0);
+  });
+
+  it("skips a repository whose identity changed or whose default branch cannot be resolved", async () => {
+    mockInstallationToken();
+    nock(API).get(`${REPO_PATH}`).reply(200, { id: 999, default_branch: "main" });
+    await deliver("installation", await fixture("installation.created"));
     assert.equal(queue.jobs.length, 0);
   });
 

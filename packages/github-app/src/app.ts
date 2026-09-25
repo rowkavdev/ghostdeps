@@ -17,6 +17,7 @@ import {
   type ChangedFilesLookup,
 } from "./events/filter.js";
 import { decideRerequest } from "./events/rerequested.js";
+import { installationCandidates, installationJob } from "./events/installation.js";
 import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
 import { RegistryMetadataService } from "./worker/registry-metadata.js";
@@ -154,21 +155,89 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
     });
 
     app.on(["installation", "installation_repositories"], async (context) => {
-      const repositories =
-        "repositories" in context.payload
-          ? (context.payload.repositories ?? [])
-          : "repositories_added" in context.payload
-            ? context.payload.repositories_added
-            : [];
-      context.log.info(
-        {
-          event: context.name,
-          action: context.payload.action,
-          installation: context.payload.installation.id,
-          repositories: repositories.map((r) => r.id),
-        },
-        "installation event received (no-op in v0.1)",
-      );
+      const candidates = installationCandidates(context.name, context.payload);
+      if (candidates.length === 0) return;
+      // An installation delivery can list many repositories. Resolve heads in
+      // parallel under one webhook deadline, then let the bounded queue decide
+      // admission per repository. Never guess the head from the payload.
+      let octokit: LookupOctokit;
+      try {
+        octokit = await withDeadline(
+          noWaitOctokit(app, candidates[0]!.installationId, context.log),
+          WEBHOOK_LOOKUP_DEADLINE_MS,
+          "installation token lookup",
+        );
+      } catch (error) {
+        context.log.warn({ delivery: context.id, err: error }, "installation token lookup failed");
+        return;
+      }
+      const deadlineAt = Date.now() + WEBHOOK_LOOKUP_DEADLINE_MS;
+      let next = 0;
+      const processNext = async () => {
+        while (next < candidates.length && Date.now() < deadlineAt) {
+          const candidate = candidates[next++]!;
+          const { repository } = candidate;
+          try {
+            const headSha = await withDeadline(
+              (async () => {
+                const repo = await octokit.rest.repos.get({
+                  owner: repository.owner,
+                  repo: repository.name,
+                });
+                if (repo.data.id !== repository.id || !repo.data.default_branch)
+                  throw new Error("repository identity or default branch changed");
+                if (Date.now() >= deadlineAt)
+                  throw new Error("installation lookup deadline reached");
+                const branch = await octokit.rest.repos.getBranch({
+                  owner: repository.owner,
+                  repo: repository.name,
+                  branch: repo.data.default_branch,
+                });
+                return branch.data.commit.sha;
+              })(),
+              Math.max(1, deadlineAt - Date.now()),
+              "installation default-branch lookup",
+            );
+            if (!/^[0-9a-f]{40}$/i.test(headSha)) throw new Error("invalid default-branch SHA");
+            const job = installationJob(candidate, headSha, context.id);
+            const result = queue.enqueue(job);
+            const fields = { delivery: context.id, repository: repository.id, result };
+            if (result === "overloaded") {
+              context.log.warn(fields, "installation scan queue full; job dropped");
+              if (appId !== undefined && busyLimiter.allow(repository.id)) {
+                try {
+                  await withDeadline(
+                    new CheckReporter(context.octokit.rest).busy({
+                      owner: repository.owner,
+                      repo: repository.name,
+                      headSha,
+                      externalId: job.key,
+                      appId,
+                    }),
+                    Math.max(1, deadlineAt - Date.now()),
+                    "installation busy check",
+                  );
+                } catch (error) {
+                  context.log.warn({ ...fields, err: error }, "busy check run failed");
+                }
+              }
+            } else {
+              context.log.info(fields, "installation full scan");
+            }
+          } catch (error) {
+            context.log.warn(
+              { delivery: context.id, repository: repository.id, err: error },
+              "installation default-branch lookup failed; scan not queued",
+            );
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(8, candidates.length) }, processNext));
+      if (next < candidates.length)
+        context.log.warn(
+          { delivery: context.id, skipped: candidates.length - next },
+          "installation lookup deadline reached; remaining repositories not scanned",
+        );
     });
 
     app.on(
