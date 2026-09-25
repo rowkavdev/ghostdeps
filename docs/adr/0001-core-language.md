@@ -28,7 +28,7 @@ Concretely:
 - **GitHub App framework:** Probot (see ADR 0003).
 - **JS/TS source analysis:** the TypeScript compiler API for module resolution and import graphs in the JS/TS adapter.
 - **Other languages' source analysis:** tree-sitter (via Node bindings) for import/usage scanning of Python, Rust and Go — grammars are maintained, incremental, and never execute target code.
-- **Tests:** Vitest. **Lint/format:** ESLint (flat config) + Prettier.
+- **Tests:** Node.js `node:test` (see amendment below). **Lint/format:** ESLint (flat config) + Prettier.
 - **CLI distribution:** npm (`npx ghostdeps`) first; single-binary builds (via `node --experimental-sea` or pkg-style bundling) deferred until distribution matters.
 
 ## Alternatives considered
