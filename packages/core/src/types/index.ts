@@ -405,8 +405,9 @@ export interface PackageRegistryFacts extends PackageVersionRef {
   publishedAt?: MetadataFact<string>;
   latestVersion?: MetadataFact<string>;
   deprecated?: MetadataFact<boolean>;
-  /** Repository host evidence only; do not infer from registry deprecation. */
-  repositoryArchived?: MetadataFact<boolean>;
+  /** Repository-host sourced only. The discriminator is checked at runtime; a
+   * registry basis string alone cannot authenticate an archived claim. */
+  repositoryArchived?: MetadataFact<boolean> & { sourceKind: "repository-host" };
 }
 
 export interface PackageMetadataProvider {

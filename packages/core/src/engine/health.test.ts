@@ -32,7 +32,11 @@ const answer: PackageRegistryFacts = {
   origin,
   publishedAt: { value: "2022-01-02T00:00:00.000Z", basis: "npm registry time[version]" },
   deprecated: { value: true, basis: "npm registry versions[version].deprecated" },
-  repositoryArchived: { value: true, basis: "repository host archived status" },
+  repositoryArchived: {
+    value: true,
+    basis: "repository host archived status",
+    sourceKind: "repository-host",
+  },
 };
 const provider = (facts: readonly PackageRegistryFacts[]): PackageMetadataProvider => ({
   async installSizes() {
@@ -71,7 +75,7 @@ describe("source-backed health signals (#61)", () => {
           {
             ...answer,
             deprecated: { value: false, basis: "registry" },
-            repositoryArchived: { value: true, basis: "" },
+            repositoryArchived: { value: true, basis: "", sourceKind: "repository-host" },
             publishedAt: { value: "not a date", basis: "registry" },
           },
         ]),
@@ -164,4 +168,50 @@ it("includes only touched dependencies in a PR-mode analysis", async () => {
   );
   assert.ok(changed.findings.some((f) => f.rule === "registry-deprecated"));
   assert.ok(changed.findings.some((f) => f.rule === "locked-version-published"));
+});
+
+it("rejects an archive claim without typed repository-host provenance", async () => {
+  const registryClaim = {
+    ...answer,
+    publishedAt: undefined,
+    deprecated: undefined,
+    repositoryArchived: { value: true, basis: "npm registry", sourceKind: "registry" },
+  } as unknown as PackageRegistryFacts;
+  assert.deepEqual(await healthFindings([dep], [graph], provider([registryClaim])), []);
+});
+
+it("does not leak a health finding across same-name manifests in PR mode", async () => {
+  const { assembleAnalysisResult } = await import("./analyse.js");
+  const otherProject: ProjectRef = { ...project, path: "packages/other" };
+  const otherDep: Dependency = {
+    ...dep,
+    project: otherProject,
+    declaredIn: "packages/other/package.json",
+  };
+  const otherGraph: DependencyGraph = { ...graph, project: otherProject };
+  const outcome = {
+    ecosystem: project.ecosystem,
+    detected: { confidence: "high" as const, projects: [project, otherProject], evidence: [] },
+    dependencies: [dep, otherDep],
+    usages: [],
+    graphs: [graph, otherGraph],
+    findings: [],
+    adapterNotes: [],
+    usageAnalysed: false,
+    referenceAnalysed: false,
+  };
+  const result = await assembleAnalysisResult(
+    [outcome],
+    undefined,
+    [
+      {
+        ecosystem: project.ecosystem,
+        name: dep.name,
+        change: "changed",
+        manifest: otherDep.declaredIn,
+      },
+    ],
+    { metadata: provider([answer]) },
+  );
+  assert.equal(result.findings.filter((f) => f.rule === "registry-deprecated").length, 1);
 });

@@ -428,7 +428,8 @@ export async function assembleAnalysisResult(
           (change) =>
             change.change !== "removed" &&
             change.ecosystem === dependency.project.ecosystem &&
-            change.name === dependency.name,
+            change.name === dependency.name &&
+            change.manifest === dependency.declaredIn,
         ),
       )
     : dependencies;

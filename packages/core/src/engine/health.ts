@@ -44,7 +44,11 @@ function signals(name: string, facts: PackageRegistryFacts): Finding[] {
   if (facts.deprecated?.value === true && deprecatedSource)
     add("registry-deprecated", `${name} is marked deprecated`, deprecatedSource);
   const archivedSource = basis(facts.repositoryArchived);
-  if (facts.repositoryArchived?.value === true && archivedSource)
+  if (
+    facts.repositoryArchived?.value === true &&
+    facts.repositoryArchived.sourceKind === "repository-host" &&
+    archivedSource
+  )
     add("repository-archived", `${name}'s repository is archived`, archivedSource);
   // publishedAt names only the locked version, never project staleness.
   const publishedSource = basis(facts.publishedAt);

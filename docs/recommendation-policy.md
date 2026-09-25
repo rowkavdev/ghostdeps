@@ -100,6 +100,7 @@ malformed, conflicting or timed-out facts produce no signal and do not block
 the scan. In PR mode, only added or changed dependencies get health observations.
 
 Explicit `deprecated: true` and repo-host-sourced `repositoryArchived: true`
+(with runtime-checked `sourceKind: "repository-host"`)
 produce separate factual `info` findings with their source basis. A
 `publishedAt` date reports **when the locked version was published**, not the
 last release of the project. An old locked version does not mean the project
