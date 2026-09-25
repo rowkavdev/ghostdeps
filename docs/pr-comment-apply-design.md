@@ -1,10 +1,12 @@
 # PR comment and tick-to-apply design (#62)
 
-- Status: Proposed for reviewer and architecture-lead decision; **no implementation authorised**
+- Status: Accepted design (architecture-lead verdict on [#387](https://github.com/rowkavdev/ghostdeps/pull/387), 2026-09-25); delivery remains gated as described below
 - Date: 2026-09-25
 - Scope: Human-in-the-loop removal on an existing PR branch, not automatic remediation or merging
 
-## Decision to review
+Rowan proposed the PR comment and maintainer-ticked commit flow at 21:11 BST on 2026-09-25, then explicitly directed work on that goal at 21:12 BST. The architecture lead accepted this App/Action design on [#387](https://github.com/rowkavdev/ghostdeps/pull/387) after review. Acceptance of this delivery design does **not** flip [ADR 0005](adr/0005-fix-generation-and-verification.md) to Accepted. The architecture lead permits only an inert, diff-only core eligibility/preview slice while ADR 0005 is Proposed, as a sequencing interpretation of Rowan's goal directive, **not** an owner waiver of ADR acceptance. User-facing comment and apply rollout still waits for that ADR's Accepted flip and the slice-2 evidence gates.
+
+## Decision
 
 Use the App for analysis, one maintained PR comment, edit-event validation and dispatch. **Run the edit and lockfile regeneration in an explicitly installed, trusted workflow on the repository's runner**, not in the App worker. The App never executes repository code or edits the PR branch. An eligible maintainer ticks a box, and the workflow makes at most one commit for the checked batch after fresh validation. This is a separate, opt-in application path under [ADR 0005](adr/0005-fix-generation-and-verification.md), not a replacement for its dry-run CLI-first gate. Its earlier App-created _separate remediation PR_ is not this feature: that later mode needs its own approval and branch/permission design. The new mode modifies the existing PR head, with its author's review still required for merge.
 
@@ -37,10 +39,10 @@ Permission delta for opt-in App installs: `issues: write` to create/edit the sin
 
 ## Slices and acceptance
 
-1. **Design gate:** reviewer-1 checks this proposal, then lead decides the App/Action boundary, first ecosystem, fork policy and signing/runner model. Reconcile ADR 0005's Proposed status and M3 prerequisites. No code yet.
-2. **Core eligibility/preview:** ADR 0005's versioned finding key, independent `FixEligibilityEvidence`, exact declarative edit validation, static re-analysis, supported npm manifest/lockfile consistency and dry-run CLI, with corpus/adversarial fixtures. No comment and no write permission.
-3. **Comment-only App:** same-result renderer, one-comment discovery/update, bounded parser, editor permission checks, stale re-scan and refusal behaviour. Permission/manifest/docs/security changes land together and reapproval is documented. No dispatch until safe workflow available.
-4. **Opt-in same-repo apply Action:** signed dispatch, trusted default-branch runner, pinned toolchain, head compare-and-swap, lockfile regeneration and one-commit batch. Dedicated tests for replay, crashes and every refusal path. Fork mode remains disabled until its separate live capability and security gate passes.
+1. **Design gate (met on #387):** reviewer-1 checked the proposal and the architecture lead accepted the App/Action boundary, first ecosystem, same-repo-first fork policy and signed envelope/consumer-App commit model. ADR 0005 remains Proposed; its Accepted flip is a separate owner decision.
+2. **Core eligibility/preview (inert, diff-only while ADR 0005 is Proposed):** ADR 0005's versioned finding key, independent `FixEligibilityEvidence`, exact declarative edit validation, static re-analysis, supported npm manifest/lockfile consistency and dry-run CLI, with corpus/adversarial fixtures. No comment and no write permission.
+3. **Comment-only App (gated on ADR 0005 Accepted and slice-2 evidence):** same-result renderer, one-comment discovery/update, bounded parser, editor permission checks, stale re-scan and refusal behaviour. Permission/manifest/docs/security changes land together and reapproval is documented. No dispatch until safe workflow available.
+4. **Opt-in same-repo apply Action (gated on ADR 0005 Accepted and slice-2 evidence):** signed dispatch, trusted default-branch runner, pinned toolchain, head compare-and-swap, lockfile regeneration and one-commit batch. Dedicated tests for replay, crashes and every refusal path. Fork mode remains disabled until its separate live capability and security gate passes.
 5. **Fork gate and other ecosystems:** prove the exact cross-fork write path or keep diff-only. Add pnpm/yarn and other ecosystems only with package-manager-specific lockfile, workspace and runner threat tests.
 
 Test matrix: issue-comment edited webhook fixtures (valid tick, non-maintainer, bot, forged marker, body text change, uncheck, duplicate keys, stale head, deleted PR, permission revoked); association and live-permission matrix; one-comment idempotence across duplicate/out-of-order deliveries and same-SHA cache; comment tampering/control text and huge input; two editors ticking concurrently; missing workflow/installation reapproval; same-repo branch protection; fork allow-edits on/off and missing fork token; dispatch forgery/replay/expiry; malicious npm configuration and scripts; lockfile mismatch, unexpected transitive resolution, runner crash after push, a `GITHUB_TOKEN`-authored push that suppresses CI, and a missing/new-head delayed check. Assert **zero writes on every pre-commit failure**, explicit pending/failed new-head status on post-commit failures, no stale lockfile commit, no token in logs/workspace, and one successful commit for a valid batch. Document Actions minutes and that runner-based install does not validate runtime behaviour.
