@@ -9,3 +9,7 @@ coverage/
 Thumbs.db
 *.log
 .corpus-cache/
+
+# Local documentation build
+site/
+.venv-docs/
