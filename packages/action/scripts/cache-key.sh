@@ -8,12 +8,17 @@
 set -euo pipefail
 root=${1:?usage: cache-key.sh <action-root>}
 cd "$root"
-[ -f pnpm-lock.yaml ] || exit 1
-[ -f pnpm-workspace.yaml ] || exit 1
+# Every root-level build input must feed the identity: the lockfile and
+# workspace config, plus tsconfig.base.json (extended by every built package)
+# and package.json (packageManager pins the pnpm version; root scripts drive
+# the build). A change to any of these must bust the cache.
+for f in pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json package.json; do
+  [ -f "$f" ] || exit 1
+done
 dirs=(packages/core packages/cli packages/action packages/checks-renderer packages/adapters)
 for d in "${dirs[@]}"; do [ -d "$d" ] || exit 1; done
 {
-  sha256sum pnpm-lock.yaml pnpm-workspace.yaml
+  sha256sum pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json package.json
   find "${dirs[@]}" -type f \
     -not -path '*/node_modules/*' \
     -not -path '*/dist/*' \

@@ -19,6 +19,8 @@ async function makeLayout(): Promise<void> {
   root = await mkdtemp(join(tmpdir(), "ghostdeps-cache-key-"));
   await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: 1\n");
   await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+  await writeFile(join(root, "tsconfig.base.json"), '{"compilerOptions":{}}');
+  await writeFile(join(root, "package.json"), '{"packageManager":"pnpm@12.6.0"}');
   for (const p of PKGS) {
     await mkdir(join(root, "packages", p, "src"), { recursive: true });
     await writeFile(join(root, "packages", p, "package.json"), `{"name":"@ghostdeps/${p}"}`);
@@ -54,6 +56,15 @@ describe("cache-key.sh on a checkout-free action download", () => {
     const before = key(root);
     await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: 2\n");
     assert.notEqual(key(root), before);
+  });
+
+  it("changes when root build inputs change (compiler config, package manager pin)", async () => {
+    const before = key(root);
+    await writeFile(join(root, "tsconfig.base.json"), '{"compilerOptions":{"strict":true}}');
+    assert.notEqual(key(root), before, "tsconfig.base.json must bust the cache");
+    const afterTs = key(root);
+    await writeFile(join(root, "package.json"), '{"packageManager":"pnpm@13.0.0"}');
+    assert.notEqual(key(root), afterTs, "root package.json must bust the cache");
   });
 
   it("ignores dist and node_modules content (build outputs are cache, not identity)", async () => {
