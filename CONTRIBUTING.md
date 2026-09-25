@@ -11,6 +11,17 @@ Thanks for helping build GhostDeps. This project treats outside contributors as 
 5. **Docs travel with code.** If you change behaviour, update the relevant doc in `docs/` in the same PR.
 6. **Green CI or it doesn't merge.** All checks must pass.
 
+
+## Merge protocol
+
+The merge gate keeps `main` green and every merge verdict auditable.
+
+1. **Approval names the head.** A pull request merges only after a reviewer posts an APPROVE comment naming the current head SHA. Any new push resets the verdict.
+2. **Green at the approved head, no rebase.** All CI checks must pass at that exact SHA and GitHub must report the PR mergeable; merge green and approved without rebasing. A rebase is a new head, so it resets the gate like any other push.
+3. **Squash merge.** Squash-merge pinned to the approved SHA.
+4. **Post-merge gate: latest containing green.** Main CI is the integration check. When a merge's own CI run is cancelled by concurrency supersession, the latest containing main commit going green is sufficient as the post-merge gate - no exact-SHA rerun - under three conditions: (a) containment: the green run's commit descends from the cancelled run's merge SHA; (b) same matrix: the containing run executes the same full job set, so a lint/typecheck-only run never counts; (c) red reopens: if the containing run fails, rerun the intermediate SHA to bisect which merge introduced the failure. Green closes; red bisects. Cancellation by supersession is a CI scheduling artifact, not a signal.
+5. **Board hygiene on merge.** Close the linked issue and move its card to **Done**.
+
 ## Development setup
 
 Requires Node.js 22+ and pnpm (via `corepack enable`).
