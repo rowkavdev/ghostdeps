@@ -39,8 +39,8 @@ One analysis engine. The GitHub App and the CLI are delivery mechanisms over the
 3. **Package-manager detection.** Within each detected ecosystem, identify the package manager(s) from lockfiles and manifests (npm/pnpm/Yarn/Bun; pip/Poetry/uv/Pipenv; Cargo; Go Modules), per project.
 4. **Dependency model.** Parse manifests into a normalised `Dependency` model: name, version constraint, kind (runtime/dev/peer/optional/build), scope (root vs workspace package).
 5. **Dependency graph.** Parse lockfiles into the transitive graph. No lockfile means reduced confidence, never implicit resolution (ADR 0004).
-6. **Usage analysis.** For each direct dependency, find imports/requires and the APIs actually used, with file/line evidence. JS/TS uses the TypeScript compiler API; other languages use tree-sitter grammars.
-7. **Recommendation engine.** Core-owned policy turns facts into findings: unused, potentially unnecessary (native alternative / duplicate capability), risk notes (unmaintained, footprint). Every finding carries evidence, confidence, and limitations. Conservative by design: uncertainty downgrades the recommendation, never upgrades it.
+6. **Usage analysis.** Adapters look for source and configuration references to direct dependencies and report the evidence and limits of their coverage. JS/TS uses the TypeScript compiler API; Python, Rust and Go use tree-sitter grammars. Exact API-use coverage for native replacements is not shipped across these adapters.
+7. **Recommendation engine.** Today core policy reports `unused` only behind complete reference coverage, plus type-only, should-be-dev and manual-review findings. Health observations and transitive impact are facts, not removal verdicts; cross-ecosystem capability overlap is awareness-only. Native-alternative and duplicate-capability verdicts are designed but not shipped. Every finding carries evidence, confidence and limitations; uncertainty downgrades a claim, never upgrades it.
 8. **Reporting.** A single `AnalysisResult` schema feeds both the CLI (human + `--json`) and the GitHub App (Checks + annotations).
 
 ## JSON output
@@ -74,7 +74,7 @@ Diff paths are attacker data. Paths that are absolute, contain `..` segments, ba
 
 ## Native replacement rules
 
-Native alternatives come from versioned rule sets (`packages/core/src/native-rules/`, one module per ecosystem), each rule recording: package, minimum runtime/language version, APIs covered, incompatible use cases, semantic differences, confidence criteria, and references. Rules are data with tests, not vibes. Example: `axios` simple GET/JSON usage on Node 18+ → `fetch()`; incompatible when interceptors, custom adapters, or cancellation APIs are detected.
+The shared rule interface exists under `packages/core/src/native-rules/`, but no ecosystem rule dataset or native-replacement verdict is shipped yet. The design calls for versioned, tested rules recording packages, minimum runtime/language versions, covered APIs, incompatible uses, semantic differences, confidence criteria and references. A proposed example is `axios` simple GET/JSON usage on Node 18+ to `fetch()`; interceptors, custom adapters and cancellation semantics must disqualify a naive swap. See the [JS/TS native-rule research](research/native-rules-js.md).
 
 ## Cross-language repositories
 
