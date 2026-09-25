@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -268,6 +268,82 @@ describe("npm removal preview (#389)", () => {
         },
       };
       assert.match(await check(partial), /incomplete/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("refuses source mutation during overlay analysis and binds key to source bytes", async () => {
+    const { root, handle } = await fixture(3);
+    try {
+      const first = await previewNpmRemoval(handle, [adapter], "left-pad");
+      assert.equal(first.status, "statically-checked");
+      await writeFile(join(root, "index.js"), "export const two = 2;\n");
+      const second = await previewNpmRemoval(
+        await FsRepositoryHandle.open(root),
+        [adapter],
+        "left-pad",
+      );
+      assert.equal(second.status, "statically-checked");
+      assert.notEqual(first.key, second.key);
+      let calls = 0;
+      const racy: EcosystemAdapter = {
+        ...adapter,
+        async buildDependencyGraph(ctx) {
+          if (++calls === 2) await writeFile(join(root, "index.js"), "export const three = 3;\n");
+          return adapter.buildDependencyGraph!(ctx, [project]);
+        },
+      };
+      const result = await previewNpmRemoval(
+        await FsRepositoryHandle.open(root),
+        [racy],
+        "left-pad",
+      );
+      assert.equal(result.status, "blocked");
+      assert.match(result.reason!, /Source snapshot changed/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("refuses an added source path during overlay analysis", async () => {
+    const { root, handle } = await fixture(3);
+    try {
+      let calls = 0;
+      const racy: EcosystemAdapter = {
+        ...adapter,
+        async buildDependencyGraph(ctx) {
+          if (++calls === 2) await writeFile(join(root, "extra.js"), "export const extra = 1;\n");
+          return adapter.buildDependencyGraph!(ctx, [project]);
+        },
+      };
+      const result = await previewNpmRemoval(handle, [racy], "left-pad");
+      assert.equal(result.status, "blocked");
+      assert.match(result.reason!, /Source snapshot changed/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("refuses hardlink aliases for either edit target", async () => {
+    const { root, handle } = await fixture(3);
+    try {
+      await link(join(root, "package.json"), join(root, "alias.json"));
+      const result = await previewNpmRemoval(handle, [adapter], "left-pad");
+      assert.equal(result.status, "blocked");
+      assert.match(result.reason!, /Hardlink aliases/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("refuses a C1 control embedded in displayed root metadata", async () => {
+    const { root } = await fixture(3);
+    try {
+      await writeFile(join(root, "package.json"), text({ ...manifest, name: "f\u009b" }));
+      const result = await previewNpmRemoval(
+        await FsRepositoryHandle.open(root),
+        [adapter],
+        "left-pad",
+      );
+      assert.equal(result.status, "blocked");
+      assert.match(result.reason!, /Control or bidirectional/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

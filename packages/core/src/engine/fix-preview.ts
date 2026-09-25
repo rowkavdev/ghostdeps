@@ -1,12 +1,14 @@
 /** Narrow, read-only npm fix preview. No package-manager process, writes or network. */
 import { createHash } from "node:crypto";
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import type { EcosystemAdapter } from "../adapter.js";
 import type { Dependency, Finding, RepositoryHandle } from "../types/index.js";
 import { findingGroup } from "../types/finding-group.js";
 import { analyseRepository } from "./analyse.js";
 import type { RecommendationInput } from "./analyse.js";
 import { scanCompletenessFindings } from "./analyse-directory.js";
-import type { FsRepositoryHandle } from "./scanner/handle.js";
+import { FsRepositoryHandle } from "./scanner/handle.js";
 import { createDefaultPolicy } from "../recommend/policy.js";
 
 const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
@@ -47,12 +49,7 @@ const blocked = (reason: string): FixPreview => ({
   reason,
   verification: { static: "unavailable", lockfile: "unavailable", sandbox: "not-run" },
 });
-function findingKey(
-  dep: Dependency,
-  finding: Finding,
-  manifestSha: string,
-  lockSha: string,
-): string {
+function findingKey(dep: Dependency, finding: Finding, snapshotSha: string): string {
   return sha(
     JSON.stringify([
       1,
@@ -64,8 +61,7 @@ function findingKey(
       dep.constraint,
       finding.rule,
       finding.evidence,
-      manifestSha,
-      lockSha,
+      snapshotSha,
     ]),
   );
 }
@@ -84,6 +80,27 @@ function diffFile(path: string, before: string, after: string): string {
   );
 }
 
+/** Bind evidence to every scanned path and byte, not only the two edit targets. */
+async function snapshot(
+  handle: FsRepositoryHandle,
+  paths: readonly string[],
+): Promise<string | undefined> {
+  if (paths.length > 2000) return undefined;
+  const digest = createHash("sha256");
+  let bytes = 0;
+  try {
+    for (const path of paths) {
+      const content = await handle.readFile(path);
+      bytes += Buffer.byteLength(content);
+      if (bytes > 8_000_000) return undefined;
+      digest.update(JSON.stringify([path, content]));
+    }
+  } catch {
+    return undefined;
+  }
+  return digest.digest("hex");
+}
+
 /** Every refusal is explicit. Only an exact root npm leaf removal is supported. */
 export async function previewNpmRemoval(
   handle: FsRepositoryHandle,
@@ -95,7 +112,12 @@ export async function previewNpmRemoval(
     return blocked("The repository scan is incomplete; no edit is proposed.");
   if (handle.scan.skippedCounts.symlink || handle.scan.skippedCounts["special-file"])
     return blocked("Links or special files leave the edit target or analysis scope uncertain.");
-  const paths = new Set(await handle.listFiles());
+  const listedPaths = await handle.listFiles();
+  const paths = new Set(listedPaths);
+  // A large or unreadable snapshot cannot be bound without guessing.
+  const snapshotSha = await snapshot(handle, listedPaths);
+  if (!snapshotSha)
+    return blocked("The complete source snapshot cannot be bound within preview limits.");
   if (!paths.has("package.json") || !paths.has("package-lock.json"))
     return blocked("A root package.json and package-lock.json are required.");
   if (
@@ -114,6 +136,17 @@ export async function previewNpmRemoval(
     );
   if ([...paths].some((p) => p.endsWith("/package.json")))
     return blocked("Nested package manifests or workspaces are not supported in this preview.");
+  // An edit target with another hardlink name may cause hidden mutations on apply.
+  // Both counts must be exactly one; this also rejects aliases outside the scan.
+  try {
+    for (const file of ["package.json", "package-lock.json"]) {
+      const stat = await lstat(join(handle.scan.root, file));
+      if (!stat.isFile() || stat.nlink !== 1)
+        return blocked("Hardlink aliases or nonregular edit targets are not supported.");
+    }
+  } catch {
+    return blocked("Edit target became unavailable during preview.");
+  }
   let manifestText: string, lockText: string;
   try {
     manifestText = await handle.readFile("package.json");
@@ -121,8 +154,13 @@ export async function previewNpmRemoval(
   } catch {
     return blocked("Manifest or lockfile could not be read from the scanned snapshot.");
   }
-  // eslint-disable-next-line no-control-regex
-  if (/[\u202a-\u202e\u2066-\u2069\u001b]/u.test(manifestText + lockText))
+  const unsafeDisplay = /[\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
+  const rawControl = (text: string): boolean =>
+    [...text].some((character) => {
+      const code = character.codePointAt(0)!;
+      return code <= 31 && code !== 9 && code !== 10 && code !== 13;
+    });
+  if (unsafeDisplay.test(manifestText + lockText) || rawControl(manifestText + lockText))
     return blocked("Control or bidirectional formatting characters cannot be safely displayed.");
   if (manifestText.length > 512_000 || lockText.length > 2_000_000)
     return blocked("Manifest or lockfile exceeds the preview byte ceiling.");
@@ -369,7 +407,7 @@ export async function previewNpmRemoval(
   );
   if (findings.length !== 1 || facts.usages.some((u) => u.dependency === name && !u.removedInPr))
     return blocked("Independent unused and no-reference evidence is unavailable.");
-  const key = findingKey(dep, findings[0]!, sha(manifestText), sha(lockText));
+  const key = findingKey(dep, findings[0]!, snapshotSha);
   const editedManifest = structuredClone(manifest);
   const editedLock = structuredClone(lock);
   delete section(editedManifest, field)![name];
@@ -419,16 +457,32 @@ export async function previewNpmRemoval(
     after.usages.length !== baseline.usages.length
   )
     return blocked("Static overlay analysis did not verify the scoped declaration removal.");
-  // Recheck exact bytes before returning a preview tied to these hashes.
+  // Rescan to catch added/deleted paths; compare every source byte, not only edit targets.
+  // The second scan also refuses newly linked, skipped or unreadable source entries.
+  let current: FsRepositoryHandle;
   try {
-    if (
-      (await handle.readFile("package.json")) !== manifestText ||
-      (await handle.readFile("package-lock.json")) !== lockText
-    )
-      return blocked("Files changed during preview; rerun on the current snapshot.");
+    current = await FsRepositoryHandle.open(handle.scan.root, { limits: handle.scan.limits });
   } catch {
-    return blocked("Files changed or became unreadable during preview.");
+    return blocked("Repository changed or became unreadable during preview.");
   }
+  try {
+    for (const file of ["package.json", "package-lock.json"]) {
+      const stat = await lstat(join(current.scan.root, file));
+      if (!stat.isFile() || stat.nlink !== 1)
+        return blocked("Hardlink aliases or nonregular edit targets are not supported.");
+    }
+  } catch {
+    return blocked("Edit target became unavailable during preview.");
+  }
+  if (
+    current.scan.truncated ||
+    scanCompletenessFindings(current.scan).length ||
+    current.scan.skippedCounts.symlink ||
+    current.scan.skippedCounts["special-file"] ||
+    JSON.stringify(await current.listFiles()) !== JSON.stringify(listedPaths) ||
+    (await snapshot(current, listedPaths)) !== snapshotSha
+  )
+    return blocked("Source snapshot changed during preview; rerun on the current snapshot.");
   const diff =
     diffFile("package.json", manifestText, afterManifest) +
     diffFile("package-lock.json", lockText, afterLock);
