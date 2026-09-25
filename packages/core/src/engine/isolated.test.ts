@@ -111,6 +111,17 @@ describe("worker-thread adapter isolation (#90)", () => {
         lines.some((line) => line === "chatty stdout: chatty detection log line"),
         `stdout line missing from debugLog: ${JSON.stringify(lines)}`,
       );
+      // Emitted at module evaluation, before the worker's `loaded` message:
+      // must be buffered and labeled with the ecosystem, never the module
+      // URL (main CI run 36124774990 flaked on the racy label).
+      assert.ok(
+        lines.some((line) => line === "chatty stdout: chatty module load line"),
+        `module-load line missing or mislabeled in debugLog: ${JSON.stringify(lines)}`,
+      );
+      assert.ok(
+        !lines.some((line) => line.includes(".mjs stdout:")),
+        `a line was labeled with the module URL: ${JSON.stringify(lines)}`,
+      );
       assert.ok(
         lines.some((line) => line === "chatty stderr: chatty detection error line"),
         `stderr line missing from debugLog: ${JSON.stringify(lines)}`,

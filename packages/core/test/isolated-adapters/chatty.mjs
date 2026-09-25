@@ -1,4 +1,8 @@
 /** Fixture adapter that writes to stdout and stderr during detection. */
+// Written at module evaluation, before the worker posts `loaded`: this
+// deterministically exercises the host's pre-load output buffering (the
+// line must still be labeled with the ecosystem, not the module URL).
+process.stdout.write("chatty module load line\n");
 const project = { path: ".", ecosystem: "chatty", packageManagers: [] };
 
 export default {
