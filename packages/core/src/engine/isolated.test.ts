@@ -152,7 +152,9 @@ describe("worker-thread adapter isolation (#90)", () => {
         `a line was labeled with the module URL: ${JSON.stringify(lines)}`,
       );
       const present = lines.filter((line) => /^floody stdout: flood line \d+$/.test(line)).length;
-      const dropNote = lines.find((line) => line.includes("pre-load adapter output line(s) dropped"));
+      const dropNote = lines.find((line) =>
+        line.includes("pre-load adapter output line(s) dropped"),
+      );
       const dropped = dropNote === undefined ? 0 : Number(/: (\d+) pre-load/.exec(dropNote)?.[1]);
       assert.ok(
         dropNote === undefined || dropNote.startsWith("floody debugLog: "),
