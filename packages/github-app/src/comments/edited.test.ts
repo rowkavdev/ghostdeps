@@ -46,12 +46,20 @@ function payload(body: string, over: Partial<EditedPayload> = {}): EditedPayload
 function deps(
   permission: string,
   captured: { updates: string[] },
-  live: { body?: string; prOpen?: boolean } = {},
+  live: { body?: string; prOpen?: boolean; bodyAfterFirstRead?: string } = {},
 ): HandleEditedDeps {
+  let reads = 0;
   return {
     issues: {
       issues: {
-        getComment: async () => ({ data: { id: 77, body: live.body ?? LAST_BODY! } }),
+        getComment: async () => {
+          reads += 1;
+          const body =
+            reads > 1 && live.bodyAfterFirstRead !== undefined
+              ? live.bodyAfterFirstRead
+              : (live.body ?? LAST_BODY!);
+          return { data: { id: 77, body } };
+        },
         get: async () => ({
           data: { state: live.prOpen === false ? "closed" : "open", pull_request: {} },
         }),
@@ -132,6 +140,19 @@ describe("handleCommentEdited", () => {
     assert.deepEqual(out, {
       kind: "ignored",
       reason: "comment moved after this delivery; a newer delivery owns it",
+    });
+    assert.equal(captured.updates.length, 0);
+  });
+
+  it("refuses to write when a scan update lands during the permission check", async () => {
+    const captured = { updates: [] as string[] };
+    const out = await handleCommentEdited(
+      deps("maintain", captured, { bodyAfterFirstRead: "SCAN UPDATE: fresh canonical body" }),
+      payload(canonical().replace("[ ]", "[x]")),
+    );
+    assert.deepEqual(out, {
+      kind: "ignored",
+      reason: "comment moved while permissions were checked; refusing to overwrite",
     });
     assert.equal(captured.updates.length, 0);
   });
