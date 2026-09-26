@@ -30,8 +30,7 @@ export function comparePythonVersions(a: readonly number[], b: readonly number[]
 export function parsePythonFloor(raw: string): Bound | undefined {
   if (raw.length > 4096) return undefined;
   const arms = raw.split(/\s*\|\|\s*/);
-  if (raw.includes("|") && arms.length === 1) return undefined;
-  if (arms.some((arm) => !arm.trim())) return undefined;
+  if ((raw.includes("|") && arms.length === 1) || arms.some((arm) => !arm.trim())) return undefined;
   const bounds: Bound[] = [];
   for (const arm of arms) {
     let best: Bound | undefined;
@@ -55,6 +54,26 @@ export function parsePythonFloor(raw: string): Bound | undefined {
         uppers.push({ version, exclusive: op === "<" });
         continue;
       }
+      if (op === "==" && !m[3]) uppers.push({ version, exclusive: false });
+      if (op === "==" && m[3])
+        uppers.push({ version: [version[0]!, version[1]! + 1], exclusive: true });
+      if (op === "^" || op === "~" || op === "~=") {
+        if (op === "~=" && version.length < 2) return undefined;
+        const upper = [...version];
+        const index =
+          op === "^"
+            ? version[0] === 0 && version.length > 1
+              ? 1
+              : 0
+            : op === "~"
+              ? version.length > 1
+                ? 1
+                : 0
+              : version.length - 2;
+        upper[index] = upper[index]! + 1;
+        upper.length = index + 1;
+        uppers.push({ version: upper, exclusive: true });
+      }
       const candidate = { version, exclusive: op === ">" };
       const cmp = best === undefined ? 1 : comparePythonVersions(candidate.version, best.version);
       if (cmp > 0 || (cmp === 0 && candidate.exclusive)) best = candidate;
@@ -67,8 +86,6 @@ export function parsePythonFloor(raw: string): Bound | undefined {
       })
     )
       return undefined;
-    // The exact lower version is excluded: there is no safe numeric floor
-    // for the remaining interval without interpreting successor semantics.
     if (
       !best.exclusive &&
       exclusions.some((excluded) => comparePythonVersions(excluded, best.version) === 0)
@@ -101,38 +118,55 @@ function tomlCandidate(text: string, target: "project" | "poetry"): Candidate {
   // Find the key within its exact TOML table. Do not confuse poetry's python
   // dependency with similarly named keys elsewhere in the file.
   const header = target === "project" ? "project" : "tool.poetry.dependencies";
+  const unquote = (value: string): string => value.trim().replace(/^(["'])(.*)\1$/, "$2");
+  const sectionName = (value: string): string => value.split(".").map(unquote).join(".");
   let active = false;
   let line = 0;
   for (const [i, raw] of text.split(/\r?\n/).entries()) {
     const match = /^\s*\[([^\]]+)\]/.exec(raw);
-    if (match) active = match[1]!.trim() === header;
-    else if (active && new RegExp(`^\\s*["']?${key}["']?\\s*=`).test(raw)) {
-      line = i + 1;
-      break;
+    if (match) active = sectionName(match[1]!) === header;
+    else if (active) {
+      const keyMatch = /^\s*(["'][^"']+["']|[A-Za-z0-9_-]+)\s*=/.exec(raw);
+      if (keyMatch && unquote(keyMatch[1]!) === key) {
+        line = i + 1;
+        break;
+      }
     }
   }
   return { present: true, ...(typeof constraint === "string" ? { constraint } : {}), line };
 }
 function setupCfgCandidate(text: string): Candidate {
   let active = false;
-  for (const [i, raw] of text.split(/\r?\n/).entries()) {
+  const lines = text.split(/\r?\n/);
+  for (const [i, raw] of lines.entries()) {
     const header = /^\s*\[([^\]]+)\]/.exec(raw);
     if (header) {
       active = header[1]!.trim().toLowerCase() === "options";
       continue;
     }
     if (!active) continue;
-    const match = /^\s*python_requires\s*=\s*([^#;\r\n]*)/.exec(raw);
-    if (match) return { present: true, constraint: match[1]!.trim(), line: i + 1 };
+    const match = /^\s*python_requires\s*=\s*(.*)$/.exec(raw);
+    if (!match) continue;
+    const parts = [match[1]!.trim()];
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j]!;
+      if (!/^\s+\S/.test(next)) break;
+      parts.push(next.trim());
+    }
+    return { present: true, constraint: parts.join("").replace(/\s*#.*$/, ""), line: i + 1 };
   }
   return { present: false, line: 0 };
 }
+
 function setupPyCandidate(text: string): Candidate {
   for (const [i, raw] of text.split(/\r?\n/).entries()) {
     if (/^\s*#/.test(raw)) continue;
     const match = /\bpython_requires\s*=/.exec(raw);
     if (!match) continue;
-    const literal = /^\s*python_requires\s*=\s*(['"])([^'"\r\n]+)\1\s*,?\s*(?:#.*)?$/.exec(raw);
+    // A quoted literal may appear alone or as a keyword inside setup(...).
+    // No expression, interpolation, or setup code is ever evaluated.
+    const tail = raw.slice(match.index + match[0].length).trimStart();
+    const literal = /^(['"])([^'"\r\n]+)\1(?=\s*[,)]|\s*$)/.exec(tail);
     return { present: true, ...(literal ? { constraint: literal[2]! } : {}), line: i + 1 };
   }
   return { present: false, line: 0 };
@@ -179,7 +213,7 @@ export async function readPythonFloor(
     if (!candidate.present) continue;
     const bound =
       candidate.constraint === undefined ? undefined : parsePythonFloor(candidate.constraint);
-    if (!bound) {
+    if (!bound || candidate.line === 0) {
       const note = unparsed(path, candidate.line, "Python floor unparsed", evidence);
       if (source === "setup.py") continue; // setuptools may supply it in setup.cfg.
       return note;
