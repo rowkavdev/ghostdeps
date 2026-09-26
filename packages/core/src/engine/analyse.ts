@@ -27,9 +27,14 @@ import { buildProjectTree } from "./project-tree.js";
 import { buildUnifiedGraph } from "./unified-graph.js";
 import { declarationLineNote } from "./declared-lines.js";
 import { crossEcosystemOverlaps } from "./capability-overlap.js";
+import {
+  sameEcosystemDuplicates,
+  SAME_ECOSYSTEM_DUPLICATES_RULE,
+} from "./capability-duplicates.js";
 import { boundSourceChanges } from "./source-changes.js";
 import type {
   AnalysisResult,
+  Confidence,
   Dependency,
   DependencyGraph,
   GraphCompleteness,
@@ -92,6 +97,19 @@ export interface RecommendationInput {
 /** Core-owned policy that turns facts into findings (#56 and friends plug in here). */
 export type RecommendationPolicy = (input: RecommendationInput) => Finding[] | Promise<Finding[]>;
 
+/**
+ * Engine-level rule config (#58): rules the engine itself emits (not the
+ * injected policy) can be disabled by id, or have their confidence capped
+ * - a cap never raises confidence. The CLI maps --disable-rule and
+ * --downgrade onto this for engine rules as well as policy rules.
+ */
+export interface EngineRuleConfig {
+  /** Rule ids to turn off. */
+  disabled?: readonly string[];
+  /** Cap a rule's confidence (never raises it). */
+  downgrade?: Readonly<Record<string, Confidence>>;
+}
+
 export interface AnalyseOptions {
   adapters: readonly EcosystemAdapter[];
   /** Defaults to offline. */
@@ -104,6 +122,8 @@ export interface AnalyseOptions {
   usageConcurrency?: number;
   /** Omit to emit facts only (no recommendation findings). */
   recommend?: RecommendationPolicy;
+  /** Disable or downgrade engine-emitted rules (e.g. #58 duplicates). */
+  ruleConfig?: EngineRuleConfig;
   /**
    * Dependency changes in the pull request under analysis (#128). Omit for a
    * full scan. The GitHub App builds them from the PR diff: parseUnifiedDiff,
@@ -339,6 +359,8 @@ export async function assembleAnalysisResult(
     maxGraphNodes?: number;
     /** See AnalyseOptions.metadata. */
     metadata?: PackageMetadataProvider;
+    /** See AnalyseOptions.ruleConfig. */
+    ruleConfig?: EngineRuleConfig;
   } = {},
 ): Promise<AnalysisResult> {
   // Caller notes plus notes adapters raised while running (#113).
@@ -529,6 +551,22 @@ export async function assembleAnalysisResult(
     findings.push({ ...finding, severity: severityOf(finding) });
   }
 
+  // Same-ecosystem duplicate capability (#58): awareness findings, added
+  // after the policy and the strip above so they keep `awareness` and
+  // never feed a verdict, like the cross-ecosystem overlap. In a PR only
+  // packages the PR added are reported. Config can disable the rule or
+  // cap its confidence (a cap never raises it).
+  if (!context.ruleConfig?.disabled?.includes(SAME_ECOSYSTEM_DUPLICATES_RULE)) {
+    const cap = context.ruleConfig?.downgrade?.[SAME_ECOSYSTEM_DUPLICATES_RULE];
+    for (const finding of sameEcosystemDuplicates(dependencies, pullRequestChanges)) {
+      const capped =
+        cap === undefined
+          ? finding
+          : { ...finding, confidence: capConfidence(finding.confidence, cap) };
+      findings.push({ ...capped, severity: severityOf(capped) });
+    }
+  }
+
   // Adapter notes (#205): non-capping, added after the policy and the strip
   // above, like the overlap notes. Engine-mapped markers decide the group:
   // capability notes are awareness, run-level notes are "note".
@@ -656,6 +694,7 @@ export async function analyseRepository(
     scanCompleteness: options.scanCompleteness ?? [],
     notes: sourceChanges.findings,
     ...(options.metadata ? { metadata: options.metadata } : {}),
+    ...(options.ruleConfig ? { ruleConfig: options.ruleConfig } : {}),
   });
 }
 

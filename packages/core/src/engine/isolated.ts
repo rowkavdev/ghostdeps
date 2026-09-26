@@ -29,6 +29,7 @@ import type {
 } from "../types/index.js";
 import {
   assembleAnalysisResult,
+  type EngineRuleConfig,
   boundPullRequestSourceChanges,
   DEFAULT_ADAPTER_TIMEOUT_MS,
   DEFAULT_USAGE_CONCURRENCY,
@@ -119,6 +120,8 @@ export interface IsolatedAnalyseOptions {
   metadata?: PackageMetadataProvider;
   /** Dependency changes in the pull request under analysis; see AnalyseOptions. */
   pullRequestChanges?: readonly DependencyChange[];
+  /** See AnalyseOptions.ruleConfig. */
+  ruleConfig?: EngineRuleConfig;
 }
 
 /** Truncate a worker-posted outcome to OUTCOME_CAPS, recording overflow as limitations. */
@@ -586,5 +589,6 @@ export async function analyseRepositoryIsolated(
     scanCompleteness: options.scanCompleteness ?? [],
     notes: sourceChanges.findings,
     ...(options.metadata ? { metadata: options.metadata } : {}),
+    ...(options.ruleConfig ? { ruleConfig: options.ruleConfig } : {}),
   });
 }

@@ -187,7 +187,8 @@ export interface Finding {
    * Awareness only, no action suggested (#234). Presenters put these in an
    * awareness section that never affects a check conclusion, title, count
    * or exit code. Set only by the core rule that emits the finding: today
-   * just "cross-ecosystem-capability-overlap". Absent means NOT awareness
+   * "cross-ecosystem-capability-overlap" (#55) and
+   * "same-ecosystem-capability-duplicates" (#58). Absent means NOT awareness
    * (fail-closed), so a new info rule costs a clean check until core marks
    * it, and marking a rule needs arbiter sign-off. The engine strips it from
    * adapter and policy findings.
