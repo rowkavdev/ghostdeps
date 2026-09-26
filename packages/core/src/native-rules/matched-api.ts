@@ -59,11 +59,16 @@ export interface NativeMatchedApiBlock {
   readonly referenceIndex?: number;
   readonly detail: string;
 }
+/** A pillar result, not sealed eligibility evidence. Core verifies citation structure
+ * and byte provenance; receiver/binding lineage remains adapter-asserted, NOT
+ * core-verified. Even a pass is input to the still-blocked producer only.
+ */
 export type NativeMatchedApiResult =
   | {
       readonly status: "blocked";
       readonly snapshotSha256: string;
       readonly binding: "caller-asserted" | "verified";
+      readonly lineageVerification: "adapter-asserted";
       readonly policy: string | null;
       readonly matchedApis: readonly NativeMatchedApi[];
       readonly accounted: readonly NativeAccountedReference[];
@@ -73,6 +78,7 @@ export type NativeMatchedApiResult =
       readonly status: "pass";
       readonly snapshotSha256: string;
       readonly binding: "caller-asserted" | "verified";
+      readonly lineageVerification: "adapter-asserted";
       readonly policy: string | null;
       readonly matchedApis: readonly NativeMatchedApi[];
       readonly accounted: readonly NativeAccountedReference[];
@@ -174,12 +180,22 @@ export async function collectNativeMatchedApiEvidence(
           status: "blocked",
           snapshotSha256,
           binding,
+          lineageVerification: "adapter-asserted",
           policy,
           matchedApis,
           accounted,
           blocking: blocking as [NativeMatchedApiBlock, ...NativeMatchedApiBlock[]],
         }
-      : { status: "pass", snapshotSha256, binding, policy, matchedApis, accounted, blocking: [] };
+      : {
+          status: "pass",
+          snapshotSha256,
+          binding,
+          lineageVerification: "adapter-asserted",
+          policy,
+          matchedApis,
+          accounted,
+          blocking: [],
+        };
   const initial = await verifyNativeSnapshot(repository, snapshotSha256);
   if (initial.status !== "verified") {
     block("snapshot-unverified", initial.reason);
