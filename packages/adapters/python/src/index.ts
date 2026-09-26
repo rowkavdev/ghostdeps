@@ -16,3 +16,9 @@ export {
   readTopLevelMetadata,
   type ImportResolution,
 } from "./import-map.js";
+export {
+  comparePythonVersions,
+  parsePythonFloor,
+  readPythonFloor,
+  type PythonFloor,
+} from "./python-floor.js";
