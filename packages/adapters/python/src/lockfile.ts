@@ -262,11 +262,13 @@ export async function buildProjectGraph(
         file: lockPath,
       });
     const rootNames = new Set(direct.map((d) => d.name));
-    const unreachable = doc.filter((pkg) => !rootNames.has(pkg.name)).length;
-    if (unreachable > 0)
+    const excludedNames = [
+      ...new Set(doc.filter((pkg) => !rootNames.has(pkg.name)).map((pkg) => pkg.name)),
+    ].sort();
+    if (excludedNames.length > 0)
       evidence.push({
         kind: "lockfile-unreachable",
-        statement: `${unreachable} resolved Pipfile.lock entries are not direct declarations; edges are unavailable, so they are not attributed to a root`,
+        statement: `${excludedNames.length} lock-resolved entries are not represented in the graph (edges unavailable): ${excludedNames.join(", ")}`,
         file: lockPath,
       });
     evidence.push({
