@@ -25,3 +25,10 @@ export type {
   MatchedApiScan,
   MatchedApiSpan,
 } from "./native/matched-apis.js";
+export {
+  inspectIncompatiblePatterns,
+  MAX_PATTERN_BYTES,
+  MAX_PATTERN_FILES,
+  MAX_PATTERN_OBSERVATIONS,
+} from "./native/pattern-inspections.js";
+export type { PatternInspection, PatternKind } from "./native/pattern-inspections.js";
