@@ -1,11 +1,12 @@
 /**
- * Per-project manifest reading: pyproject.toml (#43) and requirements
- * files (#44). Read failures and malformed files become evidence,
+ * Per-project manifest reading: pyproject.toml (#43), requirements files
+ * (#44), and Pipfile (#432). Read failures and malformed files become evidence,
  * never exceptions.
  */
 import type { Evidence, ProjectRef, RepositoryHandle } from "@ghostdeps/core";
 import { MAX_PYPROJECT_BYTES } from "./detect.js";
 import { joinPath } from "./paths.js";
+import { parsePipfileText } from "./pipfile.js";
 import { parsePyprojectText, type PythonRequirement } from "./pyproject.js";
 import { parseRequirementsFiles, requirementsEntryPoints } from "./requirements.js";
 
@@ -44,6 +45,32 @@ export async function parseManifests(
       const parsed = parsePyprojectText(text, project, pyproject);
       result.requirements.push(...parsed.requirements);
       Object.assign(result.extras, parsed.extras);
+      result.evidence.push(...parsed.evidence);
+    }
+  }
+  const pipfile = joinPath(project.path, "Pipfile");
+  if (await repository.exists(pipfile)) {
+    let text: string | undefined;
+    try {
+      text = await repository.readFile(pipfile);
+    } catch {
+      result.evidence.push({
+        kind: "manifest-malformed",
+        statement: `${pipfile} could not be read; Pipfile runtime section not parsed`,
+        file: pipfile,
+      });
+    }
+    if (text !== undefined && Buffer.byteLength(text, "utf8") > MAX_PYPROJECT_BYTES) {
+      result.evidence.push({
+        kind: "manifest-malformed",
+        statement: `${pipfile} exceeds ${MAX_PYPROJECT_BYTES} bytes; Pipfile runtime section not parsed`,
+        file: pipfile,
+      });
+      text = undefined;
+    }
+    if (text !== undefined) {
+      const parsed = parsePipfileText(text, project, pipfile);
+      result.requirements.push(...parsed.requirements);
       result.evidence.push(...parsed.evidence);
     }
   }
