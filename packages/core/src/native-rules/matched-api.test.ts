@@ -118,6 +118,7 @@ describe("native matched-API pillar (#442)", () => {
     const result = await run([direct(), alias, barrel]);
     assert.equal(result.status, "pass");
     assert.equal(result.binding, "verified");
+    assert.equal(result.lineageVerification, "adapter-asserted");
     assert.equal(result.matchedApis.length, 3);
     assert.equal(result.matchedApis[2]?.lineage?.length, 2);
     assert.match(
@@ -134,6 +135,7 @@ describe("native matched-API pillar (#442)", () => {
     };
     const result = await run([direct(), unknown, { ...direct(), options: "unknown" }]);
     assert.equal(result.status, "blocked");
+    assert.equal(result.lineageVerification, "adapter-asserted");
     assert.equal(result.matchedApis.length, 1);
     assert.deepEqual(
       result.blocking.map((x) => x.reason),
