@@ -68,17 +68,27 @@ export interface GhostDepsAppOptions {
 type LookupOctokit = Parameters<typeof changedFiles>[0];
 
 /**
- * An installation client for webhook lookups that never sleeps on a rate
- * limit and never retries (#255 follow-up). The token comes from Probot's
- * token cache, so this costs no extra token request.
+ * A single-repository installation client for webhook lookups that never sleeps
+ * on a rate limit and never retries (#255 follow-up). Never use the
+ * installation-wide token: a later manifest may grant write permissions.
  */
 async function noWaitOctokit(
   app: Probot,
   installationId: number,
+  repositoryId: number,
+  permissions:
+    | { readonly contents: "read"; readonly pull_requests: "read" }
+    | { readonly contents: "read" }
+    | { readonly checks: "write" },
   log: { warn(obj: object, msg: string): void },
 ): Promise<LookupOctokit> {
   const appOctokit = await app.auth();
-  const { token } = (await appOctokit.auth({ type: "installation", installationId })) as {
+  const { token } = (await appOctokit.auth({
+    type: "installation",
+    installationId,
+    repositoryIds: [repositoryId],
+    permissions,
+  })) as {
     token: string;
   };
   return new ProbotOctokit({
@@ -101,7 +111,16 @@ function changedFilesLookup(
       // The webhook never waits on a rate limit (#255): its client fails a
       // rate-limited request at once, and past the deadline the lookup counts
       // as failed; either way the event takes the analyse-anyway path.
-      const octokit = await noWaitOctokit(app, candidate.installationId, context.log);
+      const octokit = await noWaitOctokit(
+        app,
+        candidate.installationId,
+        candidate.repository.id,
+        // PR files need pull_requests:read; push compares need contents:read.
+        // Request the bounded read subset for both so no webhook path ever
+        // inherits future installation-wide write permissions.
+        { contents: "read", pull_requests: "read" },
+        context.log,
+      );
       return await withDeadline(
         changedFiles(octokit, candidate),
         WEBHOOK_LOOKUP_DEADLINE_MS,
@@ -171,20 +190,10 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
     app.on(["installation", "installation_repositories"], async (context) => {
       const candidates = installationCandidates(context.name, context.payload);
       if (candidates.length === 0) return;
-      // An installation delivery can list many repositories. Resolve heads in
-      // parallel under one webhook deadline, then let the bounded queue decide
-      // admission per repository. Never guess the head from the payload.
-      let octokit: LookupOctokit;
-      try {
-        octokit = await withDeadline(
-          noWaitOctokit(app, candidates[0]!.installationId, context.log),
-          WEBHOOK_LOOKUP_DEADLINE_MS,
-          "installation token lookup",
-        );
-      } catch (error) {
-        context.log.warn({ delivery: context.id, err: error }, "installation token lookup failed");
-        return;
-      }
+      // An installation delivery can list many repositories. Mint a separate
+      // read-only client for each one, never a broad installation client.
+      // Resolve heads in parallel under one webhook deadline, then let the
+      // bounded queue decide admission. Never guess a head from the payload.
       const deadlineAt = Date.now() + WEBHOOK_LOOKUP_DEADLINE_MS;
       let next = 0;
       const processNext = async () => {
@@ -192,6 +201,17 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
           const candidate = candidates[next++]!;
           const { repository } = candidate;
           try {
+            const octokit = await withDeadline(
+              noWaitOctokit(
+                app,
+                candidate.installationId,
+                repository.id,
+                { contents: "read" },
+                context.log,
+              ),
+              Math.max(1, deadlineAt - Date.now()),
+              "installation token lookup",
+            );
             const headSha = await withDeadline(
               (async () => {
                 const repo = await octokit.rest.repos.get({
@@ -221,7 +241,17 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
               if (appId !== undefined && busyLimiter.allow(repository.id)) {
                 try {
                   await withDeadline(
-                    new CheckReporter(context.octokit.rest).busy({
+                    new CheckReporter(
+                      (
+                        await noWaitOctokit(
+                          app,
+                          candidate.installationId,
+                          repository.id,
+                          { checks: "write" },
+                          context.log,
+                        )
+                      ).rest,
+                    ).busy({
                       owner: repository.owner,
                       repo: repository.name,
                       headSha,
@@ -285,7 +315,17 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             context.log.warn(fields, "APP_ID not configured; no busy check run written");
           } else if (busyLimiter.allow(job.repository.id)) {
             try {
-              await new CheckReporter(context.octokit.rest).busy({
+              await new CheckReporter(
+                (
+                  await noWaitOctokit(
+                    app,
+                    job.installationId,
+                    job.repository.id,
+                    { checks: "write" },
+                    context.log,
+                  )
+                ).rest,
+              ).busy({
                 owner: job.repository.owner,
                 repo: job.repository.name,
                 headSha: job.headSha,
