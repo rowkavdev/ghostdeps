@@ -291,6 +291,32 @@ describe("JS/TS config string contract (#149, lead guardrails)", () => {
     assert.equal(usages[0]!.symbols[0], "postcss.config import");
   });
 
+  it("keys outside a plugins map are ordinary options, not package references (#397 review)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js": "module.exports = { autoprefixer: {}, plugins: {} };",
+    });
+    assert.deepEqual(await via(context, "autoprefixer"), []);
+  });
+
+  it("a disabled plugin-map entry earns no credit: false, null, 0, undefined (#397 review)", async () => {
+    for (const value of ["false", "null", "0", "undefined"]) {
+      const context = ctx({
+        "package.json": "{}",
+        "postcss.config.js": `module.exports = { plugins: { autoprefixer: ${value} } };`,
+      });
+      assert.deepEqual(await via(context, "autoprefixer"), [], `value ${value}`);
+    }
+  });
+
+  it("a plugins map passed as a variable is not read for keys (#397 review)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js": "const map = { autoprefixer: {} };\nmodule.exports = { plugins: map };",
+    });
+    assert.deepEqual(await via(context, "autoprefixer"), []);
+  });
+
   it("object keys match exactly: no subpath, prefix or case-folded credit (#397)", async () => {
     const context = ctx({
       "package.json": "{}",
