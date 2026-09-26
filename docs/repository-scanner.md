@@ -43,7 +43,7 @@ mirror it.
 
 | Limit              | Default | Effect when exceeded                       |
 | ------------------ | ------- | ------------------------------------------ |
-| `maxFiles`         | 50,000  | scan stops, `truncated: "max-files"`       |
+| `maxFiles`         | 100,000 | scan stops, `truncated: "max-files"`       |
 | `maxDirectories`   | 20,000  | scan stops, `truncated: "max-directories"` |
 | `maxTotalBytes`    | 512 MiB | scan stops, `truncated: "max-total-bytes"` |
 | `maxDepth`         | 32      | deeper directory skipped (`too-deep`)      |
