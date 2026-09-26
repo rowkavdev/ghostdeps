@@ -269,6 +269,8 @@ export function renderCheck(
   const n = findings.length;
   const parts: string[] = [
     `GhostDeps found ${n} finding${n === 1 ? "" : "s"} worth review. This check is advisory and never blocks merging.`,
+    // Audit goes before verdicts: a long findings list must not truncate it away.
+    ...scopeSection(result.scanScope),
   ];
   if (annotated.size > 0) parts.push("", `${annotated.size} annotated on lines this change added.`);
   if (overflow > 0)
@@ -290,7 +292,6 @@ export function renderCheck(
     );
   }
   parts.push(
-    ...scopeSection(result.scanScope),
     ...factsSection(facts),
     ...awarenessSection(awareness),
     ...notesSection(notes, appNotes),

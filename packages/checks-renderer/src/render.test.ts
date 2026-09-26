@@ -53,6 +53,40 @@ describe("opt-in Scan scope rendering", () => {
     assert.match(check.output.summary, /missing: unmatched/);
     assert.match(check.output.summary, /0 files/);
   });
+  it("keeps matched and unmatched roots visible ahead of a truncated verdict list", () => {
+    const longFindings = Array.from({ length: 90 }, (_, i) =>
+      finding({
+        summary: `finding ${i}: ${"x".repeat(950)}`,
+        dependency: `package-${i}`,
+      }),
+    );
+    const check = renderCheck(
+      {
+        ...result(longFindings),
+        scanScope: {
+          ...scope,
+          roots: [
+            { root: "fixtures", matched: true, files: 2, manifests: 1 },
+            { root: "missing", matched: false, files: 0, manifests: 0 },
+          ],
+          matchedRoots: 1,
+          excludedFiles: 2,
+          excludedManifests: 1,
+        },
+      },
+      new Map(),
+    );
+    assert.equal(check.conclusion, "neutral");
+    assert.ok(check.output.summary.length <= 65_000);
+    assert.match(check.output.summary, /Summary truncated/);
+    assert.match(check.output.summary, /Scan scope/);
+    assert.match(check.output.summary, /fixtures: 2 files/);
+    assert.match(check.output.summary, /missing: unmatched \(0 files/);
+    assert.ok(
+      check.output.summary.indexOf("Scan scope") < check.output.summary.indexOf("High confidence"),
+    );
+  });
+
   it("makes omitted declarations neutral, even without a finding", () => {
     const check = renderCheck(
       {
