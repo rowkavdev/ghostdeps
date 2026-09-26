@@ -11,6 +11,7 @@
  * its own: the actor's CURRENT repository permission is read live.
  */
 import { parseMarker } from "./marker.js";
+import { commentLockKey, withCommentLock } from "./queue.js";
 import type { IssuesClient } from "./state.js";
 
 /** Repos collaborator-permission slice; minted read-only for the check. */
@@ -119,6 +120,24 @@ export async function handleCommentEdited(
   const canonical = canonicalFrom(payload.changes?.body?.from);
   if (canonical === undefined) return ignore("previous body is not canonical");
 
+  // Serialised with the scan writer (queue.ts, lead ruling
+  // issuecomment-5847830199): the whole read-modify-write below runs
+  // inside the per-PR writer lock, so no scan render can interleave
+  // between these reads and the write. The live re-reads stay as defense
+  // against out-of-band actors (a human editing this instant, another
+  // replica); they narrow that window but cannot eliminate it.
+  return withCommentLock(commentLockKey(payload.repository.id, payload.issue.number), () =>
+    handleCommentEditedLocked(deps, payload, marker, canonical, ignore),
+  );
+}
+
+async function handleCommentEditedLocked(
+  deps: HandleEditedDeps,
+  payload: EditedPayload,
+  marker: NonNullable<ReturnType<typeof parseMarker>>,
+  canonical: string,
+  ignore: (reason: string) => EditOutcome,
+): Promise<EditOutcome> {
   // Re-read live state before ANY edit (reviewer-1 #425): a delayed delivery
   // must never overwrite a newer canonical comment, and a restore onto a
   // closed or merged PR is wrong. The delivery's claim is not state.
@@ -166,10 +185,9 @@ export async function handleCommentEdited(
   }
   if (!TICK_PERMISSIONS.has(permission)) return ignore(`editor is ${permission}, not a maintainer`);
 
-  // Compare-and-swap on the body (reviewer-1 #425 round 2): the permission
-  // call above is a window in which a scan update can replace the comment.
-  // Re-read immediately before writing and refuse unless the live body is
-  // still exactly what this delivery showed.
+  // The permission call above is a window in which an out-of-band actor
+  // can replace the comment. Re-read immediately before writing and refuse
+  // unless the live body is still exactly what this delivery showed.
   const still = await readLive();
   if (still === undefined) return ignore("current comment or PR state could not be read");
   if (!still.prOpen) return ignore("pull request is not open");

@@ -6,6 +6,7 @@
  * Multiple matching comments are an ambiguity to repair, never a choice.
  */
 import { parseMarker, type CommentMarker } from "./marker.js";
+import { commentLockKey, withCommentLock } from "./queue.js";
 
 /** The issues slice of Octokit the commenter needs; minted narrowed to issues:write. */
 export interface IssuesClient {
@@ -64,6 +65,17 @@ export interface MaintainInput {
 }
 
 export async function maintainComment(
+  client: IssuesClient,
+  input: MaintainInput,
+): Promise<MaintainOutcome> {
+  // Serialised with the edited handler (queue.ts): the whole
+  // list-then-create/update section is one writer's critical section.
+  return withCommentLock(commentLockKey(input.marker.repositoryId, input.pullNumber), () =>
+    maintainCommentLocked(client, input),
+  );
+}
+
+async function maintainCommentLocked(
   client: IssuesClient,
   input: MaintainInput,
 ): Promise<MaintainOutcome> {
