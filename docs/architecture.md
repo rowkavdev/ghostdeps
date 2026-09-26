@@ -74,7 +74,7 @@ Diff paths are attacker data. Paths that are absolute, contain `..` segments, ba
 
 ## Native replacement rules
 
-The shared rule interface exists under `packages/core/src/native-rules/`, but no ecosystem rule dataset or native-replacement verdict is shipped yet. The design calls for versioned, tested rules recording packages, minimum runtime/language versions, covered APIs, incompatible uses, semantic differences, confidence criteria and references. A proposed example is `axios` simple GET/JSON usage on Node 18+ to `fetch()`; interceptors, custom adapters and cancellation semantics must disqualify a naive swap. See the [JS/TS native-rule research](research/native-rules-js.md).
+The shared rule interface and inert JS/TS seed catalog live under `packages/core/src/native-rules/`. The seeds cover narrow cases of `axios` to Node `fetch()` (stable Node 21+), `uuid` v4 string generation to `node:crypto.randomUUID()`, and `lodash.clonedeep` on plain cloneable data to `structuredClone()`. They record runtime floors, covered APIs, disqualifiers, semantic differences, confidence criteria and references. **No source-backed producer or native-replacement verdict is shipped**: a synthetic test candidate is not a finding. See [adding native rules](native-rules.md) and [JS/TS native-rule research](research/native-rules-js.md).
 
 ## Cross-language repositories
 
