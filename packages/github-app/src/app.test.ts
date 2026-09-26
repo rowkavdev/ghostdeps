@@ -35,17 +35,22 @@ async function fixture(name: string): Promise<string> {
 const API = "https://api.github.com";
 const REPO_PATH = "/repos/octo-org/example-app";
 
-/** A webhook lookup must request only one repository and no write rights. */
+/** Webhook token mocks share an endpoint: return false on a different repo's
+ * concurrent request so Nock can try that repo's mock. Never assert in a
+ * predicate before matching, or a wrong-order request will throw and time out.
+ */
 function mockInstallationToken(repositoryId = 872001, installationHeadLookup = false) {
   nock(API)
     .post("/app/installations/55501/access_tokens", (body: Record<string, unknown>) => {
-      assert.deepEqual(body, {
-        repository_ids: [repositoryId],
-        permissions: installationHeadLookup
-          ? { contents: "read" }
-          : { contents: "read", pull_requests: "read" },
-      });
-      return true;
+      return (
+        JSON.stringify(body) ===
+        JSON.stringify({
+          repository_ids: [repositoryId],
+          permissions: installationHeadLookup
+            ? { contents: "read" }
+            : { contents: "read", pull_requests: "read" },
+        })
+      );
     })
     .reply(201, { token: "test-token", expires_at: "2099-01-01T00:00:00Z" });
 }
@@ -54,11 +59,13 @@ function mockInstallationToken(repositoryId = 872001, installationHeadLookup = f
 function mockBusyToken(repositoryId = 872001) {
   nock(API)
     .post("/app/installations/55501/access_tokens", (body: Record<string, unknown>) => {
-      assert.deepEqual(body, {
-        repository_ids: [repositoryId],
-        permissions: { checks: "write" },
-      });
-      return true;
+      return (
+        JSON.stringify(body) ===
+        JSON.stringify({
+          repository_ids: [repositoryId],
+          permissions: { checks: "write" },
+        })
+      );
     })
     .reply(201, { token: "busy-token", expires_at: "2099-01-01T00:00:00Z" });
 }
