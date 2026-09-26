@@ -43,7 +43,6 @@ const base = (): NativeProducerInput => ({
       },
     ],
   },
-  deploymentTargets: [{ target: "production", runtime: "node" }],
 });
 
 describe("native evidence producer boundary (#435)", () => {
@@ -75,16 +74,8 @@ describe("native evidence producer boundary (#435)", () => {
     assert.equal((await produceNativeEvidence(base())).status, "blocked");
   });
 
-  it("blocks unknown deployment target leads rather than treating Node CI as production", async () => {
-    assert.equal(
-      (
-        await produceNativeEvidence({
-          ...base(),
-          deploymentTargets: [{ target: "edge", runtime: "unknown" }],
-        })
-      ).status,
-      "blocked",
-    );
+  it("does not infer deployment from a caller-provided runtime", async () => {
+    assert.equal((await produceNativeEvidence(base())).status, "blocked");
   });
 });
 
@@ -136,12 +127,14 @@ const evidence: NativeEligibilityEvidence = {
   version: 1,
   ruleId: AXIOS_FETCH_RULE.id,
   snapshotSha256,
+  binding: "verified",
   declaration: { ...source, file: "package.json", line: 1 },
   referencesComplete: true,
   matchedApis: [matched],
   incompatibleChecks: [absent, observed],
   deploymentTargets: [
     {
+      binding: "verified",
       target: "production",
       runtime: "node",
       minimumVersion: "22.0.0",
