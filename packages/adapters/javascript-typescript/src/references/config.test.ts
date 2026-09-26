@@ -268,6 +268,39 @@ describe("JS/TS config string contract (#149, lead guardrails)", () => {
     });
   }
 
+  it("a plugin map names packages as identifier keys: postcss.config.js plugins (#397)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js":
+        "module.exports = {\n  plugins: {\n    autoprefixer: {},\n    'postcss-preset-env': {},\n  },\n};",
+    });
+    assert.deepEqual(await via(context, "autoprefixer"), [["config", "postcss.config.js", 3]]);
+    assert.deepEqual(await via(context, "postcss-preset-env"), [
+      ["config", "postcss.config.js", 4],
+    ]);
+  });
+
+  it("shorthand properties are not credited by key; their own require is (#397)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js":
+        'const autoprefixer = require("autoprefixer");\nmodule.exports = { plugins: { autoprefixer } };',
+    });
+    const usages = await findConfigUsages(context, dep("autoprefixer"));
+    assert.equal(usages.length, 1);
+    assert.equal(usages[0]!.symbols[0], "postcss.config import");
+  });
+
+  it("object keys match exactly: no subpath, prefix or case-folded credit (#397)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js": "module.exports = { plugins: { autoprefixer: {}, AutoPrefixer: {} } };",
+    });
+    assert.deepEqual(await via(context, "autoprefixer"), [["config", "postcss.config.js", 1]]);
+    assert.deepEqual(await via(context, "prefixer"), []);
+    assert.deepEqual(await via(context, "autoprefix"), []);
+  });
+
   it("a config importing a package is unread without a lockfile, read with one (#201 review)", async () => {
     const files = {
       "package.json": JSON.stringify({
