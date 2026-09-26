@@ -12,3 +12,16 @@ export { detectPackageManagers } from "./package-managers.js";
 export type { PackageManagerDetection } from "./package-managers.js";
 export { classifySpecifier, parseManifest, parseManifestText } from "./manifest.js";
 export type { ManifestParseResult } from "./manifest.js";
+export {
+  findMatchedApiReferences,
+  MAX_MATCHED_REFERENCES,
+  MAX_RESOLUTION_DEPTH,
+} from "./native/matched-apis.js";
+export type {
+  MatchedApiHop,
+  MatchedApiOptions,
+  MatchedApiReference,
+  MatchedApiResolution,
+  MatchedApiScan,
+  MatchedApiSpan,
+} from "./native/matched-apis.js";
