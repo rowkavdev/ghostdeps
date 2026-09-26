@@ -11,6 +11,21 @@
     {
       "kind": "info",
       "severity": "info",
+      "dependency": "@types/bun"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@types/node"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@types/node"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
       "dependency": "@vitest/browser"
     },
     {
