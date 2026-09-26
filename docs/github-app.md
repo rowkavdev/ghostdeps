@@ -2,25 +2,29 @@
 
 The GitHub App is the primary interface. Architecture decision: [ADR 0003](adr/0003-github-app-architecture.md). This file is the operational reference.
 
-## Permissions (least privilege)
+## Permissions (proposed opt-in comment/apply rollout; not active)
+
+**Gated preparation, not an installation instruction.** The manifest below is a candidate for slices 3/4, not today's scan-only installation. Do not register or reapprove it until M3 is stable, #389's slice-2 evidence and the ADR 0004 execution/security design have passed review and tests. The current deployed scan path remains `contents: read`, `pull_requests: read`, `checks: write`, `metadata: read`; if an installation declines reapproval, scan-only must remain functional. This is a coded acceptance property, not merely a deployment promise: handlers must detect permission availability per installation, leave scans on their existing read/check token, and skip comment and dispatch paths when the new rights are unavailable. See [the security model](security-model.md#proposed-opt-in-commentapply-permissions-gated) for the threat boundary.
 
 | Permission          | Access | Why                                                            |
 | ------------------- | ------ | -------------------------------------------------------------- |
-| Repository contents | Read   | Read manifests, lockfiles and source (codeload tarball + API)  |
-| Pull requests       | Read   | Diffs, to analyse dependency changes in the context of the PR  |
-| Checks              | Write  | Create check runs and code annotations — the reporting surface |
-| Metadata            | Read   | Implicit, granted to every app                                 |
+| Repository contents | Write  | Only a narrow, repository-scoped token at the dispatch boundary calls `repository_dispatch` on the base repo; never give write to analysis workers |
+| Pull requests       | Read   | Read current PR identity, head and allow-edits state before any apply decision |
+| Checks              | Write  | Create existing Checks and annotations; job token still has only `contents: read` and `checks: write` |
+| Issues              | Write  | Create/edit one maintained issue comment on a PR; no issue mutation feature |
+| Metadata            | Read   | Implicit on every GitHub App |
 
-Explicitly **not** requested: `issues`, `actions`, `contents: write`, `pull_requests: write`, administration, secrets, or anything else. M4 remediation PRs will require a deliberate, separately-communicated permission change.
+No `pull_requests: write`, `actions: write`, administration or org-wide rights. The separate opt-in consumer workflow's commit-only job uses a different dedicated App credential, not the GhostDeps service key. Manifest permissions are an installation-wide ceiling, not automatically repo-scoped tokens for each call. No permission delta is safe simply because a manifest and documentation agree. The App event filters must keep `issue_comment` default-denied until the editor, comment, PR and permissions gates exist; manifest subscription does not enable processing by itself.
 
-## Webhook events
+## Webhook events (proposed; handler must be built before reapproval)
 
 - `pull_request` (opened, synchronize, reopened)
 - `push` (configured branches)
-- `check_run` (rerequested: the re-run button on the GhostDeps check)
-- `installation`, `installation_repositories` (setup and initial scan)
+- `check_run` (rerequested on GhostDeps's own check)
+- `issue_comment` (`edited` only for a verified bot-owned PR comment; never run apply from an ordinary issue or comment text alone)
+- `installation`, `installation_repositories` (implicit setup and initial scan)
 
-No other events are subscribed. The manifest ([`packages/github-app/app.yml`](https://github.com/rowkavdev/ghostdeps/blob/main/packages/github-app/app.yml)) lists `pull_request`, `push` and `check_run`. GitHub delivers `installation` and `installation_repositories` to every app automatically, so they cannot be listed. `checks: write` already subscribes the app to `check_run` and `check_suite`; `check_run` is listed anyway because re-runs depend on it, and GitHub sends `rerequested` only to the app that created the run ([GitHub docs](https://docs.github.com/en/webhooks/webhook-events-and-payloads#check_run)). `check_suite` is not used: `push` is the push trigger, and using both would double up jobs. A test in `packages/github-app` fails if the manifest and this page drift apart.
+No other events are subscribed. This manifest parity test checks the requested list, not that handlers, reapproval, opt-in consumer workflow, or security controls exist. The live App still posts no PR comments pending the gates below. See [comment/apply design](pr-comment-apply-design.md) for the actual delivery protocol.
 
 ## Behaviour
 
