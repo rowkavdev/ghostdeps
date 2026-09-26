@@ -51,3 +51,9 @@ export {
   type NativeDeploymentGateResult,
   type NativeDeploymentBlock,
 } from "./deployment.js";
+
+export {
+  mintNativeSnapshot,
+  verifyNativeSnapshot,
+  type NativeSnapshotBinding,
+} from "./snapshot.js";

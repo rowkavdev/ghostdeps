@@ -263,6 +263,25 @@ export interface RepositoryHandle {
    */
   readFileHead?(path: string, maxBytes: number): Promise<string | undefined>;
   exists(path: string): Promise<boolean>;
+  /** Optional raw-byte capability for a bounded, exact snapshot hash. */
+  readFileBytes?(path: string): Promise<Uint8Array>;
+  /** Optional complete typed view; omitted capabilities never imply completeness. */
+  listEntries?(): Promise<RepositoryTreeListing>;
+}
+
+/** Files and symlinks in the scanner's bounded view. Other skipped entries block verification. */
+export interface RepositoryTreeEntry {
+  path: string;
+  kind: "file" | "symlink" | "other";
+  target?: string;
+}
+export interface RepositoryTreeListing {
+  entries: RepositoryTreeEntry[];
+  complete: boolean;
+  /** SHA-256 identity of the scanner-visible domain, including exclusions and scope. */
+  policy: string;
+  /** Why any source path could have been omitted; never silently drop one. */
+  limitations: string[];
 }
 
 /** What network access, if any, an analysis run permits. Adapters never fetch directly. */

@@ -90,6 +90,9 @@ export interface ScanResult {
   truncated?: TruncationReason;
   totalBytes: number;
   limits: ScanLimits;
+  /** The exact exclusion policy used to define this scanner-visible subset. */
+  excludedDirectories: string[];
+  excludedFileSuffixes: string[];
   /** Present for opt-in scans, including a repository without a config. */
   scope?: ScanScope;
 }
@@ -298,6 +301,8 @@ export async function scanRepository(
     skippedCounts,
     totalBytes,
     limits,
+    excludedDirectories: [...excludedDirs].sort(),
+    excludedFileSuffixes: [...excludedSuffixes].sort(),
   };
   if (truncated !== undefined) result.truncated = truncated;
   if (scope !== undefined) result.scope = scope;
