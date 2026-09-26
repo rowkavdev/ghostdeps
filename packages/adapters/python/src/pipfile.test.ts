@@ -33,6 +33,23 @@ describe("Pipfile declarations (#432)", () => {
     assert.deepEqual(parsed.requirements[1]?.extras, ["speed"]);
     assert.equal(parsed.requirements[1]?.marker, "python_version >= '3.11'");
   });
+  it("fails closed on unsupported or mistyped option tables", () => {
+    for (const value of [
+      "{git = 42}",
+      "{markers = 42}",
+      '{bogus = "not-a-constraint"}',
+      '{extras = "speed"}',
+      '{git = "https://example.com/repo.git", version = "*"}',
+    ]) {
+      const result = parsePipfileText(`[packages]\nfoo = ${value}\n`, project, "Pipfile");
+      assert.equal(result.complete, false, value);
+      assert.deepEqual(result.requirements, [], value);
+      assert.ok(
+        result.evidence.some((e) => e.kind === "manifest-malformed" && e.statement.includes("foo")),
+        value,
+      );
+    }
+  });
   it("never guesses runtime from missing or malformed sections", () => {
     const missing = parsePipfileText('[dev-packages]\npytest = "*"', project, "Pipfile");
     assert.equal(missing.complete, false);

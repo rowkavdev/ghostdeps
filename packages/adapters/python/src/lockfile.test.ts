@@ -289,7 +289,10 @@ describe("Pipfile.lock graph (#432)", () => {
     );
     assert.equal(graph.incomplete, true);
     assert.deepEqual(graph.transitiveClosure, {});
-    assert.ok(evidence.some((e) => e.kind === "lockfile-unreachable"));
+    assert.match(
+      evidence.find((e) => e.kind === "lockfile-unreachable")?.statement ?? "",
+      /1 lock-resolved entries are not represented in the graph.*transitive/,
+    );
     assert.ok(evidence.some((e) => e.kind === "graph-edges-unavailable"));
   });
   it("marks declared roots missing from the lock as unresolved", async () => {

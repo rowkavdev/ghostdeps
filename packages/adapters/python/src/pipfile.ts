@@ -21,6 +21,50 @@ const table = (value: unknown): Table | undefined =>
 const strings = (value: unknown): string[] =>
   Array.isArray(value) && value.every((v) => typeof v === "string") ? value : [];
 
+const SUPPORTED_OPTIONS = new Set([
+  "version",
+  "extras",
+  "markers",
+  "git",
+  "path",
+  "file",
+  "url",
+  "ref",
+  "editable",
+  "index",
+  "subdirectory",
+  "os_name",
+  "sys_platform",
+  "platform_machine",
+  "platform_python_implementation",
+  "platform_release",
+  "platform_system",
+  "platform_version",
+  "python_version",
+  "python_full_version",
+  "implementation_name",
+  "implementation_version",
+  "extra",
+]);
+const STRING_OPTIONS = new Set(
+  [...SUPPORTED_OPTIONS].filter((key) => key !== "extras" && key !== "editable"),
+);
+function validOptions(options: Table): boolean {
+  if (
+    Object.entries(options).some(
+      ([key, value]) =>
+        !SUPPORTED_OPTIONS.has(key) ||
+        (STRING_OPTIONS.has(key) && typeof value !== "string") ||
+        (key === "editable" && typeof value !== "boolean") ||
+        (key === "extras" &&
+          (!Array.isArray(value) || value.some((item) => typeof item !== "string"))),
+    )
+  )
+    return false;
+  const refs = ["git", "path", "file", "url"].filter((key) => options[key] !== undefined);
+  return refs.length <= 1 && (refs.length === 0 || options.version === undefined);
+}
+
 export function parsePipfileText(
   text: string,
   project: ProjectRef,
@@ -79,18 +123,14 @@ export function parsePipfileText(
       const options = table(raw);
       const valid = typeof raw === "string" || options !== undefined;
       const constraint = typeof raw === "string" ? raw : options?.version;
-      if (
-        !valid ||
-        (constraint !== undefined && typeof constraint !== "string") ||
-        (options?.extras !== undefined &&
-          strings(options.extras).length !==
-            (Array.isArray(options.extras) ? options.extras.length : -1))
-      ) {
+      if (!valid || (options !== undefined && !validOptions(options))) {
         incomplete = true;
+        const line = lines.tableKey(section, rawName, name);
         evidence.push({
           kind: "manifest-malformed",
           statement: `could not read ${rawName} in ${declaredIn} [${section}]`,
           file: declaredIn,
+          ...(line !== undefined ? { line } : {}),
         });
         continue;
       }
