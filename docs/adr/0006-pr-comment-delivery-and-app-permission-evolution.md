@@ -24,7 +24,7 @@ The risk this ADR controls: a wider installation ceiling becomes ambient authori
    - Dispatch token: narrow, single-purpose, constrained per the delivery design.
    - Comment editor: `issues: write` only, checked before use.
    - Ambient `context.octokit` usage is not permitted on paths that handle untrusted input; each such handler moves to an explicitly narrowed client.
-   These narrowings are acceptance properties with adversarial tests (the #411 hardening PR carries the first of them), not documentation aspirations.
+     These narrowings are acceptance properties with adversarial tests (the #411 hardening PR carries the first of them), not documentation aspirations.
 
 3. **Decline and revocation behaviour.** If an installation declines the wider permissions, scanning keeps working on the old ceiling; the comment/apply features stay off and say so. Decline-preserves-scans is a coded acceptance property. Installation effective-rights detection decides feature availability from what the installation actually granted, never from what the manifest requests.
 
