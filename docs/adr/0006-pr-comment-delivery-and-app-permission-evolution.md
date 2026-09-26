@@ -1,8 +1,12 @@
 # ADR 0006: PR-comment delivery and App permission evolution
 
-- Status: Proposed (owner acceptance gate; see Activation below)
+- Status: Accepted (owner decision 2026-09-26; see Acceptance below)
 - Date: 2026-09-26
 - Supersedes: the permission set, event list and "rare PR comments" clauses of [ADR 0003](0003-github-app-architecture.md) for the PR-comment delivery feature only. Every other ADR 0003 decision stands.
+
+## Acceptance (2026-09-26)
+
+Rowan accepted on his authenticated WhatsApp channel at 14:45:39 BST, verbatim: "yes sure merge it and then after another pr show me its comment" (wamid.HBgMNDQ3ODIzNTA1ODg2FQIAEhgWM0VCMDJEMUQxODAwMjRBM0E4N0Y0RQA=), replying to the ADR-0006 sign-off request and the dry-run evidence for the comment feature. The channel exchange explicitly told him acceptance is two separate yeses by design: this ADR now, and the live App permission bump at activation. Verified against the channel archive by the architecture lead. This acceptance covers this ADR only; the Activation conditions below all still stand, including the separate owner confirmation of the live App permission update.
 
 ## Context
 
