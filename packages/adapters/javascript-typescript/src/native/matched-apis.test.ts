@@ -671,3 +671,26 @@ test("computed interceptor intermediate access and computed option methods are u
     assert.equal(record!.uninspectable.length, 1);
   }
 });
+
+test("computed option accessors and earlier computed interceptor segments are uninspectable", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const cases = [
+    [
+      'import axios from "axios"; axios.get("/", { get [key]() { return 42; } });',
+      "timeout",
+      "option-key-value",
+    ],
+    [
+      'import axios from "axios"; axios[feature].request.use(() => {});',
+      "interceptors.request.use",
+      "member-call",
+    ],
+  ] as const;
+  for (const [text, patternId, kind] of cases) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
+      { patternId, kind },
+    ]);
+    assert.equal(record!.state, "uninspectable");
+    assert.equal(record!.uninspectable.length, 1);
+  }
+});
