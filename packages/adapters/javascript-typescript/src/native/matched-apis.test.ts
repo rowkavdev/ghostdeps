@@ -492,3 +492,51 @@ test("plain local value flow produces no package records (review repro 5b)", asy
   const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
   assert.equal(scan.references.length, 0, "no package flow: no reference and no unknown");
 });
+
+test("per-pattern inspections emit byte-exact observations and explicit not-observed", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const text =
+    'import axios from "axios";\naxios.interceptors.request.use(x => x);\naxios.get("/", { timeout: 1000, responseType: "json" });\ntry { throw 1; } catch (error) { console.log(error.response, error.code); }\n';
+  const patterns = [
+    { patternId: "interceptors.request.use", kind: "member-call" as const },
+    { patternId: "timeout", kind: "option-key-value" as const },
+    { patternId: "responseType", kind: "option-key-value" as const },
+    { patternId: "error.response", kind: "property-chain" as const },
+    { patternId: "error.code", kind: "property-chain" as const },
+    { patternId: "absent", kind: "option-key-value" as const },
+  ];
+  const records = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), patterns);
+  assert.deepEqual(
+    records.map((r) => r.state),
+    ["observed", "observed", "observed", "observed", "observed", "not-observed"],
+  );
+  for (const record of records)
+    for (const span of record.observations) {
+      assert.equal(
+        Buffer.from(text).subarray(span.start, span.end).toString(),
+        record.patternId === "timeout"
+          ? "timeout: 1000"
+          : record.patternId === "responseType"
+            ? 'responseType: "json"'
+            : record.patternId === "error.response"
+              ? "error.response"
+              : record.patternId === "error.code"
+                ? "error.code"
+                : text.slice(span.start, span.end),
+      );
+    }
+  assert.deepEqual(records[5]!.observations, []);
+  assert.equal(records[5]!.capped, false);
+});
+
+test("pattern inspection marks bounded scan caps and does not imply completeness", async () => {
+  const { inspectIncompatiblePatterns, MAX_PATTERN_BYTES } =
+    await import("./pattern-inspections.js");
+  const files = { "src/a.ts": `const timeout = 1;\n${" ".repeat(MAX_PATTERN_BYTES)}` };
+  const [record] = await inspectIncompatiblePatterns(memoryHandle(files), [
+    { patternId: "timeout", kind: "option-key-value" },
+  ]);
+  assert.equal(record!.capped, true);
+  assert.deepEqual(record!.inspectedFiles, []);
+  assert.equal(record!.state, "not-observed");
+});
