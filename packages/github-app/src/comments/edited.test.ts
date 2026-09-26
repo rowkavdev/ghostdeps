@@ -157,6 +157,24 @@ describe("handleCommentEdited", () => {
     assert.equal(captured.updates.length, 0);
   });
 
+  it("serializes with the scan writer: a scan render landing mid-handler is seen, not overwritten", async () => {
+    // The scan writer holds the same lock while it updates; when the edited
+    // handler gets in afterwards, its first live read already shows the new
+    // body and it refuses. Simulate the serialized interleaving: the live
+    // body changes to the scan's render before this handler's first read.
+    const captured = { updates: [] as string[] };
+    const scanRender = "SCAN UPDATE: fresh canonical body";
+    const out = await handleCommentEdited(
+      deps("maintain", captured, { body: scanRender }),
+      payload(canonical().replace("[ ]", "[x]")),
+    );
+    assert.deepEqual(out, {
+      kind: "ignored",
+      reason: "comment moved after this delivery; a newer delivery owns it",
+    });
+    assert.equal(captured.updates.length, 0);
+  });
+
   it("refuses a restore onto a closed or merged PR", async () => {
     const captured = { updates: [] as string[] };
     const out = await handleCommentEdited(
