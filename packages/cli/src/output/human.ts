@@ -192,6 +192,43 @@ function renderVerdicts(
 }
 
 /**
+ * One package fact line (#385): dependency, core's summary, then the
+ * structured provenance fields - `source.basis` and the declaring manifest.
+ * The summary is core's wording and is shown verbatim; presenters never
+ * parse it (or evidence) for semantics, and never add relative-age badges
+ * or newer-available framing. Basis and manifest fields are external and
+ * repository data, so everything goes through escapeTerminal.
+ */
+function renderFact(finding: Finding): string[] {
+  const name = finding.dependency ?? "(repository-wide)";
+  const parts: string[] = [];
+  if (finding.source !== undefined) {
+    parts.push(`source: ${escapeTerminal(finding.source.basis)}`);
+  }
+  const manifest = finding.declaringManifest;
+  if (manifest !== undefined) {
+    parts.push(
+      `declared in ${escapeTerminal(manifest.path)}, ${escapeTerminal(manifest.ecosystem)}`,
+    );
+  }
+  const suffix = parts.length > 0 ? ` (${parts.join("; ")})` : "";
+  return [`    ${escapeTerminal(name)} - ${escapeTerminal(finding.summary)}${suffix}`];
+}
+
+/**
+ * Package facts are the source-backed health observations findingGroup
+ * (#239) calls "fact" (core's `healthFact: true`, #61/#351): facts about
+ * the exact locked version, action-relevant but never capping. Always
+ * visible like Notes and Awareness notes; they never affect the verdict
+ * lines, the tally or the exit code. Omitted when there are none.
+ */
+function renderFacts(findings: readonly Finding[]): string[] {
+  const facts = findings.filter((finding) => findingGroup(finding) === "fact");
+  if (facts.length === 0) return [];
+  return ["", "Package facts:", ...facts.flatMap((fact) => renderFact(fact))];
+}
+
+/**
  * Notes are the info findings findingGroup (#239) calls "incomplete" or
  * "note": engine cap and incompleteness notes (partial scans, adapter
  * failures, cap notices, manual-review notes such as unverified-no-imports)
@@ -249,7 +286,6 @@ export function renderRepositorySummary(result: AnalysisResult): string {
   const transitive = transitiveSummary(result.surface);
 
   // Awareness and source-backed facts never inflate the finding tally.
-  // Rendering a Package facts section is a separate follow-up (#350).
   const counts = new Map<FindingKind, number>();
   for (const finding of result.findings) {
     if (["awareness", "fact"].includes(findingGroup(finding))) continue;
@@ -280,6 +316,7 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     "Findings:",
     ...(findingLines.length > 0 ? findingLines : ["  none"]),
     ...renderVerdicts(result.findings, result.impact),
+    ...renderFacts(result.findings),
     ...renderNotes(result.findings),
     ...renderAwarenessNotes(result.findings),
   ].join("\n");
