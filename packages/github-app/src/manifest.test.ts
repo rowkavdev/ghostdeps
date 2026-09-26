@@ -6,6 +6,7 @@ import { parse } from "yaml";
 /** Row labels in the docs/github-app.md permissions table -> manifest permission keys. */
 const DOC_LABEL_TO_KEY: Record<string, string> = {
   "Repository contents": "contents",
+  Issues: "issues",
   "Pull requests": "pull_requests",
   Checks: "checks",
   Metadata: "metadata",
@@ -70,12 +71,13 @@ describe("app manifest", () => {
     assert.deepEqual(manifest.default_permissions, documentedPermissions(doc));
   });
 
-  it("is least privilege: nothing beyond contents/PR read and checks write", async () => {
+  it("requests only the documented scoped comment/dispatch permission delta", async () => {
     const { manifest } = await load();
     assert.deepEqual(manifest.default_permissions, {
-      contents: "read",
+      contents: "write",
       pull_requests: "read",
       checks: "write",
+      issues: "write",
       metadata: "read",
     });
   });
@@ -84,7 +86,7 @@ describe("app manifest", () => {
     const { manifest, doc } = await load();
     const expected = [...documentedEvents(doc)].filter((e) => !IMPLICIT_EVENTS.has(e)).sort();
     assert.deepEqual([...manifest.default_events].sort(), expected);
-    assert.deepEqual(expected, ["check_run", "pull_request", "push"]);
+    assert.deepEqual(expected, ["check_run", "issue_comment", "pull_request", "push"]);
   });
 
   it("documents the implicit installation events", async () => {
