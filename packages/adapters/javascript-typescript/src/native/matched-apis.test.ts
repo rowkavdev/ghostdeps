@@ -337,3 +337,90 @@ test("bare call of a callable package binding is cited, not dropped", async () =
   assert.equal(scan.references[0]!.api, "<call>");
   assert.equal(scan.references[0]!.callTarget, "axios");
 });
+
+test("function-local const alias binds in its scope (review repro 3)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function f() {",
+      "  const x = axios;",
+      '  x.get("/x");',
+      "}",
+      "f();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  // The alias call inside f, plus f() cited as a wrapper call site.
+  const ref = scan.references.find((r) => r.resolution === "alias");
+  assert.ok(ref, "nested alias use must be cited, not dropped");
+  assert.equal(ref!.callTarget, "axios.get");
+  assert.equal(ref!.lineage[0]!.kind, "alias");
+  assert.equal(scan.references.filter((r) => r.resolution === "wrapper").length, 1);
+});
+
+test("function-local destructure binds in its scope (review repro 3b)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function f() {",
+      "  const { get } = axios;",
+      '  get("/x");',
+      "}",
+      "f();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const ref = scan.references.find((r) => r.resolution === "alias");
+  assert.ok(ref, "nested destructure use must be cited, not dropped");
+  assert.equal(ref!.callTarget, "axios.get");
+});
+
+test("function-local require binds in its scope (review repro 3c)", async () => {
+  const files = {
+    "src/a.cjs": [
+      "function f() {",
+      '  const axios = require("axios");',
+      '  axios.get("/x");',
+      "}",
+      "f();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const ref = scan.references.find((r) => r.resolution === "direct");
+  assert.ok(ref, "nested require use must be cited, not dropped");
+  assert.equal(ref!.callTarget, "axios.get");
+});
+
+test("nested alias does not leak out of its scope", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function f() {",
+      "  const x = axios;",
+      '  x.get("/inside");',
+      "}",
+      'const x = "plain-string";',
+      "void x;",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 1, "only the in-scope use is cited");
+  assert.ok(cited(files, scan.references[0]!).includes("/inside"));
+});
+
+test("innermost scoped binding wins over the module binding", async () => {
+  const files = {
+    "src/a.ts": [
+      'import { get } from "axios";',
+      "function f() {",
+      "  const g = get;",
+      '  g("/x");',
+      "}",
+      "f();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const ref = scan.references.find((r) => r.resolution === "alias");
+  assert.ok(ref);
+  assert.equal(ref!.callTarget, "axios.get");
+});
