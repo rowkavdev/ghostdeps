@@ -153,6 +153,9 @@ interface Binding {
   decl: ts.Node;
   /** The top-level statement that introduced this binding; its names never shadow it. */
   declStatement?: ts.Node | undefined;
+  /** Lexical scope span (UTF-16 positions in the binding's file) this binding is visible in. */
+  scopeStart: number;
+  scopeEnd: number;
   hopKind: "import" | "require" | "alias";
   /** True when the local name differs from a plain direct import (alias class). */
   aliased: boolean;
@@ -195,6 +198,47 @@ interface ParsedFile {
   text: string;
   sf: ts.SourceFile;
   index: ByteIndex;
+}
+
+/** Add a binding under its local name; several scopes may bind the same name. */
+function addBindingTo(map: Map<string, Binding[]>, name: string, binding: Binding): void {
+  const list = map.get(name) ?? [];
+  list.push(binding);
+  map.set(name, list);
+}
+
+/** The innermost binding of `name` whose scope contains `pos`, if any. */
+function bindingAt(map: Map<string, Binding[]>, name: string, pos: number): Binding | undefined {
+  const list = map.get(name);
+  if (!list) return undefined;
+  let best: Binding | undefined;
+  for (const binding of list) {
+    if (pos < binding.scopeStart || pos >= binding.scopeEnd) continue;
+    if (!best || binding.scopeEnd - binding.scopeStart < best.scopeEnd - best.scopeStart) {
+      best = binding;
+    }
+  }
+  return best;
+}
+
+/** The nearest enclosing block-like scope span of a declaration node. */
+function scopeSpanOf(sf: ts.SourceFile, node: ts.Node): { start: number; end: number } {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (
+      ts.isBlock(current) ||
+      ts.isSourceFile(current) ||
+      ts.isCaseBlock(current) ||
+      ts.isModuleBlock(current) ||
+      ts.isForStatement(current) ||
+      ts.isForInStatement(current) ||
+      ts.isForOfStatement(current)
+    ) {
+      return { start: current.getStart(sf), end: current.getEnd() };
+    }
+    current = current.parent;
+  }
+  return { start: 0, end: sf.getEnd() };
 }
 
 /** Function-like nodes open a lexical scope frame (parameters shadow outer names). */
@@ -386,7 +430,7 @@ export async function findMatchedApiReferences(
   }
 
   // Fact pass: bindings, re-export facts, local consts, wrapper candidates.
-  const bindingsByFile = new Map<string, Map<string, Binding>>();
+  const bindingsByFile = new Map<string, Map<string, Binding[]>>();
   const reExportsByFile = new Map<string, ReExportFacts>();
   const constsByFile = new Map<string, Map<string, ts.Expression>>();
   const wrappersByFile = new Map<string, Map<string, WrapperInfo>>();
@@ -398,17 +442,37 @@ export async function findMatchedApiReferences(
   };
 
   for (const { file, sf, index } of parsed.values()) {
-    const bindings = new Map<string, Binding>();
+    const bindings = new Map<string, Binding[]>();
     const reExports: ReExportFacts = { named: new Map(), star: [] };
     const consts = new Map<string, ts.Expression>();
     bindingsByFile.set(file, bindings);
+    const add = (
+      name: string,
+      binding: Omit<Binding, "scopeStart" | "scopeEnd"> &
+        Partial<Pick<Binding, "scopeStart" | "scopeEnd">>,
+    ): void => {
+      const scope = scopeSpanOf(sf, binding.decl);
+      addBindingTo(bindings, name, { ...binding, scopeStart: scope.start, scopeEnd: scope.end });
+    };
     reExportsByFile.set(file, reExports);
     constsByFile.set(file, consts);
 
     const spanOf = (node: ts.Node): MatchedApiSpan =>
       index.span(file, node.getStart(sf), node.getEnd());
 
-    for (const statement of sf.statements) {
+    // Facts come from top-level statements (imports/exports/variables) AND
+    // variable statements in every nested scope: an alias, destructure or
+    // require inside a function binds exactly the same way, scoped to its
+    // lexical span. Dropping nested facts silently is a fail-closed bug.
+    const factNodes: ts.Node[] = [...sf.statements];
+    const collectNestedVariables = (node: ts.Node): void => {
+      ts.forEachChild(node, (child) => {
+        if (ts.isVariableStatement(child) && child.parent !== sf) factNodes.push(child);
+        collectNestedVariables(child);
+      });
+    };
+    collectNestedVariables(sf);
+    for (const statement of factNodes) {
       if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
         const specifier = statement.moduleSpecifier.text;
         if (packageOf(specifier) !== packageName) continue;
@@ -417,7 +481,7 @@ export async function findMatchedApiReferences(
         const span = spanOf(statement);
         if (clause.name) {
           // Default import binds the package's default export (its object).
-          bindings.set(clause.name.text, {
+          add(clause.name.text, {
             kind: "namespace",
             decl: clause.name,
             hopKind: "import",
@@ -427,7 +491,7 @@ export async function findMatchedApiReferences(
         }
         const named = clause.namedBindings;
         if (named && ts.isNamespaceImport(named)) {
-          bindings.set(named.name.text, {
+          add(named.name.text, {
             kind: "namespace",
             decl: named.name,
             hopKind: "import",
@@ -439,7 +503,7 @@ export async function findMatchedApiReferences(
             if (element.isTypeOnly) continue;
             const imported = (element.propertyName ?? element.name).text;
             const local = element.name.text;
-            bindings.set(local, {
+            add(local, {
               kind: imported === "default" ? "namespace" : "member",
               member: imported === "default" ? undefined : imported,
               decl: element,
@@ -486,7 +550,7 @@ export async function findMatchedApiReferences(
             if (packageOf(specifier) !== packageName) continue;
             const span = spanOf(decl);
             if (ts.isIdentifier(decl.name)) {
-              bindings.set(decl.name.text, {
+              add(decl.name.text, {
                 kind: "namespace",
                 decl,
                 hopKind: "require",
@@ -501,7 +565,7 @@ export async function findMatchedApiReferences(
                     ? element.propertyName
                     : element.name
                 ).text;
-                bindings.set(element.name.text, {
+                add(element.name.text, {
                   kind: "member",
                   member: imported,
                   decl: element,
@@ -521,12 +585,12 @@ export async function findMatchedApiReferences(
             // indirect-unknown rather than vanishing.
             if (ts.isIdentifier(decl.name)) {
               const target = ts.isIdentifier(init)
-                ? bindings.get(init.text)
+                ? bindingAt(bindings, init.text, init.getStart(sf))
                 : ts.isPropertyAccessExpression(init) && ts.isIdentifier(init.expression)
-                  ? bindings.get(init.expression.text)
+                  ? bindingAt(bindings, init.expression.text, init.getStart(sf))
                   : undefined;
               if (target) {
-                bindings.set(decl.name.text, {
+                add(decl.name.text, {
                   ...target,
                   decl,
                   hopKind: "alias",
@@ -541,7 +605,7 @@ export async function findMatchedApiReferences(
           }
           // Destructure alias: const { get: g } = <namespace binding>.
           if (ts.isObjectBindingPattern(decl.name) && ts.isIdentifier(init)) {
-            const target = bindings.get(init.text);
+            const target = bindingAt(bindings, init.text, init.getStart(sf));
             if (target?.kind === "namespace") {
               for (const element of decl.name.elements) {
                 if (!ts.isIdentifier(element.name)) continue;
@@ -550,7 +614,7 @@ export async function findMatchedApiReferences(
                     ? element.propertyName
                     : element.name
                 ).text;
-                bindings.set(element.name.text, {
+                add(element.name.text, {
                   kind: "member",
                   member: imported,
                   decl: element,
@@ -564,13 +628,13 @@ export async function findMatchedApiReferences(
           }
           if (!ts.isIdentifier(decl.name)) continue;
           const name = decl.name.text;
-          // Local consts feed argument inspection.
-          consts.set(name, init);
+          // Local consts feed argument inspection (module scope only).
+          if (statement.parent === sf) consts.set(name, init);
           // Alias: const ax = <namespace binding>.
           if (ts.isIdentifier(init)) {
-            const target = bindings.get(init.text);
+            const target = bindingAt(bindings, init.text, init.getStart(sf));
             if (target) {
-              bindings.set(name, {
+              add(name, {
                 ...target,
                 decl,
                 hopKind: "alias",
@@ -584,9 +648,9 @@ export async function findMatchedApiReferences(
           if (
             ts.isPropertyAccessExpression(init) &&
             ts.isIdentifier(init.expression) &&
-            bindings.get(init.expression.text)?.kind === "namespace"
+            bindingAt(bindings, init.expression.text, init.getStart(sf))?.kind === "namespace"
           ) {
-            bindings.set(name, {
+            add(name, {
               kind: "member",
               member: init.name.text,
               decl,
@@ -616,8 +680,10 @@ export async function findMatchedApiReferences(
     return current;
   };
   for (const bindings of bindingsByFile.values()) {
-    for (const binding of bindings.values()) {
-      binding.declStatement = statementOf(binding.decl);
+    for (const list of bindings.values()) {
+      for (const binding of list) {
+        binding.declStatement = statementOf(binding.decl);
+      }
     }
   }
 
@@ -689,7 +755,7 @@ export async function findMatchedApiReferences(
           star: "unresolved" in resolved ? false : resolved.star,
         };
         if ("unresolved" in resolved) {
-          bindings.set(local, {
+          addBindingTo(bindings, local, {
             kind: "member",
             member: exportName,
             decl: statement,
@@ -698,10 +764,12 @@ export async function findMatchedApiReferences(
             span: importSpan,
             barrel,
             unresolved: resolved.unresolved,
+            scopeStart: 0,
+            scopeEnd: sf.getEnd(),
           });
           return;
         }
-        bindings.set(local, {
+        addBindingTo(bindings, local, {
           kind: resolved.imported === "default" ? "namespace" : "member",
           member: resolved.imported === "default" ? undefined : resolved.imported,
           decl: statement,
@@ -709,6 +777,8 @@ export async function findMatchedApiReferences(
           aliased: exportName !== resolved.imported,
           span: importSpan,
           barrel,
+          scopeStart: 0,
+          scopeEnd: sf.getEnd(),
         });
       };
       if (clause.name) bind(clause.name.text, "default");
@@ -722,13 +792,15 @@ export async function findMatchedApiReferences(
         // import * as ns from "./barrel": member access is resolved per call below.
         const resolved = resolveBarrel(target, "*", 0);
         if (resolved && !("unresolved" in resolved)) {
-          bindings.set(named.name.text, {
+          addBindingTo(bindings, named.name.text, {
             kind: "namespace",
             decl: named.name,
             hopKind: "import",
             aliased: false,
             span: importSpan,
             barrel: { file: target, exportSpan: resolved.exportSpan, star: resolved.star },
+            scopeStart: 0,
+            scopeEnd: sf.getEnd(),
           });
         }
       }
@@ -762,8 +834,10 @@ export async function findMatchedApiReferences(
     const frames: ScopeFrame[] = [];
     {
       const bindingStatements = new Set<ts.Node>();
-      for (const binding of bindings.values()) {
-        if (binding.declStatement) bindingStatements.add(binding.declStatement);
+      for (const list of bindings.values()) {
+        for (const binding of list) {
+          if (binding.declStatement) bindingStatements.add(binding.declStatement);
+        }
       }
       const stack: ScopeFrame[] = [];
       const pushFrame = (node: ts.Node): void => {
@@ -884,7 +958,7 @@ export async function findMatchedApiReferences(
         };
       }
       if (ts.isIdentifier(expr)) {
-        const binding = bindings.get(expr.text);
+        const binding = bindingAt(bindings, expr.text, expr.getStart(sf));
         if (!binding) return { status: "unrelated" };
         if (isShadowed(expr.text, expr.getStart(sf), binding.decl)) {
           return {
@@ -1207,7 +1281,7 @@ export async function findMatchedApiReferences(
       if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
         const name = node.expression.text;
         const start = wrappers.get(name);
-        if (start && !bindings.has(name)) {
+        if (start && !bindingAt(bindings, name, node.expression.getStart(sf))) {
           const span = spanOf(node);
           const argumentSpans = node.arguments.map((arg) => spanOf(arg));
           const { argsState, optionsState } = inspectArguments(node);
