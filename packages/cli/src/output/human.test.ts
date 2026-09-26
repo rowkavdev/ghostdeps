@@ -69,7 +69,7 @@ describe("opt-in Scan scope rendering", () => {
     const output = renderRepositorySummary(result);
     assert.match(output, /Scan scope:/);
     assert.match(output, /missing: unmatched \(0 files, 0 recognised manifests excluded\)/);
-    assert.match(output, /Findings:\n  none/);
+    assert.match(output, /Findings:\n {2}none/);
   });
 });
 

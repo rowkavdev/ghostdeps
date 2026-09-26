@@ -67,63 +67,77 @@ describe("analyseDirectory", () => {
     );
   });
 
-  it("propagates matched and unmatched scope to JSON and caps absence claims", async () => {
-    await mkdir(path.join(root, "fixtures"), { recursive: true });
-    await writeFile(path.join(root, "fixtures", "package.json"), "{}");
-    await writeFile(
-      path.join(root, ".ghostdeps.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        fixtureRoots: ["fixtures", "missing"],
-      }),
-    );
-    const result = await analyseDirectory(root, {
-      adapters: [manifestAdapter],
-      scan: { fixtureScope: true },
-      recommend: () => [
-        {
-          kind: "unused",
-          dependency: "leftpad",
-          summary: "not used",
-          recommendation: "remove",
-          evidence: [],
-          confidence: "high",
-          limitations: [],
-          affectedFiles: ["package.json"],
-        },
-      ],
+  describe("isolated fixture scope", () => {
+    let scopeRoot: string;
+    before(async () => {
+      scopeRoot = await mkdtemp(path.join(tmpdir(), "ghostdeps-scope-result-"));
+      await writeFile(
+        path.join(scopeRoot, "package.json"),
+        JSON.stringify({ dependencies: { leftpad: "^1.0.0" } }),
+      );
     });
-    assert.deepEqual(result.scanScope?.roots, [
-      { root: "fixtures", matched: true, files: 1, manifests: 1 },
-      { root: "missing", matched: false, files: 0, manifests: 0 },
-    ]);
-    const unused = result.findings.find((f) => f.kind === "unused");
-    assert.equal(unused?.confidence, "medium");
-    assert.ok(unused?.limitations.some((l) => l.includes("scan was incomplete")));
-    assert.ok(result.findings.some((f) => f.summary.includes("fixture scope omitted 1 file")));
-    const scopeJson = JSON.stringify(result);
-    assert.match(scopeJson, /"matched":false/);
-    assert.match(scopeJson, /"root":"missing"/);
-  });
+    after(async () => {
+      await rm(scopeRoot, { recursive: true, force: true });
+    });
+    it("propagates matched and unmatched scope to JSON and caps absence claims", async () => {
+      await mkdir(path.join(scopeRoot, "fixtures"), { recursive: true });
+      await writeFile(path.join(scopeRoot, "fixtures", "package.json"), "{}");
+      await writeFile(
+        path.join(scopeRoot, ".ghostdeps.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          fixtureRoots: ["fixtures", "missing"],
+        }),
+      );
+      const result = await analyseDirectory(scopeRoot, {
+        adapters: [manifestAdapter],
+        scan: { fixtureScope: true },
+        recommend: () => [
+          {
+            kind: "unused",
+            dependency: "leftpad",
+            summary: "not used",
+            recommendation: "remove",
+            evidence: [],
+            confidence: "high",
+            limitations: [],
+            affectedFiles: ["package.json"],
+          },
+        ],
+      });
+      assert.deepEqual(result.scanScope?.roots, [
+        { root: "fixtures", matched: true, files: 1, manifests: 1 },
+        { root: "missing", matched: false, files: 0, manifests: 0 },
+      ]);
+      const unused = result.findings.find((f) => f.kind === "unused");
+      assert.equal(unused?.confidence, "medium");
+      assert.ok(unused?.limitations.some((l) => l.includes("scan was incomplete")));
+      assert.ok(result.findings.some((f) => f.summary.includes("fixture scope omitted 1 file")));
+      const scopeJson = JSON.stringify(result);
+      assert.match(scopeJson, /"matched":false/);
+      assert.match(scopeJson, /"root":"missing"/);
+    });
 
-  it("keeps an all-unmatched configuration complete and retains its literal root", async () => {
-    await writeFile(
-      path.join(root, ".ghostdeps.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        fixtureRoots: ["nonexistent"],
-      }),
-    );
-    const handle = await FsRepositoryHandle.open(root, { fixtureScope: true });
-    assert.deepEqual(scanCompletenessFindings(handle.scan), []);
-    const result = await analyseDirectory(root, {
-      adapters: [manifestAdapter],
-      scan: { fixtureScope: true },
+    it("keeps an all-unmatched configuration complete and retains its literal root", async () => {
+      await rm(path.join(scopeRoot, "fixtures"), { recursive: true, force: true });
+      await writeFile(
+        path.join(scopeRoot, ".ghostdeps.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          fixtureRoots: ["nonexistent"],
+        }),
+      );
+      const handle = await FsRepositoryHandle.open(scopeRoot, { fixtureScope: true });
+      assert.deepEqual(scanCompletenessFindings(handle.scan), []);
+      const result = await analyseDirectory(scopeRoot, {
+        adapters: [manifestAdapter],
+        scan: { fixtureScope: true },
+      });
+      assert.deepEqual(result.scanScope?.roots, [
+        { root: "nonexistent", matched: false, files: 0, manifests: 0 },
+      ]);
+      assert.ok(!result.findings.some((f) => f.summary.includes("fixture scope omitted")));
     });
-    assert.deepEqual(result.scanScope?.roots, [
-      { root: "nonexistent", matched: false, files: 0, manifests: 0 },
-    ]);
-    assert.ok(!result.findings.some((f) => f.summary.includes("fixture scope omitted")));
   });
 
   it("reports oversized files as an info finding with examples", async () => {

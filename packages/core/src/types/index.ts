@@ -3,6 +3,7 @@
  * its executable form. Everything a finding claims must be backed by
  * evidence, a confidence level, and stated limitations.
  */
+import type { ScanScope } from "../engine/scanner/scope.js";
 
 /** Where a dependency was declared. */
 export type DependencyKind = "runtime" | "dev" | "peer" | "optional" | "build";
@@ -448,7 +449,7 @@ export interface PackageMetadataProvider {
 export interface AnalysisResult {
   schemaVersion: 1;
   /** Opt-in fixture-root scope audit; omitted on legacy unscoped runs (#354). */
-  scanScope?: import("../engine/scanner/scope.js").ScanScope;
+  scanScope?: ScanScope;
   projects: ProjectRef[];
   /**
    * Every detected project with its enclosing project (#55). The engine
