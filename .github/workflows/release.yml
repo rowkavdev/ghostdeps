@@ -40,10 +40,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             version="$INPUT_VERSION"
-            echo "dry=--dry-run" >> "$GITHUB_OUTPUT"
           else
             version="${GITHUB_REF_NAME#v}"
-            echo "dry=" >> "$GITHUB_OUTPUT"
           fi
           case "$version" in
             *"$(printf '\n')"* | *"$(printf '\r')"*)
