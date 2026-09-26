@@ -268,3 +268,55 @@ describe("lockfile evidence in detection (#45 review)", () => {
     assert.match(evidence.find((e) => e.kind === "lockfile-mismatch")?.statement ?? "", /\(rich\)/);
   });
 });
+
+describe("Pipfile.lock graph (#432)", () => {
+  const pipfile = '[packages]\npytz = "*"\n[dev-packages]\npytest = "==8.*"\n';
+  const lock = JSON.stringify({
+    default: { pytz: { version: "==2024.1" }, transitive: { version: "==1.0" } },
+    develop: { pytest: { version: "==8.3" } },
+  });
+  it("resolves direct roots without manufacturing transitive declarations or edges", async () => {
+    const { graph, evidence } = await buildProjectGraph(
+      ctx({ Pipfile: pipfile, "Pipfile.lock": lock }),
+      project,
+    );
+    assert.deepEqual(
+      graph.nodes.map((n) => [n.name, n.version, n.dev]),
+      [
+        ["pytz", "2024.1", false],
+        ["pytest", "8.3", true],
+      ],
+    );
+    assert.equal(graph.incomplete, true);
+    assert.deepEqual(graph.transitiveClosure, {});
+    assert.ok(evidence.some((e) => e.kind === "lockfile-unreachable"));
+    assert.ok(evidence.some((e) => e.kind === "graph-edges-unavailable"));
+  });
+  it("marks declared roots missing from the lock as unresolved", async () => {
+    const { graph, evidence } = await buildProjectGraph(
+      ctx({
+        Pipfile: pipfile,
+        "Pipfile.lock": JSON.stringify({ default: {}, develop: { pytest: { version: "==8.3" } } }),
+      }),
+      project,
+    );
+    assert.equal(graph.incomplete, true);
+    assert.match(
+      evidence.find((e) => e.kind === "lockfile-mismatch")?.statement ?? "",
+      /pytz.*declared but unresolved/,
+    );
+  });
+  it("degrades on malformed JSON and oversized locks", async () => {
+    const malformed = await buildProjectGraph(
+      ctx({ Pipfile: pipfile, "Pipfile.lock": "{" }),
+      project,
+    );
+    assert.equal(malformed.graph.incomplete, true);
+    assert.ok(malformed.evidence.some((e) => e.kind === "lockfile-malformed"));
+    const oversized = await buildProjectGraph(
+      ctx({ Pipfile: pipfile, "Pipfile.lock": " ".repeat(32 * 1024 * 1024 + 1) }),
+      project,
+    );
+    assert.ok(oversized.evidence.some((e) => e.kind === "lockfile-too-large"));
+  });
+});

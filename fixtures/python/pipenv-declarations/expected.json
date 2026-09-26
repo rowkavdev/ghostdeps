@@ -1,0 +1,10 @@
+{
+  "description": "Pipfile runtime and dev declarations with lines; lock defaults resolve roots but unreachable entries do not become declarations (#432).",
+  "detection": { "minConfidence": 0.8, "projects": ["."], "packageManagers": { ".": ["pipenv"] } },
+  "dependencies": [
+    { "name": "pytz", "kind": "runtime", "declaredIn": "Pipfile", "declaredLine": 7 },
+    { "name": "pyyaml", "kind": "runtime", "constraint": ">=6", "declaredIn": "Pipfile", "declaredLine": 8 },
+    { "name": "pytest", "kind": "dev", "declaredIn": "Pipfile", "declaredLine": 11 }
+  ],
+  "graph": { ".": { "incomplete": true, "nodes": ["pytest", "pytz", "pyyaml"], "devNodes": ["pytest"] } }
+}

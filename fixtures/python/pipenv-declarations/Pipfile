@@ -1,0 +1,11 @@
+[[source]]
+url = "https://pypi.org/simple"
+name = "pypi"
+verify_ssl = true
+
+[packages]
+pytz = "*"
+PyYAML = {version = ">=6", extras = ["speed"], markers = "python_version >= '3.10'"}
+
+[dev-packages]
+pytest = "==8.*"
