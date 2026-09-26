@@ -318,6 +318,10 @@ function parsePoetry(
   }
 }
 /**
+ * @deprecated Superseded by `readPythonFloor` in ./python-floor.js (#434), which carries
+ * provenance, exclusivity as a flag, and fail-closed evidence. Retained for the
+ * contributor record (#401); do not wire into new code.
+ *
  * Advanced Grammar Parser for Issue #300.
  * Deliberately parses semver clauses, enforces constraint bounds,
  * automatically resolves precedence and strictly rejects garbage or ambiguous texts.
@@ -335,7 +339,7 @@ export function parsePythonFloorToTuple(constraintStr: string | undefined): numb
   }
 
   // Split multiple clauses (e.g., ">=3.8,<=3.12" or ">=3.10,>=3.12")
-  const clauses = cleanInput.split(",").map(c => c.trim());
+  const clauses = cleanInput.split(",").map((c) => c.trim());
   let absoluteHighestFloor: number[] | undefined = undefined;
 
   for (const clause of clauses) {
@@ -350,13 +354,16 @@ export function parsePythonFloorToTuple(constraintStr: string | undefined): numb
 
     if (isInclusive || isExclusive || isPoetryCompatible) {
       const numericRaw = clause.replace(/[>=^~]/g, "").trim();
-      let parts = numericRaw.split(".").map(part => parseInt(part, 10)).filter(num => !isNaN(num));
-      
+      const parts = numericRaw
+        .split(".")
+        .map((part) => parseInt(part, 10))
+        .filter((num) => !isNaN(num));
+
       if (parts.length === 0) continue;
 
       // Handle strict exclusive upper-shift logic (e.g., ">3.10" gracefully shifts minimum baseline to 3.11)
       if (isExclusive && parts.length >= 2) {
-        parts[parts.length - 1] += 1;
+        parts[parts.length - 1] = (parts[parts.length - 1] ?? 0) + 1;
       }
 
       // Precedence Logic Optimization: Keep the highest lower bound constraint (e.g., between 3.10 and 3.12, pick 3.12)
