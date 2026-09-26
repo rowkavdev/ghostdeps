@@ -6,6 +6,8 @@
  * source-validating producer must first establish runtime and semantic facts.
  */
 
+import type { NativeReferenceSurface } from "./matched-api.js";
+
 /** One native-replacement rule for one ecosystem. */
 export interface NativeRule {
   /** Stable rule identity; version changes when coverage or semantics change. */
@@ -27,6 +29,8 @@ export interface NativeRule {
   confidenceCriteria: string[];
   /** Links to docs/specs justifying the mapping. */
   references: string[];
+  /** Explicit versioned boundary for non-call references; absent means blocking. */
+  referenceSurface?: NativeReferenceSurface;
 }
 
 export { evaluateNativeRule, type NativeDecision } from "./evaluate.js";
@@ -57,3 +61,12 @@ export {
   verifyNativeSnapshot,
   type NativeSnapshotBinding,
 } from "./snapshot.js";
+
+export {
+  collectNativeMatchedApiEvidence,
+  type NativeMatchedApiResult,
+  type NativeReferenceScan,
+  type NativeReferenceRecord,
+  type NativeMatchedApiBlock,
+  type NativeAccountedReference,
+} from "./matched-api.js";
