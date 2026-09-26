@@ -8,6 +8,7 @@ export {
   type AnalyseOptions,
   type RecommendationInput,
   type RecommendationPolicy,
+  type EngineRuleConfig,
 } from "./analyse.js";
 export {
   analyseRepositoryIsolated,

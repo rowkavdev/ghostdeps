@@ -121,6 +121,70 @@ function mockAdapter(spec: MockSpec): EcosystemAdapter & { calls: string[] } {
   return adapter;
 }
 
+describe("same-ecosystem duplicate wiring (#58)", () => {
+  const jsDups = () =>
+    mockAdapter({ ecosystem: "javascript-typescript", confidence: 1, deps: ["axios", "got"] });
+
+  it("emits awareness findings for same-ecosystem duplicates in a full scan", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, { adapters: [jsDups()] });
+    const dups = result.findings.filter((f) => f.rule === "same-ecosystem-capability-duplicates");
+    assert.deepEqual(dups.map((f) => f.dependency).sort(), ["axios", "got"]);
+    for (const f of dups) {
+      assert.equal(f.kind, "duplicate-capability");
+      assert.equal(f.awareness, true, "core sets it after the fail-closed strip (#234)");
+      assert.equal(f.severity, "info", "declaration evidence is low confidence");
+      assert.match(f.recommendation, /no change is suggested/i);
+    }
+  });
+
+  it("reports only PR-added members in pull-request mode", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [jsDups()],
+      pullRequestChanges: [
+        {
+          change: "added",
+          name: "got",
+          ecosystem: "javascript-typescript",
+          manifest: "package.json",
+        },
+      ],
+    });
+    const dups = result.findings.filter((f) => f.rule === "same-ecosystem-capability-duplicates");
+    assert.deepEqual(
+      dups.map((f) => f.dependency),
+      ["got"],
+    );
+  });
+
+  it("does not fire when the rule is disabled by config", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [jsDups()],
+      ruleConfig: { disabled: ["same-ecosystem-capability-duplicates"] },
+    });
+    assert.equal(
+      result.findings.filter((f) => f.rule === "same-ecosystem-capability-duplicates").length,
+      0,
+    );
+  });
+
+  it("applies a configured downgrade as a cap, never a raise", async () => {
+    const repo = await fixtureHandle(fixture);
+    const result = await analyseRepository(repo, {
+      adapters: [jsDups()],
+      ruleConfig: { downgrade: { "same-ecosystem-capability-duplicates": "high" } },
+    });
+    const dups = result.findings.filter((f) => f.rule === "same-ecosystem-capability-duplicates");
+    assert.ok(dups.length > 0);
+    assert.ok(
+      dups.every((f) => f.confidence === "low"),
+      "declaration tier is low confidence and a cap can never raise it",
+    );
+  });
+});
+
 describe("unused confidence cap (#178 contract)", () => {
   const finding = (
     kind: Finding["kind"],
