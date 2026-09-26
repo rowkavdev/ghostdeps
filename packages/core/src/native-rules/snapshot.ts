@@ -70,7 +70,6 @@ async function calculate(
       .update("ghostdeps-native-tree-v1\0")
       .update(Buffer.from(listing.policy, "hex"));
     let total = 0;
-    const firstPass = new Map<string, Buffer>();
     for (const entry of sorted) {
       if (
         entry.path.normalize("NFC") !== entry.path ||
@@ -103,12 +102,11 @@ async function calculate(
           .update(length(target.length))
           .update(target);
       } else if (entry.kind === "file") {
-        const bytes = await repository.readFileBytes(entry.path);
+        const bytes = await repository.readFileBytes(entry.path, entry);
         if (!(bytes instanceof Uint8Array)) return blocked("invalid-file-bytes");
         if (bytes.byteLength > MAX_FILE_BYTES || total + bytes.byteLength > MAX_TOTAL_BYTES)
           return blocked("byte-cap");
         total += bytes.byteLength;
-        firstPass.set(entry.path, createHash("sha256").update(bytes).digest());
         hash
           .update("F")
           .update(length(name.length))
@@ -117,29 +115,8 @@ async function calculate(
           .update(bytes);
       } else return blocked("unsupported-entry");
     }
-    // Re-list detects path changes. Re-read every file to detect byte changes
-    // during hashing; a stable handle still needs a pinned underlying snapshot.
-    const again = await repository.listEntries();
-    if (
-      !again.complete ||
-      again.limitations.length ||
-      again.policy !== listing.policy ||
-      JSON.stringify(
-        [...again.entries].sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path))),
-      ) !== JSON.stringify(sorted)
-    )
-      return blocked("listing-changed");
-    for (const entry of sorted) {
-      if (entry.kind !== "file") continue;
-      const current = await repository.readFileBytes(entry.path);
-      if (!(current instanceof Uint8Array) || current.byteLength > MAX_FILE_BYTES)
-        return blocked("listing-changed");
-      // The first-pass content hashes are recorded below; compare to prevent
-      // a mutable repository from certifying bytes read at different times.
-      const first = firstPass.get(entry.path);
-      if (!first || !timingSafeEqual(first, createHash("sha256").update(current).digest()))
-        return blocked("listing-changed");
-    }
+    // One fresh enumeration pass; read each listed file against its stat
+    // identity. A mismatched/vanished file blocks rather than stitching states.
     const actual = hash.digest();
     if (expected && !timingSafeEqual(actual, Buffer.from(expected, "hex")))
       return blocked("snapshot-mismatch");

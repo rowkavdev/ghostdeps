@@ -264,7 +264,7 @@ export interface RepositoryHandle {
   readFileHead?(path: string, maxBytes: number): Promise<string | undefined>;
   exists(path: string): Promise<boolean>;
   /** Optional raw-byte capability for a bounded, exact snapshot hash. */
-  readFileBytes?(path: string): Promise<Uint8Array>;
+  readFileBytes?(path: string, expected?: RepositoryTreeEntry): Promise<Uint8Array>;
   /** Optional complete typed view; omitted capabilities never imply completeness. */
   listEntries?(): Promise<RepositoryTreeListing>;
 }
@@ -274,6 +274,11 @@ export interface RepositoryTreeEntry {
   path: string;
   kind: "file" | "symlink" | "other";
   target?: string;
+  /** Filesystem identity at the enumeration pass, when available. */
+  size?: number;
+  mtimeMs?: number;
+  ino?: number;
+  dev?: number;
 }
 export interface RepositoryTreeListing {
   entries: RepositoryTreeEntry[];
