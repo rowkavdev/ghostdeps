@@ -309,6 +309,24 @@ describe("JS/TS config string contract (#149, lead guardrails)", () => {
     }
   });
 
+  it("a quoted key with a disabled value earns no credit (#397 review round 2)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js": 'module.exports = { plugins: { "autoprefixer": false } };',
+    });
+    assert.deepEqual(await via(context, "autoprefixer"), []);
+  });
+
+  it("a quoted active key is credited exactly once, through the plugin-map scan (#397 review round 2)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js": 'module.exports = { plugins: { "autoprefixer": {} } };',
+    });
+    const usages = await findConfigUsages(context, dep("autoprefixer"));
+    assert.equal(usages.length, 1);
+    assert.equal(usages[0]!.symbols[0], "postcss.config key");
+  });
+
   it("a plugins map passed as a variable is not read for keys (#397 review)", async () => {
     const context = ctx({
       "package.json": "{}",
