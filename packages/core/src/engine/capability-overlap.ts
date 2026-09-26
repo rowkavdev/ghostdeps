@@ -32,7 +32,7 @@ export function crossEcosystemOverlaps(
     ? new Set(
         pullRequestChanges
           .filter((c) => c.change === "added")
-          .map((c) => `${c.ecosystem}\0${c.name}`),
+          .map((c) => `${c.ecosystem}\0${c.manifest}\0${c.name}`),
       )
     : undefined;
   const findings: Finding[] = [];
@@ -59,7 +59,10 @@ export function crossEcosystemOverlaps(
         .filter((e) => e !== eco)
         .map((e) => `${[...found.get(e)!.keys()].sort(compare).join(", ")} (${e})`);
       for (const [name, manifests] of [...found.get(eco)!].sort(([a], [b]) => compare(a, b))) {
-        if (added && !added.has(`${eco}\0${name}`)) continue;
+        const affectedManifests = added
+          ? [...manifests].filter((manifest) => added.has(`${eco}\0${manifest}\0${name}`))
+          : [...manifests];
+        if (!affectedManifests.length) continue;
         findings.push({
           kind: "info",
           rule: CROSS_ECOSYSTEM_OVERLAP_RULE,
@@ -78,7 +81,7 @@ export function crossEcosystemOverlaps(
           limitations: [
             "Based on declared dependencies and the catalogue, not on how each package is used.",
           ],
-          affectedFiles: [...manifests].sort(compare),
+          affectedFiles: affectedManifests.sort(compare),
         });
       }
     }
