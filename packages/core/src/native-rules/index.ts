@@ -34,3 +34,17 @@ export {
   type NativeEligibilityEvidence,
   type NativeDecision,
 } from "./evaluate.js";
+
+export {
+  produceNativeEvidence,
+  type NativeSourceProof,
+  type NativeMatchedApi,
+  type NativeInspectedScope,
+  type NativeIncompatibleCheck,
+  type NativeDeploymentTarget,
+  type NativeSemanticCheck,
+  type NativeProducedEvidence,
+  type NativeProducerInput,
+  type NativeProducerResult,
+  type NativeEvidenceProducer,
+} from "./producer.js";
