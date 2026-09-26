@@ -27,6 +27,9 @@ export interface NativeMatchedApi {
   readonly arguments: "inspected" | "unknown";
   readonly options: "inspected" | "unknown";
   readonly resolution: "direct" | "alias" | "wrapper" | "re-export" | "indirect-unknown";
+  /** Every binding-hop citation and every call-argument citation, re-read as bytes. */
+  readonly lineage?: readonly NativeSourceProof[];
+  readonly argumentSources?: readonly NativeSourceProof[];
 }
 
 /** Scope itself must be bounded and tied to the same snapshot. */
