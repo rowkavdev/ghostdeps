@@ -424,3 +424,42 @@ test("innermost scoped binding wins over the module binding", async () => {
   assert.ok(ref);
   assert.equal(ref!.callTarget, "axios.get");
 });
+
+test("shadowed alias initializer never grounds a package citation (review repro 4)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function f(axios: unknown) {",
+      "  const x = axios;",
+      '  x.get("/shadow");',
+      "}",
+      "f();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const ref = scan.references.find((r) => cited(files, r).includes('"/shadow"'));
+  assert.ok(ref, "the use must be cited, not dropped");
+  assert.equal(ref!.resolution, "indirect-unknown", "x derives from the shadowing parameter");
+  assert.ok(ref!.note?.includes("shadowed"));
+  assert.ok(
+    !scan.references.some((r) => r.resolution === "alias" && cited(files, r).includes('"/shadow"')),
+    "no unsound alias citation",
+  );
+});
+
+test("use before the alias declaration never resolves to it (review repro 4b)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      'x.get("/before");',
+      "const x = axios;",
+      'x.get("/after");',
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const before = scan.references.find((r) => cited(files, r).includes('"/before"'))!;
+  assert.equal(before.resolution, "indirect-unknown", "pre-declaration use cannot cite the alias");
+  assert.ok(before.note?.includes("before its package-binding declaration"));
+  const after = scan.references.find((r) => cited(files, r).includes('"/after"'))!;
+  assert.equal(after.resolution, "alias", "the post-declaration use cites the alias");
+});
