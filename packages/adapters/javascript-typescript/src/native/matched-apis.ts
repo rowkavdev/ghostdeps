@@ -364,11 +364,6 @@ function isShadowedAt(
   return false;
 }
 
-/** True when any frame containing `pos` declares `name` at all. */
-function isDeclaredInScope(frames: readonly ScopeFrame[], name: string, pos: number): boolean {
-  return isShadowedAt(frames, name, pos);
-}
-
 /** Function-like nodes open a lexical scope frame (parameters shadow outer names). */
 function isFunctionLikeNode(
   node: ts.Node,
@@ -598,27 +593,33 @@ export async function findMatchedApiReferences(
 
     /**
      * The package source of an alias initializer at its own position,
-     * through the same scope/shadowing logic as use resolution. A shadowed
-     * or unproven initializer can never ground a package citation.
+     * through the same scope/shadowing logic as use resolution. An
+     * initializer that resolves to a local NON-package binding is simply
+     * unrelated (no record) - unknown is reserved for plausible but
+     * unprovable package involvement: a shadowed actual package binding,
+     * or a chain that starts from the package.
      */
     const packageSource = (
       expr: ts.Expression,
     ): { binding: Binding } | { unresolved: string } | undefined => {
-      if (ts.isIdentifier(expr)) {
-        const pos = expr.getStart(sf);
-        if (isShadowedAt(frames, expr.text, pos)) {
-          return {
-            unresolved: `alias initializer "${expr.text}" is shadowed here; it cannot be proven to reference the package`,
-          };
-        }
-        const binding = bindingAt(bindings, expr.text, pos);
-        if (binding) return { binding };
-        if (isDeclaredInScope(frames, expr.text, pos)) {
-          return {
-            unresolved: `alias initializer "${expr.text}" does not resolve to the package at this point; provenance unknown`,
-          };
-        }
-        return undefined;
+      if (!ts.isIdentifier(expr)) return undefined;
+      const pos = expr.getStart(sf);
+      const binding = bindingAt(bindings, expr.text, pos);
+      if (binding && !isShadowedAt(frames, expr.text, pos, binding.decl)) {
+        return { binding };
+      }
+      // Plausible package involvement: an actual package binding of this
+      // name is defeated by a local declaration here.
+      const defeated = (bindings.get(expr.text) ?? []).some(
+        (candidate) =>
+          pos >= candidate.scopeStart &&
+          pos < candidate.scopeEnd &&
+          isShadowedAt(frames, expr.text, pos, candidate.decl),
+      );
+      if (defeated) {
+        return {
+          unresolved: `alias initializer "${expr.text}" is shadowed here; it cannot be proven to reference the package`,
+        };
       }
       return undefined;
     };
