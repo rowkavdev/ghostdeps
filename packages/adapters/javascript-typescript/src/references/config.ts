@@ -532,7 +532,8 @@ const NAME_FRAGMENT =
  * the same way (#397): `{ plugins: { autoprefixer: {} } }` names the package
  * as an identifier key, not a string. Only the `plugins` position counts -
  * keys elsewhere are ordinary options - and a disabled entry
- * (`autoprefixer: false`, null, 0 or undefined) earns no credit. The config stays unread (coverage
+ * (`autoprefixer: false`, null, 0 or undefined) earns no credit, quoted or
+ * not. The config stays unread (coverage
  * incomplete) if it does not parse, loads a module by a non-literal
  * specifier, builds a string that may be a package name at runtime, or
  * imports a local module whose strings are not read here. Its import/require
@@ -557,6 +558,11 @@ export function readExecutableConfig(
   // Literal specifiers of import/require in the config: real loads, not
   // bare strings, so their refs are not marked configString.
   const specifiers = new Set<ts.Node>();
+  // Quoted keys of a `plugins` map: credited by the plugin-map scan below
+  // (which gates on the entry's value), so the generic string scan skips
+  // them (#397 review): `plugins: { "autoprefixer": false }` is disabled,
+  // and an enabled quoted key must not be credited twice.
+  const pluginKeys = new Set<ts.Node>();
 
   const moduleSpecifier = (spec: ts.Expression | undefined): void => {
     if (spec === undefined) return;
@@ -600,16 +606,19 @@ export function readExecutableConfig(
       // A plugin map names packages as identifier keys, not strings:
       // postcss.config.js `plugins: { autoprefixer: {} }` (#397). Only the
       // value of a `plugins` property is a plugin map (#397 review) - keys
-      // anywhere else are ordinary options. String keys are already caught
-      // by the literal scan below; shorthand properties refer to a variable
-      // whose own require/import is credited instead. A disabled entry
-      // (`autoprefixer: false`, null, 0 or undefined) earns no credit.
+      // anywhere else are ordinary options. Shorthand properties refer to a
+      // variable whose own require/import is credited instead. A disabled
+      // entry (`autoprefixer: false`, null, 0 or undefined) earns no credit,
+      // whether the key is an identifier or a quoted string.
       const isPlugins =
         (ts.isIdentifier(node.name) || ts.isStringLiteralLike(node.name)) &&
         node.name.text === "plugins";
       if (isPlugins && ts.isObjectLiteralExpression(node.initializer)) {
         for (const prop of node.initializer.properties) {
-          if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue;
+          if (!ts.isPropertyAssignment(prop)) continue;
+          const key = prop.name;
+          if (!ts.isIdentifier(key) && !ts.isStringLiteralLike(key)) continue;
+          if (ts.isStringLiteralLike(key)) pluginKeys.add(key);
           const init = prop.initializer;
           if (
             init.kind === ts.SyntaxKind.FalseKeyword ||
@@ -620,9 +629,9 @@ export function readExecutableConfig(
             continue;
           if (strings >= MAX_CONFIG_STRINGS) break;
           strings += 1;
-          const packages = expand(prop.name.text);
+          const packages = expand(key.text);
           if (packages.length) {
-            const line = sf.getLineAndCharacterOfPosition(prop.name.getStart(sf)).line + 1;
+            const line = sf.getLineAndCharacterOfPosition(key.getStart(sf)).line + 1;
             refs.push({
               packages,
               file,
@@ -635,7 +644,7 @@ export function readExecutableConfig(
         }
       }
     }
-    if (ts.isStringLiteralLike(node) && strings < MAX_CONFIG_STRINGS) {
+    if (ts.isStringLiteralLike(node) && !pluginKeys.has(node) && strings < MAX_CONFIG_STRINGS) {
       strings += 1;
       const packages = expand(node.text);
       if (packages.length) {
