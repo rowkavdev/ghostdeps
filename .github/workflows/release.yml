@@ -45,7 +45,13 @@ jobs:
             version="${GITHUB_REF_NAME#v}"
             echo "dry=" >> "$GITHUB_OUTPUT"
           fi
-          if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          case "$version" in
+            *"$(printf '\n')"* | *"$(printf '\r')"*)
+              echo "Refusing multiline version" >&2
+              exit 1
+              ;;
+          esac
+          if ! printf '%s' "$version" | grep -qxE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'; then
             echo "Refusing malformed version: $version" >&2
             exit 1
           fi
@@ -66,4 +72,9 @@ jobs:
         # token. The first publish must be manual - npm only lets you
         # configure a trusted publisher for a package that already exists.
         # See docs/publishing.md.
-        run: npm publish --provenance --access public ${{ steps.mode.outputs.dry }}
+        run: |
+          dry=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            dry="--dry-run"
+          fi
+          npm publish --provenance --access public $dry
