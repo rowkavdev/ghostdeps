@@ -180,6 +180,30 @@ describe("sameEcosystemDuplicates (#58, declaration tier)", () => {
     assert.deepEqual(sameEcosystemDuplicates([dep(web, "axios"), dep(web, "got")], changes), []);
   });
 
+  it("in a pull request keys added packages by manifest, so an untouched project stays quiet", () => {
+    // Regression for the #407 review: apps/old declares axios+got already;
+    // the PR adds got to apps/new. Only apps/new's got may be reported.
+    const oldProject = project(JS, "apps/old");
+    const newProject = project(JS, "apps/new");
+    const changes: DependencyChange[] = [
+      { change: "added", name: "got", ecosystem: JS, manifest: "apps/new/package.json" },
+    ];
+    const findings = sameEcosystemDuplicates(
+      [
+        dep(oldProject, "axios", "apps/old/package.json"),
+        dep(oldProject, "got", "apps/old/package.json"),
+        dep(newProject, "axios", "apps/new/package.json"),
+        dep(newProject, "got", "apps/new/package.json"),
+      ],
+      changes,
+    );
+    assert.deepEqual(
+      findings.map((f) => [f.dependency, f.affectedFiles]),
+      [["got", ["apps/new/package.json"]]],
+      "the unchanged apps/old duplicate must not be re-reported",
+    );
+  });
+
   it("in a pull request matches the added package to its own ecosystem", () => {
     const changes: DependencyChange[] = [
       { change: "added", name: "axios", ecosystem: PY, manifest: "services/api/pyproject.toml" },

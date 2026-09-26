@@ -61,12 +61,14 @@ export function sameEcosystemDuplicates(
   catalogue: CapabilityCatalogue = CAPABILITY_CATALOGUE,
 ): Finding[] {
   // In a pull request, only packages the PR added are reported, so an
-  // existing duplicate doesn't show on every PR (#55's semantics).
+  // existing duplicate doesn't show on every PR (#55's semantics). Keyed
+  // by manifest as well as name: an added `got` in apps/new must not
+  // re-report an untouched apps/old project declaring the same names.
   const added = pullRequestChanges
     ? new Set(
         pullRequestChanges
           .filter((c) => c.change === "added")
-          .map((c) => `${c.ecosystem}\0${c.name}`),
+          .map((c) => `${c.ecosystem}\0${c.manifest}\0${c.name}`),
       )
     : undefined;
   // projectKey -> clusterId -> declared name -> declarations
@@ -103,7 +105,11 @@ export function sameEcosystemDuplicates(
           .get(name)!
           .slice()
           .sort((a, b) => compare(a.declaredIn, b.declaredIn));
-        if (added && !added.has(`${declarations[0]!.project.ecosystem}\0${name}`)) continue;
+        if (
+          added &&
+          !declarations.some((d) => added.has(`${d.project.ecosystem}\0${d.declaredIn}\0${d.name}`))
+        )
+          continue;
         const others = declaredNames.filter((n) => n !== name);
         findings.push({
           kind: "duplicate-capability",
