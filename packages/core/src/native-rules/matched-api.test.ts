@@ -14,6 +14,8 @@ const policy = "b".repeat(64);
 const files: Record<string, string> = {
   "src/app.ts": 'import axios from "axios";\nconst a = axios;\na.get("/x");\n',
   "src/zero.ts": 'import { get } from "axios";\nget();\n',
+  "src/members.ts":
+    'import axios from "axios";\na.post("/x");\na.get("/x");\naxios.interceptors.request.use();\n',
   "src/target.ts": 'import { get } from "axios";\ntarget("get");\n',
   "src/barrel.ts": 'export { get } from "axios";\n',
   "package.json": '{"scripts":{"test":"axios --version"}}',
@@ -251,6 +253,47 @@ describe("native matched-API pillar (#442)", () => {
       argumentSpans: [span("src/target.ts", '"get"')],
     };
     assert.equal((await run([wordBoundary])).blocking[0]?.reason, "citation-inconsistent");
+  });
+  it("requires the final member token to be the API, never a receiver or earlier member", async () => {
+    const member = (text: string, api: string, argument: string | null): NativeReferenceRecord => ({
+      ...direct(),
+      api,
+      callTarget: `axios.${api}`,
+      binding: "a",
+      span: span("src/members.ts", text),
+      argumentSpans:
+        argument === null
+          ? []
+          : [
+              {
+                ...span("src/members.ts", argument),
+                start: Buffer.from(files["src/members.ts"]!).indexOf(
+                  Buffer.from(argument),
+                  Buffer.from(files["src/members.ts"]!).indexOf(Buffer.from(text)),
+                ),
+                end:
+                  Buffer.from(files["src/members.ts"]!).indexOf(
+                    Buffer.from(argument),
+                    Buffer.from(files["src/members.ts"]!).indexOf(Buffer.from(text)),
+                  ) + Buffer.byteLength(argument),
+              },
+            ],
+    });
+    const wrong = member('a.post("/x")', "get", '"/x"');
+    const right = member('a.get("/x")', "get", '"/x"');
+    const result = await run([wrong, right]);
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(
+      result.blocking.map((x) => x.reason),
+      ["citation-inconsistent"],
+    );
+    assert.equal(result.matchedApis.length, 1);
+    const chainRule: NativeRule = { ...AXIOS_FETCH_RULE, coveredApis: ["use", "get"] };
+    const chain = member("axios.interceptors.request.use()", "use", null);
+    assert.equal((await run([chain], chainRule)).status, "pass");
+    const wrongChain = { ...chain, api: "get", callTarget: "axios.get" };
+    assert.equal((await run([wrongChain], chainRule)).blocking[0]?.reason, "citation-inconsistent");
+    assert.equal((await run([{ ...right, binding: "a.get" }])).status, "pass");
   });
   it("blocks false, missing, out-of-tree and changed byte citations", async () => {
     assert.equal(
