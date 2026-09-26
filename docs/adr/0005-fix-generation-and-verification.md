@@ -1,6 +1,6 @@
 # ADR 0005: Fix proposals and isolated verification
 
-- Status: Proposed (lead review required)
+- Status: Accepted (delegated owner decision 2026-09-26; see Acceptance below)
 - Date: 2026-09-25
 - Scope: M4 design for `ghostdeps fix`; this Proposed document alone does not authorise implementation (see the lead-approved, inert core sequencing below)
 
@@ -9,6 +9,10 @@
 Rowan proposed the PR-comment and tick-to-commit goal at 21:11 BST and explicitly directed work on it at 21:12 BST on 2026-09-25. The architecture lead accepted the separate [delivery design](../pr-comment-apply-design.md) on [#387](https://github.com/rowkavdev/ghostdeps/pull/387). **This ADR stays Proposed**: its Accepted flip is Rowan-gated and has not been granted by that directive or the delivery-design verdict.
 
 Rowan directed work on the PR-comment goal; the architecture lead interprets this as allowing only **inert, diff-only core engine eligibility and dry-run preview** (slice 2) while this ADR remains Proposed, pending Rowan's separate ADR decision. Rowan did not expressly waive the ADR acceptance gate. Slice 2 must not edit repositories, post comments, dispatch workflows or request new write permissions. The rollout condition below requiring M3 stability and ADR acceptance applies to **user-facing delivery** (comment and apply, slices 3 and 4), which remains blocked until the Accepted flip **and** slice-2 evidence gates pass. Slice 2 binds fix eligibility to the core-owned, locked five-group `findingGroup` taxonomy (`verdict`, `fact`, `incomplete`, `note`, `awareness`) and engine-stamped markers. It must not infer eligibility from display severity, adapter-supplied group claims or future M3 presentation changes. Core revalidates underlying evidence and refuses incomplete or ambiguous cases. This sequencing does not waive ADR 0004's execution boundary, security review or tests.
+
+## Acceptance (2026-09-26)
+
+Rowan delegated the remaining owner-gated decisions on 2026-09-26 at 10:14:54 BST on his authenticated WhatsApp channel, verbatim: "Link me to that first and you choose for the rest" (message wamid.HBgMNDQ3ODIzNTA1ODg2FQIAEhgUM0E4RTk2QUQxMjZFNTFEQURDMEEA; verified against the channel archive). The coordinator executed this flip; the architecture lead recorded it. This ADR is now **Accepted**. The 2026-09-25 sequencing record above stays as written: slice 2 proceeded under that exception. Acceptance removes only the ADR-status gate on user-facing delivery - slices 3 and 4 of the delivery design still require M3 stability, the ADR 0004 execution/security boundary and the slice-2 evidence gates, per the Rollout section below.
 
 ## Context
 
