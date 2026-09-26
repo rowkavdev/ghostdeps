@@ -158,16 +158,54 @@ function setupCfgCandidate(text: string): Candidate {
   return { present: false, line: 0 };
 }
 
+/** A bounded static setup(...) literal reader. It never runs setup.py code. */
 function setupPyCandidate(text: string): Candidate {
-  for (const [i, raw] of text.split(/\r?\n/).entries()) {
-    if (/^\s*#/.test(raw)) continue;
-    const match = /\bpython_requires\s*=/.exec(raw);
-    if (!match) continue;
-    // A quoted literal may appear alone or as a keyword inside setup(...).
-    // No expression, interpolation, or setup code is ever evaluated.
-    const tail = raw.slice(match.index + match[0].length).trimStart();
-    const literal = /^(['"])([^'"\r\n]+)\1(?=\s*[,)]|\s*$)/.exec(tail);
-    return { present: true, ...(literal ? { constraint: literal[2]! } : {}), line: i + 1 };
+  const lines = text.split(/\r?\n/);
+  let inSetup = false;
+  let depth = 0;
+  for (const [i, raw] of lines.entries()) {
+    // Strip comments outside quotes so a commented keyword is never parsed.
+    let clean = "";
+    let quote = "";
+    for (let j = 0; j < raw.length; j++) {
+      const ch = raw[j]!;
+      if (quote) {
+        clean += ch;
+        if (ch === "\\" && j + 1 < raw.length) clean += raw[++j];
+        else if (ch === quote) quote = "";
+      } else if (ch === "#") break;
+      else {
+        clean += ch;
+        if (ch === '"' || ch === "'") quote = ch;
+      }
+    }
+    if (!inSetup) {
+      // Only a call spelled setup(...), optionally setuptools.setup(...),
+      // at statement start. Bare assignments and other function calls do not
+      // declare setuptools metadata.
+      const call = /^\s*(?:setuptools\.)?setup\s*\(/.exec(clean);
+      if (!call) continue;
+      inSetup = true;
+      clean = clean.slice(call[0].length);
+      depth = 1;
+    }
+    const match = /\bpython_requires\s*=/.exec(clean);
+    if (match && depth === 1) {
+      const tail = clean.slice(match.index + match[0].length).trimStart();
+      const literal = /^(['"])([^'"\r\n]+)\1(?=\s*[,)]|\s*$)/.exec(tail);
+      return { present: true, ...(literal ? { constraint: literal[2]! } : {}), line: i + 1 };
+    }
+    // Conservatively abandon nested/malformed calls. We only support flat
+    // literal keyword arguments, not arbitrary Python expressions.
+    for (const ch of clean) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      if (depth <= 0) {
+        inSetup = false;
+        depth = 0;
+        break;
+      }
+    }
   }
   return { present: false, line: 0 };
 }

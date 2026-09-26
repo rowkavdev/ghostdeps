@@ -65,6 +65,18 @@ describe("declared Python floor (#300)", () => {
     );
     assert.equal((await read({ "setup.cfg": files["setup.cfg"] })).status, "declared");
   });
+  it("ignores comments, unrelated assignments and other calls in setup.py", async () => {
+    for (const script of [
+      'setup(name="x") # python_requires=">=3.10"\n',
+      'python_requires=">=3.12"\n',
+      'dict(python_requires=">=3.12")\n',
+    ])
+      assert.deepEqual(
+        await read({ "setup.py": script }),
+        { status: "absent", evidence: [] },
+        script,
+      );
+  });
   it("reads inline setup.py literals and multiline setup.cfg specifiers", async () => {
     const inline = await read({ "setup.py": 'setup(name="x", python_requires=">=3.10")\n' });
     assert.deepEqual(inline, {
@@ -146,12 +158,12 @@ describe("declared Python floor (#300)", () => {
     assert.equal(unparsed.status, "unparsed");
     assert.equal(unparsed.evidence[0]?.line, 2);
     const fallback = await read({
-      "setup.py": "    python_requires=get_python_floor(),\n",
+      "setup.py": "setup(\n    python_requires=get_python_floor(),\n)\n",
       "setup.cfg": "[options]\npython_requires = >=3.11\n",
     });
     assert.equal(fallback.status, "declared");
     assert.deepEqual(fallback.status === "declared" ? fallback.version : [], [3, 11]);
     assert.equal(fallback.evidence[0]?.file, "setup.py");
-    assert.equal(fallback.evidence[0]?.line, 1);
+    assert.equal(fallback.evidence[0]?.line, 2);
   });
 });
