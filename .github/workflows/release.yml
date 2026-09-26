@@ -35,9 +35,11 @@ jobs:
 
       - name: Resolve publish mode
         id: mode
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
             echo "dry=--dry-run" >> "$GITHUB_OUTPUT"
           else
             version="${GITHUB_REF_NAME#v}"
