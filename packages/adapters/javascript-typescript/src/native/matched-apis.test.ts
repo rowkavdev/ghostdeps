@@ -540,3 +540,35 @@ test("pattern inspection marks bounded scan caps and does not imply completeness
   assert.deepEqual(record!.inspectedFiles, []);
   assert.equal(record!.state, "not-observed");
 });
+
+test("computed, dynamic, and spread option keys are uninspectable, not absent (#448)", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const fixtures = [
+    [
+      'import axios from "axios"; axios.get("/", { ["timeout"]: 1000 });',
+      "computed option key may match timeout",
+    ],
+    [
+      'import axios from "axios"; const key = "timeout"; axios.get("/", { [key]: 1000 });',
+      "computed option key may match timeout",
+    ],
+    [
+      'import axios from "axios"; const other = {}; axios.get("/", { ...other });',
+      "object spread may hide option key timeout",
+    ],
+  ] as const;
+  for (const [text, note] of fixtures) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
+      { patternId: "timeout", kind: "option-key-value" },
+    ]);
+    assert.equal(record!.state, "uninspectable");
+    assert.equal(record!.observations.length, 0);
+    assert.equal(record!.uninspectable.length, 1);
+    assert.equal(record!.uninspectable[0]!.note, note);
+    const cited = record!.uninspectable[0]!;
+    assert.equal(
+      Buffer.from(text).subarray(cited.start, cited.end).toString(),
+      text.slice(cited.start, cited.end),
+    );
+  }
+});

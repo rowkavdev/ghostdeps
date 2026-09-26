@@ -11,6 +11,7 @@ export const MAX_PATTERN_FILES = 2_000;
 export const MAX_PATTERN_BYTES = 8_000_000;
 export const MAX_PATTERN_OBSERVATIONS = 1_000;
 export type PatternKind = "member-call" | "option-key-value" | "property-chain";
+export type PatternObservationState = "observed" | "not-observed" | "uninspectable";
 export interface PatternInspection {
   patternId: string;
   kind: PatternKind;
@@ -18,7 +19,8 @@ export interface PatternInspection {
   inspectedBytes: number;
   capped: boolean;
   observations: readonly { file: string; start: number; end: number }[];
-  state: "observed" | "not-observed";
+  uninspectable: readonly { file: string; start: number; end: number; note: string }[];
+  state: PatternObservationState;
 }
 const excluded = new Set(["node_modules", ".git", "dist", "build", "coverage"]);
 function eligible(file: string): boolean {
@@ -62,13 +64,33 @@ function patternMatches(kind: PatternKind, patternId: string, node: ts.Node): bo
       (!ts.isIdentifier(node.name) && !ts.isStringLiteral(node.name))
     )
       return false;
-    return (ts.isIdentifier(node.name) ? node.name.text : node.name.text) === id;
+    return node.name.text === id;
   }
   if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
   const value = chain(node);
   return value === id || value.endsWith(`.${id}`);
 }
-/** Inspect the requested catalog entries over a deterministic, capped file set. */
+function isUnresolvedOptionProperty(node: ts.Node, patternId: string): string | undefined {
+  if (!ts.isObjectLiteralExpression(node)) return undefined;
+  const wanted = patternId.replace(/\[\*\]/g, "").replace(/\(.*$/, "");
+  for (const property of node.properties) {
+    if (ts.isSpreadAssignment(property)) return `object spread may hide option key ${wanted}`;
+    if (ts.isGetAccessorDeclaration(property) || ts.isSetAccessorDeclaration(property)) {
+      if (property.name && ts.isIdentifier(property.name) && property.name.text === wanted)
+        return `getter/setter for option key ${wanted} is not a static value`;
+      continue;
+    }
+    if (!ts.isPropertyAssignment(property)) continue;
+    if (ts.isComputedPropertyName(property.name)) {
+      // Even a computed literal is reported as unresolved rather than silently
+      // treated as absent. The consumer can apply its own stricter rule.
+      return `computed option key may match ${wanted}`;
+    }
+    if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) continue;
+  }
+  return undefined;
+}
+/** Inspect requested entries with deterministic caps; this is not a completeness claim. */
 export async function inspectIncompatiblePatterns(
   repository: RepositoryHandle,
   patterns: readonly { patternId: string; kind: PatternKind }[],
@@ -80,7 +102,11 @@ export async function inspectIncompatiblePatterns(
   const selected = files.slice(0, MAX_PATTERN_FILES);
   const inspectedFiles: string[] = [];
   const found = new Map<string, { file: string; start: number; end: number }[]>();
-  for (const p of patterns) found.set(p.patternId, []);
+  const unknown = new Map<string, { file: string; start: number; end: number; note: string }[]>();
+  for (const p of patterns) {
+    found.set(p.patternId, []);
+    unknown.set(p.patternId, []);
+  }
   let inspectedBytes = 0;
   let capped = files.length > selected.length;
   for (const file of selected) {
@@ -102,21 +128,41 @@ export async function inspectIncompatiblePatterns(
     const visit = (node: ts.Node): void => {
       for (const p of patterns) {
         const records = found.get(p.patternId)!;
-        if (records.length < MAX_PATTERN_OBSERVATIONS && patternMatches(p.kind, p.patternId, node))
+        const uncertain =
+          p.kind === "option-key-value" ? isUnresolvedOptionProperty(node, p.patternId) : undefined;
+        if (uncertain && unknown.get(p.patternId)!.length < MAX_PATTERN_OBSERVATIONS) {
+          unknown.get(p.patternId)!.push({ ...byteSpan(file, text, node), note: uncertain });
+        } else if (
+          records.length < MAX_PATTERN_OBSERVATIONS &&
+          patternMatches(p.kind, p.patternId, node)
+        ) {
           records.push(byteSpan(file, text, node));
-        else if (records.length >= MAX_PATTERN_OBSERVATIONS) capped = true;
+        } else if (
+          records.length >= MAX_PATTERN_OBSERVATIONS ||
+          unknown.get(p.patternId)!.length >= MAX_PATTERN_OBSERVATIONS
+        )
+          capped = true;
       }
       ts.forEachChild(node, visit);
     };
     visit(sf);
   }
-  return patterns.map(({ patternId, kind }) => ({
-    patternId,
-    kind,
-    inspectedFiles,
-    inspectedBytes,
-    capped,
-    observations: found.get(patternId)!,
-    state: found.get(patternId)!.length ? "observed" : "not-observed",
-  }));
+  return patterns.map(({ patternId, kind }) => {
+    const observations = found.get(patternId)!;
+    const uninspectable = unknown.get(patternId)!;
+    return {
+      patternId,
+      kind,
+      inspectedFiles,
+      inspectedBytes,
+      capped,
+      observations,
+      uninspectable,
+      state: observations.length
+        ? "observed"
+        : uninspectable.length
+          ? "uninspectable"
+          : "not-observed",
+    };
+  });
 }
