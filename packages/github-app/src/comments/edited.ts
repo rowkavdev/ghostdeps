@@ -122,28 +122,33 @@ export async function handleCommentEdited(
   // Re-read live state before ANY edit (reviewer-1 #425): a delayed delivery
   // must never overwrite a newer canonical comment, and a restore onto a
   // closed or merged PR is wrong. The delivery's claim is not state.
-  let liveBody: string | undefined;
-  let prOpen: boolean;
-  try {
-    const [comment, issue] = await Promise.all([
-      deps.issues.issues.getComment({
-        owner: payload.repository.owner.login,
-        repo: payload.repository.name,
-        comment_id: payload.comment.id,
-      }),
-      deps.issues.issues.get({
-        owner: payload.repository.owner.login,
-        repo: payload.repository.name,
-        issue_number: payload.issue.number,
-      }),
-    ]);
-    liveBody = comment.data.body ?? undefined;
-    prOpen = issue.data.state === "open" && issue.data.pull_request !== undefined;
-  } catch {
-    return ignore("current comment or PR state could not be read");
-  }
-  if (!prOpen) return ignore("pull request is not open");
-  if (liveBody !== payload.comment.body)
+  const readLive = async (): Promise<{ body: string | undefined; prOpen: boolean } | undefined> => {
+    try {
+      const [comment, issue] = await Promise.all([
+        deps.issues.issues.getComment({
+          owner: payload.repository.owner.login,
+          repo: payload.repository.name,
+          comment_id: payload.comment.id,
+        }),
+        deps.issues.issues.get({
+          owner: payload.repository.owner.login,
+          repo: payload.repository.name,
+          issue_number: payload.issue.number,
+        }),
+      ]);
+      return {
+        body: comment.data.body ?? undefined,
+        prOpen: issue.data.state === "open" && issue.data.pull_request !== undefined,
+      };
+    } catch {
+      return undefined;
+    }
+  };
+
+  const first = await readLive();
+  if (first === undefined) return ignore("current comment or PR state could not be read");
+  if (!first.prOpen) return ignore("pull request is not open");
+  if (first.body !== payload.comment.body)
     return ignore("comment moved after this delivery; a newer delivery owns it");
 
   // Live permission read: association labels and the checkbox UI prove
@@ -160,6 +165,16 @@ export async function handleCommentEdited(
     return ignore("editor permission could not be verified");
   }
   if (!TICK_PERMISSIONS.has(permission)) return ignore(`editor is ${permission}, not a maintainer`);
+
+  // Compare-and-swap on the body (reviewer-1 #425 round 2): the permission
+  // call above is a window in which a scan update can replace the comment.
+  // Re-read immediately before writing and refuse unless the live body is
+  // still exactly what this delivery showed.
+  const still = await readLive();
+  if (still === undefined) return ignore("current comment or PR state could not be read");
+  if (!still.prOpen) return ignore("pull request is not open");
+  if (still.body !== payload.comment.body)
+    return ignore("comment moved while permissions were checked; refusing to overwrite");
 
   const allowed = new Set(marker.keys);
   const ticked = checkboxOnlyDiff(canonical, payload.comment.body, allowed);
