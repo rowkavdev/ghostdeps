@@ -1,6 +1,6 @@
 # Native replacement rules for JS/TS
 
-Research for [#64](https://github.com/rowkavdev/ghostdeps/issues/64), checked against GhostDeps main on 25 September 2026. This is a candidate rule set, not a list of dependencies GhostDeps can remove today. The [native-rule interface](https://github.com/rowkavdev/ghostdeps/blob/main/packages/core/src/native-rules/index.ts) records runtime floors, covered APIs, disqualifiers, semantic differences and sources; main does not yet ship a JS/TS rule dataset or a native-replacement verdict.
+Research for [#64](https://github.com/rowkavdev/ghostdeps/issues/64), checked against GhostDeps main on 25 September 2026. This is a candidate rule set, not a list of dependencies GhostDeps can remove today. The [native-rule interface](https://github.com/rowkavdev/ghostdeps/blob/main/packages/core/src/native-rules/index.ts) records runtime floors, covered APIs, disqualifiers, semantic differences and sources; main has an inert JS/TS seed catalog, but does not yet ship a native-replacement verdict.
 
 ## Candidate seeds
 
