@@ -4,6 +4,26 @@
   "expectExit": 0,
   "findings": [
     {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "requests"
+    },
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "urllib3"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "atomicwrites"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "bottle"
+    },
+    {
       "kind": "info",
       "severity": "info",
       "dependency": "certifi"
@@ -11,12 +31,37 @@
     {
       "kind": "info",
       "severity": "info",
+      "dependency": "click"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "exceptiongroup"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "gunicorn"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
       "dependency": null
     },
     {
       "kind": "info",
       "severity": "info",
       "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "legacy-cgi"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "myst-parser"
     },
     {
       "kind": "info",
@@ -26,7 +71,52 @@
     {
       "kind": "info",
       "severity": "info",
+      "dependency": "pypiserver"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pyyaml"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sphinx-click"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sphinx-rtd-theme"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "sphinxcontrib-spelling"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "stdeb"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "tomli"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
       "dependency": "virtualenv"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "waitress"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "pytz"
     },
     {
       "kind": "should-be-dev",
