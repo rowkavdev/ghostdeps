@@ -81,7 +81,7 @@ describe("opt-in Scan scope rendering", () => {
     assert.match(check.output.summary, /Summary truncated/);
     assert.match(check.output.summary, /Scan scope/);
     assert.match(check.output.summary, /fixtures: 2 files/);
-    assert.match(check.output.summary, /missing: unmatched \(0 files/);
+    assert.ok(check.output.summary.includes(String.raw`missing: unmatched \(0 files`));
     assert.ok(
       check.output.summary.indexOf("Scan scope") < check.output.summary.indexOf("High confidence"),
     );
