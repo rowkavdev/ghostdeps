@@ -65,6 +65,17 @@ describe("declared Python floor (#300)", () => {
     );
     assert.equal((await read({ "setup.cfg": files["setup.cfg"] })).status, "declared");
   });
+  it("ignores keyword-looking text inside setup string values", async () => {
+    const positive = await read({
+      "setup.py": 'setup(name="python_requires=>=3.12", python_requires=">=3.10")\n',
+    });
+    assert.equal(positive.status, "declared");
+    assert.deepEqual(positive.status === "declared" ? positive.version : [], [3, 10]);
+    assert.deepEqual(await read({ "setup.py": 'setup(name="python_requires=>=3.12")\n' }), {
+      status: "absent",
+      evidence: [],
+    });
+  });
   it("ignores comments, unrelated assignments and other calls in setup.py", async () => {
     for (const script of [
       'setup(name="x") # python_requires=">=3.10"\n',
