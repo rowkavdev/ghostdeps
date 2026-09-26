@@ -1,4 +1,4 @@
-import { findingGroup } from "@ghostdeps/core";
+import { findingGroup, scanScopeRows, scanScopeSummary } from "@ghostdeps/core";
 import type {
   AnalysisResult,
   DependencyImpact,
@@ -306,6 +306,14 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     ...section("Languages", languages),
     "",
     ...section("Package managers", packageManagers),
+    ...(result.scanScope
+      ? [
+          "",
+          "Scan scope:",
+          `  ${scanScopeSummary(result.scanScope)}`,
+          ...scanScopeRows(result.scanScope).map((row) => `  ${escapeTerminal(row)}`),
+        ]
+      : []),
     "",
     "Direct dependencies:",
     `  ${groupThousands(direct)}`,

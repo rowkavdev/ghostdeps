@@ -10,3 +10,4 @@ export {
   severityOrder,
 } from "./severity.js";
 export type { Severity } from "./severity.js";
+export { scanScopeRows, scanScopeSummary } from "./scan-scope.js";
