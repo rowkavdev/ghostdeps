@@ -170,3 +170,47 @@ it("keeps excluded node_modules outside the scanner-visible domain, but binds po
     await rm(second, { recursive: true, force: true });
   }
 });
+
+it("re-enumerates the same FsRepositoryHandle after a file is added", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ghostdeps-refresh-"));
+  try {
+    await writeFile(path.join(root, "package.json"), "{}");
+    const handle = await FsRepositoryHandle.open(root);
+    const before = await mintNativeSnapshot(handle);
+    assert.equal(before.status, "verified");
+    if (before.status !== "verified") return;
+    await writeFile(
+      path.join(root, "ghostdeps.targets.json"),
+      '{"schemaVersion":1,"complete":true,"targets":[]}',
+    );
+    const after = await mintNativeSnapshot(handle);
+    assert.equal(after.status, "verified");
+    if (after.status !== "verified") return;
+    assert.notEqual(before.snapshotSha256, after.snapshotSha256);
+    assert.equal((await verifyNativeSnapshot(handle, before.snapshotSha256)).status, "blocked");
+    assert.deepEqual(await verifyNativeSnapshot(handle, after.snapshotSha256), after);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("blocks if a listed file changes before the byte read", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ghostdeps-change-"));
+  try {
+    await writeFile(path.join(root, "package.json"), "old");
+    const handle = await FsRepositoryHandle.open(root);
+    const original = handle.listEntries.bind(handle);
+    handle.listEntries = async () => {
+      const listing = await original();
+      await writeFile(path.join(root, "package.json"), "new value");
+      return listing;
+    };
+    assert.deepEqual(await mintNativeSnapshot(handle), {
+      status: "blocked",
+      binding: "caller-asserted",
+      reason: "snapshot-read-failed",
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

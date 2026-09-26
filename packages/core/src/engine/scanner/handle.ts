@@ -13,7 +13,11 @@ import { lstat, open, readlink, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { utf8Head } from "../../repository-head.js";
 import { MAX_HEAD_READ_BYTES } from "../../limits.js";
-import type { RepositoryHandle, RepositoryTreeListing } from "../../types/index.js";
+import type {
+  RepositoryHandle,
+  RepositoryTreeEntry,
+  RepositoryTreeListing,
+} from "../../types/index.js";
 import { scanRepository, type ScanOptions, type ScanResult, type ScannedFile } from "./scanner.js";
 
 export type RepositoryReadErrorCode = "not-listed" | "changed" | "too-large" | "binary";
@@ -65,16 +69,18 @@ export class FsRepositoryHandle implements RepositoryHandle {
     return new FsRepositoryHandle(await scanRepository(rootDir, options));
   }
 
-  /** Include skipped symlinks and expose all omissions as explicit limitations. */
+  /** A fresh scanner walk, never the files captured when this handle opened. */
   async listEntries(): Promise<RepositoryTreeListing> {
-    const entries: RepositoryTreeListing["entries"] = this.scan.files.map(({ path }) => ({
-      path,
-      kind: "file",
-    }));
+    const fresh = await scanRepository(this.scan.root, {
+      limits: this.scan.limits,
+      excludedDirectories: new Set(this.scan.excludedDirectories),
+      excludedFileSuffixes: this.scan.excludedFileSuffixes,
+      ...(this.scan.scope ? { fixtureScope: true } : {}),
+    });
+    const entries: RepositoryTreeListing["entries"] = [];
     const limitations: string[] = [];
-    if (this.scan.truncated) limitations.push(`truncated:${this.scan.truncated}`);
-    if (this.scan.scope?.excludedFiles) limitations.push("fixture-scope-excluded");
-    for (const [reason, count] of Object.entries(this.scan.skippedCounts)) {
+    if (fresh.truncated) limitations.push(`truncated:${fresh.truncated}`);
+    for (const [reason, count] of Object.entries(fresh.skippedCounts)) {
       if (
         !["symlink", "excluded-directory", "excluded-generated-file", "fixture-root"].includes(
           reason,
@@ -83,20 +89,48 @@ export class FsRepositoryHandle implements RepositoryHandle {
       )
         limitations.push(`skipped:${reason}:${count}`);
     }
-    const links = this.scan.skipped.filter((item) => item.reason === "symlink");
-    if (links.length !== (this.scan.skippedCounts.symlink ?? 0))
+    const links = fresh.skipped.filter((item) => item.reason === "symlink");
+    if (links.length !== (fresh.skippedCounts.symlink ?? 0))
       limitations.push("symlinks-unrecorded");
+    for (const item of fresh.files) {
+      try {
+        const st = await lstat(path.join(fresh.root, item.path));
+        if (!st.isFile() || st.size !== item.size) throw new Error("file changed");
+        entries.push({
+          path: item.path,
+          kind: "file",
+          size: st.size,
+          mtimeMs: st.mtimeMs,
+          ino: st.ino,
+          dev: st.dev,
+        });
+      } catch {
+        limitations.push(`changed-file:${item.path}`);
+      }
+    }
     for (const item of links) {
       try {
-        const full = path.join(this.scan.root, item.path);
+        const full = path.join(fresh.root, item.path);
         const before = await lstat(full);
         if (!before.isSymbolicLink()) throw new Error("changed symlink");
         const raw = await readlink(full, { encoding: "buffer" });
         const target = new TextDecoder("utf-8", { fatal: true }).decode(raw);
         const after = await lstat(full);
-        if (!after.isSymbolicLink() || before.ino !== after.ino || before.dev !== after.dev)
+        if (
+          !after.isSymbolicLink() ||
+          before.ino !== after.ino ||
+          before.dev !== after.dev ||
+          before.mtimeMs !== after.mtimeMs
+        )
           throw new Error("changed symlink");
-        entries.push({ path: item.path, kind: "symlink", target });
+        entries.push({
+          path: item.path,
+          kind: "symlink",
+          target,
+          mtimeMs: after.mtimeMs,
+          ino: after.ino,
+          dev: after.dev,
+        });
       } catch {
         limitations.push(`unreadable-symlink:${item.path}`);
       }
@@ -105,9 +139,9 @@ export class FsRepositoryHandle implements RepositoryHandle {
       .update(
         JSON.stringify({
           version: 1,
-          excludedDirectories: this.scan.excludedDirectories,
-          excludedFileSuffixes: this.scan.excludedFileSuffixes,
-          scopeDigest: this.scan.scope?.digest ?? null,
+          excludedDirectories: fresh.excludedDirectories,
+          excludedFileSuffixes: fresh.excludedFileSuffixes,
+          scopeDigest: fresh.scope?.digest ?? null,
         }),
       )
       .digest("hex");
@@ -119,17 +153,53 @@ export class FsRepositoryHandle implements RepositoryHandle {
     };
   }
 
-  async readFileBytes(requested: string): Promise<Uint8Array> {
-    const { rel, listed, handle, size } = await this.openListed(requested);
+  async readFileBytes(requested: string, expected?: RepositoryTreeEntry): Promise<Uint8Array> {
+    const rel = normalise(requested);
+    if (
+      !rel ||
+      expected?.kind !== "file" ||
+      expected.path !== rel ||
+      expected.size === undefined ||
+      expected.ino === undefined ||
+      expected.dev === undefined ||
+      expected.mtimeMs === undefined
+    )
+      throw new RepositoryReadError("changed", requested);
+    const parts = rel.split("/");
+    let current = this.scan.root;
+    for (const part of parts.slice(0, -1)) {
+      current = path.join(current, part);
+      const st = await lstat(current).catch(() => undefined);
+      if (!st?.isDirectory()) throw new RepositoryReadError("changed", rel);
+    }
+    const full = path.join(this.scan.root, rel);
+    const before = await lstat(full).catch(() => undefined);
+    if (
+      !before?.isFile() ||
+      before.size !== expected.size ||
+      before.mtimeMs !== expected.mtimeMs ||
+      before.ino !== expected.ino ||
+      before.dev !== expected.dev
+    )
+      throw new RepositoryReadError("changed", rel);
+    const handle = await open(full, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)).catch(() => {
+      throw new RepositoryReadError("changed", rel);
+    });
     try {
-      const ceiling = listed.lockfile
-        ? this.scan.limits.maxLockfileBytes
-        : this.scan.limits.maxFileBytes;
-      if (size > ceiling) throw new RepositoryReadError("too-large", rel);
-      const bytes = await readPrefix(handle, size + 1);
-      if (bytes.length !== size) throw new RepositoryReadError("changed", rel);
+      const st = await handle.stat();
+      if (
+        !st.isFile() ||
+        st.size !== expected.size ||
+        st.mtimeMs !== expected.mtimeMs ||
+        st.ino !== expected.ino ||
+        st.dev !== expected.dev ||
+        st.size > this.scan.limits.maxLockfileBytes
+      )
+        throw new RepositoryReadError("changed", rel);
+      const bytes = await readPrefix(handle, st.size + 1);
       const after = await handle.stat();
-      if (after.size !== size) throw new RepositoryReadError("changed", rel);
+      if (bytes.length !== expected.size || after.size !== st.size || after.mtimeMs !== st.mtimeMs)
+        throw new RepositoryReadError("changed", rel);
       return bytes;
     } finally {
       await handle.close();
