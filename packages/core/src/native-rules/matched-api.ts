@@ -123,9 +123,13 @@ function reconstructCall(
     !/^[\p{ID_Start}_$][\p{ID_Continue}$]*(?:\.[\p{ID_Start}_$][\p{ID_Continue}$]*)*$/u.test(head)
   )
     return "callee head is not a simple identifier/member chain";
-  const identifiers: string[] = head.match(/[\p{ID_Start}_$][\p{ID_Continue}$]*/gu) ?? [];
-  if (!identifiers.includes(api) && !identifiers.includes(binding))
-    return "claimed API or resolved local binding is absent from the callee head";
+  const finalMember = head.split(".").at(-1)!;
+  // A receiver token never proves the claimed API on a member call. A
+  // bare identifier can name a local alias or wrapper; its binding link
+  // remains the adapter's responsibility, not a claim made by core.
+  const local = binding.split(".").at(-1);
+  if (head.includes(".") ? finalMember !== api : head !== api && head !== local)
+    return "callee final member or local binding does not match the claimed API";
   const innerStart = call.start + Buffer.byteLength(raw.slice(0, open + 1));
   const innerEnd = call.end - 1;
   let cursor = innerStart;
