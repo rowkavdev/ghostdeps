@@ -66,3 +66,17 @@ Excluded directories are recorded once, at the directory, and never walked. The 
 Generated files skipped by suffix: `.min.js`, `.min.mjs`, `.min.cjs`, `.min.css`, `.map`. Lockfiles are never excluded as generated.
 
 Exclusion is about focus, not safety; the ceilings are the safety control.
+
+## Fixture-root scope, core opt-in (#354, slice 1)
+
+The core scanner now accepts `{ fixtureScope: true }`. This is **not enabled by the CLI or App yet**: neither presenter discloses the scope or applies the required absence cap/neutral-check rule. Do not enable it in an entry point before those follow-up slices. The unscoped default still reads every fixture tree normally.
+
+When opted in, core reads a repository-root `.ghostdeps.json` with exactly this shape:
+
+```json
+{ "schemaVersion": 1, "fixtureRoots": ["fixtures"] }
+```
+
+`fixtureRoots` contains literal repository-relative directory paths, without a trailing slash. No glob, negation, file path or name convention is implied. Roots must be real directories if present; a nonexistent root is retained in the scope record as unmatched. Empty roots are valid. Unknown fields or schema versions, duplicate/overlapping paths, symlinked roots, malformed JSON, or oversized config fail the scan visibly, rather than silently dropping scope. The config is capped at 16 KiB, with up to 32 roots. The separate bounded metadata walk counts omitted regular files and recognised manifests per root, including under nested directories; limits or uncertain entries fail visibly rather than reporting false exact counts.
+
+The optional `scan.scope` record includes source (`none` or `repo-config`), schema version, sorted configured roots with `matched`, `files` and `manifests`, aggregate counts, a stable SHA-256 digest of the canonical effective root list, `countingComplete`, and a separate built-in exclusion policy identifier. The scanner also records each matched fixture root as one `fixture-root` skip; the normal capped skip list is not the audit record. Core consumers opting in must propagate this scope, cap absence verdicts when files are omitted, and make excluded declarations visible in human/JSON/check output. This slice does not add an Action/CLI override, commit binding, PR diff treatment, or user-facing reporting. Those are required before activation, as specified in [the accepted design](scan-scope-design.md).
