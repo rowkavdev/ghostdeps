@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { CAPABILITY_CATALOGUE } from "../capabilities/index.js";
+import type { DependencyChange } from "../diff/dependency-changes.js";
 import type { Dependency, ProjectRef } from "../types/index.js";
 import {
   sameEcosystemDuplicates,
@@ -43,9 +44,10 @@ describe("sameEcosystemDuplicates (#58, declaration tier)", () => {
       assert.equal(f.rule, SAME_ECOSYSTEM_DUPLICATES_RULE);
       assert.equal(f.confidence, "low", "declaration evidence only");
       assert.ok(f.dependency, "never a run note (#197)");
-      assert.equal(f.awareness, undefined, "awareness is a separate ruling (#58 slice 2)");
+      assert.equal(f.awareness, true, "awareness-only per the #58 arbiter ruling (#234)");
       assert.ok(f.limitations.length > 0, "declaration tier always states its limits");
       assert.match(f.recommendation, /Review whether/);
+      assert.match(f.recommendation, /no change is suggested/i, "informs, never recommends action");
       assert.doesNotMatch(f.recommendation, /remove \w+ from/i, "never an auto-remove claim");
     }
     assert.deepEqual(findings[0]!.affectedFiles, ["apps/web/package.json"]);
@@ -152,9 +154,40 @@ describe("sameEcosystemDuplicates (#58, declaration tier)", () => {
 
   it("accepts an injected catalogue and stays deterministic", () => {
     const deps = [dep(web, "axios"), dep(web, "got"), dep(web, "zod"), dep(web, "yup")];
-    const first = sameEcosystemDuplicates(deps, CAPABILITY_CATALOGUE);
-    const second = sameEcosystemDuplicates([...deps].reverse(), CAPABILITY_CATALOGUE);
+    const first = sameEcosystemDuplicates(deps, undefined, CAPABILITY_CATALOGUE);
+    const second = sameEcosystemDuplicates([...deps].reverse(), undefined, CAPABILITY_CATALOGUE);
     assert.deepEqual(first, second, "input order never changes the output");
-    assert.deepEqual(sameEcosystemDuplicates(deps, { version: 1, clusters: [] }), []);
+    assert.deepEqual(sameEcosystemDuplicates(deps, undefined, { version: 1, clusters: [] }), []);
+  });
+
+  it("in a pull request reports only the packages the PR added (#55 semantics)", () => {
+    const changes: DependencyChange[] = [
+      { change: "added", name: "got", ecosystem: JS, manifest: "apps/web/package.json" },
+    ];
+    const findings = sameEcosystemDuplicates([dep(web, "axios"), dep(web, "got")], changes);
+    assert.deepEqual(
+      findings.map((f) => f.dependency),
+      ["got"],
+      "the pre-existing member is not re-reported on every PR",
+    );
+  });
+
+  it("in a pull request stays quiet when the PR only changed or removed members", () => {
+    const changes: DependencyChange[] = [
+      { change: "changed", name: "got", ecosystem: JS, manifest: "apps/web/package.json" },
+      { change: "removed", name: "axios", ecosystem: JS, manifest: "apps/web/package.json" },
+    ];
+    assert.deepEqual(sameEcosystemDuplicates([dep(web, "axios"), dep(web, "got")], changes), []);
+  });
+
+  it("in a pull request matches the added package to its own ecosystem", () => {
+    const changes: DependencyChange[] = [
+      { change: "added", name: "axios", ecosystem: PY, manifest: "services/api/pyproject.toml" },
+    ];
+    assert.deepEqual(
+      sameEcosystemDuplicates([dep(web, "axios"), dep(web, "got")], changes),
+      [],
+      "an axios added to a Python project is not the JS axios",
+    );
   });
 });

@@ -8,10 +8,12 @@
  * Slice 1 is declaration evidence only: the catalogue says the packages
  * cover the same capability, but usage was not compared, so every finding
  * is low confidence with that limitation stated. The usage-evidenced tier
- * (one package's observed API use covered by another) is slice 2 and
- * builds on #56's rule contract. Wiring into the pipeline (policy config,
- * PR-mode semantics, awareness) is deferred to the same ruling - this
- * module is exported and tested but not called by analyse.ts yet.
+ * (one package's observed API use covered by another) builds on #56's
+ * rule contract and stays deferred.
+ *
+ * Findings are awareness-only (#234, arbiter-ruling for #58): they inform
+ * and never suggest a change. In a pull request only packages the PR
+ * added are reported, matching the cross-ecosystem overlap (#55).
  *
  * Cross-ecosystem overlap is #55's job (capability-overlap.ts); this
  * detector stays within one project root and one ecosystem. The same
@@ -23,6 +25,7 @@ import {
   catalogueName,
   type CapabilityCatalogue,
 } from "../capabilities/index.js";
+import type { DependencyChange } from "../diff/dependency-changes.js";
 import type { Dependency, Finding } from "../types/index.js";
 
 export const SAME_ECOSYSTEM_DUPLICATES_RULE = "same-ecosystem-capability-duplicates";
@@ -54,8 +57,18 @@ const atDeclaration = (d: Dependency): { file: string; line?: number } =>
  */
 export function sameEcosystemDuplicates(
   dependencies: readonly Dependency[],
+  pullRequestChanges?: readonly DependencyChange[],
   catalogue: CapabilityCatalogue = CAPABILITY_CATALOGUE,
 ): Finding[] {
+  // In a pull request, only packages the PR added are reported, so an
+  // existing duplicate doesn't show on every PR (#55's semantics).
+  const added = pullRequestChanges
+    ? new Set(
+        pullRequestChanges
+          .filter((c) => c.change === "added")
+          .map((c) => `${c.ecosystem}\0${c.name}`),
+      )
+    : undefined;
   // projectKey -> clusterId -> declared name -> declarations
   const byProject = new Map<string, Map<string, Map<string, Dependency[]>>>();
   for (const dep of dependencies) {
@@ -90,15 +103,18 @@ export function sameEcosystemDuplicates(
           .get(name)!
           .slice()
           .sort((a, b) => compare(a.declaredIn, b.declaredIn));
+        if (added && !added.has(`${declarations[0]!.project.ecosystem}\0${name}`)) continue;
         const others = declaredNames.filter((n) => n !== name);
         findings.push({
           kind: "duplicate-capability",
           rule: SAME_ECOSYSTEM_DUPLICATES_RULE,
           dependency: name,
+          awareness: true,
           summary: `${name} and ${others.join(", ")} all provide ${cluster.label} in ${place}`,
           recommendation:
-            `Review whether ${declaredNames.join(", ")} are all necessary. ` +
-            `This is declaration evidence only - check how each is used before removing any of them.`,
+            `For awareness only - no change is suggested. ` +
+            `Review whether ${declaredNames.join(", ")} are all necessary; ` +
+            `this is declaration evidence only and usage was not compared.`,
           evidence: [
             {
               kind: "capability-cluster",
