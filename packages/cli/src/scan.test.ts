@@ -252,6 +252,41 @@ describe("ghostdeps scan policy flags", () => {
     assert.equal(body.findings.length, 0);
   });
 
+  it("reports same-ecosystem duplicates as awareness findings (#58)", async () => {
+    const { io, out } = capture();
+    const code = await run(["scan", "--json", fixture("duplicate-capability")], io);
+    assert.equal(code, 0);
+    const body = JSON.parse(out.join("\n")) as {
+      findings: { rule?: string; awareness?: boolean; severity?: string; dependency?: string }[];
+    };
+    const dups = body.findings.filter((f) => f.rule === "same-ecosystem-capability-duplicates");
+    assert.deepEqual(dups.map((f) => f.dependency).sort(), ["axios", "got"]);
+    for (const f of dups) {
+      assert.equal(f.awareness, true);
+      assert.equal(f.severity, "info", "declaration-tier duplicates can never gate CI");
+    }
+  });
+
+  it("--disable-rule turns an engine-emitted rule off too (#58)", async () => {
+    const { io, out } = capture();
+    const code = await run(
+      [
+        "scan",
+        "--json",
+        "--disable-rule",
+        "same-ecosystem-capability-duplicates",
+        fixture("duplicate-capability"),
+      ],
+      io,
+    );
+    assert.equal(code, 0);
+    const body = JSON.parse(out.join("\n")) as { findings: { rule?: string }[] };
+    assert.equal(
+      body.findings.filter((f) => f.rule === "same-ecosystem-capability-duplicates").length,
+      0,
+    );
+  });
+
   it("rejects an unknown rule for --disable-rule", async () => {
     const { io, err } = capture();
     const code = await run(["scan", "--disable-rule", "unsed", fixture("basic-unused")], io);

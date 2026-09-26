@@ -5,7 +5,7 @@ const optionLines = [
   "  --json              Machine-readable JSON output (schema-versioned)",
   "  --fail-on <sev>     scan: exit 1 when any finding reaches this severity",
   "  --severity <min>    scan: only show findings at or above this severity",
-  "  --disable-rule <id> scan: turn off a policy rule (repeatable)",
+  "  --disable-rule <id> scan: turn off a policy or engine rule (repeatable)",
   "  --downgrade <r>=<c> scan: cap a rule's confidence (repeatable)",
   "  --allowlist <e>:<p> scan: allowlist a tooling package, * suffix = prefix",
   "  -h, --help          Show help",
