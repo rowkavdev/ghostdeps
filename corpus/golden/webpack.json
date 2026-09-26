@@ -1,0 +1,432 @@
+{
+  "repo": "webpack",
+  "sha": "48732858e22d7b3608fa7c9456a97e64b558d6a6",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@types/convert-source-map"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "aaa-unused"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "babel-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "bundle-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "coffee-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "coffeescript"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "css-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "es6-promise-polyfill"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "events"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "html-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "istanbul"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "jest-circus"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "jest-cli"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "jest-junit"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "json-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "node-gyp"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pug"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "raw-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "script-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "shared26"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "style-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "ts-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "unused-lib"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "unused-lib"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "unused-lib"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "unused-lib"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "url-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "zzz-unused"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@scoped/package"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@scoped/package"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "abc"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "common"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "def"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "lib1"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "lib2"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "lib2"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "my-middleware"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "other"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "package"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "package"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "package"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "pkg"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "prefix"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "prefix"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "prefix"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared10"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared11"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared12"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared13"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared14"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared15"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared16"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared17"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared18"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared19"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared20"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared21"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared22"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared23"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared24"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared2"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared2"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared3"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared4"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared5"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared6"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared7"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared8"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared9"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "shared"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "table"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "tiny-emitter"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "tiny-emitter"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "uncommon"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "used-lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "used-lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "used-lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "used-lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "used-lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "used-lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "used-lib"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "xyz"
+    }
+  ]
+}
