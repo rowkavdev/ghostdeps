@@ -82,10 +82,10 @@ function isUnresolved(kind: PatternKind, patternId: string, node: ts.Node): stri
         return `shorthand option ${wanted} has an unresolved value`;
       if (
         ts.isMethodDeclaration(property) &&
-        ts.isIdentifier(property.name) &&
-        property.name.text === wanted
+        ((ts.isIdentifier(property.name) && property.name.text === wanted) ||
+          ts.isComputedPropertyName(property.name))
       )
-        return `method option ${wanted} is not a static property value`;
+        return `method option may hide or define ${wanted}`;
       if (ts.isGetAccessorDeclaration(property) || ts.isSetAccessorDeclaration(property)) {
         if (property.name && ts.isIdentifier(property.name) && property.name.text === wanted)
           return `getter/setter for option key ${wanted} is not a static value`;
@@ -95,13 +95,22 @@ function isUnresolved(kind: PatternKind, patternId: string, node: ts.Node): stri
         return `computed option key may match ${wanted}`;
     }
   }
-  if (
-    kind === "member-call" &&
-    ts.isCallExpression(node) &&
-    ts.isElementAccessExpression(node.expression)
-  ) {
-    const target = chain(node.expression.expression);
-    if (target.endsWith(".interceptors.request") || target.endsWith(".interceptors.response"))
+  if (kind === "member-call" && ts.isCallExpression(node)) {
+    let expr: ts.Expression = node.expression,
+      hadComputed = false;
+    while (ts.isPropertyAccessExpression(expr) || ts.isElementAccessExpression(expr)) {
+      if (
+        ts.isElementAccessExpression(expr) &&
+        (!expr.argumentExpression || !ts.isStringLiteral(expr.argumentExpression))
+      )
+        hadComputed = true;
+      expr = expr.expression;
+    }
+    const rendered = chain(node.expression);
+    if (
+      hadComputed &&
+      (rendered.includes("interceptors") || node.getText().includes("interceptors"))
+    )
       return `computed member access may be incompatible pattern ${wanted}`;
   }
   if (kind === "property-chain" && ts.isElementAccessExpression(node)) {
