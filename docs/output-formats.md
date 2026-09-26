@@ -232,7 +232,8 @@ No significant dependency issues found.
 - A finding with `awareness: true` (#234) is for awareness only: presenters
   list it in an awareness section, and it never affects a check conclusion,
   title, count or exit code. Only core sets it, from the rule that emits the
-  finding (today `cross-ecosystem-capability-overlap` and the adapter
+  finding (today `cross-ecosystem-capability-overlap` (#55),
+  `same-ecosystem-capability-duplicates` (#58) and the adapter
   capability notes, `adapter-capability`, #205). Absent means not
   awareness: other info findings stay in Notes and keep their neutral
   meaning. Marking another rule awareness needs arbiter sign-off.
