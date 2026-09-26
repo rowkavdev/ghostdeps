@@ -291,6 +291,20 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
     }
   }
 
+  // Until Pipfile declarations are parsed, explicitly cap the scan and say why.
+  // The engine maps manifest-malformed detection evidence into an incomplete
+  // finding (ADR 0004), rather than returning a silent empty declaration set.
+  for (const project of projects) {
+    const pipfile = joinPath(project.path, "Pipfile");
+    if (await repository.exists(pipfile)) {
+      evidence.push({
+        kind: "manifest-malformed",
+        statement: `${pipfile}: Pipfile runtime section not parsed; declared dependencies are incomplete`,
+        file: pipfile,
+      });
+    }
+  }
+
   // Lockfile evidence (missing, unreadable, too large, malformed, stale)
   // explains incomplete graphs; DependencyGraph has no evidence field, so
   // detection carries it, as in the rust adapter (#225).
