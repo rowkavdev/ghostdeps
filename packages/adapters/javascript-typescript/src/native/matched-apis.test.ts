@@ -694,3 +694,21 @@ test("computed option accessors and earlier computed interceptor segments are un
     assert.equal(record!.uninspectable.length, 1);
   }
 });
+
+test("computed interceptor prefixes are unknown only when the access chain names interceptors", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const pattern = [{ patternId: "interceptors.request.use", kind: "member-call" as const }];
+  const [possible] = await inspectIncompatiblePatterns(
+    memoryHandle({
+      "src/a.ts": 'import axios from "axios"; axios[feature].request.use(() => {});',
+    }),
+    pattern,
+  );
+  assert.equal(possible!.state, "uninspectable");
+  const [unrelated] = await inspectIncompatiblePatterns(
+    memoryHandle({ "src/a.ts": "other[x].run(); a[x]();" }),
+    pattern,
+  );
+  assert.equal(unrelated!.state, "not-observed");
+  assert.deepEqual(unrelated!.uninspectable, []);
+});
