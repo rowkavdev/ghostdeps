@@ -30,6 +30,7 @@ export interface NativeReferenceRecord {
   readonly arguments: "inspected" | "unknown";
   readonly options: "inspected" | "unknown";
   readonly span?: NativeReferenceSpan;
+  /** One cited span per argument; complete ordered coverage is reconstructed. */
   readonly argumentSpans?: readonly NativeReferenceSpan[];
   readonly note?: string;
 }
@@ -51,6 +52,7 @@ export interface NativeMatchedApiBlock {
     | "scan-incomplete"
     | "invalid-reference"
     | "citation-unverified"
+    | "citation-inconsistent"
     | "unresolved-reference"
     | "uninspected-use"
     | "unsupported-surface";
@@ -92,6 +94,59 @@ const validPath = (file: string): boolean =>
   file.normalize("NFC") === file &&
   file.split("/").every((p) => p !== "" && p !== "." && p !== "..");
 
+/** Offset reconstruction of the adapter's call citation. No JS parser runs here.
+ * Strings, templates and nested parentheses are opaque argument bytes; all
+ * bytes outside arguments must be the single callee and call punctuation.
+ */
+function reconstructCall(
+  bytes: Uint8Array,
+  call: NativeReferenceSpan,
+  args: readonly NativeReferenceSpan[],
+  api: string,
+  binding: string,
+): string | null {
+  const text = (start: number, end: number): string | null => {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(start, end));
+    } catch {
+      return null;
+    }
+  };
+  const raw = text(call.start, call.end);
+  if (raw === null || !raw.endsWith(")")) return "call is not valid UTF-8 ending in a close paren";
+  const open = raw.indexOf("(");
+  if (open < 0) return "call has no open paren";
+  const head = raw.slice(0, open);
+  // The head contains identifiers and member selectors, not statements,
+  // literals or argument bytes. Nontrivial syntax is blocked, not guessed.
+  if (
+    !/^[\p{ID_Start}_$][\p{ID_Continue}$]*(?:\.[\p{ID_Start}_$][\p{ID_Continue}$]*)*$/u.test(head)
+  )
+    return "callee head is not a simple identifier/member chain";
+  const identifiers: string[] = head.match(/[\p{ID_Start}_$][\p{ID_Continue}$]*/gu) ?? [];
+  if (!identifiers.includes(api) && !identifiers.includes(binding))
+    return "claimed API or resolved local binding is absent from the callee head";
+  const innerStart = call.start + Buffer.byteLength(raw.slice(0, open + 1));
+  const innerEnd = call.end - 1;
+  let cursor = innerStart;
+  for (const [index, arg] of args.entries()) {
+    if (
+      arg.file !== call.file ||
+      arg.start < innerStart ||
+      arg.end > innerEnd ||
+      arg.start < cursor
+    )
+      return "arguments overlap, are unordered or escape call parentheses";
+    const gap = text(cursor, arg.start);
+    if (gap === null || !(index === 0 ? /^\s*$/u : /^\s*,\s*$/u).test(gap))
+      return "unaccounted bytes before argument";
+    cursor = arg.end;
+  }
+  const tail = text(cursor, innerEnd);
+  if (tail === null || !/^\s*$/u.test(tail)) return "unaccounted bytes after arguments";
+  return null;
+}
+
 export async function collectNativeMatchedApiEvidence(
   repository: RepositoryHandle,
   rule: NativeRule,
@@ -129,6 +184,7 @@ export async function collectNativeMatchedApiEvidence(
   binding = "verified";
   policy = initial.policy;
   if (
+    !scan ||
     !Array.isArray(scan.references) ||
     !Array.isArray(scan.limitations) ||
     scan.limitations.length ||
@@ -209,7 +265,7 @@ export async function collectNativeMatchedApiEvidence(
     }
     const source = await proof(ref.span);
     const lineage = await Promise.all(
-      ref.lineage.map((hop: NativeReferenceRecord["lineage"][number]) => proof(hop.span)),
+      ref.lineage.map((hop: NativeReferenceRecord["lineage"][number]) => proof(hop?.span)),
     );
     const args = Array.isArray(ref.argumentSpans)
       ? await Promise.all(ref.argumentSpans.map(proof))
@@ -305,6 +361,13 @@ export async function collectNativeMatchedApiEvidence(
     }
     if (ref.resolution !== "wrapper" && ref.callTarget !== `${ref.packageName}.${ref.api}`) {
       block("unresolved-reference", "Call target does not match package and covered API", index);
+      continue;
+    }
+    const callBytes = bytesByFile.get(ref.span.file);
+    const inconsistency =
+      callBytes && reconstructCall(callBytes, ref.span, ref.argumentSpans!, ref.api, ref.binding);
+    if (!callBytes || inconsistency) {
+      block("citation-inconsistent", inconsistency ?? "call bytes unavailable", index);
       continue;
     }
     matchedApis.push({
