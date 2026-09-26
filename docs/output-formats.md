@@ -28,6 +28,17 @@ Findings:
   none
 ```
 
+The opt-in core scan-scope record from #354 appears in the CLI summary only when
+`AnalysisResult.scanScope` is present. Its `Scan scope` section shows the
+configured source, effective digest, built-in policy and matched/omitted totals,
+then every configured fixture root, including an unmatched root named literally
+with zero files and zero recognised manifests. The same structured field appears
+in JSON and the GitHub Check's visible `Scan scope` section. Excluded files
+make the check advisory/neutral and cap absence claims; an all-unmatched config
+hides nothing and does not itself change the conclusion. The CLI and App still
+do not turn on fixture scope, and the standard empty-scan example above remains
+the default output. Activation awaits separate gates.
+
 The following expanded example is **proposed**, not a sample of one currently
 shippable run. It combines future native/duplicate verdicts and a PR-only
 removed-last-usage finding with a full-scan title; current `unused` confidence

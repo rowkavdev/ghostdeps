@@ -50,6 +50,29 @@ function emptyResult(): AnalysisResult {
   };
 }
 
+describe("opt-in Scan scope rendering", () => {
+  it("names unmatched roots even on an otherwise clean result", () => {
+    const result = {
+      ...emptyResult(),
+      scanScope: {
+        source: "repo-config" as const,
+        schemaVersion: 1 as const,
+        digest: "a".repeat(64),
+        roots: [{ root: "missing", matched: false, files: 0, manifests: 0 }],
+        matchedRoots: 0,
+        excludedFiles: 0,
+        excludedManifests: 0,
+        countingComplete: true as const,
+        builtInPolicy: "default-v1" as const,
+      },
+    };
+    const output = renderRepositorySummary(result);
+    assert.match(output, /Scan scope:/);
+    assert.match(output, /missing: unmatched \(0 files, 0 recognised manifests excluded\)/);
+    assert.match(output, /Findings:\n  none/);
+  });
+});
+
 describe("renderRepositorySummary", () => {
   it("matches the canonical repository summary format", () => {
     const result: AnalysisResult = {
