@@ -4,6 +4,16 @@
   "expectExit": 0,
   "findings": [
     {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "requests"
+    },
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "urllib3"
+    },
+    {
       "kind": "info",
       "severity": "info",
       "dependency": "httpbin"

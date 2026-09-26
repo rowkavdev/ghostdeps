@@ -4,6 +4,21 @@
   "expectExit": 0,
   "findings": [
     {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "axios"
+    },
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "node-fetch"
+    },
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "request"
+    },
+    {
       "kind": "info",
       "severity": "info",
       "dependency": "@types/node"
