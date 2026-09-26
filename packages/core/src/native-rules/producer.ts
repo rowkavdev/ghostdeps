@@ -86,6 +86,8 @@ export interface NativeEligibilityEvidence {
   readonly snapshotSha256: string;
   /** A produced envelope may only be sealed after repository binding is verified. */
   readonly binding: "verified";
+  /** SHA-256 identity of the scanner-visible exclusion and scope policy. */
+  readonly policy: string;
   readonly declaration: NativeSourceProof;
   readonly referencesComplete: boolean;
   readonly matchedApis: readonly NativeMatchedApi[];

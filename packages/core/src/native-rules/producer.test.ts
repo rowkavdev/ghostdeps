@@ -128,6 +128,7 @@ const evidence: NativeEligibilityEvidence = {
   ruleId: AXIOS_FETCH_RULE.id,
   snapshotSha256,
   binding: "verified",
+  policy: "a".repeat(64),
   declaration: { ...source, file: "package.json", line: 1 },
   referencesComplete: true,
   matchedApis: [matched],
