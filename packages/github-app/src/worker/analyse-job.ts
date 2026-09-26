@@ -33,6 +33,12 @@ import { isRateLimitError } from "../github/rate-limit.js";
 import type { NpmMetadataService, RunMetadataProvider } from "./npm-metadata.js";
 import type { RegistryMetadataService } from "./registry-metadata.js";
 import { isCacheable, ResultCache, resultCacheKey } from "./result-cache.js";
+import {
+  deliverComment,
+  defaultCommentAdapters,
+  type CommenterOptions,
+} from "../comments/commenter.js";
+import type { IssuesClient } from "../comments/state.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
 /** Adapter modules run by default, as specifiers core's isolation tier can import. */
@@ -94,6 +100,15 @@ export interface AnalysisWorkerOptions {
   readonly metadata?: NpmMetadataService | RegistryMetadataService;
   /** Checkout scan limits/exclusions. Defaults to core's. */
   readonly scan?: CheckoutScanOptions;
+  /**
+   * PR-comment delivery (slice 3, gated): when set together with
+   * commentClientFor, a completed PR analysis also maintains the single PR
+   * comment from the same AnalysisResult. Delivery failures never affect
+   * the check run. Off unless the app opts in (GHOSTDEPS_PR_COMMENT).
+   */
+  readonly comments?: CommenterOptions;
+  /** Minted narrowed to issues:write for the job's repository (#326 pattern). */
+  readonly commentClientFor?: (job: AnalysisJob) => Promise<IssuesClient>;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
   readonly analyse?: (
     root: string,
@@ -312,6 +327,34 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       }
       const result = await analyse(await checkoutRoot(destDir), adapterModules, run);
       const posted = await reporter.complete(target, checkRunId, result, added, appNotes);
+      // Slice 3 (gated): maintain the one PR comment from the SAME result.
+      // The comment is additive - any failure leaves the completed check as
+      // the delivered output (decline-preserves-scans, ADR 0006 #3).
+      if (options.comments && options.commentClientFor && job.trigger.kind === "pull_request") {
+        try {
+          const issues = await options.commentClientFor(job);
+          const outcome = await deliverComment(
+            issues,
+            options.comments,
+            {
+              owner: target.owner,
+              repo: target.repo,
+              repositoryId: job.repository.id,
+              pullNumber: job.trigger.number,
+              headSha: job.headSha,
+            },
+            await checkoutRoot(destDir),
+            defaultCommentAdapters(),
+            result,
+          );
+          options.log?.info({ job: job.key, comment: outcome.action }, "PR comment maintained");
+        } catch (error) {
+          options.log?.warn(
+            { job: job.key, err: error },
+            "PR comment delivery unavailable; check result stands",
+          );
+        }
+      }
       // A footprint cut short (budget, deadline, registry error) is fine to
       // post but never cached: a cached truncation would under-report on
       // every re-run of this head (#313 review, ADR 0004).

@@ -36,3 +36,9 @@ export function recommendationsFromEnv(env: NodeJS.ProcessEnv = process.env): bo
   const raw = env.GHOSTDEPS_RECOMMENDATIONS?.trim().toLowerCase();
   return !(raw === "false" || raw === "0");
 }
+
+/** PR-comment delivery (slice 3 gated draft). Off unless GHOSTDEPS_PR_COMMENT=true/1. */
+export function prCommentFromEnv(): boolean {
+  const raw = process.env.GHOSTDEPS_PR_COMMENT;
+  return raw === "true" || raw === "1";
+}

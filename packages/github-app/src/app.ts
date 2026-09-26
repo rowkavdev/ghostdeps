@@ -5,6 +5,7 @@ import { createDefaultPolicy } from "@ghostdeps/core";
 import {
   appIdFromEnv,
   footprintFromEnv,
+  prCommentFromEnv,
   recommendationsFromEnv,
   sourcePrTriggerFromEnv,
 } from "./config.js";
@@ -22,7 +23,13 @@ import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
 import { RegistryMetadataService } from "./worker/registry-metadata.js";
 import { noWaitThrottle, WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./github/rate-limit.js";
-import { repoScopedClients } from "./worker/github-client.js";
+import { commentScopedClients, repoScopedClients } from "./worker/github-client.js";
+import {
+  handleCommentEdited,
+  type EditedPayload,
+  type PermissionClient,
+} from "./comments/edited.js";
+import type { IssuesClient } from "./comments/state.js";
 
 export const HEALTH_PATH = "/healthz";
 /** A short deploy-supplied release tag, never arbitrary environment content. */
@@ -63,6 +70,28 @@ export interface GhostDepsAppOptions {
   readonly busyLimiter?: BusyLimiter;
   /** Deploy-supplied release identifier for /healthz; invalid values are omitted. */
   readonly releaseId?: string;
+  /**
+   * Slice-3 PR-comment delivery (GATED DRAFT). Off unless
+   * GHOSTDEPS_PR_COMMENT=true. Even on, delivery only works for
+   * installations that granted issues:write; nobody has - the live App
+   * registration keeps the ADR 0003 ceiling until the owner-approved
+   * permission bump (ADR 0006 Activation). No dispatch exists anywhere.
+   */
+  readonly prComment?: boolean;
+  /** Our bot login for recognising our own comment. Resolved live when omitted. */
+  readonly prCommentBotLogin?: string;
+}
+
+/** Resolve "<slug>[bot]" for our app; fallbacks stay explicit, never guessed silently. */
+async function appBotLogin(app: Probot): Promise<string> {
+  try {
+    const appOctokit = await app.auth();
+    const { data } = await appOctokit.rest.apps.getAuthenticated();
+    if (data?.slug) return `${data.slug}[bot]`;
+  } catch {
+    // fall through to the declared default
+  }
+  return "ghostdeps[bot]";
 }
 
 type LookupOctokit = Parameters<typeof changedFiles>[0];
@@ -137,8 +166,11 @@ function changedFilesLookup(
 }
 
 export function createGhostDepsApp(options: GhostDepsAppOptions = {}): ApplicationFunction {
-  return (app: Probot, { addHandler }) => {
+  return async (app: Probot, { addHandler }) => {
     const appId = options.appId ?? appIdFromEnv();
+    const prComment = options.prComment ?? prCommentFromEnv();
+    const prCommentBotLogin =
+      options.prCommentBotLogin ?? (prComment ? await appBotLogin(app) : "ghostdeps[bot]");
     const sourcePrTrigger = options.sourcePrTrigger ?? sourcePrTriggerFromEnv();
     const busyLimiter = options.busyLimiter ?? new BusyLimiter();
     // Capture deploy metadata once; never read env, a file, or request data in the handler.
@@ -155,6 +187,12 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             appId,
             clientFor: repoScopedClients(app),
             log: app.log,
+            ...(prComment
+              ? {
+                  comments: { botLogin: prCommentBotLogin, log: app.log },
+                  commentClientFor: commentScopedClients(app),
+                }
+              : {}),
             ...((options.recommendations ?? recommendationsFromEnv())
               ? { recommend: createDefaultPolicy() }
               : {}),
@@ -173,6 +211,50 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             "queued analysis dropped: the pull request's head moved past it",
           ),
       });
+
+    if (prComment) {
+      // Slice 3 gated draft: validate + enforce the canonical comment body.
+      // No dispatch, no apply - a valid tick only acknowledges. Every client
+      // here is explicitly narrowed (ADR 0006 #2): issues:write for the
+      // comment, contents:read for the live permission check. The ambient
+      // context.octokit is never used on this untrusted-input path.
+      app.on("issue_comment.edited", async (context) => {
+        const payload = context.payload as unknown as EditedPayload;
+        const installationId = payload.installation?.id;
+        if (installationId === undefined) {
+          context.log.warn({ delivery: context.id }, "issue_comment.edited without installation");
+          return;
+        }
+        const appOctokit = await app.auth();
+        const mint = async (permissions: Record<string, string>) => {
+          const { token } = (await appOctokit.auth({
+            type: "installation",
+            installationId,
+            repositoryIds: [payload.repository.id],
+            permissions,
+          })) as { token: string };
+          return new ProbotOctokit({
+            auth: { token },
+            log: context.log,
+            throttle: noWaitThrottle(context.log),
+            retry: { enabled: false },
+          });
+        };
+        const issues = await mint({ issues: "write" });
+        const permissions = await mint({ contents: "read" });
+        await handleCommentEdited(
+          {
+            issues: { issues: issues.rest.issues } as unknown as IssuesClient,
+            permissions: {
+              repos: permissions.rest.repos,
+            } as unknown as PermissionClient,
+            botLogin: prCommentBotLogin,
+            log: context.log,
+          },
+          payload,
+        );
+      });
+    }
 
     addHandler((req, res) => {
       if (req.method !== "GET" || req.url?.split("?")[0] !== HEALTH_PATH) return false;
