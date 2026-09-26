@@ -1,0 +1,34 @@
+{
+  "description": "axios and got are both declared; analysis must report same-ecosystem duplicate capability as awareness-only findings that never suggest a change.",
+  "detection": {
+    "minConfidence": 0.5,
+    "projects": [
+      "."
+    ]
+  },
+  "dependencies": [
+    {
+      "name": "axios",
+      "kind": "runtime",
+      "constraint": "^1.7.0"
+    },
+    {
+      "name": "got",
+      "kind": "runtime",
+      "constraint": "^14.0.0"
+    }
+  ],
+  "findings": [
+    {
+      "kind": "duplicate-capability",
+      "dependency": "axios",
+      "rule": "same-ecosystem-capability-duplicates"
+    },
+    {
+      "kind": "duplicate-capability",
+      "dependency": "got",
+      "rule": "same-ecosystem-capability-duplicates"
+    }
+  ],
+  "mustNotFind": []
+}

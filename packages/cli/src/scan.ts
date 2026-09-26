@@ -1,6 +1,7 @@
 import {
   analyseDirectory,
   createDefaultPolicy,
+  type EngineRuleConfig,
   type AnalysisResult,
   type PolicyConfig,
 } from "@ghostdeps/core";
@@ -18,8 +19,17 @@ import { printJson } from "./output/json.js";
  * files through an inert handle, nothing in the repository runs, and skipped
  * files come back as scan-incompleteness findings.
  */
+/** Engine-emitted rules (#58 duplicates) take the same disable/downgrade config as policy rules. */
+function engineRuleConfig(policy: PolicyConfig | undefined): { ruleConfig?: EngineRuleConfig } {
+  const ruleConfig: EngineRuleConfig = {};
+  if (policy?.disabled) ruleConfig.disabled = policy.disabled;
+  if (policy?.downgrade) ruleConfig.downgrade = policy.downgrade;
+  return Object.keys(ruleConfig).length > 0 ? { ruleConfig } : {};
+}
+
 export async function analysePath(path: string, policy?: PolicyConfig): Promise<AnalysisResult> {
   return analyseDirectory(path, {
+    ...engineRuleConfig(policy),
     adapters: defaultAdapters(),
     network: { mode: "offline" },
     recommend: createDefaultPolicy(policy ?? {}),
