@@ -86,6 +86,38 @@ export function parseUvLock(text: string, projectName?: string): ParsedPythonLoc
 }
 
 /** poetry.lock: [[package]] with a `dependencies` table of name -> constraint. */
+/** Pipfile.lock is JSON: default/develop are resolved packages, not direct declarations.
+ * It does not record dependency edges, so closures are not inferred.
+ */
+export function parsePipfileLock(text: string): ParsedPythonLockfile {
+  const doc: unknown = JSON.parse(text);
+  if (
+    !isTable(doc) ||
+    !isTable(doc.default) ||
+    (doc.develop !== undefined && !isTable(doc.develop))
+  ) {
+    throw new Error("invalid Pipfile.lock structure");
+  }
+  const packages: LockedPackage[] = [];
+  for (const section of ["default", "develop"] as const) {
+    for (const [name, entry] of Object.entries(doc[section] ?? {})) {
+      if (
+        !isTable(entry) ||
+        typeof entry.version !== "string" ||
+        !/^==[^=]+$/.test(entry.version)
+      ) {
+        throw new Error(`invalid Pipfile.lock ${section} entry`);
+      }
+      packages.push({
+        name: normaliseName(name),
+        version: entry.version.slice(2),
+        dependencies: [],
+      });
+    }
+  }
+  return { packages };
+}
+
 export function parsePoetryLock(text: string): ParsedPythonLockfile {
   const doc: unknown = parseToml(text);
   const list = isTable(doc) && Array.isArray(doc.package) ? doc.package.filter(isTable) : [];
@@ -123,6 +155,7 @@ export interface PythonGraphResult {
 const LOCKFILES = [
   ["uv.lock", "uv"],
   ["poetry.lock", "poetry"],
+  ["Pipfile.lock", "pipenv"],
 ] as const;
 
 /** Nearest ancestor directory's lockfile, if any (the project's own is checked first). */
@@ -190,11 +223,16 @@ export async function buildProjectGraph(
       return empty();
     }
     try {
-      parsed = kind === "uv" ? parseUvLock(text) : parsePoetryLock(text);
+      parsed =
+        kind === "uv"
+          ? parseUvLock(text)
+          : kind === "pipenv"
+            ? parsePipfileLock(text)
+            : parsePoetryLock(text);
     } catch {
       evidence.push({
         kind: "lockfile-malformed",
-        statement: `${path} is not valid TOML; the graph is incomplete`,
+        statement: `${path} is not valid ${kind === "pipenv" ? "JSON or Pipfile.lock" : "TOML"}; the graph is incomplete`,
         file: path,
       });
       return empty();
@@ -204,7 +242,7 @@ export async function buildProjectGraph(
   if (parsed === undefined) {
     evidence.push({
       kind: "lockfile-missing",
-      statement: `no uv.lock or poetry.lock at ${project.path}; transitive dependencies are not resolved`,
+      statement: `no uv.lock, poetry.lock or Pipfile.lock at ${project.path}; transitive dependencies are not resolved`,
     });
     return empty();
   }
@@ -213,6 +251,37 @@ export async function buildProjectGraph(
   // pulled in), but members themselves are first-party and never become
   // nodes or closure entries. Nodes are limited to what this project's own
   // direct dependencies reach: a workspace lockfile covers every member.
+  if (lockPath?.endsWith("Pipfile.lock")) {
+    const doc = parsed.packages;
+    const byName = new Map(doc.map((p) => [p.name, p]));
+    const missing = direct.filter((dep) => !byName.has(dep.name) && dep.kind !== "build");
+    if (missing.length > 0)
+      evidence.push({
+        kind: "lockfile-mismatch",
+        statement: `${missing.length} Pipfile declaration(s) are missing from ${lockPath} (${missing.map((d) => d.name).join(", ")}); declared but unresolved`,
+        file: lockPath,
+      });
+    const rootNames = new Set(direct.map((d) => d.name));
+    const unreachable = doc.filter((pkg) => !rootNames.has(pkg.name)).length;
+    if (unreachable > 0)
+      evidence.push({
+        kind: "lockfile-unreachable",
+        statement: `${unreachable} resolved Pipfile.lock entries are not direct declarations; edges are unavailable, so they are not attributed to a root`,
+        file: lockPath,
+      });
+    evidence.push({
+      kind: "graph-edges-unavailable",
+      statement: `${lockPath} has no dependency edges; transitive closure is incomplete`,
+      file: lockPath,
+    });
+    const nodes: GraphNode[] = direct.flatMap((dep) => {
+      const locked = byName.get(dep.name);
+      return locked
+        ? [{ name: dep.name, version: locked.version, dependencies: [], dev: dep.kind === "dev" }]
+        : [];
+    });
+    return { graph: { project, nodes, transitiveClosure: {}, incomplete: true }, evidence };
+  }
   const byName = new Map(parsed.packages.map((p) => [p.name, p]));
   const members = new Set(parsed.members ?? []);
   if (parsed.root !== undefined) members.add(parsed.root.name);
