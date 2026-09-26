@@ -150,13 +150,16 @@ describe("end-to-end: pull request webhook -> check run (#41)", () => {
     let completed: (value: Json) => void = () => undefined;
     const done = new Promise<Json>((resolve) => (completed = resolve));
 
-    // Webhook handler token (changed-files lookup), then the worker's token,
-    // which must be scoped to this one repository and the worker's permissions.
+    // Webhook changed-files and worker tokens are independently limited to
+    // this repository and the permissions each path actually needs.
     nock(API)
-      .post(
-        `/app/installations/${payload.installation.id}/access_tokens`,
-        (b: Json) => !b.repository_ids,
-      )
+      .post(`/app/installations/${payload.installation.id}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b, {
+          repository_ids: [payload.repository.id],
+          permissions: { contents: "read", pull_requests: "read" },
+        });
+        return true;
+      })
       .reply(201, { token: "handler-token", expires_at: "2099-01-01T00:00:00Z" });
     nock(API)
       .post(`/app/installations/${payload.installation.id}/access_tokens`, (b: Json) => {

@@ -35,11 +35,32 @@ async function fixture(name: string): Promise<string> {
 const API = "https://api.github.com";
 const REPO_PATH = "/repos/octo-org/example-app";
 
-/** Installation token for the fixture installation; Probot caches it per test instance. */
-function mockInstallationToken() {
+/** A webhook lookup must request only one repository and no write rights. */
+function mockInstallationToken(repositoryId = 872001, installationHeadLookup = false) {
   nock(API)
-    .post("/app/installations/55501/access_tokens")
+    .post("/app/installations/55501/access_tokens", (body: Record<string, unknown>) => {
+      assert.deepEqual(body, {
+        repository_ids: [repositoryId],
+        permissions: installationHeadLookup
+          ? { contents: "read" }
+          : { contents: "read", pull_requests: "read" },
+      });
+      return true;
+    })
     .reply(201, { token: "test-token", expires_at: "2099-01-01T00:00:00Z" });
+}
+
+/** Busy check writes must not inherit installation-wide contents/issue rights. */
+function mockBusyToken(repositoryId = 872001) {
+  nock(API)
+    .post("/app/installations/55501/access_tokens", (body: Record<string, unknown>) => {
+      assert.deepEqual(body, {
+        repository_ids: [repositoryId],
+        permissions: { checks: "write" },
+      });
+      return true;
+    })
+    .reply(201, { token: "busy-token", expires_at: "2099-01-01T00:00:00Z" });
 }
 
 function mockPrFiles(filenames: string[], times = 1) {
@@ -225,9 +246,10 @@ describe("GhostDeps GitHub App", () => {
   it("queues the default branch head for every repo on creation or later addition", async () => {
     const head = "a".repeat(40);
     const addedHead = "b".repeat(40);
-    mockInstallationToken();
+    mockInstallationToken(872001, true);
     mockDefaultBranch("octo-org", "example-app", 872001, head);
     mockDefaultBranch("octo-org", "api", 872002, addedHead);
+    mockInstallationToken(872002, true);
     const a = await deliver("installation", await fixture("installation.created"));
     const b = await deliver(
       "installation_repositories",
@@ -263,7 +285,8 @@ describe("GhostDeps GitHub App", () => {
     const payload = JSON.parse(await fixture("installation.created"));
     payload.repositories.push({ id: 872002, name: "api", full_name: "octo-org/api" });
     payload.repositories.push(payload.repositories[0]);
-    mockInstallationToken();
+    mockInstallationToken(872001, true);
+    mockInstallationToken(872002, true);
     mockDefaultBranch("octo-org", "example-app", 872001, "a".repeat(40));
     mockDefaultBranch("octo-org", "api", 872002, "b".repeat(40));
     assert.equal((await deliver("installation", JSON.stringify(payload))).status, 200);
@@ -272,7 +295,7 @@ describe("GhostDeps GitHub App", () => {
 
   it("collapses an installation redelivery at the same head", async () => {
     const head = "a".repeat(40);
-    mockInstallationToken();
+    mockInstallationToken(872001, true);
     mockDefaultBranch("octo-org", "example-app", 872001, head);
     mockDefaultBranch("octo-org", "example-app", 872001, head);
     const body = await fixture("installation.created");
@@ -308,7 +331,7 @@ describe("GhostDeps GitHub App", () => {
   });
 
   it("skips a repository whose identity changed or whose default branch cannot be resolved", async () => {
-    mockInstallationToken();
+    mockInstallationToken(872001, true);
     nock(API).get(`${REPO_PATH}`).reply(200, { id: 999, default_branch: "main" });
     await deliver("installation", await fixture("installation.created"));
     assert.equal(queue.jobs.length, 0);
@@ -545,7 +568,7 @@ describe("GhostDeps GitHub App when the queue is full", () => {
 
   it("writes one neutral busy check run per repository per minute", async () => {
     const created: Record<string, unknown>[] = [];
-    mockInstallationToken();
+    mockBusyToken();
     nock(API)
       .post(`${REPO_PATH}/check-runs`, (b: Record<string, unknown>) => {
         created.push(b);
@@ -565,6 +588,34 @@ describe("GhostDeps GitHub App when the queue is full", () => {
     assert.equal(created[0]?.status, "completed");
     assert.equal(created[0]?.conclusion, "neutral");
     assert.equal(created[0]?.external_id, "busy:872001:0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c");
+  });
+
+  it("uses only a repo-scoped checks token for an overloaded installation scan", async () => {
+    mockInstallationToken(872001, true);
+    mockBusyToken();
+    nock(API).get(REPO_PATH).reply(200, { id: 872001, default_branch: "main" });
+    nock(API)
+      .get(`${REPO_PATH}/branches/main`)
+      .reply(200, { commit: { sha: "a".repeat(40) } });
+    const created: Record<string, unknown>[] = [];
+    nock(API)
+      .post(`${REPO_PATH}/check-runs`, (body: Record<string, unknown>) => {
+        created.push(body);
+        return true;
+      })
+      .reply(201, { id: 1 });
+    const app = await start({ appId: 123 });
+    try {
+      assert.equal(
+        (await app.deliver("installation", await fixture("installation.created"))).status,
+        200,
+      );
+    } finally {
+      await app.close();
+    }
+    assert.equal(unmatched, 0);
+    assert.equal(created.length, 1);
+    assert.equal(created[0]?.conclusion, "neutral");
   });
 
   it("writes nothing without an app id", async () => {
