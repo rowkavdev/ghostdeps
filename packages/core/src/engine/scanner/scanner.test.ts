@@ -369,3 +369,110 @@ describe("FsRepositoryHandle.readFileHead (#113)", () => {
     assert.equal(await repo.readFileHead("swap.ts", 10), undefined);
   });
 });
+
+describe("opt-in fixture scope accounting (#354)", () => {
+  let root: string;
+  before(async () => {
+    root = await mkdtemp(path.join(tmpdir(), "ghostdeps-scope-"));
+    await tree(root, {
+      "package.json": "{}",
+      "fixtures/package.json": "{}",
+      "fixtures/nested/pyproject.toml": "[project]",
+      "fixtures/nested/source.ts": "export {};",
+      "fixtures-old/package.json": "{}",
+    });
+  });
+  after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const config = async (root: string, fixtureRoots: unknown) =>
+    writeFile(
+      path.join(root, ".ghostdeps.json"),
+      JSON.stringify({ schemaVersion: 1, fixtureRoots }),
+    );
+
+  it("defaults to no fixture exclusion and reports the empty state when explicitly requested", async () => {
+    const ordinary = await scanRepository(root);
+    assert.equal(ordinary.scope, undefined);
+    assert.ok(ordinary.files.some((f) => f.path === "fixtures/package.json"));
+    const scoped = await scanRepository(root, { fixtureScope: true });
+    assert.deepEqual(scoped.scope?.roots, []);
+    assert.equal(scoped.scope?.source, "none");
+    assert.equal(scoped.scope?.excludedFiles, 0);
+    assert.ok(scoped.files.some((f) => f.path === "fixtures/package.json"));
+  });
+
+  it("excludes component-matched roots, counts manifests and leaves a bounded audit record", async () => {
+    await config(root, ["fixtures"]);
+    const scan = await scanRepository(root, {
+      fixtureScope: true,
+      limits: { maxSkippedRecords: 0 },
+    });
+    assert.deepEqual(scan.scope?.roots, [
+      { root: "fixtures", matched: true, files: 3, manifests: 2 },
+    ]);
+    assert.equal(scan.scope?.excludedFiles, 3);
+    assert.equal(scan.scope?.excludedManifests, 2);
+    assert.equal(scan.skippedCounts["fixture-root"], 1);
+    assert.deepEqual(scan.skipped, []);
+    assert.ok(scan.files.some((f) => f.path === "fixtures-old/package.json"));
+    assert.ok(!scan.files.some((f) => f.path.startsWith("fixtures/")));
+    const handle = await FsRepositoryHandle.open(root, { fixtureScope: true });
+    await assert.rejects(
+      handle.readFile("fixtures/package.json"),
+      (e: unknown) => e instanceof RepositoryReadError && e.code === "not-listed",
+    );
+    assert.equal(
+      (await scanRepository(root, { fixtureScope: true })).scope?.digest,
+      scan.scope?.digest,
+    );
+  });
+
+  it("discloses an unmatched root with exact zero counts", async () => {
+    await config(root, ["missing"]);
+    const scan = await scanRepository(root, { fixtureScope: true });
+    assert.deepEqual(scan.scope?.roots, [
+      { root: "missing", matched: false, files: 0, manifests: 0 },
+    ]);
+    assert.equal(scan.scope?.matchedRoots, 0);
+  });
+
+  it("fails visibly on malformed, overlapping and unsafe declarations", async () => {
+    for (const roots of [
+      ["fixtures", "fixtures/nested"],
+      ["fixtures", "fixtures"],
+      ["../escape"],
+      ["/absolute"],
+      ["fixtures/*"],
+      ["fixtures\\nested"],
+      ["fixtures\u202e"],
+      ["node_modules/hidden"],
+    ]) {
+      await config(root, roots);
+      await assert.rejects(scanRepository(root, { fixtureScope: true }));
+    }
+    await writeFile(path.join(root, ".ghostdeps.json"), '{"schemaVersion":2,"fixtureRoots":[]}');
+    await assert.rejects(scanRepository(root, { fixtureScope: true }));
+    await writeFile(
+      path.join(root, ".ghostdeps.json"),
+      '{"schemaVersion":1,"fixtureRoots":[],"hide":true}',
+    );
+    await assert.rejects(scanRepository(root, { fixtureScope: true }));
+    await writeFile(path.join(root, ".ghostdeps.json"), "x".repeat(16385));
+    await assert.rejects(scanRepository(root, { fixtureScope: true }));
+  });
+
+  it("refuses symlinked config, symlinked roots and uncertain counts", async () => {
+    await rm(path.join(root, ".ghostdeps.json"), { force: true });
+    await symlink(path.join(root, "package.json"), path.join(root, ".ghostdeps.json"));
+    await assert.rejects(scanRepository(root, { fixtureScope: true }));
+    await rm(path.join(root, ".ghostdeps.json"));
+    await symlink(path.join(root, "fixtures"), path.join(root, "linked"));
+    await config(root, ["linked"]);
+    await assert.rejects(scanRepository(root, { fixtureScope: true }));
+    await config(root, ["fixtures"]);
+    await assert.rejects(scanRepository(root, { fixtureScope: true, limits: { maxFiles: 2 } }));
+    await symlink(path.join(root, "package.json"), path.join(root, "fixtures", "linked.json"));
+    await assert.rejects(scanRepository(root, { fixtureScope: true }));
+  });
+});

@@ -23,9 +23,12 @@ import {
   isLockfile,
 } from "./exclusions.js";
 import { resolveLimits, type ScanLimits } from "./limits.js";
+import { fixtureScope, type ScanScope } from "./scope.js";
 
 export interface ScanOptions {
   limits?: Partial<ScanLimits>;
+  /** Opt-in only until all entry points disclose and cap scoped results (#354). */
+  fixtureScope?: boolean;
   /** Replaces the default excluded directory names. */
   excludedDirectories?: ReadonlySet<string>;
   /** Replaces the default excluded file suffixes. */
@@ -40,6 +43,7 @@ export interface ScannedFile {
 }
 
 export type SkipReason =
+  | "fixture-root"
   | "excluded-directory"
   | "excluded-generated-file"
   | "symlink"
@@ -86,6 +90,8 @@ export interface ScanResult {
   truncated?: TruncationReason;
   totalBytes: number;
   limits: ScanLimits;
+  /** Present for opt-in scans, including a repository without a config. */
+  scope?: ScanScope;
 }
 
 // C0/C1 control characters, DEL, and backslash (ambiguous separator on Windows).
@@ -134,6 +140,8 @@ export async function scanRepository(
     throw new Error("scan root must be a directory");
   }
   const root = await realpath(rootDir);
+  const scope = options.fixtureScope === true ? await fixtureScope(root, limits) : undefined;
+  const excludedRoots = new Set(scope?.roots.map((r) => r.root) ?? []);
 
   const files: ScannedFile[] = [];
   const recorded: SkippedEntry[] = [];
@@ -199,7 +207,9 @@ export async function scanRepository(
           continue;
         }
         if (entry.isDir) {
-          if (excludedDirs.has(name)) {
+          if (excludedRoots.has(childRel)) {
+            skipped.push({ path: childRel, reason: "fixture-root" });
+          } else if (excludedDirs.has(name)) {
             skipped.push({ path: childRel, reason: "excluded-directory" });
           } else if (depth + 1 > limits.maxDepth) {
             skipped.push({ path: childRel, reason: "too-deep" });
@@ -281,5 +291,6 @@ export async function scanRepository(
     limits,
   };
   if (truncated !== undefined) result.truncated = truncated;
+  if (scope !== undefined) result.scope = scope;
   return result;
 }
