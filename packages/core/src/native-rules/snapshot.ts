@@ -115,8 +115,30 @@ async function calculate(
           .update(bytes);
       } else return blocked("unsupported-entry");
     }
-    // One fresh enumeration pass; read each listed file against its stat
-    // identity. A mismatched/vanished file blocks rather than stitching states.
+    // A second live enumeration catches added, removed, retyped and retouched
+    // paths during the byte pass. This is a consistency check across two
+    // listings and reads, not an atomic filesystem snapshot.
+    const second = await repository.listEntries();
+    if (!second.complete || second.limitations.length || second.policy !== listing.policy)
+      return blocked("listing-changed");
+    const identity = (entry: (typeof sorted)[number]) =>
+      JSON.stringify([
+        entry.path,
+        entry.kind,
+        entry.target ?? null,
+        entry.size ?? null,
+        entry.mtimeMs ?? null,
+        entry.ino ?? null,
+        entry.dev ?? null,
+      ]);
+    const secondSorted = [...second.entries].sort((a, b) =>
+      Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)),
+    );
+    if (
+      secondSorted.length !== sorted.length ||
+      secondSorted.some((entry, index) => identity(entry) !== identity(sorted[index]!))
+    )
+      return blocked("listing-changed");
     const actual = hash.digest();
     if (expected && !timingSafeEqual(actual, Buffer.from(expected, "hex")))
       return blocked("snapshot-mismatch");
