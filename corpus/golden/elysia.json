@@ -1,0 +1,42 @@
+{
+  "repo": "elysia",
+  "sha": "e037eca710e7ad193be09cc6615ab0dbe54af914",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "valibot"
+    },
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "zod"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "elysia"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "elysia"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "elysia"
+    }
+  ]
+}
