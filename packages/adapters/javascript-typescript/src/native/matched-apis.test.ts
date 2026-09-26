@@ -463,3 +463,32 @@ test("use before the alias declaration never resolves to it (review repro 4b)", 
   const after = scan.references.find((r) => cited(files, r).includes('"/after"'))!;
   assert.equal(after.resolution, "alias", "the post-declaration use cites the alias");
 });
+
+test("local non-package initializer is unrelated, not unknown (review repro 5)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "const unrelated = { get() {} };",
+      "const x = unrelated;",
+      'x.get("/unrelated");',
+      'axios.get("/real");',
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 1, "only the genuine package use is cited");
+  assert.equal(scan.references[0]!.resolution, "direct");
+  assert.ok(cited(files, scan.references[0]!).includes('"/real"'));
+});
+
+test("plain local value flow produces no package records (review repro 5b)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      'const plain = "abc";',
+      "const x = plain;",
+      "x.toUpperCase();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 0, "no package flow: no reference and no unknown");
+});
