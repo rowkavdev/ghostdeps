@@ -82,6 +82,8 @@ export interface IsolatedAnalyseOptions {
   scanIncomplete?: boolean;
   /** See AnalyseOptions.scanCompleteness. */
   scanCompleteness?: readonly Finding[];
+  /** Opt-in scanner audit, forwarded unchanged to the shared engine result. */
+  scanScope?: AnalysisResult["scanScope"];
   /**
    * Module specifiers; each module's default or "adapter" export is the
    * adapter. TRUSTED CONFIGURATION ONLY: every specifier goes to import()
@@ -587,6 +589,7 @@ export async function analyseRepositoryIsolated(
   return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
     scanIncomplete: options.scanIncomplete === true,
     scanCompleteness: options.scanCompleteness ?? [],
+    ...(options.scanScope ? { scanScope: options.scanScope } : {}),
     notes: sourceChanges.findings,
     ...(options.metadata ? { metadata: options.metadata } : {}),
     ...(options.ruleConfig ? { ruleConfig: options.ruleConfig } : {}),

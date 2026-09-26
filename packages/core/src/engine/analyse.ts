@@ -152,6 +152,8 @@ export interface AnalyseOptions {
    * never post-process the result themselves (ADR 0004, #154).
    */
   scanCompleteness?: readonly Finding[];
+  /** Opt-in scanner audit, never inferred from a policy finding. */
+  scanScope?: AnalysisResult["scanScope"];
   /**
    * PR mode (#101): removed and added source lines from
    * extractDependencyChanges' `sourceLineChanges`. A separate field from
@@ -353,6 +355,7 @@ export async function assembleAnalysisResult(
   context: {
     scanIncomplete?: boolean;
     scanCompleteness?: readonly Finding[];
+    scanScope?: AnalysisResult["scanScope"];
     /** Engine notes (e.g. capped PR source changes) appended as findings. */
     notes?: readonly Finding[];
     /** Emitted unified-graph cap (#55). Default MAX_EMITTED_GRAPH_NODES. */
@@ -637,6 +640,7 @@ export async function assembleAnalysisResult(
   // One canonical ordering for the engine and the JSON reporter (#71).
   return normaliseAnalysisResult({
     schemaVersion: 1,
+    ...(context.scanScope ? { scanScope: context.scanScope } : {}),
     projects: [...projects.values()],
     projectTree: buildProjectTree([...projects.values()]),
     graph: unified,
@@ -692,6 +696,7 @@ export async function analyseRepository(
   return assembleAnalysisResult(outcomes, options.recommend, options.pullRequestChanges, {
     scanIncomplete: options.scanIncomplete === true,
     scanCompleteness: options.scanCompleteness ?? [],
+    ...(options.scanScope ? { scanScope: options.scanScope } : {}),
     notes: sourceChanges.findings,
     ...(options.metadata ? { metadata: options.metadata } : {}),
     ...(options.ruleConfig ? { ruleConfig: options.ruleConfig } : {}),

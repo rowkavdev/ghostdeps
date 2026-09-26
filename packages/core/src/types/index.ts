@@ -447,6 +447,8 @@ export interface PackageMetadataProvider {
 
 export interface AnalysisResult {
   schemaVersion: 1;
+  /** Opt-in fixture-root scope audit; omitted on legacy unscoped runs (#354). */
+  scanScope?: import("../engine/scanner/scope.js").ScanScope;
   projects: ProjectRef[];
   /**
    * Every detected project with its enclosing project (#55). The engine

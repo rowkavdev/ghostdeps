@@ -56,6 +56,31 @@ export function scanCompletenessFindings(scan: ScanResult): Finding[] {
       affectedFiles: [],
     });
   }
+  const scope = scan.scope;
+  if (scope && scope.excludedFiles > 0) {
+    findings.push({
+      kind: "info",
+      summary: `fixture scope omitted ${scope.excludedFiles} file(s), including ${scope.excludedManifests} recognised manifest(s)`,
+      recommendation:
+        "Review the Scan scope record; omitted declarations and references were not analysed.",
+      evidence: scope.roots
+        .filter((root) => root.matched)
+        .slice(0, 5)
+        .map((root) => ({
+          kind: "scan-scope-excluded",
+          statement: `${root.files} file(s), ${root.manifests} recognised manifest(s) omitted`,
+          file: root.root,
+        })),
+      confidence: "high",
+      limitations: [
+        "Excluded declarations and usage are unknown; absence verdicts are provisional.",
+      ],
+      affectedFiles: scope.roots
+        .filter((root) => root.matched)
+        .slice(0, 5)
+        .map((root) => root.root),
+    });
+  }
   for (const reason of INCOMPLETENESS_REASONS) {
     const count = scan.skippedCounts[reason] ?? 0;
     if (count === 0) continue;
@@ -88,5 +113,6 @@ export async function analyseDirectory(
   return analyseRepository(handle, {
     ...analyseOptions,
     scanCompleteness: scanCompletenessFindings(handle.scan),
+    ...(handle.scan.scope ? { scanScope: handle.scan.scope } : {}),
   });
 }
