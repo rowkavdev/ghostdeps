@@ -16,6 +16,7 @@ import {
 import { parse as parseToml } from "smol-toml";
 import { analysePythonLocks } from "./lockfile.js";
 import { parseManifests } from "./manifest.js";
+import { readPythonFloor } from "./python-floor.js";
 import { baseName, dirName, displayRoot, joinPath } from "./paths.js";
 
 export const PYTHON_ECOSYSTEM = "python";
@@ -299,6 +300,13 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
       const parsed = await parseManifests(repository, project);
       evidence.push(...parsed.evidence.filter((e) => e.file === joinPath(project.path, "Pipfile")));
     }
+  }
+
+  // The floor is adapter-only state, but an unparseable declaration must be
+  // visible to the scan rather than mistaken for an absent one (#300).
+  for (const project of projects) {
+    const floor = await readPythonFloor(repository, project);
+    if (floor.status === "unparsed" || floor.evidence.length > 0) evidence.push(...floor.evidence);
   }
 
   // Lockfile evidence (missing, unreadable, too large, malformed, stale)

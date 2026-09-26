@@ -17,6 +17,7 @@ import {
 } from "@ghostdeps/core";
 import { createPythonAdapter } from "./adapter.js";
 import { detectPython } from "./detect.js";
+import { readPythonFloor, type PythonFloor } from "./python-floor.js";
 import { ImportResolver, firstPartyModules, readTopLevelMetadata } from "./import-map.js";
 import { FIXTURES_ROOT, fixtureHandle } from "./testing/fs-handle.js";
 
@@ -70,6 +71,7 @@ function matches(finding: Finding, want: ExpectedFinding): boolean {
 }
 
 interface ExpectedFixture {
+  pythonFloor?: PythonFloor;
   dependencies?: ExpectedDependency[];
   /** Dependency name -> exactly the "file:line" usages findUsage reports (#47). */
   usage?: Record<string, string[]>;
@@ -116,6 +118,18 @@ describe("python fixtures (issue #48)", () => {
         repository: fixtureHandle("python", scenario),
         network: { mode: "offline" },
       };
+
+      if (expected.pythonFloor !== undefined) {
+        assert.deepEqual(
+          await readPythonFloor(context.repository, {
+            path: ".",
+            ecosystem: "python",
+            packageManagers: [],
+          }),
+          expected.pythonFloor,
+          `${scenario}: Python floor`,
+        );
+      }
 
       if (expected.detection !== undefined) {
         const detection = await detectPython(context);

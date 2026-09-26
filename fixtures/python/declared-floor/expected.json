@@ -1,0 +1,7 @@
+{
+  "description": "PEP 621 floor takes precedence and keeps its raw constraint; 3.10 compares above 3.9 (#300).",
+  "detection": { "minConfidence": 0.8, "projects": ["."] },
+  "dependencies": [{ "name": "tomli", "kind": "runtime" }],
+  "pythonFloor": { "status": "declared", "version": [3, 10], "exclusive": false, "constraint": ">=3.10,<4", "declaredIn": "pyproject.toml", "line": 3, "evidence": [] },
+  "findings": []
+}

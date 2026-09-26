@@ -1,0 +1,6 @@
+[project]
+name = "floor-fixture"
+requires-python = ">=3.10,<4"
+dependencies = ["tomli"]
+[tool.poetry.dependencies]
+python = "^3.11"
