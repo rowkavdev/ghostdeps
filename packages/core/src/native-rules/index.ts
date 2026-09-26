@@ -29,11 +29,7 @@ export interface NativeRule {
   references: string[];
 }
 
-export {
-  evaluateNativeRule,
-  type NativeEligibilityEvidence,
-  type NativeDecision,
-} from "./evaluate.js";
+export { evaluateNativeRule, type NativeDecision } from "./evaluate.js";
 
 export {
   produceNativeEvidence,
@@ -43,7 +39,7 @@ export {
   type NativeIncompatibleCheck,
   type NativeDeploymentTarget,
   type NativeSemanticCheck,
-  type NativeProducedEvidence,
+  type NativeEligibilityEvidence,
   type NativeProducerInput,
   type NativeProducerResult,
   type NativeEvidenceProducer,

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { AXIOS_FETCH_RULE } from "./axios-fetch.js";
-import { evaluateNativeRule, type NativeEligibilityEvidence } from "./evaluate.js";
+import { evaluateNativeRule, type NativeShapeOnlyFacts } from "./evaluate.js";
 
 // Synthetic facts are deliberately NOT produced from a repository. This test checks
 // only the data contract; the candidate cannot be surfaced as a recommendation.
-const complete = (): NativeEligibilityEvidence => ({
+const complete = (): NativeShapeOnlyFacts => ({
   version: 1,
   ecosystem: "javascript-typescript",
   project: ".",
@@ -119,7 +119,7 @@ describe("axios to native fetch evidence contract (#56)", () => {
       const result = evaluateNativeRule(AXIOS_FETCH_RULE, {
         ...complete(),
         ...change,
-      } as NativeEligibilityEvidence);
+      } as NativeShapeOnlyFacts);
       assert.equal(result.status, "blocked", caseName);
     });
   }

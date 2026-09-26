@@ -2,8 +2,13 @@
 import type { Alternative, Confidence, Evidence } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 
-/** Each fact is supplied by validated analysis of this exact project, not from a guessed target. */
-export interface NativeEligibilityEvidence {
+/**
+ * Synthetic, caller-filled shape-only facts. NOT source-validated eligibility evidence.
+ * @deprecated Internal shape-test input only; future source-backed producers use
+ * NativeEligibilityEvidence from producer.ts. Do not turn this evaluator's
+ * candidate output into a finding.
+ */
+export interface NativeShapeOnlyFacts {
   version: 1;
   ecosystem: string;
   project: string;
@@ -80,10 +85,7 @@ const safeEvidence = (e: Evidence | undefined): boolean =>
  * No caller may convert a candidate to a Finding without a separate core-owned
  * source-validating producer, which this slice does not provide.
  */
-export function evaluateNativeRule(
-  rule: NativeRule,
-  facts: NativeEligibilityEvidence,
-): NativeDecision {
+export function evaluateNativeRule(rule: NativeRule, facts: NativeShapeOnlyFacts): NativeDecision {
   if (
     facts.version !== 1 ||
     rule.ecosystem !== facts.ecosystem ||
