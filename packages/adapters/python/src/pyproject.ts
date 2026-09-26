@@ -413,19 +413,6 @@ export function parsePyprojectText(
   if (isTable(doc)) {
     parsePep621(doc, out, extras);
     parsePoetry(doc, out, extras, declaredIn);
-
-    // 🚀 CLEAN SCHEME WIRE: Directly parsing and tracking python floor without schema pollution
-    const projectTable = table(doc, "project");
-    if (projectTable !== undefined && typeof projectTable["requires-python"] === "string") {
-      const pythonFloorStr = projectTable["requires-python"];
-      // Securely calling the newly optimized grammar parser engine
-      const resolvedTuple = parsePythonFloorToTuple(pythonFloorStr);
-      
-      // Pinning the resolved tuple directly into project contextual references safely
-      if (resolvedTuple !== undefined) {
-        (project as Record<string, unknown>)["pythonFloorTuple"] = resolvedTuple;
-      }
-    }
   }
   return { requirements: out.requirements, extras, evidence: out.evidence, malformed: false };
 }
