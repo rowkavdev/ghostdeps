@@ -23,7 +23,7 @@ describe("shared limits (issue #89)", () => {
   });
 
   it("the values stay conservative and documented", () => {
-    assert.equal(MAX_REPO_FILES, 50_000);
+    assert.equal(MAX_REPO_FILES, 100_000);
     assert.equal(MAX_FILE_READ_BYTES, 2 * 1024 * 1024);
     assert.equal(MAX_LOCKFILE_BYTES, 32 * 1024 * 1024);
     assert.ok(MAX_LOCKFILE_BYTES > MAX_FILE_READ_BYTES, "lockfiles are legitimately larger");
