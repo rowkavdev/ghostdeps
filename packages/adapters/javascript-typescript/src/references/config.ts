@@ -893,7 +893,8 @@ export const MAX_CONFIG_STRING_NOTES = 50;
 /**
  * Capability notes (#205, #201 follow-up): one per declared dependency that
  * only a string in an executable JS/TS config credited, naming the first
- * such string. That is the case the note explains: without the config read,
+ * such string. Plugin-map key credits (#397) say "a plugin-map key" instead
+ * of "a string" so the note describes the evidence it cites (#418). That is the case the note explains: without the config read,
  * the dependency would look unused. A dependency with any other usage
  * in its project (`hasOtherUsage`) gets no note, so imported packages don't
  * flood the run. A name declared in several projects gets one note, citing
@@ -928,10 +929,11 @@ export async function configStringNotes(
       .sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
     const first = refs[0]!;
     const more = refs.length - 1;
+    const kind = first.source.endsWith(" key") ? "a plugin-map key" : "a string";
     return {
       dependency: name,
       statement:
-        `credited by a string in ${first.file}:${first.line}` +
+        `credited by ${kind} in ${first.file}:${first.line}` +
         `${more > 0 ? ` (+ ${more} more)` : ""}; ` +
         "JS/TS config files are read statically for package names, never run",
     };
