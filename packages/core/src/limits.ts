@@ -90,7 +90,7 @@ export const MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
  * (`max-files`). Bounds walk cost on hostile trees; real monorepos with
  * more files surface as truncated scans, not silent partial results.
  */
-export const MAX_REPO_FILES = 50_000;
+export const MAX_REPO_FILES = 100_000;
 
 /**
  * Maximum size of an ordinary file read as text (per-file read cap).
