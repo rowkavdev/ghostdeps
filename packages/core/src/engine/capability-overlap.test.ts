@@ -120,6 +120,25 @@ describe("crossEcosystemOverlaps (#55)", () => {
     assert.deepEqual(crossEcosystemOverlaps(deps, []), []);
   });
 
+  it("in a pull request keys added packages by manifest, leaving untouched projects quiet", () => {
+    // Both JS projects declare got. Only apps/new changed in this PR.
+    const old = project(JS, "apps/old");
+    const next = project(JS, "apps/new");
+    const findings = crossEcosystemOverlaps(
+      [
+        dep(old, "got", "apps/old/package.json"),
+        dep(next, "got", "apps/new/package.json"),
+        dep(svc, "requests", "services/api/pyproject.toml"),
+      ],
+      [{ change: "added", name: "got", ecosystem: JS, manifest: "apps/new/package.json" }],
+    );
+    assert.deepEqual(
+      findings.map((f) => [f.dependency, f.affectedFiles]),
+      [["got", ["apps/new/package.json"]]],
+      "the unchanged apps/old declaration must not be re-reported",
+    );
+  });
+
   it("never changes a verdict and adds only info findings", async () => {
     const outcome = (ecosystem: string, deps: Dependency[]): AdapterOutcome => ({
       ecosystem,
