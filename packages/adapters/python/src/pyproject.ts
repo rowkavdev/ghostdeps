@@ -401,7 +401,7 @@ export function parsePyprojectText(
       evidence: [
         {
           kind: "manifest-malformed",
-          statement: `${at !== undefined ? `\({declaredIn}:\){at}` : declaredIn}: invalid TOML; no dependencies read from it, so declared dependencies are incomplete`,
+          statement: `${at !== undefined ? `${declaredIn}:${at}` : declaredIn}: invalid TOML; no dependencies read from it, so declared dependencies are incomplete`,
           file: declaredIn,
           ...(at !== undefined ? { line: at } : {}),
         },
