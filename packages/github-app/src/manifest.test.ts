@@ -59,7 +59,8 @@ function documentedEvents(doc: string): Set<string> {
   for (const line of section(doc, "Webhook events").split("\n")) {
     if (!line.startsWith("- ")) continue;
     for (const match of line.matchAll(/`([a-z_]+)`/g)) {
-      if (match[1]) events.add(match[1]);
+      // Action qualifiers describe handler policy, not a distinct webhook event.
+      if (match[1] && match[1] !== "edited") events.add(match[1]);
     }
   }
   return events;
