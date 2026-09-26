@@ -68,17 +68,10 @@ describe("native evidence producer boundary (#435)", () => {
   });
 
   it("does not exclude unchecked or observed incompatibilities", async () => {
-    // Type fixtures describe states explicitly. Neither is a validated negative check.
-    const scope = { snapshotSha256, files: [source.file], calls: [source], complete: false };
-    const unchecked = {
-      patternId: "interceptors",
-      scope,
-      state: "unchecked" as const,
-      locations: [],
-    };
-    const observed = { ...unchecked, state: "observed" as const, locations: [source] };
-    assert.notEqual(unchecked.state, "absent");
-    assert.notEqual(observed.state, "absent");
+    assert.equal(absent.state, "absent");
+    assert.equal(absent.scope.complete, true);
+    assert.equal(absent.negativeProof.snapshotSha256, snapshotSha256);
+    assert.equal(observed.locations.length, 1);
     assert.equal((await produceNativeEvidence(base())).status, "blocked");
   });
 
@@ -93,4 +86,112 @@ describe("native evidence producer boundary (#435)", () => {
       "blocked",
     );
   });
+});
+
+// Compile-time reference fixtures: a negative check is only a complete,
+// snapshot-bound scope; an observed use must identify at least one location.
+import type {
+  NativeEligibilityEvidence,
+  NativeIncompatibleCheck,
+  NativeMatchedApi,
+  NativeSemanticCheck,
+} from "./producer.js";
+
+const inspected = {
+  snapshotSha256,
+  files: [source.file],
+  calls: [source],
+  complete: true as const,
+};
+const absent: NativeIncompatibleCheck = {
+  patternId: "interceptors",
+  state: "absent",
+  scope: inspected,
+  locations: [],
+  negativeProof: source,
+};
+const observed: NativeIncompatibleCheck = {
+  patternId: "interceptors",
+  state: "observed",
+  scope: { ...inspected, complete: false },
+  locations: [source],
+};
+const matched: NativeMatchedApi = {
+  packageName: "axios",
+  binding: "axios",
+  callTarget: "axios.get",
+  api: "get",
+  source,
+  arguments: "inspected",
+  options: "inspected",
+  resolution: "direct",
+};
+const semantics: NativeSemanticCheck = {
+  difference: AXIOS_FETCH_RULE.semanticDifferences[0]!,
+  use: source,
+  state: "inspected",
+  inspectedSource: [source],
+};
+const evidence: NativeEligibilityEvidence = {
+  version: 1,
+  ruleId: AXIOS_FETCH_RULE.id,
+  snapshotSha256,
+  declaration: { ...source, file: "package.json", line: 1 },
+  referencesComplete: true,
+  matchedApis: [matched],
+  incompatibleChecks: [absent, observed],
+  deploymentTargets: [
+    {
+      target: "production",
+      runtime: "node",
+      minimumVersion: "22.0.0",
+      declaration: { ...source, file: "package.json", line: 1 },
+      declarationText: '"node": ">=22"',
+      authority: "deployment",
+    },
+  ],
+  semanticChecks: [semantics],
+};
+
+// These type fixtures are compiled by the core test and typecheck builds.
+// eslint-disable-next-line no-constant-condition
+if (false) {
+  // @ts-expect-error observed evidence requires a non-empty location tuple
+  const observedWithoutLocation: NativeIncompatibleCheck = {
+    patternId: "interceptors",
+    state: "observed",
+    scope: inspected,
+    locations: [],
+  };
+  // @ts-expect-error absence requires scope.complete true
+  const absentWithoutCompleteScope: NativeIncompatibleCheck = {
+    patternId: "interceptors",
+    state: "absent",
+    scope: { ...inspected, complete: false as const },
+    locations: [],
+    negativeProof: source,
+  };
+  // @ts-expect-error absence requires a bounded snapshot-bound negative proof
+  const absentWithoutProof: NativeIncompatibleCheck = {
+    patternId: "interceptors",
+    state: "absent",
+    scope: inspected,
+    locations: [],
+  };
+  void observedWithoutLocation;
+  void absentWithoutCompleteScope;
+  void absentWithoutProof;
+}
+
+it("carries bounded negative-check proof and matched/semantic source identity", () => {
+  assert.deepEqual(absent.scope, inspected);
+  assert.equal(absent.negativeProof.snapshotSha256, snapshotSha256);
+  assert.equal(absent.negativeProof.file, source.file);
+  assert.equal(evidence.snapshotSha256, matched.source.snapshotSha256);
+  assert.equal(matched.callTarget, "axios.get");
+  assert.equal(matched.arguments, "inspected");
+  assert.equal(matched.options, "inspected");
+  assert.equal(semantics.use.snapshotSha256, snapshotSha256);
+  assert.equal(semantics.inspectedSource[0]?.file, source.file);
+  assert.equal((evidence.incompatibleChecks[1] as typeof observed).locations.length, 1);
 });

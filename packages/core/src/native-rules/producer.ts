@@ -37,14 +37,27 @@ export interface NativeInspectedScope {
 }
 
 /** A pattern is excluded only if checked, absent, and its inspected scope is complete. */
-export interface NativeIncompatibleCheck {
-  readonly patternId: string;
-  readonly scope: NativeInspectedScope;
-  /** Absent is reserved for a complete negative-check scope. */
-  readonly state: "unchecked" | "observed" | "absent";
-  /** Present for observed use; absence needs the bounded negative-check scope. */
-  readonly locations: readonly NativeSourceProof[];
-}
+export type NativeIncompatibleCheck =
+  | {
+      readonly patternId: string;
+      readonly state: "unchecked";
+      readonly scope: NativeInspectedScope;
+      readonly locations: readonly [];
+    }
+  | {
+      readonly patternId: string;
+      readonly state: "observed";
+      readonly scope: NativeInspectedScope;
+      readonly locations: readonly [NativeSourceProof, ...NativeSourceProof[]];
+    }
+  | {
+      readonly patternId: string;
+      readonly state: "absent";
+      readonly scope: NativeInspectedScope & { readonly complete: true };
+      readonly locations: readonly [];
+      /** Bounded negative check grounded in this snapshot, not an unscoped assertion. */
+      readonly negativeProof: NativeSourceProof;
+    };
 
 /** Unknown is explicit; a CI matrix or a bare engines declaration is not all targets. */
 export interface NativeDeploymentTarget {
@@ -65,7 +78,7 @@ export interface NativeSemanticCheck {
 }
 
 /** Only source-validating code may ever populate this future output record. */
-export interface NativeProducedEvidence {
+export interface NativeEligibilityEvidence {
   readonly version: 1;
   readonly ruleId: string;
   readonly snapshotSha256: string;
@@ -90,7 +103,7 @@ export interface NativeProducerInput {
 
 export type NativeProducerResult =
   | { readonly status: "blocked"; readonly reason: string }
-  | { readonly status: "produced"; readonly evidence: NativeProducedEvidence };
+  | { readonly status: "produced"; readonly evidence: NativeEligibilityEvidence };
 
 /** Future implementations must read the repository and validate every proof. */
 export type NativeEvidenceProducer = (input: NativeProducerInput) => Promise<NativeProducerResult>;
