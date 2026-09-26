@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stage (x.y.z); always published with --dry-run"
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # npm trusted publishing (OIDC) + --provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # Trusted publishing needs npm >= 11.5.1; setup-node ships an older one.
+      - run: npm install --global npm@latest
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+
+      - name: Resolve publish mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "dry=--dry-run" >> "$GITHUB_OUTPUT"
+          else
+            version="${GITHUB_REF_NAME#v}"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "dry=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage the package
+        run: node scripts/stage-npm.mjs --version "${{ steps.mode.outputs.version }}"
+
+      - name: Verify tarball contents
+        working-directory: .npm-staging
+        run: npm pack --dry-run
+
+      - name: Publish to npm
+        working-directory: .npm-staging
+        # No token: trusted publishing authenticates via the workflow's OIDC
+        # token. The first publish must be manual - npm only lets you
+        # configure a trusted publisher for a package that already exists.
+        # See docs/publishing.md.
+        run: npm publish --provenance --access public ${{ steps.mode.outputs.dry }}
