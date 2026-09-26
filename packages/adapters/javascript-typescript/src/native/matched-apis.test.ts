@@ -572,3 +572,83 @@ test("computed, dynamic, and spread option keys are uninspectable, not absent (#
     );
   }
 });
+
+test("shorthand and method options are uninspectable", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  for (const [text, note] of [
+    [
+      'import axios from "axios"; axios.get("/", { timeout });',
+      "shorthand option timeout has an unresolved value",
+    ],
+    [
+      'import axios from "axios"; axios.get("/", { timeout() { return 1000; } });',
+      "method option timeout is not a static property value",
+    ],
+  ] as const) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
+      { patternId: "timeout", kind: "option-key-value" },
+    ]);
+    assert.equal(record!.state, "uninspectable");
+    assert.equal(record!.uninspectable[0]!.note, note);
+  }
+});
+
+test("computed interceptor members and error properties are uninspectable", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  for (const [text, patternId, kind] of [
+    [
+      'import axios from "axios"; axios.interceptors.request[method](() => {});',
+      "interceptors.request.use",
+      "member-call",
+    ],
+    ["try {} catch (error) { error[key]; }", "error.response", "property-chain"],
+  ] as const) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
+      { patternId, kind },
+    ]);
+    assert.equal(record!.state, "uninspectable");
+    assert.equal(record!.uninspectable.length, 1);
+    const span = record!.uninspectable[0]!;
+    assert.ok(Buffer.from(text).subarray(span.start, span.end).toString().length > 0);
+  }
+});
+
+test("shorthand and method options are uninspectable", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  for (const [text, note] of [
+    [
+      'import axios from "axios"; axios.get("/", { timeout });',
+      "shorthand option timeout has an unresolved value",
+    ],
+    [
+      'import axios from "axios"; axios.get("/", { timeout() { return 1000; } });',
+      "method option timeout is not a static property value",
+    ],
+  ] as const) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
+      { patternId: "timeout", kind: "option-key-value" },
+    ]);
+    assert.equal(record!.state, "uninspectable");
+    assert.equal(record!.uninspectable[0]!.note, note);
+  }
+});
+
+test("computed interceptor members and error properties are uninspectable", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  for (const [text, patternId, kind] of [
+    [
+      'import axios from "axios"; axios.interceptors.request[method](() => {});',
+      "interceptors.request.use",
+      "member-call",
+    ],
+    ["try {} catch (error) { error[key]; }", "error.response", "property-chain"],
+  ] as const) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
+      { patternId, kind },
+    ]);
+    assert.equal(record!.state, "uninspectable");
+    assert.equal(record!.uninspectable.length, 1);
+    const span = record!.uninspectable[0]!;
+    assert.ok(Buffer.from(text).subarray(span.start, span.end).toString().length > 0);
+  }
+});

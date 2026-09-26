@@ -70,23 +70,47 @@ function patternMatches(kind: PatternKind, patternId: string, node: ts.Node): bo
   const value = chain(node);
   return value === id || value.endsWith(`.${id}`);
 }
-function isUnresolvedOptionProperty(node: ts.Node, patternId: string): string | undefined {
-  if (!ts.isObjectLiteralExpression(node)) return undefined;
-  const wanted = patternId.replace(/\[\*\]/g, "").replace(/\(.*$/, "");
-  for (const property of node.properties) {
-    if (ts.isSpreadAssignment(property)) return `object spread may hide option key ${wanted}`;
-    if (ts.isGetAccessorDeclaration(property) || ts.isSetAccessorDeclaration(property)) {
-      if (property.name && ts.isIdentifier(property.name) && property.name.text === wanted)
-        return `getter/setter for option key ${wanted} is not a static value`;
-      continue;
+function idFor(patternId: string): string {
+  return patternId.replace(/\[\*\]/g, "").replace(/\(.*$/, "");
+}
+function isUnresolved(kind: PatternKind, patternId: string, node: ts.Node): string | undefined {
+  const wanted = idFor(patternId);
+  if (kind === "option-key-value" && ts.isObjectLiteralExpression(node)) {
+    for (const property of node.properties) {
+      if (ts.isSpreadAssignment(property)) return `object spread may hide option key ${wanted}`;
+      if (ts.isShorthandPropertyAssignment(property) && property.name.text === wanted)
+        return `shorthand option ${wanted} has an unresolved value`;
+      if (
+        ts.isMethodDeclaration(property) &&
+        ts.isIdentifier(property.name) &&
+        property.name.text === wanted
+      )
+        return `method option ${wanted} is not a static property value`;
+      if (ts.isGetAccessorDeclaration(property) || ts.isSetAccessorDeclaration(property)) {
+        if (property.name && ts.isIdentifier(property.name) && property.name.text === wanted)
+          return `getter/setter for option key ${wanted} is not a static value`;
+        continue;
+      }
+      if (ts.isPropertyAssignment(property) && ts.isComputedPropertyName(property.name))
+        return `computed option key may match ${wanted}`;
     }
-    if (!ts.isPropertyAssignment(property)) continue;
-    if (ts.isComputedPropertyName(property.name)) {
-      // Even a computed literal is reported as unresolved rather than silently
-      // treated as absent. The consumer can apply its own stricter rule.
-      return `computed option key may match ${wanted}`;
-    }
-    if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) continue;
+  }
+  if (
+    kind === "member-call" &&
+    ts.isCallExpression(node) &&
+    ts.isElementAccessExpression(node.expression)
+  ) {
+    const target = chain(node.expression.expression);
+    if (target.endsWith(".interceptors.request") || target.endsWith(".interceptors.response"))
+      return `computed member access may be incompatible pattern ${wanted}`;
+  }
+  if (kind === "property-chain" && ts.isElementAccessExpression(node)) {
+    const base = chain(node.expression),
+      parts = wanted.split("."),
+      root = parts[0]!,
+      tail = parts.slice(1).join(".");
+    if (tail && (base === root || base.endsWith(`.${root}`)))
+      return `computed property access may match ${wanted}`;
   }
   return undefined;
 }
@@ -128,8 +152,7 @@ export async function inspectIncompatiblePatterns(
     const visit = (node: ts.Node): void => {
       for (const p of patterns) {
         const records = found.get(p.patternId)!;
-        const uncertain =
-          p.kind === "option-key-value" ? isUnresolvedOptionProperty(node, p.patternId) : undefined;
+        const uncertain = isUnresolved(p.kind, p.patternId, node);
         if (uncertain && unknown.get(p.patternId)!.length < MAX_PATTERN_OBSERVATIONS) {
           unknown.get(p.patternId)!.push({ ...byteSpan(file, text, node), note: uncertain });
         } else if (
