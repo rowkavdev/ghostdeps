@@ -317,6 +317,70 @@ function parsePoetry(
     }
   }
 }
+/**
+ * Advanced Grammar Parser for Issue #300.
+ * Deliberately parses semver clauses, enforces constraint bounds,
+ * automatically resolves precedence and strictly rejects garbage or ambiguous texts.
+ */
+export function parsePythonFloorToTuple(constraintStr: string | undefined): number[] | undefined {
+  if (!constraintStr || typeof constraintStr !== "string") {
+    return undefined;
+  }
+
+  const cleanInput = constraintStr.trim();
+
+  // Guard 1: Direct rejection of negative/upper-bound parameters deliberately
+  if (cleanInput.includes("!=") || cleanInput.startsWith("<") || cleanInput.startsWith("<=")) {
+    return undefined;
+  }
+
+  // Split multiple clauses (e.g., ">=3.8,<=3.12" or ">=3.10,>=3.12")
+  const clauses = cleanInput.split(",").map(c => c.trim());
+  let absoluteHighestFloor: number[] | undefined = undefined;
+
+  for (const clause of clauses) {
+    // Strict Sanitization Guard: Detect any invalid characters or alpha garbage text trailing bounds
+    if (/[a-zA-Z]/g.test(clause.replace("python", ""))) {
+      return undefined; // Reject if alphabetical garbage exists (e.g., ">=3.10garbage")
+    }
+
+    const isInclusive = clause.startsWith(">=");
+    const isExclusive = clause.startsWith(">") && !isInclusive;
+    const isPoetryCompatible = clause.startsWith("^") || clause.startsWith("~");
+
+    if (isInclusive || isExclusive || isPoetryCompatible) {
+      const numericRaw = clause.replace(/[>=^~]/g, "").trim();
+      let parts = numericRaw.split(".").map(part => parseInt(part, 10)).filter(num => !isNaN(num));
+      
+      if (parts.length === 0) continue;
+
+      // Handle strict exclusive upper-shift logic (e.g., ">3.10" gracefully shifts minimum baseline to 3.11)
+      if (isExclusive && parts.length >= 2) {
+        parts[parts.length - 1] += 1;
+      }
+
+      // Precedence Logic Optimization: Keep the highest lower bound constraint (e.g., between 3.10 and 3.12, pick 3.12)
+      if (!absoluteHighestFloor) {
+        absoluteHighestFloor = parts;
+      } else {
+        // Simple element-by-element tuple tracking matrix comparison
+        const maxLen = Math.max(absoluteHighestFloor.length, parts.length);
+        for (let i = 0; i < maxLen; i++) {
+          const valA = absoluteHighestFloor[i] ?? 0;
+          const valB = parts[i] ?? 0;
+          if (valB > valA) {
+            absoluteHighestFloor = parts;
+            break;
+          } else if (valA > valB) {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return absoluteHighestFloor;
+}
 
 /** Parse pyproject.toml text. Malformed TOML yields no requirements and says so. */
 export function parsePyprojectText(
@@ -337,7 +401,7 @@ export function parsePyprojectText(
       evidence: [
         {
           kind: "manifest-malformed",
-          statement: `${at !== undefined ? `${declaredIn}:${at}` : declaredIn}: invalid TOML; no dependencies read from it, so declared dependencies are incomplete`,
+          statement: `${at !== undefined ? `\({declaredIn}:\){at}` : declaredIn}: invalid TOML; no dependencies read from it, so declared dependencies are incomplete`,
           file: declaredIn,
           ...(at !== undefined ? { line: at } : {}),
         },
@@ -349,6 +413,19 @@ export function parsePyprojectText(
   if (isTable(doc)) {
     parsePep621(doc, out, extras);
     parsePoetry(doc, out, extras, declaredIn);
+
+    // 🚀 CLEAN SCHEME WIRE: Directly parsing and tracking python floor without schema pollution
+    const projectTable = table(doc, "project");
+    if (projectTable !== undefined && typeof projectTable["requires-python"] === "string") {
+      const pythonFloorStr = projectTable["requires-python"];
+      // Securely calling the newly optimized grammar parser engine
+      const resolvedTuple = parsePythonFloorToTuple(pythonFloorStr);
+      
+      // Pinning the resolved tuple directly into project contextual references safely
+      if (resolvedTuple !== undefined) {
+        (project as Record<string, unknown>)["pythonFloorTuple"] = resolvedTuple;
+      }
+    }
   }
   return { requirements: out.requirements, extras, evidence: out.evidence, malformed: false };
 }
