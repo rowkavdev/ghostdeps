@@ -4,6 +4,21 @@
   "expectExit": 0,
   "findings": [
     {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "ajv"
+    },
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "joi"
+    },
+    {
+      "kind": "duplicate-capability",
+      "severity": "info",
+      "dependency": "yup"
+    },
+    {
       "kind": "info",
       "severity": "info",
       "dependency": "@stylistic/eslint-plugin-js"
