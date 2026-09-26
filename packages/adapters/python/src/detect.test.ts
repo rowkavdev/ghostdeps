@@ -167,17 +167,11 @@ describe("isRequirementsFile", () => {
 });
 
 describe("Pipfile declaration coverage (#432)", () => {
-  it("states that the runtime section is not parsed instead of silently omitting it", async () => {
+  it("declares the Pipfile runtime section", async () => {
     const result = await detectPython(
       ctx({ Pipfile: '[packages]\npytz = "*"\n', "app.py": "import pytz\n" }),
     );
     assert.ok(result.projects.length > 0);
-    assert.ok(
-      result.evidence.some(
-        (e) =>
-          e.kind === "manifest-malformed" &&
-          e.statement.includes("Pipfile runtime section not parsed"),
-      ),
-    );
+    assert.ok(!result.evidence.some((e) => e.kind === "manifest-malformed"));
   });
 });

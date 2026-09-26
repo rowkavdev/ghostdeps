@@ -15,6 +15,7 @@ import {
 } from "@ghostdeps/core";
 import { parse as parseToml } from "smol-toml";
 import { analysePythonLocks } from "./lockfile.js";
+import { parseManifests } from "./manifest.js";
 import { baseName, dirName, displayRoot, joinPath } from "./paths.js";
 
 export const PYTHON_ECOSYSTEM = "python";
@@ -291,17 +292,12 @@ export async function detectPython(context: AdapterContext): Promise<DetectionRe
     }
   }
 
-  // Until Pipfile declarations are parsed, explicitly cap the scan and say why.
-  // The engine maps manifest-malformed detection evidence into an incomplete
-  // finding (ADR 0004), rather than returning a silent empty declaration set.
+  // Pipfile parsing evidence belongs to detection so core can turn malformed
+  // declaration surfaces into incomplete findings (ADR 0004).
   for (const project of projects) {
-    const pipfile = joinPath(project.path, "Pipfile");
-    if (await repository.exists(pipfile)) {
-      evidence.push({
-        kind: "manifest-malformed",
-        statement: `${pipfile}: Pipfile runtime section not parsed; declared dependencies are incomplete`,
-        file: pipfile,
-      });
+    if (await repository.exists(joinPath(project.path, "Pipfile"))) {
+      const parsed = await parseManifests(repository, project);
+      evidence.push(...parsed.evidence.filter((e) => e.file === joinPath(project.path, "Pipfile")));
     }
   }
 
