@@ -528,7 +528,9 @@ const NAME_FRAGMENT =
  * Statically read one JS/TS tool config (#149). It is parsed with the
  * TypeScript parser and never evaluated. Every string literal in it becomes
  * a config reference (with the tool's shorthand expansion), since plugins and
- * presets are usually named by string. The config stays unread (coverage
+ * presets are usually named by string. Object-literal keys are credited the
+ * same way (#397): a plugin map like `{ plugins: { autoprefixer: {} } }`
+ * names the package as an identifier key, not a string. The config stays unread (coverage
  * incomplete) if it does not parse, loads a module by a non-literal
  * specifier, builds a string that may be a package name at runtime, or
  * imports a local module whose strings are not read here. Its import/require
@@ -591,6 +593,27 @@ export function readExecutableConfig(
     } else if (ts.isTemplateExpression(node) || ts.isBinaryExpression(node)) {
       const lead = leadingLiteral(node);
       if (lead !== undefined && NAME_FRAGMENT.test(lead)) problem ??= "computed specifier";
+    }
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+      // A plugin map names packages as identifier keys, not strings:
+      // postcss.config.js `plugins: { autoprefixer: {} }` (#397). String keys
+      // are already caught by the literal scan below; shorthand properties
+      // refer to a variable whose own require/import is credited instead.
+      if (strings < MAX_CONFIG_STRINGS) {
+        strings += 1;
+        const packages = expand(node.name.text);
+        if (packages.length) {
+          const line = sf.getLineAndCharacterOfPosition(node.name.getStart(sf)).line + 1;
+          refs.push({
+            packages,
+            file,
+            line,
+            via: "config",
+            source: `${tool} key`,
+            configString: true,
+          });
+        }
+      }
     }
     if (ts.isStringLiteralLike(node) && strings < MAX_CONFIG_STRINGS) {
       strings += 1;
