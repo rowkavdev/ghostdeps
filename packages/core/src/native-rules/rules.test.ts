@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { NativeRule } from "./index.js";
-import { evaluateNativeRule, type NativeEligibilityEvidence } from "./evaluate.js";
+import { evaluateNativeRule, type NativeShapeOnlyFacts } from "./evaluate.js";
 import { JS_NATIVE_RULES } from "./rules.js";
 
 // Synthetic records exercise the inert data contract, not source-backed verdicts.
-function synthetic(rule: NativeRule): NativeEligibilityEvidence {
+function synthetic(rule: NativeRule): NativeShapeOnlyFacts {
   const use = {
     api: rule.coveredApis[0]!,
     file: "src/index.ts",
@@ -99,7 +99,7 @@ describe("JS native rule seed data (#57)", () => {
     ] as const) {
       it(`${rule.id}: blocks ${reason}`, () => {
         assert.equal(
-          evaluateNativeRule(rule, { ...synthetic(rule), ...change } as NativeEligibilityEvidence)
+          evaluateNativeRule(rule, { ...synthetic(rule), ...change } as NativeShapeOnlyFacts)
             .status,
           "blocked",
         );
