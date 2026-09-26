@@ -63,15 +63,7 @@ export const DEFAULT_TOOLING_ALLOWLIST: Readonly<Record<string, ToolingAllowlist
       "cross-env",
       "semantic-release",
       "release-please",
-      "@types/node",
-      "@types/bun",
-      "@types/jest",
-      "@types/mocha",
-      "@types/web",
     ],
-    // @types/* is not a blanket prefix: @types/foo counts as used when foo
-    // is used (policy.ts), so an orphaned @types package is still caught.
-    // These describe globals or runtimes with no importable companion.
     prefixes: [
       "eslint-config-",
       "eslint-plugin-",

@@ -65,22 +65,59 @@ function usagesOf(d: Dependency, context: PolicyContext): readonly Usage[] {
   return context.usagesByDependency.get(key(d)) ?? [];
 }
 
-/** @types/foo counts as used when foo is used in a TypeScript-ecosystem repo. */
-function typesCompanionUsed(d: Dependency, context: PolicyContext): string | undefined {
-  if (d.project.ecosystem !== "javascript-typescript" || !d.name.startsWith("@types/")) {
+/** A declaration can pull types into the compiler without an import of @types/* itself. */
+function typesCompanion(d: Dependency, context: PolicyContext): Dependency | undefined {
+  if (d.project.ecosystem !== "javascript-typescript" || !d.name.startsWith("@types/"))
     return undefined;
-  }
   const bare = d.name.slice("@types/".length);
-  // @types/scope__pkg describes @scope/pkg.
-  const target = bare.includes("__") ? `@${bare.replace("__", "/")}` : bare;
-  const used = context.usagesByDependency.get(`${d.project.ecosystem}\0${target}`);
-  return used && used.length > 0 ? target : undefined;
+  if (!bare) return undefined;
+  // DefinitelyTyped encodes scoped packages as @types/scope__name.
+  const scoped = /^([^/]+)__([^/]+)$/.exec(bare);
+  const target = scoped ? `@${scoped[1]}/${scoped[2]}` : bare;
+  return context.input.dependencies.find(
+    (candidate) =>
+      candidate.project.ecosystem === d.project.ecosystem &&
+      candidate.project.path === d.project.path &&
+      candidate.name === target,
+  );
 }
+
+/** No runtime companion is not absence proof: ambient globals and compiler targets are opaque. */
+const ambientTypesRule: PolicyRule = {
+  id: "ambient-types-unverified",
+  evaluate(d, context) {
+    if (d.project.ecosystem !== "javascript-typescript" || !d.name.startsWith("@types/"))
+      return undefined;
+    if (usagesOf(d, context).length > 0 || typesCompanion(d, context)) return undefined;
+    if (
+      !context.input.usageAnalysedEcosystems.has(d.project.ecosystem) ||
+      isAllowlisted(d.name, d.project.ecosystem, context.allowlists)
+    )
+      return undefined;
+    return {
+      kind: "info",
+      rule: "ambient-types-unverified",
+      dependency: d.name,
+      summary: `${d.name} has no direct imports, but its compiler use is unverified`,
+      recommendation: `Check TypeScript compiler and ambient type use before removing ${d.name}.`,
+      evidence: [
+        {
+          kind: "ambient-types-unverified",
+          statement: `${d.name} may be consumed by TypeScript without an import`,
+          ...atDeclaration(d),
+        },
+      ],
+      confidence: "low",
+      limitations: ["TypeScript compiler and ambient type consumption were not proven."],
+      affectedFiles: [d.declaredIn],
+    };
+  },
+};
 
 /**
  * Shared preconditions for the no-imports rules: usage analysis ran, the
  * dependency is a plain registry runtime/dev dep, and nothing counts as
- * usage (imports, any via, the allowlist, a used @types companion).
+ * usage (imports, any via, the allowlist, a declared @types companion).
  */
 function hasNoUsageEvidence(d: Dependency, context: PolicyContext): boolean {
   const ecosystem = d.project.ecosystem;
@@ -91,7 +128,9 @@ function hasNoUsageEvidence(d: Dependency, context: PolicyContext): boolean {
   if (d.specifier && d.specifier.type !== "registry") return false;
   if (usagesOf(d, context).length > 0) return false;
   if (isAllowlisted(d.name, ecosystem, context.allowlists)) return false;
-  if (typesCompanionUsed(d, context)) return false;
+  // Compiler consumption is not an import; a configurable note rule cannot
+  // grant the generic absence rules permission to call @types/* removable.
+  if (ecosystem === "javascript-typescript" && d.name.startsWith("@types/")) return false;
   return true;
 }
 
@@ -371,6 +410,7 @@ const typeOnlyRule: PolicyRule = {
 
 /** Registered rules, in evaluation order. First finding per dependency wins. */
 export const DEFAULT_RULES: readonly PolicyRule[] = [
+  ambientTypesRule,
   removedLastUsageRule,
   unusedRule,
   unverifiedNoImportsRule,
