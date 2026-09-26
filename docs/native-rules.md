@@ -1,0 +1,10 @@
+# Adding a JS native-replacement rule
+
+The seed catalog in `packages/core/src/native-rules/rules.ts` is **inert**. It does not produce findings or changes to code. A synthetic `candidate` from `evaluateNativeRule` tests the shape of a complete evidence record, not whether a real repository qualifies. Do not connect this catalog to recommendation policy until a core-owned producer validates all fields against the exact repository snapshot, as tracked by #56.
+
+1. Add a versioned data object under `packages/core/src/native-rules/`, with a stable ID, exact package and covered APIs, a conservative runtime floor for every supported target, incompatible uses, semantic differences, confidence criteria and primary references. Add it to the catalog. Increment the ID version when coverage or semantics change.
+2. Keep the rule narrow. For example, `uuid` v4 string generation is not UUID parsing or custom RNG; `lodash.clonedeep` on plain cloneable data is not cloning functions, prototypes or descriptors. A browser-only target cannot inherit a Node floor.
+3. Add synthetic match and no-match tests for every new rule: incomplete references, unknown or below-floor targets, unresolved uses or options, unsupported APIs, an observed incompatibility and missing semantic checks must block. Add specific fixtures for the rule's risky API and semantics when a source-backed producer is available.
+4. Never run code from the scanned repository to decide eligibility. Never infer the deployment floor from the CI matrix alone. No automatic removal, rewrite or `potentially-unnecessary` finding follows from these seeds.
+
+Sources for the initial rules: [Node crypto](https://nodejs.org/api/crypto.html), [Node globals](https://nodejs.org/api/globals.html), [MDN structured clone](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm), [Axios docs](https://axios-http.com/docs/handling_errors), [uuid](https://github.com/uuidjs/uuid#readme), and [Lodash](https://lodash.com/docs/4.17.15#cloneDeep).
