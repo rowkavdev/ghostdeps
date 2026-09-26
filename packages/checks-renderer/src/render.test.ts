@@ -233,6 +233,61 @@ describe("renderCheck", () => {
     assert.equal(out.output.title, incompleteTitle);
   });
 
+  it("a package fact alone keeps the quiet success check and lists the fact (#385)", () => {
+    const { conclusion, output } = renderCheck(
+      result([
+        finding({
+          kind: "info",
+          rule: "locked-version-published",
+          summary: "left-pad locked version 1.3.0 published 2022-01-02T00:00:00Z",
+          recommendation: "Review the source-backed status before changing this dependency.",
+          healthFact: true,
+          source: { kind: "registry", basis: "npm registry time[version]" },
+          declaringManifest: { ecosystem: "javascript-typescript", path: "package.json" },
+          confidence: "high",
+        }),
+      ]),
+      new Map(),
+    );
+    assert.equal(conclusion, "success");
+    assert.equal(output.title, quietSummary);
+    assert.ok(output.summary.startsWith(quietSummary), output.summary);
+    assert.ok(output.summary.includes("### Package facts"), output.summary);
+    assert.ok(
+      output.summary.includes(
+        "**left\\-pad** - left\\-pad locked version 1\\.3\\.0 published 2022\\-01\\-02T00:00:00Z _(source: npm registry time\\[version\\]; declared in package\\.json, javascript\\-typescript)_",
+      ),
+      output.summary,
+    );
+    assert.equal(output.annotations.length, 0);
+  });
+
+  it("facts never enter the count, the confidence groups or the annotations (#385)", () => {
+    const { conclusion, output } = renderCheck(
+      result([
+        finding({}),
+        finding({
+          kind: "info",
+          rule: "registry-deprecated",
+          dependency: "moment",
+          summary: "moment is marked deprecated",
+          recommendation: "Review the source-backed status before changing this dependency.",
+          healthFact: true,
+          source: { kind: "registry", basis: "npm registry deprecated" },
+          declaringManifest: { ecosystem: "javascript-typescript", path: "package.json" },
+          confidence: "high",
+        }),
+      ]),
+      added,
+    );
+    assert.equal(conclusion, "neutral");
+    assert.equal(output.title, "1 dependency finding to review");
+    assert.ok(output.summary.includes("### Package facts"), output.summary);
+    assert.ok(output.summary.includes("moment is marked deprecated"), output.summary);
+    // Only the verdict annotates; the fact stays summary-only.
+    assert.equal(output.annotations.length, 1);
+  });
+
   it("is neutral, never failure, when there are findings", () => {
     assert.equal(
       renderCheck(result([finding({ confidence: "low" })]), added).conclusion,

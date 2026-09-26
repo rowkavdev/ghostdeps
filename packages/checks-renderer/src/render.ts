@@ -11,6 +11,10 @@
  * - Awareness notes (info findings about a dependency that suggest no
  *   action, e.g. a cross-ecosystem overlap) never affect the conclusion,
  *   title or count: they go in a collapsed Awareness notes section (#209).
+ * - Package facts (core-validated, source-backed observations about the
+ *   exact locked version, #61/#351) are listed in a Package facts section
+ *   (#385): action-relevant but non-capping, they never affect the
+ *   conclusion, title, count, annotations or hidden tallies.
  * - Annotate only high-confidence findings whose evidence points at a line the PR added.
  * - At most 50 annotations (one API request); everything else goes in the summary.
  * - Repository-derived text is data: annotation text is plain, summary text is Markdown-escaped.
@@ -109,6 +113,29 @@ function annotationFor(f: Finding, e: Evidence & { file: string; line: number })
   };
 }
 
+/**
+ * Package facts section (#385): core's fact findings with their structured
+ * provenance (source basis, declaring manifest). The summary is core's
+ * wording, rendered verbatim as data - the renderer never parses it for
+ * semantics and adds no age badges or newer-available framing. Facts never
+ * affect the conclusion, title, count or annotations.
+ */
+function factsSection(facts: readonly Finding[]): string[] {
+  if (facts.length === 0) return [];
+  const lines = ["", "### Package facts", ""];
+  for (const f of facts) {
+    const dep = f.dependency ? `**${md(f.dependency)}** - ` : "";
+    const bits: string[] = [];
+    if (f.source !== undefined) bits.push(`source: ${f.source.basis}`);
+    if (f.declaringManifest !== undefined) {
+      bits.push(`declared in ${f.declaringManifest.path}, ${f.declaringManifest.ecosystem}`);
+    }
+    const suffix = bits.length > 0 ? ` _(${md(bits.join("; "))})_` : "";
+    lines.push(`- ${dep}${md(f.summary)}${suffix}`);
+  }
+  return lines;
+}
+
 function awarenessSection(awareness: readonly Finding[]): string[] {
   if (awareness.length === 0) return [];
   const n = awareness.length;
@@ -156,11 +183,13 @@ export function renderCheck(
 ): CheckOutput {
   // Grouping is core's (#239): the app only formats. "incomplete" notes and
   // the app's own notes make a finding-free run neutral; plain adapter
-  // "note"s are shown but keep success; "awareness" never counts.
+  // "note"s are shown but keep success; "awareness" never counts; "fact"s
+  // are listed but never cap anything.
   const group = (g: FindingGroup) => result.findings.filter((f) => findingGroup(f) === g);
   const findings = group("verdict");
   const notes = [...group("incomplete"), ...group("note")];
   const awareness = group("awareness");
+  const facts = group("fact");
   const incomplete = group("incomplete").length + appNotes.length;
   if (findings.length === 0 && incomplete === 0) {
     return {
@@ -168,9 +197,12 @@ export function renderCheck(
       output: {
         title: quietSummary,
         summary: truncateSummary(
-          [quietSummary, ...awarenessSection(awareness), ...notesSection(notes, appNotes)].join(
-            "\n",
-          ),
+          [
+            quietSummary,
+            ...factsSection(facts),
+            ...awarenessSection(awareness),
+            ...notesSection(notes, appNotes),
+          ].join("\n"),
         ),
         annotations: [],
       },
@@ -184,7 +216,12 @@ export function renderCheck(
       output: {
         title: incompleteTitle,
         summary: truncateSummary(
-          [intro, ...awarenessSection(awareness), ...notesSection(notes, appNotes)].join("\n"),
+          [
+            intro,
+            ...factsSection(facts),
+            ...awarenessSection(awareness),
+            ...notesSection(notes, appNotes),
+          ].join("\n"),
         ),
         annotations: [],
       },
@@ -233,7 +270,11 @@ export function renderCheck(
       "</details>",
     );
   }
-  parts.push(...awarenessSection(awareness), ...notesSection(notes, appNotes));
+  parts.push(
+    ...factsSection(facts),
+    ...awarenessSection(awareness),
+    ...notesSection(notes, appNotes),
+  );
 
   const summary = truncateSummary(parts.join("\n"));
 
