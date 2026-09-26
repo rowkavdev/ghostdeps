@@ -1,0 +1,12 @@
+{
+  "repo": "viper",
+  "sha": "528f7416c4b56a4948673984b190bf8713f0c3c4",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    }
+  ]
+}

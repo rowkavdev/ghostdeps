@@ -120,6 +120,27 @@
       "sha": "f0c43e358a449584c2045c89d1b9ae3cd5a9f293",
       "covers": "npm; quiet repo from the #171 sweep set - ava/xo/tsd script conventions and test-file imports all resolve, zero findings at pin; pins silence on a small ava repo",
       "mustNotBeUnused": ["ava", "delay", "random-int", "time-span", "xo"]
+    },
+    {
+      "name": "viper",
+      "url": "https://github.com/spf13/viper.git",
+      "sha": "528f7416c4b56a4948673984b190bf8713f0c3c4",
+      "covers": "go; wider go module set (12 deps) than cobra, same module-graph limitation info; quiet otherwise",
+      "mustNotBeUnused": ["github.com/fsnotify/fsnotify"]
+    },
+    {
+      "name": "rayon",
+      "url": "https://github.com/rayon-rs/rayon.git",
+      "sha": "ee0a00bdb1ab039e178a215ad5712fb7fa58e58f",
+      "covers": "rust; quiet cargo workspace with a build script (rayon-core/build.rs) exercising the build-dependencies class; zero findings at pin",
+      "mustNotBeUnused": ["crossbeam-deque"]
+    },
+    {
+      "name": "elysia",
+      "url": "https://github.com/elysiajs/elysia.git",
+      "sha": "e037eca710e7ad193be09cc6615ab0dbe54af914",
+      "covers": "bun lockfile class (bun.lock); peer dependency declaration (@sinclair/typebox); three self-referencing test rigs (test/* declare elysia runtime, imported only from their own tests - should-be-dev pinned as current behavior); size-ceiling partial scan disclosed",
+      "mustNotBeUnused": ["cookie"]
     }
   ]
 }
