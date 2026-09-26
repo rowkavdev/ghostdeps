@@ -115,7 +115,10 @@ function isUnresolved(kind: PatternKind, patternId: string, node: ts.Node): stri
       hadComputed &&
       (rendered.includes("interceptors") ||
         node.getText().includes("interceptors") ||
-        (wanted.startsWith("interceptors.") && node.getText().includes("request")))
+        (wanted.startsWith("interceptors.") &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.name.text === "use" &&
+          node.getText().includes("request")))
     )
       return `computed member access may be incompatible pattern ${wanted}`;
   }

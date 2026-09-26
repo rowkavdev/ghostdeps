@@ -712,3 +712,18 @@ test("computed interceptor prefixes are unknown only when the access chain names
   assert.equal(unrelated!.state, "not-observed");
   assert.deepEqual(unrelated!.uninspectable, []);
 });
+
+test("computed interceptor uncertainty requires the expected terminal method", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const pattern = [{ patternId: "interceptors.request.use", kind: "member-call" as const }];
+  const [possible] = await inspectIncompatiblePatterns(
+    memoryHandle({ "src/a.ts": "api[feature].request.use(() => {});" }),
+    pattern,
+  );
+  assert.equal(possible!.state, "uninspectable");
+  const [ruledOut] = await inspectIncompatiblePatterns(
+    memoryHandle({ "src/a.ts": "api[feature].request.other();" }),
+    pattern,
+  );
+  assert.equal(ruledOut!.state, "not-observed");
+});
