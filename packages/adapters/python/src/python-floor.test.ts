@@ -65,6 +65,42 @@ describe("declared Python floor (#300)", () => {
     );
     assert.equal((await read({ "setup.cfg": files["setup.cfg"] })).status, "declared");
   });
+  it("reads inline setup.py literals and multiline setup.cfg specifiers", async () => {
+    const inline = await read({ "setup.py": 'setup(name="x", python_requires=">=3.10")\n' });
+    assert.deepEqual(inline, {
+      status: "declared",
+      version: [3, 10],
+      exclusive: false,
+      constraint: ">=3.10",
+      declaredIn: "setup.py",
+      line: 1,
+      evidence: [],
+    });
+    const multiline = await read({
+      "setup.cfg": "[options]\npython_requires =\n    >=3.10,\n    <4\n",
+    });
+    assert.deepEqual(multiline, {
+      status: "declared",
+      version: [3, 10],
+      exclusive: false,
+      constraint: ">=3.10,<4",
+      declaredIn: "setup.cfg",
+      line: 2,
+      evidence: [],
+    });
+  });
+  it("does not declare floors from contradictory exact or compatible ranges", async () => {
+    for (const value of ["==3.11,>3.11", "^3.11,>=4", "~3.10,>=3.11", "~=3.10,>=4"]) {
+      assert.equal(parsePythonFloor(value), undefined, value);
+      const result = await read({ "pyproject.toml": `[project]\nrequires-python = "${value}"\n` });
+      assert.equal(result.status, "unparsed", value);
+    }
+  });
+  it("locates quoted TOML project and key provenance", async () => {
+    const result = await read({ "pyproject.toml": '["project"]\n"requires-python" = ">=3.11"\n' });
+    assert.equal(result.status, "declared");
+    assert.equal(result.status === "declared" ? result.line : undefined, 2);
+  });
   it("does not infer a floor from classifiers, CI, or an upper-only declaration", async () => {
     const absent = await read({
       "pyproject.toml": '[project]\nclassifiers = ["Programming Language :: Python :: 3.12"]\n',
