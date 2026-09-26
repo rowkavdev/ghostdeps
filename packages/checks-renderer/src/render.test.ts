@@ -34,6 +34,45 @@ function finding(over: Partial<Finding> = {}): Finding {
 
 const added = new Map([["package.json", new Set([12])]]);
 
+describe("opt-in Scan scope rendering", () => {
+  const scope = {
+    source: "repo-config" as const,
+    schemaVersion: 1 as const,
+    digest: "b".repeat(64),
+    roots: [{ root: "missing", matched: false, files: 0, manifests: 0 }],
+    matchedRoots: 0,
+    excludedFiles: 0,
+    excludedManifests: 0,
+    countingComplete: true as const,
+    builtInPolicy: "default-v1" as const,
+  };
+  it("names an unmatched root and keeps a complete finding-free result successful", () => {
+    const check = renderCheck({ ...result([]), scanScope: scope }, new Map());
+    assert.equal(check.conclusion, "success");
+    assert.match(check.output.summary, /Scan scope/);
+    assert.match(check.output.summary, /missing: unmatched/);
+    assert.match(check.output.summary, /0 files/);
+  });
+  it("makes omitted declarations neutral, even without a finding", () => {
+    const check = renderCheck(
+      {
+        ...result([]),
+        scanScope: {
+          ...scope,
+          roots: [{ root: "fixtures", matched: true, files: 2, manifests: 1 }],
+          matchedRoots: 1,
+          excludedFiles: 2,
+          excludedManifests: 1,
+        },
+      },
+      new Map(),
+    );
+    assert.equal(check.conclusion, "neutral");
+    assert.match(check.output.summary, /fixtures/);
+    assert.match(check.output.summary, /2 files/);
+  });
+});
+
 describe("addedLinesFromPatch", () => {
   it("returns new-file line numbers of added lines only", () => {
     const patch = [
