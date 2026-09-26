@@ -458,6 +458,97 @@ describe("renderRepositorySummary", () => {
     );
   });
 
+  it("lists health facts in a Package facts section with structured provenance (#385)", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      findings: [
+        {
+          kind: "info",
+          rule: "locked-version-published",
+          dependency: "left-pad",
+          summary: "left-pad locked version 1.3.0 published 2022-01-02T00:00:00Z",
+          recommendation: "Review the source-backed status before changing this dependency.",
+          evidence: [
+            { kind: "locked-version-published", statement: "source: npm registry time[version]" },
+          ],
+          confidence: "high",
+          healthFact: true,
+          source: { kind: "registry", basis: "npm registry time[version]" },
+          declaringManifest: { ecosystem: "javascript-typescript", path: "package.json" },
+          limitations: [],
+          affectedFiles: [],
+        },
+      ],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(
+      text.includes(
+        "Package facts:\n    left-pad - left-pad locked version 1.3.0 published 2022-01-02T00:00:00Z (source: npm registry time[version]; declared in package.json, javascript-typescript)",
+      ),
+      text,
+    );
+  });
+
+  it("keeps facts out of the tally, the verdicts and the notes (#385)", () => {
+    const fact: Finding = {
+      kind: "info",
+      rule: "registry-deprecated",
+      dependency: "moment",
+      summary: "moment is marked deprecated",
+      recommendation: "Review the source-backed status before changing this dependency.",
+      evidence: [{ kind: "registry-deprecated", statement: "source: npm registry deprecated" }],
+      confidence: "high",
+      healthFact: true,
+      source: { kind: "registry", basis: "npm registry deprecated" },
+      declaringManifest: { ecosystem: "javascript-typescript", path: "package.json" },
+      limitations: [],
+      affectedFiles: [],
+    };
+    const text = renderRepositorySummary({ ...emptyResult(), findings: [fact] });
+    assert.ok(text.includes("Findings:\n  none"), text);
+    assert.ok(!text.includes("Verdicts:"), text);
+    assert.ok(!text.includes("Notes:"), text);
+    assert.ok(text.includes("Package facts:"), text);
+    // Facts render before Notes in canonical order.
+    const factsAt = text.indexOf("Package facts:");
+    const verdictText = renderRepositorySummary({
+      ...emptyResult(),
+      findings: [...makeFindings("unused", 1), fact],
+    });
+    assert.ok(
+      verdictText.indexOf("Verdicts:") < verdictText.indexOf("Package facts:"),
+      verdictText,
+    );
+    assert.ok(factsAt > 0, text);
+  });
+
+  it("renders a fact without provenance fields as a bare summary line (#385)", () => {
+    const result: AnalysisResult = {
+      ...emptyResult(),
+      findings: [
+        {
+          kind: "info",
+          rule: "locked-version-published",
+          dependency: "chalk",
+          summary: "chalk locked version 4.1.2 published 2024-06-01T00:00:00Z",
+          recommendation: "review",
+          evidence: [],
+          confidence: "high",
+          healthFact: true,
+          limitations: [],
+          affectedFiles: [],
+        },
+      ],
+    };
+    const text = renderRepositorySummary(result);
+    assert.ok(
+      text.includes(
+        "Package facts:\n    chalk - chalk locked version 4.1.2 published 2024-06-01T00:00:00Z",
+      ),
+      text,
+    );
+  });
+
   it("omits the Verdicts section when every finding is info", () => {
     const result: AnalysisResult = { ...emptyResult(), findings: makeFindings("info", 2) };
     const text = renderRepositorySummary(result);
