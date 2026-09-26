@@ -164,47 +164,48 @@ function setupPyCandidate(text: string): Candidate {
   let inSetup = false;
   let depth = 0;
   for (const [i, raw] of lines.entries()) {
-    // Strip comments outside quotes so a commented keyword is never parsed.
-    let clean = "";
+    // Lex one line, replacing quoted bytes with spaces in the search view.
+    // Keep the original for extracting a literal at the matched index.
+    let code = "";
     let quote = "";
     for (let j = 0; j < raw.length; j++) {
       const ch = raw[j]!;
       if (quote) {
-        clean += ch;
-        if (ch === "\\" && j + 1 < raw.length) clean += raw[++j];
-        else if (ch === quote) quote = "";
+        code += " ";
+        if (ch === "\\" && j + 1 < raw.length) {
+          code += " ";
+          j++;
+        } else if (ch === quote) quote = "";
       } else if (ch === "#") break;
-      else {
-        clean += ch;
-        if (ch === '"' || ch === "'") quote = ch;
-      }
+      else if (ch === '"' || ch === "'") {
+        quote = ch;
+        code += " ";
+      } else code += ch;
     }
+    let start = 0;
     if (!inSetup) {
-      // Only a call spelled setup(...), optionally setuptools.setup(...),
-      // at statement start. Bare assignments and other function calls do not
-      // declare setuptools metadata.
-      const call = /^\s*(?:setuptools\.)?setup\s*\(/.exec(clean);
+      const call = /^\s*(?:setuptools\.)?setup\s*\(/.exec(code);
       if (!call) continue;
       inSetup = true;
-      clean = clean.slice(call[0].length);
+      start = call[0].length;
       depth = 1;
     }
-    const match = /\bpython_requires\s*=/.exec(clean);
-    if (match && depth === 1) {
-      const tail = clean.slice(match.index + match[0].length).trimStart();
+    for (let j = start; j < code.length; j++) {
+      const ch = code[j]!;
+      if (ch === "(") depth++;
+      else if (ch === ")") {
+        depth--;
+        if (depth === 0) {
+          inSetup = false;
+          break;
+        }
+      }
+      if (depth !== 1) continue;
+      const match = /^python_requires\s*=/.exec(code.slice(j));
+      if (!match || (j > 0 && /[A-Za-z0-9_]/.test(code[j - 1]!))) continue;
+      const tail = raw.slice(j + match[0].length).trimStart();
       const literal = /^(['"])([^'"\r\n]+)\1(?=\s*[,)]|\s*$)/.exec(tail);
       return { present: true, ...(literal ? { constraint: literal[2]! } : {}), line: i + 1 };
-    }
-    // Conservatively abandon nested/malformed calls. We only support flat
-    // literal keyword arguments, not arbitrary Python expressions.
-    for (const ch of clean) {
-      if (ch === "(") depth++;
-      else if (ch === ")") depth--;
-      if (depth <= 0) {
-        inSetup = false;
-        depth = 0;
-        break;
-      }
     }
   }
   return { present: false, line: 0 };
