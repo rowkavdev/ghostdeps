@@ -87,8 +87,12 @@ function isUnresolved(kind: PatternKind, patternId: string, node: ts.Node): stri
       )
         return `method option may hide or define ${wanted}`;
       if (ts.isGetAccessorDeclaration(property) || ts.isSetAccessorDeclaration(property)) {
-        if (property.name && ts.isIdentifier(property.name) && property.name.text === wanted)
-          return `getter/setter for option key ${wanted} is not a static value`;
+        if (
+          property.name &&
+          (ts.isComputedPropertyName(property.name) ||
+            (ts.isIdentifier(property.name) && property.name.text === wanted))
+        )
+          return `computed or unresolved getter/setter may hide option key ${wanted}`;
         continue;
       }
       if (ts.isPropertyAssignment(property) && ts.isComputedPropertyName(property.name))
@@ -109,7 +113,9 @@ function isUnresolved(kind: PatternKind, patternId: string, node: ts.Node): stri
     const rendered = chain(node.expression);
     if (
       hadComputed &&
-      (rendered.includes("interceptors") || node.getText().includes("interceptors"))
+      (rendered.includes("interceptors") ||
+        node.getText().includes("interceptors") ||
+        wanted.startsWith("interceptors."))
     )
       return `computed member access may be incompatible pattern ${wanted}`;
   }
