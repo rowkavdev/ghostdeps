@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 import { AXIOS_FETCH_RULE } from "./axios-fetch.js";
 import { collectNativeDeploymentEvidence, NATIVE_TARGETS_FILE } from "./deployment.js";
+import { mintNativeSnapshot } from "./snapshot.js";
 import type { RepositoryHandle } from "../types/index.js";
 
 const digest = "a".repeat(64);
@@ -20,13 +21,48 @@ const node = (minVersion: string) => ({ id: "production", runtime: "node", minVe
 const run = (content?: string, otherFiles: readonly string[] = []) =>
   collectNativeDeploymentEvidence(file(content, otherFiles), AXIOS_FETCH_RULE, digest);
 
+it("stamps a matching complete deployment inventory verified, but does not seal producer eligibility", async () => {
+  const raw = declaration([node("22.0.0")]);
+  const bytes = Buffer.from(raw);
+  const repository: RepositoryHandle = {
+    ...file(raw),
+    readFileBytes: async () => bytes,
+    listEntries: async () => ({
+      entries: [{ path: NATIVE_TARGETS_FILE, kind: "file" }],
+      complete: true,
+      limitations: [],
+      policy: "b".repeat(64),
+    }),
+  };
+  const minted = await mintNativeSnapshot(repository);
+  assert.equal(minted.status, "verified");
+  if (minted.status !== "verified") return;
+  const gate = await collectNativeDeploymentEvidence(
+    repository,
+    AXIOS_FETCH_RULE,
+    minted.snapshotSha256,
+  );
+  assert.equal(gate.status, "pass");
+  assert.equal(gate.binding, "verified");
+  assert.equal(gate.policy, minted.policy);
+  assert.equal(gate.targets[0]?.binding, "verified");
+  const tampered = await collectNativeDeploymentEvidence(
+    repository,
+    AXIOS_FETCH_RULE,
+    "a".repeat(64),
+  );
+  assert.equal(tampered.status, "blocked");
+  assert.equal(tampered.binding, "caller-asserted");
+});
+
 describe("native deployment target gate (#438)", () => {
   it("reads an exhaustive single-target declaration with exact source-byte provenance", async () => {
     const raw = declaration([node(">=22.0")]);
     const result = await run(raw);
-    assert.equal(result.status, "pass");
+    assert.equal(result.status, "blocked");
+    assert.equal(result.blocking[0]?.reason, "snapshot-verification-failed");
     assert.equal(result.binding, "caller-asserted");
-    assert.deepEqual(result.blocking, []);
+    assert.equal(result.blocking.length, 1);
     assert.equal(result.targets.length, 1);
     const target = result.targets[0]!;
     assert.equal(target.runtime, "node");
@@ -46,7 +82,10 @@ describe("native deployment target gate (#438)", () => {
   it("does not infer a target from CI matrices or engines when the inventory is absent", async () => {
     const ci = await run(undefined, ["package.json", ".github/workflows/ci.yml"]);
     assert.equal(ci.status, "blocked");
-    assert.equal(ci.blocking[0]?.reason, "declaration-unavailable");
+    assert.equal(
+      ci.blocking.some((item) => item.reason === "declaration-unavailable"),
+      true,
+    );
   });
 
   it("rejects incomplete inventories even with an engine and CI matrix", async () => {
@@ -55,7 +94,10 @@ describe("native deployment target gate (#438)", () => {
       ".github/workflows/ci.yml",
     ]);
     assert.equal(result.status, "blocked");
-    assert.equal(result.blocking[0]?.reason, "incomplete-inventory");
+    assert.equal(
+      result.blocking.some((item) => item.reason === "incomplete-inventory"),
+      true,
+    );
   });
 
   it("rejects ambiguous and below-floor versions with source-backed reasons", async () => {
@@ -65,10 +107,11 @@ describe("native deployment target gate (#438)", () => {
     ] as const) {
       const result = await run(declaration([node(floor)]));
       assert.equal(result.status, "blocked");
-      assert.equal(result.blocking[0]?.reason, reason);
-      assert.equal(result.blocking[0]?.binding, "caller-asserted");
-      assert.equal(result.blocking[0]?.source?.file, NATIVE_TARGETS_FILE);
-      assert.equal(result.blocking[0]?.source?.snapshotSha256, digest);
+      const reported = result.blocking.find((item) => item.reason === reason);
+      assert.ok(reported);
+      assert.equal(reported.binding, "caller-asserted");
+      assert.equal(reported.source?.file, NATIVE_TARGETS_FILE);
+      assert.equal(reported.source?.snapshotSha256, digest);
     }
   });
 
@@ -79,7 +122,10 @@ describe("native deployment target gate (#438)", () => {
       );
       assert.equal(result.status, "blocked");
       assert.equal(result.targets.length, 2);
-      assert.equal(result.blocking[0]?.reason, "unsupported-target");
+      assert.equal(
+        result.blocking.some((item) => item.reason === "unsupported-target"),
+        true,
+      );
     }
   });
 
@@ -102,7 +148,7 @@ describe("native deployment target gate (#438)", () => {
           "not-a-digest",
         )
       ).blocking[0]?.reason,
-      "snapshot-unavailable",
+      "snapshot-verification-failed",
     );
   });
 });

@@ -7,19 +7,20 @@ import { createHash } from "node:crypto";
 import type { RepositoryHandle } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 import type { NativeDeploymentTarget, NativeSourceProof } from "./producer.js";
+import { verifyNativeSnapshot } from "./snapshot.js";
 
 export const NATIVE_TARGETS_FILE = "ghostdeps.targets.json";
 const MAX_TARGETS = 64;
 const MAX_BYTES = 64 * 1024;
-const SHA256 = /^[a-f0-9]{64}$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 const FLOOR = /^(?:>=)?(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$/;
 const RULE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export interface NativeDeploymentBlock {
-  readonly binding: "caller-asserted";
+  readonly binding: "caller-asserted" | "verified";
   readonly reason:
     | "snapshot-unavailable"
+    | "snapshot-verification-failed"
     | "declaration-unavailable"
     | "incomplete-inventory"
     | "schema-invalid"
@@ -35,14 +36,16 @@ export type NativeDeploymentGateResult =
   | {
       readonly status: "blocked";
       readonly snapshotSha256: string;
-      readonly binding: "caller-asserted";
+      readonly binding: "caller-asserted" | "verified";
+      readonly policy: string | null;
       readonly targets: readonly NativeDeploymentTarget[];
       readonly blocking: readonly [NativeDeploymentBlock, ...NativeDeploymentBlock[]];
     }
   | {
       readonly status: "pass";
       readonly snapshotSha256: string;
-      readonly binding: "caller-asserted";
+      readonly binding: "caller-asserted" | "verified";
+      readonly policy: string | null;
       readonly targets: readonly [NativeDeploymentTarget, ...NativeDeploymentTarget[]];
       readonly blocking: readonly [];
     };
@@ -154,6 +157,8 @@ export async function collectNativeDeploymentEvidence(
   rule: NativeRule,
   snapshotSha256: string,
 ): Promise<NativeDeploymentGateResult> {
+  const verification = await verifyNativeSnapshot(repository, snapshotSha256);
+  const binding = verification.status === "verified" ? "verified" : "caller-asserted";
   const targets: NativeDeploymentTarget[] = [];
   const blocking: NativeDeploymentBlock[] = [];
   const block = (
@@ -161,28 +166,29 @@ export async function collectNativeDeploymentEvidence(
     detail: string,
     source?: NativeSourceProof,
   ) => {
-    blocking.push({ binding: "caller-asserted", reason, detail, ...(source ? { source } : {}) });
+    blocking.push({ binding, reason, detail, ...(source ? { source } : {}) });
   };
   const result = (): NativeDeploymentGateResult =>
     blocking.length > 0
       ? {
           status: "blocked",
           snapshotSha256,
-          binding: "caller-asserted",
+          binding,
+          policy: verification.status === "verified" ? verification.policy : null,
           targets,
           blocking: blocking as [NativeDeploymentBlock, ...NativeDeploymentBlock[]],
         }
       : {
           status: "pass",
           snapshotSha256,
-          binding: "caller-asserted",
+          binding,
+          policy: verification.status === "verified" ? verification.policy : null,
           targets: targets as [NativeDeploymentTarget, ...NativeDeploymentTarget[]],
           blocking: [],
         };
 
-  if (!SHA256.test(snapshotSha256)) {
-    block("snapshot-unavailable", "No valid snapshot digest was supplied.");
-    return result();
+  if (verification.status === "blocked") {
+    block("snapshot-verification-failed", verification.reason);
   }
   let raw: string;
   try {
@@ -276,7 +282,7 @@ export async function collectNativeDeploymentEvidence(
     const entryText = slice.text;
     const parsedFloor = version(entry.minVersion, FLOOR);
     const target: NativeDeploymentTarget = {
-      binding: "caller-asserted",
+      binding,
       target: entry.id,
       runtime: entry.runtime,
       minimumVersion: parsedFloor
