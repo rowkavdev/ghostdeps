@@ -467,6 +467,21 @@ describe("config-string capability notes (#205, #201 follow-up)", () => {
     ]);
   });
 
+  it("a plugin-map key credit says 'a plugin-map key', not 'a string' (#418)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "postcss.config.js": "module.exports = {\n  plugins: {\n    autoprefixer: {},\n  },\n};",
+    });
+    const notes = await configStringNotes(context, [dep("autoprefixer")], none);
+    assert.deepEqual(notes, [
+      {
+        dependency: "autoprefixer",
+        statement:
+          "credited by a plugin-map key in postcss.config.js:3; JS/TS config files are read statically for package names, never run",
+      },
+    ]);
+  });
+
   it("a name declared in several projects gets one note; unreadable configs give none", async () => {
     const context = ctx({
       "package.json": "{}",
