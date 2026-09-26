@@ -1,0 +1,22 @@
+{
+  "repo": "fd",
+  "sha": "ce97e473ebaec49697c07daa50a7bc2b32f713d2",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "libc"
+    }
+  ]
+}

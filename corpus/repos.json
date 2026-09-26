@@ -141,6 +141,27 @@
       "sha": "e037eca710e7ad193be09cc6615ab0dbe54af914",
       "covers": "bun lockfile class (bun.lock); peer dependency declaration (@sinclair/typebox); three self-referencing test rigs (test/* declare elysia runtime, imported only from their own tests - should-be-dev pinned as current behavior); size-ceiling partial scan disclosed",
       "mustNotBeUnused": ["cookie"]
+    },
+    {
+      "name": "jest",
+      "url": "https://github.com/jestjs/jest.git",
+      "sha": "202dd8a14777c270607c2416bd5034c3c0abc984",
+      "covers": "yarn berry monorepo (yarn.lock v4+, workspaces); first yarn pin - berry lockfile parsing class; chalk declared in packages/jest-watcher/package.json dependencies and imported in packages/jest-watcher/src/lib/colorize.ts",
+      "mustNotBeUnused": ["chalk"]
+    },
+    {
+      "name": "webpack",
+      "url": "https://github.com/webpack/webpack.git",
+      "sha": "48732858e22d7b3608fa7c9456a97e64b558d6a6",
+      "covers": "yarn classic (yarn.lock v1) class; schema-utils used in lib/Compiler.js and lib/module/NormalModule.js",
+      "mustNotBeUnused": ["schema-utils"]
+    },
+    {
+      "name": "fd",
+      "url": "https://github.com/sharkdp/fd.git",
+      "sha": "ce97e473ebaec49697c07daa50a7bc2b32f713d2",
+      "covers": "rust single-crate crate (non-workspace Cargo.toml) - complements workspace pins serde/rayon; regex used in src/main.rs (line 29: use regex::bytes) and src/walk.rs, src/config.rs, src/filter/size.rs",
+      "mustNotBeUnused": ["regex"]
     }
   ]
 }

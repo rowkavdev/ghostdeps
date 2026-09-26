@@ -1,0 +1,397 @@
+{
+  "repo": "jest",
+  "sha": "202dd8a14777c270607c2416bd5034c3c0abc984",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@angular/common"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@angular/compiler-cli"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@angular/compiler"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@angular/platform-browser-dynamic"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@angular/platform-browser"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@babel/preset-env"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@crowdin/cli"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@crowdin/cli"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@docusaurus/module-type-aliases"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@lerna-lite/cli"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@lerna-lite/exec"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@lerna-lite/publish"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@types/babel__template"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@types/babel__template"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "@types/node"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "babel-loader"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "colors"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "graphql"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "jest-junit"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "jest-silent-reporter"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "netlify-plugin-cache"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-17"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-18"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-19"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-test-renderer-17"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-test-renderer-18"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "react-test-renderer-19"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "resolve"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "rxjs"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "test-renderer"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "url"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "zone.js"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-flow"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-flow"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-flow"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-flow"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-flow"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-react"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@babel/preset-typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@docusaurus/core"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@docusaurus/remark-plugin-npm2yarn"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@jridgewell/build-mapping"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@testing-library/react"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "browser-resolve"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "chai"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "discord.js"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "docusaurus-remark-plugin-tab-blocks"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "foo"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "handlebars"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "jest-environment-node"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "jest-environment-node"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "jest-environment-node"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "jest-environment-node"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "lodash"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "react-dom"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "react-dom"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "react-dom"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "react-dom"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "react-dom"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "react-dom"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "string-dedent"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "typescript"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "undeclared"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "winston"
+    },
+    {
+      "kind": "type-only",
+      "severity": "low",
+      "dependency": "@jest/schemas"
+    },
+    {
+      "kind": "type-only",
+      "severity": "low",
+      "dependency": "@jest/schemas"
+    }
+  ]
+}
