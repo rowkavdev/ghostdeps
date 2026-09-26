@@ -82,7 +82,13 @@ export interface NativeSemanticCheck {
   readonly inspectedSource: readonly NativeSourceProof[];
 }
 
-/** Only source-validating code may ever populate this future output record. */
+/** Only source-validating code may ever populate this future output record.
+ * Sealing requires all four pillars produced, verified repository binding,
+ * and NO constituent `lineageVerification: "adapter-asserted"` stamp.
+ * The matched-API pillar currently carries that stamp, so this producer
+ * cannot seal it. A future lineage-link reconstruction or explicit
+ * sealing-time ruling is needed; neither is implemented in this slice.
+ */
 export interface NativeEligibilityEvidence {
   readonly version: 1;
   readonly ruleId: string;
