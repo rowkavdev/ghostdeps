@@ -13,6 +13,8 @@ import { mintNativeSnapshot } from "./snapshot.js";
 const policy = "b".repeat(64);
 const files: Record<string, string> = {
   "src/app.ts": 'import axios from "axios";\nconst a = axios;\na.get("/x");\n',
+  "src/zero.ts": 'import { get } from "axios";\nget();\n',
+  "src/target.ts": 'import { get } from "axios";\ntarget("get");\n',
   "src/barrel.ts": 'export { get } from "axios";\n',
   "package.json": '{"scripts":{"test":"axios --version"}}',
   ".appconfig.json": '{"axios":true}',
@@ -169,6 +171,86 @@ describe("native matched-API pillar (#442)", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+  it("rejects two real-handle reviewer repros: import as call and missing argument citations", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ghostdeps-repro-"));
+    try {
+      await mkdir(path.join(root, "src"));
+      for (const [file, text] of Object.entries(files))
+        await writeFile(path.join(root, file), text);
+      const repository = await FsRepositoryHandle.open(root);
+      const binding = await mintNativeSnapshot(repository);
+      assert.equal(binding.status, "verified");
+      const forged: NativeReferenceRecord[] = [
+        { ...direct(), span: span("src/app.ts", 'import axios from "axios"'), argumentSpans: [] },
+        { ...direct(), argumentSpans: [] },
+      ];
+      const result = await collectNativeMatchedApiEvidence(
+        repository,
+        AXIOS_FETCH_RULE,
+        binding.snapshotSha256,
+        { packageName: "axios", references: forged, limitations: [] },
+      );
+      assert.equal(result.status, "blocked");
+      assert.equal(result.matchedApis.length, 0);
+      assert.deepEqual(
+        result.blocking.map((b) => b.reason),
+        ["citation-inconsistent", "citation-inconsistent"],
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("accepts true zero-arg calls; rejects overlaps, reordering and identifier only in argument", async () => {
+    const zero: NativeReferenceRecord = {
+      ...direct(),
+      binding: "get",
+      span: span("src/zero.ts", "get()"),
+      argumentSpans: [],
+      lineage: [
+        { kind: "import", name: "get", span: span("src/zero.ts", 'import { get } from "axios"') },
+      ],
+    };
+    assert.equal((await run([zero])).status, "pass");
+    const twoText = 'a.get("/x", "get")';
+    const twoFiles = { ...files, "src/app.ts": files["src/app.ts"]! + twoText };
+    const call = {
+      file: "src/app.ts",
+      start: Buffer.byteLength(files["src/app.ts"]!),
+      end: Buffer.byteLength(files["src/app.ts"]! + twoText),
+    };
+    const first = {
+      file: call.file,
+      start: call.start + Buffer.byteLength("a.get("),
+      end: call.start + Buffer.byteLength('a.get("/x"'),
+    };
+    const second = {
+      file: call.file,
+      start: call.start + Buffer.byteLength('a.get("/x", '),
+      end: call.end - 1,
+    };
+    const base: NativeReferenceRecord = { ...direct(), span: call, argumentSpans: [first, second] };
+    assert.equal((await run([base], AXIOS_FETCH_RULE, twoFiles)).status, "pass");
+    const wrong = [
+      { ...base, argumentSpans: [first, { ...second, start: first.end - 1 }] },
+      { ...base, argumentSpans: [second, first] },
+      {
+        ...zero,
+        span: span("src/target.ts", 'target("get")'),
+        argumentSpans: [span("src/target.ts", '"get"')],
+      },
+    ];
+    for (const ref of wrong) {
+      const result = await run([ref], AXIOS_FETCH_RULE, twoFiles);
+      assert.equal(result.status, "blocked");
+      assert.equal(result.blocking[0]?.reason, "citation-inconsistent");
+    }
+    const wordBoundary = {
+      ...zero,
+      span: span("src/target.ts", 'target("get")'),
+      argumentSpans: [span("src/target.ts", '"get"')],
+    };
+    assert.equal((await run([wordBoundary])).blocking[0]?.reason, "citation-inconsistent");
   });
   it("blocks false, missing, out-of-tree and changed byte citations", async () => {
     assert.equal(
