@@ -57,11 +57,20 @@ describe("JS adapter through the engine and default policy (#138)", () => {
     ["refs-string-specifier", "systemjs"],
     ["convention-css-preprocessor-ext", "sugarss"],
     ["convention-css-preprocessor-ext", "sass"],
+    ["refs-config-plugin-map-keys", "postcss"],
+    ["refs-config-plugin-map-keys", "autoprefixer"],
+    ["refs-config-plugin-map-keys", "postcss-preset-env"],
   ] as const) {
     it(`real-repo regression (${fixture}): ${dependency} is not reported unused`, async () => {
       assert.deepEqual(unused(await findings(fixture), dependency), []);
     });
   }
+
+  it("plugin-map keys credited, coverage complete: the genuinely unused dep is still reported (#397)", async () => {
+    const hits = unused(await findings("refs-config-plugin-map-keys"), "left-pad");
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0]!.confidence, "medium");
+  });
 
   for (const [fixture, dependency] of [
     ["usage-dynamic", "plugin-a"],

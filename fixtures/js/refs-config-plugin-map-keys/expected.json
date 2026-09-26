@@ -1,0 +1,9 @@
+{
+  "description": "Plugin maps in executable JS configs name packages as identifier keys, not strings (#397, dogfood #394). The static config reader credits them, so postcss plugins consumed this way are never reported unused; with every config read, the genuinely unused left-pad still is.",
+  "findings": [{ "kind": "unused", "dependency": "left-pad", "minConfidence": "medium" }],
+  "mustNotFind": [
+    { "kind": "unused", "dependency": "postcss" },
+    { "kind": "unused", "dependency": "autoprefixer" },
+    { "kind": "unused", "dependency": "postcss-preset-env" }
+  ]
+}
