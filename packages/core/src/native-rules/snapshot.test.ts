@@ -214,3 +214,30 @@ it("blocks if a listed file changes before the byte read", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("blocks when a visible file is added between the first listing and byte reads", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "ghostdeps-midpass-add-"));
+  try {
+    await writeFile(path.join(root, "package.json"), "{}");
+    const handle = await FsRepositoryHandle.open(root);
+    const minted = await mintNativeSnapshot(handle);
+    assert.equal(minted.status, "verified");
+    if (minted.status !== "verified") return;
+    const read = handle.readFileBytes.bind(handle);
+    let injected = false;
+    handle.readFileBytes = async (name, expected) => {
+      if (!injected) {
+        injected = true;
+        await writeFile(path.join(root, "ghostdeps.targets.json"), "{}");
+      }
+      return read(name, expected);
+    };
+    assert.deepEqual(await verifyNativeSnapshot(handle, minted.snapshotSha256), {
+      status: "blocked",
+      binding: "caller-asserted",
+      reason: "listing-changed",
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
