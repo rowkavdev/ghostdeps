@@ -1,6 +1,6 @@
 # Scan scope design (#354)
 
-- Status: Accepted design (lead ruling 2026-09-25); no implementation authorised
+- Status: Accepted design (lead ruling 2026-09-25); implementation authorised 2026-09-26 (lead ruling; first slice in #422)
 - Date: 2026-09-25
 - Driving case: GhostDeps's own fixture manifests produce noisy but correct self-scan findings
 
