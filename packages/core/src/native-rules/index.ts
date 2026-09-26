@@ -44,3 +44,10 @@ export {
   type NativeProducerResult,
   type NativeEvidenceProducer,
 } from "./producer.js";
+
+export {
+  collectNativeDeploymentEvidence,
+  NATIVE_TARGETS_FILE,
+  type NativeDeploymentGateResult,
+  type NativeDeploymentBlock,
+} from "./deployment.js";
