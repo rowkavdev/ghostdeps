@@ -119,6 +119,33 @@ export async function handleCommentEdited(
   const canonical = canonicalFrom(payload.changes?.body?.from);
   if (canonical === undefined) return ignore("previous body is not canonical");
 
+  // Re-read live state before ANY edit (reviewer-1 #425): a delayed delivery
+  // must never overwrite a newer canonical comment, and a restore onto a
+  // closed or merged PR is wrong. The delivery's claim is not state.
+  let liveBody: string | undefined;
+  let prOpen: boolean;
+  try {
+    const [comment, issue] = await Promise.all([
+      deps.issues.issues.getComment({
+        owner: payload.repository.owner.login,
+        repo: payload.repository.name,
+        comment_id: payload.comment.id,
+      }),
+      deps.issues.issues.get({
+        owner: payload.repository.owner.login,
+        repo: payload.repository.name,
+        issue_number: payload.issue.number,
+      }),
+    ]);
+    liveBody = comment.data.body ?? undefined;
+    prOpen = issue.data.state === "open" && issue.data.pull_request !== undefined;
+  } catch {
+    return ignore("current comment or PR state could not be read");
+  }
+  if (!prOpen) return ignore("pull request is not open");
+  if (liveBody !== payload.comment.body)
+    return ignore("comment moved after this delivery; a newer delivery owns it");
+
   // Live permission read: association labels and the checkbox UI prove
   // nothing; only the repository's current answer counts.
   let permission: string;

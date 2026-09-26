@@ -21,12 +21,8 @@ export function defaultCommentAdapters(): EcosystemAdapter[] {
     createPythonAdapter(),
   ];
 }
-import {
-  eligibilityId,
-  renderPrComment,
-  TICKABLE_RULES,
-  type FindingEligibility,
-} from "./render.js";
+import { renderPrComment, TICKABLE_RULES, type FindingEligibility } from "./render.js";
+import { eligibilityId, resolveFindingDeclaration } from "./resolve.js";
 import { parseMarker } from "./marker.js";
 import { maintainComment, type IssuesClient, type MaintainOutcome } from "./state.js";
 
@@ -61,9 +57,27 @@ export async function computeEligibility(
     (f) => f.dependency !== undefined && f.rule !== undefined && TICKABLE_RULES.has(f.rule),
   );
   let handle: FsRepositoryHandle | undefined;
-  for (const f of candidates.slice(0, MAX_ELIGIBILITY_CANDIDATES)) {
-    const id = eligibilityId(f.rule!, f.dependency!);
+  let previews = 0;
+  for (const f of candidates) {
+    // The project dimension is load-bearing (reviewer-1 #425): a root
+    // preview must never stamp eligibility onto another project's
+    // same-named declaration.
+    const decl = resolveFindingDeclaration(result, f);
+    if (decl.status !== "resolved") continue; // the renderer explains it
+    const id = eligibilityId(f.rule!, decl.dependency.project.path, f.dependency!);
     if (map.has(id)) continue;
+    if (decl.dependency.project.path !== ".") {
+      map.set(id, {
+        status: "ineligible",
+        reason: "only the root npm package layout is supported in this preview",
+      });
+      continue;
+    }
+    if (previews >= MAX_ELIGIBILITY_CANDIDATES) {
+      map.set(id, { status: "ineligible", reason: "beyond this run's evaluation budget" });
+      continue;
+    }
+    previews += 1;
     try {
       handle ??= await FsRepositoryHandle.open(root);
       const preview = await previewNpmRemoval(handle, adapters, f.dependency!);

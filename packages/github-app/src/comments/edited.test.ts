@@ -27,7 +27,10 @@ function canonical(): string {
   ].join("\n");
 }
 
+let LAST_BODY: string | undefined;
+
 function payload(body: string, over: Partial<EditedPayload> = {}): EditedPayload {
+  LAST_BODY = body;
   return {
     action: "edited",
     issue: { number: 4, pull_request: { url: "x" } },
@@ -40,10 +43,18 @@ function payload(body: string, over: Partial<EditedPayload> = {}): EditedPayload
   };
 }
 
-function deps(permission: string, captured: { updates: string[] }): HandleEditedDeps {
+function deps(
+  permission: string,
+  captured: { updates: string[] },
+  live: { body?: string; prOpen?: boolean } = {},
+): HandleEditedDeps {
   return {
     issues: {
       issues: {
+        getComment: async () => ({ data: { id: 77, body: live.body ?? LAST_BODY! } }),
+        get: async () => ({
+          data: { state: live.prOpen === false ? "closed" : "open", pull_request: {} },
+        }),
         updateComment: async (p: { body: string }) => {
           captured.updates.push(p.body);
           return { data: { id: 77 } };
@@ -110,6 +121,29 @@ describe("handleCommentEdited", () => {
     const out = await handleCommentEdited(deps("admin", captured), payload(to));
     assert.deepEqual(out, { kind: "restored", tickedKeys: [] });
     assert.equal(captured.updates[0], canonical());
+  });
+
+  it("refuses a stale delivery that no longer matches the live comment", async () => {
+    const captured = { updates: [] as string[] };
+    const out = await handleCommentEdited(
+      deps("maintain", captured, { body: "NEWER canonical body from a later delivery" }),
+      payload(canonical().replace("[ ]", "[x]")),
+    );
+    assert.deepEqual(out, {
+      kind: "ignored",
+      reason: "comment moved after this delivery; a newer delivery owns it",
+    });
+    assert.equal(captured.updates.length, 0);
+  });
+
+  it("refuses a restore onto a closed or merged PR", async () => {
+    const captured = { updates: [] as string[] };
+    const out = await handleCommentEdited(
+      deps("maintain", captured, { prOpen: false }),
+      payload(canonical().replace("[ ]", "[x]")),
+    );
+    assert.deepEqual(out, { kind: "ignored", reason: "pull request is not open" });
+    assert.equal(captured.updates.length, 0);
   });
 
   it("ignores a non-maintainer editor entirely", async () => {
