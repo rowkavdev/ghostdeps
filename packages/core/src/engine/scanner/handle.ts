@@ -8,11 +8,12 @@
  * O_NOFOLLOW so a file swapped for a symlink is refused, not followed.
  */
 import { constants } from "node:fs";
-import { lstat, open, type FileHandle } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, open, readlink, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { utf8Head } from "../../repository-head.js";
 import { MAX_HEAD_READ_BYTES } from "../../limits.js";
-import type { RepositoryHandle } from "../../types/index.js";
+import type { RepositoryHandle, RepositoryTreeListing } from "../../types/index.js";
 import { scanRepository, type ScanOptions, type ScanResult, type ScannedFile } from "./scanner.js";
 
 export type RepositoryReadErrorCode = "not-listed" | "changed" | "too-large" | "binary";
@@ -62,6 +63,77 @@ export class FsRepositoryHandle implements RepositoryHandle {
   /** Scan `rootDir` and return a handle over the result. */
   static async open(rootDir: string, options: ScanOptions = {}): Promise<FsRepositoryHandle> {
     return new FsRepositoryHandle(await scanRepository(rootDir, options));
+  }
+
+  /** Include skipped symlinks and expose all omissions as explicit limitations. */
+  async listEntries(): Promise<RepositoryTreeListing> {
+    const entries: RepositoryTreeListing["entries"] = this.scan.files.map(({ path }) => ({
+      path,
+      kind: "file",
+    }));
+    const limitations: string[] = [];
+    if (this.scan.truncated) limitations.push(`truncated:${this.scan.truncated}`);
+    if (this.scan.scope?.excludedFiles) limitations.push("fixture-scope-excluded");
+    for (const [reason, count] of Object.entries(this.scan.skippedCounts)) {
+      if (
+        !["symlink", "excluded-directory", "excluded-generated-file", "fixture-root"].includes(
+          reason,
+        ) &&
+        count > 0
+      )
+        limitations.push(`skipped:${reason}:${count}`);
+    }
+    const links = this.scan.skipped.filter((item) => item.reason === "symlink");
+    if (links.length !== (this.scan.skippedCounts.symlink ?? 0))
+      limitations.push("symlinks-unrecorded");
+    for (const item of links) {
+      try {
+        const full = path.join(this.scan.root, item.path);
+        const before = await lstat(full);
+        if (!before.isSymbolicLink()) throw new Error("changed symlink");
+        const raw = await readlink(full, { encoding: "buffer" });
+        const target = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+        const after = await lstat(full);
+        if (!after.isSymbolicLink() || before.ino !== after.ino || before.dev !== after.dev)
+          throw new Error("changed symlink");
+        entries.push({ path: item.path, kind: "symlink", target });
+      } catch {
+        limitations.push(`unreadable-symlink:${item.path}`);
+      }
+    }
+    const policy = createHash("sha256")
+      .update(
+        JSON.stringify({
+          version: 1,
+          excludedDirectories: this.scan.excludedDirectories,
+          excludedFileSuffixes: this.scan.excludedFileSuffixes,
+          scopeDigest: this.scan.scope?.digest ?? null,
+        }),
+      )
+      .digest("hex");
+    return {
+      policy,
+      entries: entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+      complete: limitations.length === 0,
+      limitations,
+    };
+  }
+
+  async readFileBytes(requested: string): Promise<Uint8Array> {
+    const { rel, listed, handle, size } = await this.openListed(requested);
+    try {
+      const ceiling = listed.lockfile
+        ? this.scan.limits.maxLockfileBytes
+        : this.scan.limits.maxFileBytes;
+      if (size > ceiling) throw new RepositoryReadError("too-large", rel);
+      const bytes = await readPrefix(handle, size + 1);
+      if (bytes.length !== size) throw new RepositoryReadError("changed", rel);
+      const after = await handle.stat();
+      if (after.size !== size) throw new RepositoryReadError("changed", rel);
+      return bytes;
+    } finally {
+      await handle.close();
+    }
   }
 
   async listFiles(): Promise<string[]> {
