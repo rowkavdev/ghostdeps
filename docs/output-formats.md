@@ -70,6 +70,9 @@ Verdicts:
     typescript - imported only from tests and build config (high confidence, rule: should-be-dev)
       - imports found only under test/ and build/
 
+Package facts:
+    left-pad - left-pad locked version 4.0.0 published 2020-01-02T00:00:00Z (source: npm registry time[version]; declared in package.json, javascript-typescript)
+
 Notes:
     eslint - no imports of eslint found; scripts and config were not checked (low confidence, rule: unverified-no-imports)
       - no import of eslint found
@@ -102,6 +105,16 @@ and the declaring project (the directory of the finding's manifest). With
 no match, an ambiguous match, unknown or `limited` counts, the line is
 omitted, never printed as `0`. Impact is a fact: it never changes a
 verdict, a count or the exit code.
+
+`Package facts` lists the source-backed health observations core groups
+as `fact` (#61/#351): registry deprecation, repository archival and
+locked-version publication for the exact locked direct dependency. One line
+per fact - dependency, core's summary verbatim, then the structured
+provenance in parentheses (`source: <basis>; declared in <path>,
+<ecosystem>`). Presenters never parse the summary or evidence for
+semantics, and add no relative-age badges or newer-available framing. The
+section never affects the `Findings` tally, `--fail-on`, the `--severity`
+hidden count or the exit code, and is omitted when there are no facts.
 
 `Notes` lists the info findings that say the analysis itself was
 incomplete - run-level gaps (partial scans, adapter failures, cap notices)
@@ -238,9 +251,11 @@ No significant dependency issues found.
   awareness: other info findings stay in Notes and keep their neutral
   meaning. Marking another rule awareness needs arbiter sign-off.
 - Core also groups source-backed health observations as `"fact"`. They do
-  not affect counts, severity gates or check conclusions. A dedicated CLI
-  Package facts section is not shipped; presenter work remains a separate
-  follow-up, as the [interpreting-results guide](interpreting-results.md) notes.
+  not affect counts, severity gates or check conclusions. Presenters list
+  them in a dedicated Package facts section (#385) - CLI human output and
+  the GitHub Check summary - with their structured `source` and
+  `declaringManifest` provenance, as the
+  [interpreting-results guide](interpreting-results.md) describes.
 - Presenters group findings with core's `findingGroup(f)` (#239) and own
   only the formatting:
   - `"verdict"`: every non-info finding; drives the conclusion and exit code

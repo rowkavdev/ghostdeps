@@ -62,7 +62,7 @@ export async function runScan(
         : { ...result, findings: result.findings.filter((f) => atOrAboveSeverity(f, min)) };
     io.stdout(renderRepositorySummary(shown));
     // Non-capping awareness and source-backed facts do not count as hidden
-    // findings; presentation of facts gets its own follow-up (#350).
+    // findings (#385 renders facts in their own section).
     const hidden =
       result.findings.filter((f) => counted(f)).length -
       shown.findings.filter((f) => counted(f)).length;
