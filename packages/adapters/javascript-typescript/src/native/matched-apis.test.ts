@@ -264,3 +264,76 @@ test("unreadable config keeps coverage incomplete", async () => {
     "malformed config is a blocking limitation",
   );
 });
+
+test("member-of-member chain is indirect-unknown, never silently dropped (review repro 1)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "axios.interceptors.request.use((config) => config);",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 1, "the chain use must be cited, not dropped");
+  const ref = scan.references[0]!;
+  assert.equal(ref.resolution, "indirect-unknown");
+  assert.ok(ref.span);
+  assert.ok(ref.note?.includes("member-of-member"));
+});
+
+test("reassignable let alias is indirect-unknown, never silently dropped (review repro 1b)", async () => {
+  const files = {
+    "src/a.ts": ['import axios from "axios";', "let x = axios;", 'x.get("/x");'].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 1);
+  const ref = scan.references[0]!;
+  assert.equal(ref.resolution, "indirect-unknown");
+  assert.ok(ref.note?.includes("reassignable"));
+});
+
+test("parameter shadowing defeats the import binding (review repro 2)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function f(axios: unknown) {",
+      '  axios.get("/x");',
+      "}",
+      'axios.get("/real");',
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 2);
+  const shadowed = scan.references.find((r) => cited(files, r).includes('"/x"'))!;
+  assert.equal(shadowed.resolution, "indirect-unknown");
+  assert.ok(shadowed.note?.includes("shadowed"));
+  const real = scan.references.find((r) => cited(files, r).includes('"/real"'))!;
+  assert.equal(real.resolution, "direct", "the unshadowed module-scope use stays direct");
+});
+
+test("block-scoped local const shadowing defeats the import binding (review repro 2b)", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function f() {",
+      "  const axios = { get: (url: string) => url };",
+      '  axios.get("/x");',
+      "}",
+      "f();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 1);
+  assert.equal(scan.references[0]!.resolution, "indirect-unknown");
+  assert.ok(scan.references[0]!.note?.includes("shadowed"));
+});
+
+test("bare call of a callable package binding is cited, not dropped", async () => {
+  const files = {
+    "src/a.ts": ['import axios from "axios";', 'axios("/x", { method: "get" });'].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 1);
+  assert.equal(scan.references[0]!.resolution, "direct");
+  assert.equal(scan.references[0]!.api, "<call>");
+  assert.equal(scan.references[0]!.callTarget, "axios");
+});

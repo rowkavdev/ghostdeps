@@ -149,6 +149,10 @@ interface Binding {
   /** "namespace" binds the whole package object; "member" binds one exported member. */
   kind: "namespace" | "member";
   member?: string | undefined;
+  /** The declaration node that created this binding (import clause or variable declaration). */
+  decl: ts.Node;
+  /** The top-level statement that introduced this binding; its names never shadow it. */
+  declStatement?: ts.Node | undefined;
   hopKind: "import" | "require" | "alias";
   /** True when the local name differs from a plain direct import (alias class). */
   aliased: boolean;
@@ -175,6 +179,8 @@ interface ReExportFacts {
 
 interface WrapperInfo {
   name: string;
+  /** The function node; its own declaration never shadows its name. */
+  decl: ts.Node;
   span: MatchedApiSpan;
   /** The function body node; wrapper-graph edges are collected inside it. */
   body: ts.Node;
@@ -189,6 +195,28 @@ interface ParsedFile {
   text: string;
   sf: ts.SourceFile;
   index: ByteIndex;
+}
+
+/** Function-like nodes open a lexical scope frame (parameters shadow outer names). */
+function isFunctionLikeNode(
+  node: ts.Node,
+): node is
+  | ts.FunctionDeclaration
+  | ts.FunctionExpression
+  | ts.ArrowFunction
+  | ts.MethodDeclaration
+  | ts.ConstructorDeclaration
+  | ts.GetAccessorDeclaration
+  | ts.SetAccessorDeclaration {
+  return (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isConstructorDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node)
+  );
 }
 
 function isSkipped(path: string): boolean {
@@ -391,6 +419,7 @@ export async function findMatchedApiReferences(
           // Default import binds the package's default export (its object).
           bindings.set(clause.name.text, {
             kind: "namespace",
+            decl: clause.name,
             hopKind: "import",
             aliased: false,
             span,
@@ -400,6 +429,7 @@ export async function findMatchedApiReferences(
         if (named && ts.isNamespaceImport(named)) {
           bindings.set(named.name.text, {
             kind: "namespace",
+            decl: named.name,
             hopKind: "import",
             aliased: false,
             span,
@@ -412,6 +442,7 @@ export async function findMatchedApiReferences(
             bindings.set(local, {
               kind: imported === "default" ? "namespace" : "member",
               member: imported === "default" ? undefined : imported,
+              decl: element,
               hopKind: "import",
               aliased: element.propertyName !== undefined,
               span,
@@ -457,6 +488,7 @@ export async function findMatchedApiReferences(
             if (ts.isIdentifier(decl.name)) {
               bindings.set(decl.name.text, {
                 kind: "namespace",
+                decl,
                 hopKind: "require",
                 aliased: false,
                 span,
@@ -472,6 +504,7 @@ export async function findMatchedApiReferences(
                 bindings.set(element.name.text, {
                   kind: "member",
                   member: imported,
+                  decl: element,
                   hopKind: "require",
                   aliased: true,
                   span,
@@ -480,8 +513,32 @@ export async function findMatchedApiReferences(
             }
             continue;
           }
-          if (!isConst) continue;
           const init = decl.initializer;
+          if (!isConst) {
+            // let/var alias of a package binding: reassignable, so the
+            // binding cannot be proven to still reference the package. Keep
+            // it as an unresolved alias - calls through it emit
+            // indirect-unknown rather than vanishing.
+            if (ts.isIdentifier(decl.name)) {
+              const target = ts.isIdentifier(init)
+                ? bindings.get(init.text)
+                : ts.isPropertyAccessExpression(init) && ts.isIdentifier(init.expression)
+                  ? bindings.get(init.expression.text)
+                  : undefined;
+              if (target) {
+                bindings.set(decl.name.text, {
+                  ...target,
+                  decl,
+                  hopKind: "alias",
+                  aliased: true,
+                  span: spanOf(decl),
+                  unresolved:
+                    "reassignable alias (let/var) cannot be proven to still reference the package",
+                });
+              }
+            }
+            continue;
+          }
           // Destructure alias: const { get: g } = <namespace binding>.
           if (ts.isObjectBindingPattern(decl.name) && ts.isIdentifier(init)) {
             const target = bindings.get(init.text);
@@ -496,6 +553,7 @@ export async function findMatchedApiReferences(
                 bindings.set(element.name.text, {
                   kind: "member",
                   member: imported,
+                  decl: element,
                   hopKind: "alias",
                   aliased: true,
                   span: spanOf(decl),
@@ -514,6 +572,7 @@ export async function findMatchedApiReferences(
             if (target) {
               bindings.set(name, {
                 ...target,
+                decl,
                 hopKind: "alias",
                 aliased: true,
                 span: spanOf(decl),
@@ -530,6 +589,7 @@ export async function findMatchedApiReferences(
             bindings.set(name, {
               kind: "member",
               member: init.name.text,
+              decl,
               hopKind: "alias",
               aliased: true,
               span: spanOf(decl),
@@ -538,6 +598,26 @@ export async function findMatchedApiReferences(
           }
         }
       }
+    }
+  }
+
+  // Backfill declStatement: the enclosing statement of each binding's declaration.
+  const statementOf = (node: ts.Node): ts.Node => {
+    let current = node;
+    while (
+      current.parent &&
+      !ts.isSourceFile(current.parent) &&
+      !ts.isBlock(current.parent) &&
+      !ts.isModuleBlock(current.parent) &&
+      !ts.isCaseBlock(current.parent)
+    ) {
+      current = current.parent;
+    }
+    return current;
+  };
+  for (const bindings of bindingsByFile.values()) {
+    for (const binding of bindings.values()) {
+      binding.declStatement = statementOf(binding.decl);
     }
   }
 
@@ -612,6 +692,7 @@ export async function findMatchedApiReferences(
           bindings.set(local, {
             kind: "member",
             member: exportName,
+            decl: statement,
             hopKind: "import",
             aliased: false,
             span: importSpan,
@@ -623,6 +704,7 @@ export async function findMatchedApiReferences(
         bindings.set(local, {
           kind: resolved.imported === "default" ? "namespace" : "member",
           member: resolved.imported === "default" ? undefined : resolved.imported,
+          decl: statement,
           hopKind: "import",
           aliased: exportName !== resolved.imported,
           span: importSpan,
@@ -642,6 +724,7 @@ export async function findMatchedApiReferences(
         if (resolved && !("unresolved" in resolved)) {
           bindings.set(named.name.text, {
             kind: "namespace",
+            decl: named.name,
             hopKind: "import",
             aliased: false,
             span: importSpan,
@@ -653,6 +736,10 @@ export async function findMatchedApiReferences(
   }
 
   // Call pass: resolve every call expression; collect wrappers; emit records.
+  //
+  // Fail-closed contract: every observable use of a tracked binding yields
+  // either a full-depth reference or an explicit indirect-unknown with
+  // location and note. Silent drops are bugs.
   for (const { file, sf, index } of parsed.values()) {
     const bindings = bindingsByFile.get(file)!;
     const consts = constsByFile.get(file)!;
@@ -660,6 +747,95 @@ export async function findMatchedApiReferences(
     wrappersByFile.set(file, wrappers);
     const spanOf = (node: ts.Node): MatchedApiSpan =>
       index.span(file, node.getStart(sf), node.getEnd());
+
+    // Lexical scope frames: parameters and let/const/var/function/class
+    // declarations, each with the textual span it governs. A use of a
+    // package binding's name inside a frame that redeclares that name is
+    // shadowed: resolution is defeated and the use is indirect-unknown,
+    // never a false direct citation. Import names are never frame members;
+    // a binding's own declaration node is excluded from its shadow check.
+    interface ScopeFrame {
+      start: number;
+      end: number;
+      names: Map<string, ts.Node[]>;
+    }
+    const frames: ScopeFrame[] = [];
+    {
+      const bindingStatements = new Set<ts.Node>();
+      for (const binding of bindings.values()) {
+        if (binding.declStatement) bindingStatements.add(binding.declStatement);
+      }
+      const stack: ScopeFrame[] = [];
+      const pushFrame = (node: ts.Node): void => {
+        const frame: ScopeFrame = {
+          start: node.getStart(sf),
+          end: node.getEnd(),
+          names: new Map(),
+        };
+        frames.push(frame);
+        stack.push(frame);
+      };
+      const addDecl = (name: string, decl: ts.Node): void => {
+        const frame = stack[stack.length - 1];
+        if (!frame) return;
+        const list = frame.names.get(name) ?? [];
+        list.push(decl);
+        frame.names.set(name, list);
+      };
+      const addPattern = (name: ts.BindingName, decl: ts.Node): void => {
+        if (ts.isIdentifier(name)) {
+          addDecl(name.text, decl);
+          return;
+        }
+        for (const element of name.elements) {
+          if (!ts.isOmittedExpression(element)) addPattern(element.name, decl);
+        }
+      };
+      const buildFrames = (node: ts.Node): void => {
+        const fn = isFunctionLikeNode(node);
+        if (ts.isFunctionDeclaration(node) && node.name) {
+          // A function declaration's name belongs to the OUTER scope.
+          addDecl(node.name.text, node);
+        }
+        const own =
+          fn ||
+          ts.isBlock(node) ||
+          ts.isForStatement(node) ||
+          ts.isForInStatement(node) ||
+          ts.isForOfStatement(node) ||
+          ts.isCatchClause(node) ||
+          ts.isModuleBlock(node) ||
+          ts.isCaseBlock(node) ||
+          node === sf;
+        if (own) pushFrame(node);
+        if (fn) {
+          for (const param of node.parameters) addPattern(param.name, param);
+        }
+        if (ts.isCatchClause(node) && node.variableDeclaration) {
+          addPattern(node.variableDeclaration.name, node.variableDeclaration);
+        }
+        if (ts.isVariableDeclaration(node) && !bindingStatements.has(statementOf(node))) {
+          addPattern(node.name, node);
+        }
+        if (ts.isClassDeclaration(node) && node.name) addDecl(node.name.text, node);
+        if (ts.isImportDeclaration(node)) {
+          // Import names are bindings, not shadowing declarations.
+          if (own) stack.pop();
+          return;
+        }
+        ts.forEachChild(node, buildFrames);
+        if (own) stack.pop();
+      };
+      buildFrames(sf);
+    }
+    const isShadowed = (name: string, pos: number, exclude?: ts.Node): boolean => {
+      for (const frame of frames) {
+        if (pos < frame.start || pos >= frame.end) continue;
+        const decls = frame.names.get(name);
+        if (decls?.some((decl) => decl !== exclude)) return true;
+      }
+      return false;
+    };
 
     interface Resolved {
       binding: Binding;
@@ -669,6 +845,17 @@ export async function findMatchedApiReferences(
       hops: MatchedApiHop[];
       computed?: true;
     }
+
+    type Callee =
+      | { status: "ok"; resolved: Resolved }
+      | {
+          status: "unknown";
+          reason: string;
+          localName: string;
+          hops: MatchedApiHop[];
+          api?: string;
+        }
+      | { status: "unrelated" };
 
     const hopsFor = (binding: Binding): MatchedApiHop[] => {
       const hops: MatchedApiHop[] = [];
@@ -683,45 +870,102 @@ export async function findMatchedApiReferences(
       return hops;
     };
 
-    const resolveBase = (expr: ts.Expression, depth: number): Resolved | undefined => {
-      if (depth > MAX_RESOLUTION_DEPTH) return undefined;
+    /**
+     * Resolve a callee expression to a package-derived target, an honest
+     * unknown, or proof the call does not touch the tracked bindings.
+     */
+    const resolveCallee = (expr: ts.Expression, depth: number): Callee => {
+      if (depth > MAX_RESOLUTION_DEPTH) {
+        return {
+          status: "unknown",
+          reason: "callee resolution depth limit; the invoked API cannot be determined statically",
+          localName: expr.getText(sf),
+          hops: [],
+        };
+      }
       if (ts.isIdentifier(expr)) {
         const binding = bindings.get(expr.text);
-        if (!binding) return undefined;
-        if (binding.kind === "namespace") {
+        if (!binding) return { status: "unrelated" };
+        if (isShadowed(expr.text, expr.getStart(sf), binding.decl)) {
           return {
-            binding,
+            status: "unknown",
+            reason: `"${expr.text}" is shadowed by a local declaration here; provenance of this use cannot be proven`,
             localName: expr.text,
-            api: "",
-            callTarget: packageName,
             hops: hopsFor(binding),
           };
         }
+        if (binding.kind === "namespace") {
+          return {
+            status: "ok",
+            resolved: {
+              binding,
+              localName: expr.text,
+              api: "",
+              callTarget: packageName,
+              hops: hopsFor(binding),
+            },
+          };
+        }
         return {
-          binding,
-          localName: expr.text,
-          api: binding.member ?? "",
-          callTarget: `${packageName}.${binding.member ?? ""}`,
-          hops: hopsFor(binding),
+          status: "ok",
+          resolved: {
+            binding,
+            localName: expr.text,
+            api: binding.member ?? "",
+            callTarget: `${packageName}.${binding.member ?? ""}`,
+            hops: hopsFor(binding),
+          },
         };
       }
       if (ts.isPropertyAccessExpression(expr)) {
-        const base = resolveBase(expr.expression, depth + 1);
-        if (!base) return undefined;
-        if (base.api !== "") return undefined; // member-of-member: not resolvable to full depth.
+        const base = resolveCallee(expr.expression, depth + 1);
+        if (base.status === "unrelated") return base;
+        if (base.status === "unknown") {
+          return { ...base, localName: expr.name.text };
+        }
+        if (base.resolved.api !== "") {
+          return {
+            status: "unknown",
+            reason:
+              "member-of-member chain on a package binding; full API lineage cannot be proven",
+            localName: expr.name.text,
+            hops: base.resolved.hops,
+          };
+        }
         return {
-          ...base,
-          localName: expr.name.text,
-          api: expr.name.text,
-          callTarget: `${packageName}.${expr.name.text}`,
+          status: "ok",
+          resolved: {
+            ...base.resolved,
+            localName: expr.name.text,
+            api: expr.name.text,
+            callTarget: `${packageName}.${expr.name.text}`,
+          },
         };
       }
       if (ts.isElementAccessExpression(expr)) {
-        const base = resolveBase(expr.expression, depth + 1);
-        if (!base) return undefined;
-        return { ...base, localName: base.localName, api: "<computed>", computed: true };
+        const base = resolveCallee(expr.expression, depth + 1);
+        if (base.status === "unrelated") return base;
+        if (base.status === "unknown") return base;
+        return {
+          status: "unknown",
+          reason:
+            "computed or non-static member access on a package binding; the invoked API cannot be determined statically",
+          localName: base.resolved.localName,
+          hops: base.resolved.hops,
+          api: "<computed>",
+        };
       }
-      return undefined;
+      // Parenthesized / as-cast callees unwrap; anything else derived from a
+      // package binding (call results, sequences, tagged templates) is an
+      // unknown flow when the base is package-related.
+      if (
+        ts.isParenthesizedExpression(expr) ||
+        ts.isAsExpression(expr) ||
+        ts.isSatisfiesExpression(expr)
+      ) {
+        return resolveCallee(expr.expression, depth + 1);
+      }
+      return { status: "unrelated" };
     };
 
     const resolutionFor = (resolved: Resolved): MatchedApiResolution => {
@@ -731,11 +975,9 @@ export async function findMatchedApiReferences(
       return "direct";
     };
 
-    const emitCall = (node: ts.CallExpression): void => {
-      const resolved = resolveBase(node.expression, 0);
-      if (!resolved || resolved.api === "") return;
-      const span = spanOf(node);
-      const argumentSpans = node.arguments.map((arg) => spanOf(arg));
+    const inspectArguments = (
+      node: ts.CallExpression,
+    ): { argsState: "inspected" | "unknown"; optionsState: "inspected" | "unknown" } => {
       let argsState: "inspected" | "unknown" = "inspected";
       for (const arg of node.arguments) {
         if (ts.isSpreadElement(arg) || !inspectable(arg, consts, 0)) {
@@ -761,12 +1003,41 @@ export async function findMatchedApiReferences(
           optionsState = "unknown";
         }
       }
+      return { argsState, optionsState };
+    };
+
+    const emitCall = (node: ts.CallExpression): void => {
+      const callee = resolveCallee(node.expression, 0);
+      if (callee.status === "unrelated") return;
+      const span = spanOf(node);
+      const argumentSpans = node.arguments.map((arg) => spanOf(arg));
+      const { argsState, optionsState } = inspectArguments(node);
+      if (callee.status === "unknown") {
+        push({
+          packageName,
+          binding: callee.localName,
+          callTarget: packageName,
+          api: callee.api ?? "<unresolved>",
+          resolution: "indirect-unknown",
+          lineage: callee.hops,
+          arguments: argsState,
+          options: optionsState,
+          span,
+          argumentSpans,
+          note: callee.reason,
+        });
+        return;
+      }
+      const { resolved } = callee;
       const resolution = resolutionFor(resolved);
+      // A bare call of the namespace binding (axios(...)) is the package's
+      // callable API, not a missing member.
+      const api = resolved.api === "" ? "<call>" : resolved.api;
       push({
         packageName,
         binding: resolved.localName,
         callTarget: resolved.callTarget,
-        api: resolved.api,
+        api,
         resolution,
         lineage: resolved.hops,
         arguments: argsState,
@@ -841,13 +1112,13 @@ export async function findMatchedApiReferences(
       const inner = (node: ts.Node): void => {
         if (ts.isCallExpression(node) && !seen.has(node.getStart(sf))) {
           seen.add(node.getStart(sf));
-          const resolved = resolveBase(node.expression, 0);
-          if (resolved && resolved.api !== "") {
+          const callee = resolveCallee(node.expression, 0);
+          if (callee.status === "ok" && callee.resolved.api !== "") {
             out.push({
-              callTarget: resolved.callTarget,
-              api: resolved.api,
+              callTarget: callee.resolved.callTarget,
+              api: callee.resolved.api,
               span: spanOf(node),
-              lineage: resolved.hops,
+              lineage: callee.resolved.hops,
             });
           }
         }
@@ -862,6 +1133,7 @@ export async function findMatchedApiReferences(
     // fixpoint - a wrapper of a wrapper is still a wrapper).
     interface Candidate {
       name: string;
+      decl: ts.Node;
       span: MatchedApiSpan;
       body: ts.Node;
       targets: WrapperInfo["targets"];
@@ -888,6 +1160,7 @@ export async function findMatchedApiReferences(
           findCalls(body);
           candidates.set(name, {
             name,
+            decl: node,
             span: spanOf(node),
             body,
             targets: ts.isBlock(body) || ts.isExpression(body) ? bodyCallsPackage(body) : [],
@@ -917,6 +1190,7 @@ export async function findMatchedApiReferences(
       const candidate = candidates.get(name)!;
       wrappers.set(name, {
         name,
+        decl: candidate.decl,
         span: candidate.span,
         body: candidate.body,
         targets: candidate.targets,
@@ -926,38 +1200,18 @@ export async function findMatchedApiReferences(
       });
     }
 
-    // Calls to wrapper names resolve through the wrapper graph.
+    // Calls to wrapper names resolve through the wrapper graph. A wrapper
+    // name shadowed at the call site is indirect-unknown, never a wrapper
+    // citation.
     const emitWrapperCalls = (node: ts.Node): void => {
       if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
         const name = node.expression.text;
         const start = wrappers.get(name);
         if (start && !bindings.has(name)) {
-          const chain = (
-            current: WrapperInfo,
-            depth: number,
-            acc: MatchedApiHop[],
-          ): { targets: WrapperInfo["targets"]; hops: MatchedApiHop[] } | { cycle: true } => {
-            if (depth > MAX_RESOLUTION_DEPTH) return { cycle: true };
-            const hops = [
-              ...acc,
-              { kind: "wrapper" as const, name: current.name, span: current.span },
-            ];
-            const targets = [...current.targets];
-            const subHops: MatchedApiHop[] = [];
-            for (const calleeName of current.callsWrappers) {
-              const next = wrappers.get(calleeName);
-              if (!next) continue;
-              const resolved = chain(next, depth + 1, hops);
-              if ("cycle" in resolved) return resolved;
-              targets.push(...resolved.targets);
-              subHops.push(...resolved.hops.slice(hops.length));
-            }
-            return { targets, hops: [...hops, ...subHops] };
-          };
-          const resolved = chain(start, 0, []);
           const span = spanOf(node);
           const argumentSpans = node.arguments.map((arg) => spanOf(arg));
-          if ("cycle" in resolved) {
+          const { argsState, optionsState } = inspectArguments(node);
+          if (isShadowed(name, node.expression.getStart(sf), start.decl)) {
             push({
               packageName,
               binding: name,
@@ -965,31 +1219,66 @@ export async function findMatchedApiReferences(
               api: "<unresolved>",
               resolution: "indirect-unknown",
               lineage: [{ kind: "wrapper", name, span: start.span }],
-              arguments: "unknown",
-              options: "unknown",
+              arguments: argsState,
+              options: optionsState,
               span,
               argumentSpans,
-              note: "wrapper graph cycle or depth limit; downstream flow stays unknown",
+              note: `"${name}" is shadowed by a local declaration here; provenance of this use cannot be proven`,
             });
           } else {
-            for (const target of resolved.targets) {
+            const chain = (
+              current: WrapperInfo,
+              depth: number,
+              acc: MatchedApiHop[],
+            ): { targets: WrapperInfo["targets"]; hops: MatchedApiHop[] } | { cycle: true } => {
+              if (depth > MAX_RESOLUTION_DEPTH) return { cycle: true };
+              const hops = [
+                ...acc,
+                { kind: "wrapper" as const, name: current.name, span: current.span },
+              ];
+              const targets = [...current.targets];
+              const subHops: MatchedApiHop[] = [];
+              for (const calleeName of current.callsWrappers) {
+                const next = wrappers.get(calleeName);
+                if (!next) continue;
+                const resolved = chain(next, depth + 1, hops);
+                if ("cycle" in resolved) return resolved;
+                targets.push(...resolved.targets);
+                subHops.push(...resolved.hops.slice(hops.length));
+              }
+              return { targets, hops: [...hops, ...subHops] };
+            };
+            const resolved = chain(start, 0, []);
+            if ("cycle" in resolved) {
               push({
                 packageName,
                 binding: name,
-                callTarget: target.callTarget,
-                api: target.api,
-                resolution: "wrapper",
-                lineage: [...resolved.hops, ...target.lineage],
-                arguments: node.arguments.every(
-                  (arg) => !ts.isSpreadElement(arg) && inspectable(arg, consts, 0),
-                )
-                  ? "inspected"
-                  : "unknown",
-                options: "inspected",
+                callTarget: packageName,
+                api: "<unresolved>",
+                resolution: "indirect-unknown",
+                lineage: [{ kind: "wrapper", name, span: start.span }],
+                arguments: "unknown",
+                options: "unknown",
                 span,
                 argumentSpans,
-                note: `local wrapper "${name}" resolves to ${target.callTarget}`,
+                note: "wrapper graph cycle or depth limit; downstream flow stays unknown",
               });
+            } else {
+              for (const target of resolved.targets) {
+                push({
+                  packageName,
+                  binding: name,
+                  callTarget: target.callTarget,
+                  api: target.api,
+                  resolution: "wrapper",
+                  lineage: [...resolved.hops, ...target.lineage],
+                  arguments: argsState,
+                  options: optionsState,
+                  span,
+                  argumentSpans,
+                  note: `local wrapper "${name}" resolves to ${target.callTarget}`,
+                });
+              }
             }
           }
         }
