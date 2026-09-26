@@ -85,6 +85,14 @@ function findingEntry(f: Finding, eligibility: FindingEligibility | undefined): 
   return { lines: [`- ${base}`, `  - _No tickbox: ${clean(reason)}_`] };
 }
 
+/** The finding's project-scoped eligibility id, when it resolves uniquely. */
+function eligibilityIdFor(input: RenderInput, f: Finding): string | undefined {
+  if (!TICKABLE_RULES.has(f.rule!)) return undefined;
+  const decl = resolveFindingDeclaration(input.result, f);
+  if (decl.status !== "resolved") return undefined;
+  return eligibilityId(f.rule!, decl.dependency.project.path, f.dependency!);
+}
+
 /** Where a finding's eligibility lives in the map; unresolved = none. */
 function eligibilityFor(input: RenderInput, f: Finding): FindingEligibility | undefined {
   if (!TICKABLE_RULES.has(f.rule!)) {
@@ -109,9 +117,34 @@ export function renderPrComment(input: RenderInput): string {
   );
   const notes = input.result.findings.filter((f) => f.dependency === undefined);
 
-  const entries = findings
-    .slice(0, MAX_MARKER_KEYS * 2)
-    .map((f) => findingEntry(f, eligibilityFor(input, f)));
+  // One key per finding identity, and never more visible tickboxes than
+  // the marker can carry (reviewer-1 #425): duplicate findings for an
+  // already-shown id render explanation-only, and eligibility past the
+  // marker's key budget is explained rather than boxed.
+  const seenIds = new Set<string>();
+  const entries: Entry[] = [];
+  let ticks = 0;
+  for (const f of findings.slice(0, MAX_MARKER_KEYS * 2)) {
+    let eligibility = eligibilityFor(input, f);
+    const id = eligibilityIdFor(input, f);
+    if (eligibility?.status === "eligible" && id !== undefined) {
+      if (seenIds.has(id)) {
+        eligibility = {
+          status: "ineligible",
+          reason: "duplicate of an entry above; only the first can carry a tickbox",
+        };
+      } else if (ticks >= MAX_MARKER_KEYS) {
+        eligibility = {
+          status: "ineligible",
+          reason: "beyond this comment's tickbox budget; re-run after the first batch is handled",
+        };
+      } else {
+        seenIds.add(id);
+        ticks += 1;
+      }
+    }
+    entries.push(findingEntry(f, eligibility));
+  }
 
   const header =
     findings.length === 0

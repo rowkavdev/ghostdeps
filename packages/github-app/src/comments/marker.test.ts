@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildMarker, MAX_MARKER_KEYS, parseMarker } from "./marker.js";
+import { buildMarker, MAX_MARKER_KEYS, MAX_MARKER_LINE, parseMarker } from "./marker.js";
 
 const KEY = "a".repeat(64);
 const SHA = "b".repeat(40);
@@ -37,6 +37,16 @@ describe("comment marker", () => {
     assert.equal(parseMarker(`hello\n${good}`), undefined);
     const forged = buildMarker({ repositoryId: 999, pullNumber: 2, headSha: SHA, keys: [] });
     assert.deepEqual(parseMarker(`${good}\n${forged}`)?.repositoryId, 1);
+  });
+
+  it("round-trips at the full key budget and stays inside the parse budget", () => {
+    const keys = Array.from({ length: MAX_MARKER_KEYS }, (_, i) =>
+      i.toString(16).padStart(64, "0"),
+    );
+    const marker = { repositoryId: 123456789, pullNumber: 987654, headSha: SHA, keys };
+    const line = buildMarker(marker);
+    assert.ok(line.length <= MAX_MARKER_LINE, `marker line ${line.length} chars`);
+    assert.deepEqual(parseMarker(line), marker);
   });
 
   it("rejects duplicate keys", () => {

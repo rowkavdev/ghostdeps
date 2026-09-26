@@ -96,6 +96,61 @@ describe("renderPrComment", () => {
     assert.ok(body.length < 60_000);
   });
 
+  it("round-trips the marker at the 25-tickbox boundary (reviewer-1 #425)", () => {
+    const n = 25;
+    const deps = Array.from({ length: n }, (_, i) => ({
+      ...ROOT_DEP,
+      name: `dep-${i}`,
+    })) as unknown as Dependency[];
+    const findings = deps.map((d, i) => finding({ dependency: `dep-${i}` }));
+    const eligibility = new Map<string, FindingEligibility>(
+      deps.map((d, i) => [
+        eligibilityId("unused", ".", `dep-${i}`),
+        { status: "eligible", key: i.toString(16).padStart(64, "0") },
+      ]),
+    );
+    const body = render({ result: result(findings, deps), eligibility });
+    const marker = parseMarker(body);
+    assert.equal(marker?.keys.length, n);
+    assert.equal((body.match(/- \[ \]/g) ?? []).length, n);
+    for (const key of marker!.keys) assert.match(body, new RegExp(`gd-key:${key}`));
+  });
+
+  it("never shows more tickboxes than the marker carries, even with 48 eligible findings", () => {
+    const n = 48;
+    const deps = Array.from({ length: n }, (_, i) => ({
+      ...ROOT_DEP,
+      name: `dep-${i}`,
+    })) as unknown as Dependency[];
+    const findings = deps.map((_, i) => finding({ dependency: `dep-${i}` }));
+    const eligibility = new Map<string, FindingEligibility>(
+      deps.map((_, i) => [
+        eligibilityId("unused", ".", `dep-${i}`),
+        { status: "eligible", key: i.toString(16).padStart(64, "0") },
+      ]),
+    );
+    const body = render({ result: result(findings, deps), eligibility });
+    const marker = parseMarker(body);
+    assert.equal(marker?.keys.length, 25);
+    assert.equal((body.match(/- \[ \]/g) ?? []).length, 25);
+    assert.match(body, /beyond this comment's tickbox budget/);
+    // The marker names exactly the keys whose checkboxes are visible.
+    const visible = [...body.matchAll(/gd-key:([0-9a-f]{64})/g)].map((m) => m[1]);
+    assert.deepEqual([...visible].sort(), [...marker!.keys].sort());
+  });
+
+  it("renders duplicate findings for the same rule and dependency only once tickable", () => {
+    const body = render({
+      result: result([finding({}), finding({})]),
+      eligibility: new Map([
+        [eligibilityId("unused", ".", "left-pad"), { status: "eligible", key: KEY }],
+      ]),
+    });
+    assert.equal((body.match(/- \[ \]/g) ?? []).length, 1);
+    assert.deepEqual(parseMarker(body)?.keys, [KEY]);
+    assert.match(body, /duplicate of an entry above/);
+  });
+
   it("renders repository-wide notes in their own section", () => {
     const body = render({
       result: result([
