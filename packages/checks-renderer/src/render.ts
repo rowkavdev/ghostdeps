@@ -21,6 +21,8 @@
  */
 import {
   findingGroup,
+  scanScopeRows,
+  scanScopeSummary,
   type AnalysisResult,
   type Evidence,
   type Finding,
@@ -166,6 +168,20 @@ function notesSection(notes: readonly Finding[], appNotes: readonly string[]): s
   return lines.length > 0 ? ["", "### Notes", "", ...lines] : [];
 }
 
+function scopeSection(scope: AnalysisResult["scanScope"]): string[] {
+  if (!scope) return [];
+  return [
+    "",
+    "### Scan scope",
+    "",
+    scanScopeSummary(scope)
+      .split("; ")
+      .map((part) => md(part))
+      .join("; "),
+    ...scanScopeRows(scope).map((row) => `- ${md(row)}`),
+  ];
+}
+
 function summaryLine(f: Finding): string {
   const dep = f.dependency ? `**${md(f.dependency)}** - ` : "";
   return `- ${dep}${md(f.summary)} _(${f.confidence} confidence)_`;
@@ -190,7 +206,8 @@ export function renderCheck(
   const notes = [...group("incomplete"), ...group("note")];
   const awareness = group("awareness");
   const facts = group("fact");
-  const incomplete = group("incomplete").length + appNotes.length;
+  const scopeGap = (result.scanScope?.excludedFiles ?? 0) > 0;
+  const incomplete = group("incomplete").length + appNotes.length + Number(scopeGap);
   if (findings.length === 0 && incomplete === 0) {
     return {
       conclusion: "success",
@@ -199,6 +216,7 @@ export function renderCheck(
         summary: truncateSummary(
           [
             quietSummary,
+            ...scopeSection(result.scanScope),
             ...factsSection(facts),
             ...awarenessSection(awareness),
             ...notesSection(notes, appNotes),
@@ -218,6 +236,7 @@ export function renderCheck(
         summary: truncateSummary(
           [
             intro,
+            ...scopeSection(result.scanScope),
             ...factsSection(facts),
             ...awarenessSection(awareness),
             ...notesSection(notes, appNotes),
@@ -271,6 +290,7 @@ export function renderCheck(
     );
   }
   parts.push(
+    ...scopeSection(result.scanScope),
     ...factsSection(facts),
     ...awarenessSection(awareness),
     ...notesSection(notes, appNotes),

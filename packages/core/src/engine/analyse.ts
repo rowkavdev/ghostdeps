@@ -379,7 +379,10 @@ export async function assembleAnalysisResult(
       ),
     ),
   ];
-  const scanIncomplete = context.scanIncomplete === true || scanNotes.length > 0;
+  const scanIncomplete =
+    context.scanIncomplete === true ||
+    scanNotes.length > 0 ||
+    (context.scanScope?.excludedFiles ?? 0) > 0;
   const projects = new Map<string, ProjectRef>();
   const dependencies: Dependency[] = [];
   const usages: Usage[] = [];
