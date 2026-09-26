@@ -1,0 +1,72 @@
+{
+  "repo": "django",
+  "sha": "3591e1c1acbd7c13174275367c3fdf012cb0413b",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "argon2-cffi"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "backports-zoneinfo"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "colorama"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "cx-oracle"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "geoip2"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "grunt-cli"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "grunt-contrib-qunit"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pylibmc"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pymemcache"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "python-memcached"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pywatchman"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "qunit"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "tzdata"
+    }
+  ]
+}
