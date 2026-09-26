@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -98,6 +99,22 @@ describe("slice-2 evidence gate: executable dry-run fixtures", () => {
         preview.files?.map((file) => file.path),
         ["package.json", "package-lock.json"],
       );
+      const expectedManifest = JSON.parse(before[0]!.toString());
+      delete expectedManifest.dependencies["left-pad"];
+      const expectedLock = JSON.parse(before[1]!.toString());
+      delete expectedLock.packages[""].dependencies["left-pad"];
+      delete expectedLock.packages["node_modules/left-pad"];
+      const expectedAfter = [expectedManifest, expectedLock].map((value) =>
+        Buffer.from(`${JSON.stringify(value, null, 2)}\n`),
+      );
+      for (const [index, file] of preview.files!.entries()) {
+        assert.equal(file.beforeSha256, createHash("sha256").update(before[index]!).digest("hex"));
+        assert.equal(
+          file.afterSha256,
+          createHash("sha256").update(expectedAfter[index]!).digest("hex"),
+        );
+        assert.notEqual(file.afterSha256, file.beforeSha256);
+      }
       assert.deepEqual(await bytes(root), before);
     } finally {
       await rm(root, { recursive: true, force: true });
