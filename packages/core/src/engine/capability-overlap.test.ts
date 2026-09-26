@@ -97,7 +97,7 @@ describe("crossEcosystemOverlaps (#55)", () => {
   });
 
   it("in a pull request reports only packages the PR added", () => {
-    const deps = [dep(web, "axios"), dep(svc, "requests")];
+    const deps = [dep(web, "axios"), dep(svc, "requests", "services/api/pyproject.toml")];
     const added = [
       {
         change: "added" as const,
