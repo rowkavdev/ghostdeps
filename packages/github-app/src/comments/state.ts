@@ -10,6 +10,18 @@ import { parseMarker, type CommentMarker } from "./marker.js";
 /** The issues slice of Octokit the commenter needs; minted narrowed to issues:write. */
 export interface IssuesClient {
   issues: {
+    /** Live readback before any edit: the current body, not a delivery's claim. */
+    getComment(params: {
+      owner: string;
+      repo: string;
+      comment_id: number;
+    }): Promise<{ data: { id: number; body?: string | null } }>;
+    /** Live PR state: restoring onto a closed or merged PR is a refusal. */
+    get(params: {
+      owner: string;
+      repo: string;
+      issue_number: number;
+    }): Promise<{ data: { state: string; pull_request?: unknown } }>;
     listComments(params: {
       owner: string;
       repo: string;

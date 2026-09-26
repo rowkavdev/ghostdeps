@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AnalysisResult, Finding } from "@ghostdeps/core";
-import { eligibilityId, renderPrComment, type FindingEligibility } from "./render.js";
+import { renderPrComment, type FindingEligibility } from "./render.js";
+import { eligibilityId } from "./resolve.js";
+import type { Dependency } from "@ghostdeps/core";
 import { parseMarker } from "./marker.js";
 
 const SHA = "c".repeat(40);
@@ -20,8 +22,16 @@ function finding(over: Partial<Finding>): Finding {
   } as Finding;
 }
 
-function result(findings: Finding[]): AnalysisResult {
-  return { findings } as unknown as AnalysisResult;
+const ROOT_DEP: Dependency = {
+  name: "left-pad",
+  constraint: "^1.3.0",
+  kind: "dependencies",
+  project: { path: ".", ecosystem: "javascript", packageManagers: [] },
+  declaredIn: "package.json",
+} as unknown as Dependency;
+
+function result(findings: Finding[], dependencies: Dependency[] = [ROOT_DEP]): AnalysisResult {
+  return { findings, dependencies } as unknown as AnalysisResult;
 }
 
 function render(over: Partial<Parameters<typeof renderPrComment>[0]> = {}) {
@@ -31,7 +41,7 @@ function render(over: Partial<Parameters<typeof renderPrComment>[0]> = {}) {
     pullNumber: 9,
     headSha: SHA,
     eligibility: new Map<string, FindingEligibility>([
-      [eligibilityId("unused", "left-pad"), { status: "eligible", key: KEY }],
+      [eligibilityId("unused", ".", "left-pad"), { status: "eligible", key: KEY }],
     ]),
     applyAvailable: false,
     ...over,
@@ -57,7 +67,7 @@ describe("renderPrComment", () => {
     const body = render({
       eligibility: new Map([
         [
-          eligibilityId("unused", "left-pad"),
+          eligibilityId("unused", ".", "left-pad"),
           { status: "ineligible", reason: "nested manifests are not supported" },
         ],
       ]),
