@@ -156,6 +156,8 @@ interface Binding {
   /** Lexical scope span (UTF-16 positions in the binding's file) this binding is visible in. */
   scopeStart: number;
   scopeEnd: number;
+  /** Position of the declaration; uses before it never resolve to this binding. */
+  declPos: number;
   hopKind: "import" | "require" | "alias";
   /** True when the local name differs from a plain direct import (alias class). */
   aliased: boolean;
@@ -214,6 +216,26 @@ function bindingAt(map: Map<string, Binding[]>, name: string, pos: number): Bind
   let best: Binding | undefined;
   for (const binding of list) {
     if (pos < binding.scopeStart || pos >= binding.scopeEnd) continue;
+    if (pos < binding.declPos) continue; // used before its declaration: not this binding.
+    if (!best || binding.scopeEnd - binding.scopeStart < best.scopeEnd - best.scopeStart) {
+      best = binding;
+    }
+  }
+  return best;
+}
+
+/** A binding of `name` whose scope contains `pos` but that is declared after it. */
+function declaredLaterAt(
+  map: Map<string, Binding[]>,
+  name: string,
+  pos: number,
+): Binding | undefined {
+  const list = map.get(name);
+  if (!list) return undefined;
+  let best: Binding | undefined;
+  for (const binding of list) {
+    if (pos < binding.scopeStart || pos >= binding.scopeEnd) continue;
+    if (pos >= binding.declPos) continue;
     if (!best || binding.scopeEnd - binding.scopeStart < best.scopeEnd - best.scopeStart) {
       best = binding;
     }
@@ -239,6 +261,112 @@ function scopeSpanOf(sf: ts.SourceFile, node: ts.Node): { start: number; end: nu
     current = current.parent;
   }
   return { start: 0, end: sf.getEnd() };
+}
+
+/** One lexical scope: declarations with the textual span they govern. */
+interface ScopeFrame {
+  start: number;
+  end: number;
+  names: Map<string, ts.Node[]>;
+}
+
+/**
+ * Build every lexical scope frame in one file. A use of a package binding's
+ * name inside a frame that redeclares that name is shadowed: resolution is
+ * defeated and the use is indirect-unknown, never a false citation. Import
+ * names are never frame members; a binding's own declaration node is
+ * excluded from its shadow check by the caller.
+ */
+function buildScopeFrames(sf: ts.SourceFile): ScopeFrame[] {
+  const frames: ScopeFrame[] = [];
+  const stack: ScopeFrame[] = [];
+  const pushFrame = (node: ts.Node): void => {
+    const frame: ScopeFrame = {
+      start: node.getStart(sf),
+      end: node.getEnd(),
+      names: new Map(),
+    };
+    frames.push(frame);
+    stack.push(frame);
+  };
+  const addDecl = (name: string, decl: ts.Node): void => {
+    const frame = stack[stack.length - 1];
+    if (!frame) return;
+    const list = frame.names.get(name) ?? [];
+    list.push(decl);
+    frame.names.set(name, list);
+  };
+  const addPattern = (
+    name: ts.BindingName,
+    decl: ts.VariableDeclaration | ts.ParameterDeclaration,
+  ): void => {
+    if (ts.isIdentifier(name)) {
+      addDecl(name.text, decl);
+      return;
+    }
+    for (const element of name.elements) {
+      // Register each destructured name with its own element node so a
+      // binding created from that exact element is never its own shadow.
+      if (ts.isOmittedExpression(element)) continue;
+      if (ts.isIdentifier(element.name)) addDecl(element.name.text, element);
+      else addPattern(element.name, decl);
+    }
+  };
+  const visit = (node: ts.Node): void => {
+    const fn = isFunctionLikeNode(node);
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      // A function declaration's name belongs to the OUTER scope.
+      addDecl(node.name.text, node);
+    }
+    const own =
+      fn ||
+      ts.isBlock(node) ||
+      ts.isForStatement(node) ||
+      ts.isForInStatement(node) ||
+      ts.isForOfStatement(node) ||
+      ts.isCatchClause(node) ||
+      ts.isModuleBlock(node) ||
+      ts.isCaseBlock(node) ||
+      node === sf;
+    if (own) pushFrame(node);
+    if (fn) {
+      for (const param of node.parameters) addPattern(param.name, param);
+    }
+    if (ts.isCatchClause(node) && node.variableDeclaration) {
+      addPattern(node.variableDeclaration.name, node.variableDeclaration);
+    }
+    if (ts.isVariableDeclaration(node)) addPattern(node.name, node);
+    if (ts.isClassDeclaration(node) && node.name) addDecl(node.name.text, node);
+    if (ts.isImportDeclaration(node)) {
+      // Import names are bindings, not shadowing declarations.
+      if (own) stack.pop();
+      return;
+    }
+    ts.forEachChild(node, visit);
+    if (own) stack.pop();
+  };
+  visit(sf);
+  return frames;
+}
+
+/** True when a frame containing `pos` declares `name` (excluding `exclude`). */
+function isShadowedAt(
+  frames: readonly ScopeFrame[],
+  name: string,
+  pos: number,
+  exclude?: ts.Node,
+): boolean {
+  for (const frame of frames) {
+    if (pos < frame.start || pos >= frame.end) continue;
+    const decls = frame.names.get(name);
+    if (decls?.some((decl) => decl !== exclude)) return true;
+  }
+  return false;
+}
+
+/** True when any frame containing `pos` declares `name` at all. */
+function isDeclaredInScope(frames: readonly ScopeFrame[], name: string, pos: number): boolean {
+  return isShadowedAt(frames, name, pos);
 }
 
 /** Function-like nodes open a lexical scope frame (parameters shadow outer names). */
@@ -431,6 +559,7 @@ export async function findMatchedApiReferences(
 
   // Fact pass: bindings, re-export facts, local consts, wrapper candidates.
   const bindingsByFile = new Map<string, Map<string, Binding[]>>();
+  const framesByFile = new Map<string, ScopeFrame[]>();
   const reExportsByFile = new Map<string, ReExportFacts>();
   const constsByFile = new Map<string, Map<string, ts.Expression>>();
   const wrappersByFile = new Map<string, Map<string, WrapperInfo>>();
@@ -448,17 +577,51 @@ export async function findMatchedApiReferences(
     bindingsByFile.set(file, bindings);
     const add = (
       name: string,
-      binding: Omit<Binding, "scopeStart" | "scopeEnd"> &
-        Partial<Pick<Binding, "scopeStart" | "scopeEnd">>,
+      binding: Omit<Binding, "scopeStart" | "scopeEnd" | "declPos"> &
+        Partial<Pick<Binding, "scopeStart" | "scopeEnd" | "declPos">>,
     ): void => {
       const scope = scopeSpanOf(sf, binding.decl);
-      addBindingTo(bindings, name, { ...binding, scopeStart: scope.start, scopeEnd: scope.end });
+      addBindingTo(bindings, name, {
+        ...binding,
+        scopeStart: scope.start,
+        scopeEnd: scope.end,
+        declPos: binding.decl.getStart(sf),
+      });
     };
     reExportsByFile.set(file, reExports);
     constsByFile.set(file, consts);
 
     const spanOf = (node: ts.Node): MatchedApiSpan =>
       index.span(file, node.getStart(sf), node.getEnd());
+    const frames = buildScopeFrames(sf);
+    framesByFile.set(file, frames);
+
+    /**
+     * The package source of an alias initializer at its own position,
+     * through the same scope/shadowing logic as use resolution. A shadowed
+     * or unproven initializer can never ground a package citation.
+     */
+    const packageSource = (
+      expr: ts.Expression,
+    ): { binding: Binding } | { unresolved: string } | undefined => {
+      if (ts.isIdentifier(expr)) {
+        const pos = expr.getStart(sf);
+        if (isShadowedAt(frames, expr.text, pos)) {
+          return {
+            unresolved: `alias initializer "${expr.text}" is shadowed here; it cannot be proven to reference the package`,
+          };
+        }
+        const binding = bindingAt(bindings, expr.text, pos);
+        if (binding) return { binding };
+        if (isDeclaredInScope(frames, expr.text, pos)) {
+          return {
+            unresolved: `alias initializer "${expr.text}" does not resolve to the package at this point; provenance unknown`,
+          };
+        }
+        return undefined;
+      }
+      return undefined;
+    };
 
     // Facts come from top-level statements (imports/exports/variables) AND
     // variable statements in every nested scope: an alias, destructure or
@@ -584,10 +747,14 @@ export async function findMatchedApiReferences(
             // it as an unresolved alias - calls through it emit
             // indirect-unknown rather than vanishing.
             if (ts.isIdentifier(decl.name)) {
-              const target = ts.isIdentifier(init)
-                ? bindingAt(bindings, init.text, init.getStart(sf))
+              const initName = ts.isIdentifier(init)
+                ? init.text
                 : ts.isPropertyAccessExpression(init) && ts.isIdentifier(init.expression)
-                  ? bindingAt(bindings, init.expression.text, init.getStart(sf))
+                  ? init.expression.text
+                  : undefined;
+              const target =
+                initName !== undefined && !isShadowedAt(frames, initName, init.getStart(sf))
+                  ? bindingAt(bindings, initName, init.getStart(sf))
                   : undefined;
               if (target) {
                 add(decl.name.text, {
@@ -605,8 +772,22 @@ export async function findMatchedApiReferences(
           }
           // Destructure alias: const { get: g } = <namespace binding>.
           if (ts.isObjectBindingPattern(decl.name) && ts.isIdentifier(init)) {
-            const target = bindingAt(bindings, init.text, init.getStart(sf));
-            if (target?.kind === "namespace") {
+            const source = packageSource(init);
+            const target = source && "binding" in source ? source.binding : undefined;
+            if (source && "unresolved" in source) {
+              for (const element of decl.name.elements) {
+                if (!ts.isIdentifier(element.name)) continue;
+                add(element.name.text, {
+                  kind: "member",
+                  member: undefined,
+                  decl: element,
+                  hopKind: "alias",
+                  aliased: true,
+                  span: spanOf(decl),
+                  unresolved: source.unresolved,
+                });
+              }
+            } else if (target?.kind === "namespace") {
               for (const element of decl.name.elements) {
                 if (!ts.isIdentifier(element.name)) continue;
                 const imported = (
@@ -632,10 +813,19 @@ export async function findMatchedApiReferences(
           if (statement.parent === sf) consts.set(name, init);
           // Alias: const ax = <namespace binding>.
           if (ts.isIdentifier(init)) {
-            const target = bindingAt(bindings, init.text, init.getStart(sf));
-            if (target) {
+            const source = packageSource(init);
+            if (source && "unresolved" in source) {
               add(name, {
-                ...target,
+                kind: "namespace",
+                decl,
+                hopKind: "alias",
+                aliased: true,
+                span: spanOf(decl),
+                unresolved: source.unresolved,
+              });
+            } else if (source) {
+              add(name, {
+                ...source.binding,
                 decl,
                 hopKind: "alias",
                 aliased: true,
@@ -645,11 +835,23 @@ export async function findMatchedApiReferences(
             continue;
           }
           // Member alias: const g = <namespace binding>.get.
-          if (
-            ts.isPropertyAccessExpression(init) &&
-            ts.isIdentifier(init.expression) &&
-            bindingAt(bindings, init.expression.text, init.getStart(sf))?.kind === "namespace"
-          ) {
+          if (ts.isPropertyAccessExpression(init) && ts.isIdentifier(init.expression)) {
+            const source = packageSource(init.expression);
+            if (source && "unresolved" in source) {
+              add(name, {
+                kind: "member",
+                member: init.name.text,
+                decl,
+                hopKind: "alias",
+                aliased: true,
+                span: spanOf(decl),
+                unresolved: source.unresolved,
+              });
+              continue;
+            }
+            if (!source || source.binding.kind !== "namespace") continue;
+          }
+          if (ts.isPropertyAccessExpression(init) && ts.isIdentifier(init.expression)) {
             add(name, {
               kind: "member",
               member: init.name.text,
@@ -766,6 +968,7 @@ export async function findMatchedApiReferences(
             unresolved: resolved.unresolved,
             scopeStart: 0,
             scopeEnd: sf.getEnd(),
+            declPos: statement.getStart(sf),
           });
           return;
         }
@@ -779,6 +982,7 @@ export async function findMatchedApiReferences(
           barrel,
           scopeStart: 0,
           scopeEnd: sf.getEnd(),
+          declPos: statement.getStart(sf),
         });
       };
       if (clause.name) bind(clause.name.text, "default");
@@ -801,6 +1005,7 @@ export async function findMatchedApiReferences(
             barrel: { file: target, exportSpan: resolved.exportSpan, star: resolved.star },
             scopeStart: 0,
             scopeEnd: sf.getEnd(),
+            declPos: named.name.getStart(sf),
           });
         }
       }
@@ -820,96 +1025,9 @@ export async function findMatchedApiReferences(
     const spanOf = (node: ts.Node): MatchedApiSpan =>
       index.span(file, node.getStart(sf), node.getEnd());
 
-    // Lexical scope frames: parameters and let/const/var/function/class
-    // declarations, each with the textual span it governs. A use of a
-    // package binding's name inside a frame that redeclares that name is
-    // shadowed: resolution is defeated and the use is indirect-unknown,
-    // never a false direct citation. Import names are never frame members;
-    // a binding's own declaration node is excluded from its shadow check.
-    interface ScopeFrame {
-      start: number;
-      end: number;
-      names: Map<string, ts.Node[]>;
-    }
-    const frames: ScopeFrame[] = [];
-    {
-      const bindingStatements = new Set<ts.Node>();
-      for (const list of bindings.values()) {
-        for (const binding of list) {
-          if (binding.declStatement) bindingStatements.add(binding.declStatement);
-        }
-      }
-      const stack: ScopeFrame[] = [];
-      const pushFrame = (node: ts.Node): void => {
-        const frame: ScopeFrame = {
-          start: node.getStart(sf),
-          end: node.getEnd(),
-          names: new Map(),
-        };
-        frames.push(frame);
-        stack.push(frame);
-      };
-      const addDecl = (name: string, decl: ts.Node): void => {
-        const frame = stack[stack.length - 1];
-        if (!frame) return;
-        const list = frame.names.get(name) ?? [];
-        list.push(decl);
-        frame.names.set(name, list);
-      };
-      const addPattern = (name: ts.BindingName, decl: ts.Node): void => {
-        if (ts.isIdentifier(name)) {
-          addDecl(name.text, decl);
-          return;
-        }
-        for (const element of name.elements) {
-          if (!ts.isOmittedExpression(element)) addPattern(element.name, decl);
-        }
-      };
-      const buildFrames = (node: ts.Node): void => {
-        const fn = isFunctionLikeNode(node);
-        if (ts.isFunctionDeclaration(node) && node.name) {
-          // A function declaration's name belongs to the OUTER scope.
-          addDecl(node.name.text, node);
-        }
-        const own =
-          fn ||
-          ts.isBlock(node) ||
-          ts.isForStatement(node) ||
-          ts.isForInStatement(node) ||
-          ts.isForOfStatement(node) ||
-          ts.isCatchClause(node) ||
-          ts.isModuleBlock(node) ||
-          ts.isCaseBlock(node) ||
-          node === sf;
-        if (own) pushFrame(node);
-        if (fn) {
-          for (const param of node.parameters) addPattern(param.name, param);
-        }
-        if (ts.isCatchClause(node) && node.variableDeclaration) {
-          addPattern(node.variableDeclaration.name, node.variableDeclaration);
-        }
-        if (ts.isVariableDeclaration(node) && !bindingStatements.has(statementOf(node))) {
-          addPattern(node.name, node);
-        }
-        if (ts.isClassDeclaration(node) && node.name) addDecl(node.name.text, node);
-        if (ts.isImportDeclaration(node)) {
-          // Import names are bindings, not shadowing declarations.
-          if (own) stack.pop();
-          return;
-        }
-        ts.forEachChild(node, buildFrames);
-        if (own) stack.pop();
-      };
-      buildFrames(sf);
-    }
-    const isShadowed = (name: string, pos: number, exclude?: ts.Node): boolean => {
-      for (const frame of frames) {
-        if (pos < frame.start || pos >= frame.end) continue;
-        const decls = frame.names.get(name);
-        if (decls?.some((decl) => decl !== exclude)) return true;
-      }
-      return false;
-    };
+    const frames = framesByFile.get(file)!;
+    const isShadowed = (name: string, pos: number, exclude?: ts.Node): boolean =>
+      isShadowedAt(frames, name, pos, exclude);
 
     interface Resolved {
       binding: Binding;
@@ -958,9 +1076,20 @@ export async function findMatchedApiReferences(
         };
       }
       if (ts.isIdentifier(expr)) {
-        const binding = bindingAt(bindings, expr.text, expr.getStart(sf));
-        if (!binding) return { status: "unrelated" };
-        if (isShadowed(expr.text, expr.getStart(sf), binding.decl)) {
+        const pos = expr.getStart(sf);
+        const binding = bindingAt(bindings, expr.text, pos);
+        if (!binding) {
+          if (declaredLaterAt(bindings, expr.text, pos)) {
+            return {
+              status: "unknown",
+              reason: `"${expr.text}" is used before its package-binding declaration; provenance at this point cannot be proven`,
+              localName: expr.text,
+              hops: [],
+            };
+          }
+          return { status: "unrelated" };
+        }
+        if (isShadowed(expr.text, pos, binding.decl)) {
           return {
             status: "unknown",
             reason: `"${expr.text}" is shadowed by a local declaration here; provenance of this use cannot be proven`,
