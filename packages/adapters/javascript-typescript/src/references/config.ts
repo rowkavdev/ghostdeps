@@ -528,9 +528,11 @@ const NAME_FRAGMENT =
  * Statically read one JS/TS tool config (#149). It is parsed with the
  * TypeScript parser and never evaluated. Every string literal in it becomes
  * a config reference (with the tool's shorthand expansion), since plugins and
- * presets are usually named by string. Object-literal keys are credited the
- * same way (#397): a plugin map like `{ plugins: { autoprefixer: {} } }`
- * names the package as an identifier key, not a string. The config stays unread (coverage
+ * presets are usually named by string. Keys of a `plugins` map are credited
+ * the same way (#397): `{ plugins: { autoprefixer: {} } }` names the package
+ * as an identifier key, not a string. Only the `plugins` position counts -
+ * keys elsewhere are ordinary options - and a disabled entry
+ * (`autoprefixer: false`, null, 0 or undefined) earns no credit. The config stays unread (coverage
  * incomplete) if it does not parse, loads a module by a non-literal
  * specifier, builds a string that may be a package name at runtime, or
  * imports a local module whose strings are not read here. Its import/require
@@ -594,24 +596,42 @@ export function readExecutableConfig(
       const lead = leadingLiteral(node);
       if (lead !== undefined && NAME_FRAGMENT.test(lead)) problem ??= "computed specifier";
     }
-    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+    if (ts.isPropertyAssignment(node)) {
       // A plugin map names packages as identifier keys, not strings:
-      // postcss.config.js `plugins: { autoprefixer: {} }` (#397). String keys
-      // are already caught by the literal scan below; shorthand properties
-      // refer to a variable whose own require/import is credited instead.
-      if (strings < MAX_CONFIG_STRINGS) {
-        strings += 1;
-        const packages = expand(node.name.text);
-        if (packages.length) {
-          const line = sf.getLineAndCharacterOfPosition(node.name.getStart(sf)).line + 1;
-          refs.push({
-            packages,
-            file,
-            line,
-            via: "config",
-            source: `${tool} key`,
-            configString: true,
-          });
+      // postcss.config.js `plugins: { autoprefixer: {} }` (#397). Only the
+      // value of a `plugins` property is a plugin map (#397 review) - keys
+      // anywhere else are ordinary options. String keys are already caught
+      // by the literal scan below; shorthand properties refer to a variable
+      // whose own require/import is credited instead. A disabled entry
+      // (`autoprefixer: false`, null, 0 or undefined) earns no credit.
+      const isPlugins =
+        (ts.isIdentifier(node.name) || ts.isStringLiteralLike(node.name)) &&
+        node.name.text === "plugins";
+      if (isPlugins && ts.isObjectLiteralExpression(node.initializer)) {
+        for (const prop of node.initializer.properties) {
+          if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue;
+          const init = prop.initializer;
+          if (
+            init.kind === ts.SyntaxKind.FalseKeyword ||
+            init.kind === ts.SyntaxKind.NullKeyword ||
+            (ts.isNumericLiteral(init) && init.text === "0") ||
+            (ts.isIdentifier(init) && init.text === "undefined")
+          )
+            continue;
+          if (strings >= MAX_CONFIG_STRINGS) break;
+          strings += 1;
+          const packages = expand(prop.name.text);
+          if (packages.length) {
+            const line = sf.getLineAndCharacterOfPosition(prop.name.getStart(sf)).line + 1;
+            refs.push({
+              packages,
+              file,
+              line,
+              via: "config",
+              source: `${tool} key`,
+              configString: true,
+            });
+          }
         }
       }
     }
