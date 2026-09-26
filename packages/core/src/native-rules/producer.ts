@@ -6,6 +6,7 @@
 import type { Dependency, RepositoryHandle } from "../types/index.js";
 import type { UsageAnalysisReport } from "../adapter.js";
 import type { NativeRule } from "./index.js";
+import { collectNativeDeploymentEvidence } from "./deployment.js";
 
 /** Location in a specific immutable repository snapshot; all paths are relative. */
 export interface NativeSourceProof {
@@ -61,6 +62,7 @@ export type NativeIncompatibleCheck =
 
 /** Unknown is explicit; a CI matrix or a bare engines declaration is not all targets. */
 export interface NativeDeploymentTarget {
+  readonly binding: "caller-asserted" | "verified";
   readonly target: string;
   readonly runtime: string;
   readonly minimumVersion: string | null;
@@ -82,6 +84,8 @@ export interface NativeEligibilityEvidence {
   readonly version: 1;
   readonly ruleId: string;
   readonly snapshotSha256: string;
+  /** A produced envelope may only be sealed after repository binding is verified. */
+  readonly binding: "verified";
   readonly declaration: NativeSourceProof;
   readonly referencesComplete: boolean;
   readonly matchedApis: readonly NativeMatchedApi[];
@@ -97,8 +101,6 @@ export interface NativeProducerInput {
   readonly repository: RepositoryHandle;
   readonly dependency: Dependency;
   readonly references: UsageAnalysisReport;
-  /** Enumerated target leads, including unknown targets, to verify against source. */
-  readonly deploymentTargets: readonly { readonly target: string; readonly runtime: string }[];
 }
 
 export type NativeProducerResult =
@@ -109,7 +111,12 @@ export type NativeProducerResult =
 export type NativeEvidenceProducer = (input: NativeProducerInput) => Promise<NativeProducerResult>;
 
 /** No positive path is shipped in slice 1. Never pass caller-supplied facts through. */
-export const produceNativeEvidence: NativeEvidenceProducer = async (_input) => ({
-  status: "blocked",
-  reason: "Source-validating native evidence production is not implemented.",
-});
+export const produceNativeEvidence: NativeEvidenceProducer = async (input) => {
+  // This is a per-pillar measurement, not an eligibility verdict. An unknown
+  // pillar or caller-asserted tree binding can never seal a produced envelope.
+  await collectNativeDeploymentEvidence(input.repository, input.rule, input.snapshotSha256);
+  return {
+    status: "blocked",
+    reason: "Source-validating native evidence production is not implemented.",
+  };
+};
