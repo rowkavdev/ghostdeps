@@ -1,0 +1,42 @@
+{
+  "repo": "poetry",
+  "sha": "94b6e35b9091991887aa54feeb3771a86d3bd692",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "cachy"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "jaraco-classes"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pendulum"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pendulum"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pendulum"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pendulum"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "pendulum"
+    }
+  ]
+}

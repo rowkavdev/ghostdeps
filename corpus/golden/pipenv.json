@@ -1,0 +1,37 @@
+{
+  "repo": "pipenv",
+  "sha": "226bc1342043f387eec027fb07a8254768b3f718",
+  "expectExit": 0,
+  "findings": [
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "certifi"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "packaging"
+    },
+    {
+      "kind": "info",
+      "severity": "info",
+      "dependency": "virtualenv"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "setuptools"
+    }
+  ]
+}

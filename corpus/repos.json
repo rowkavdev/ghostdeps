@@ -162,6 +162,27 @@
       "sha": "ce97e473ebaec49697c07daa50a7bc2b32f713d2",
       "covers": "rust single-crate crate (non-workspace Cargo.toml) - complements workspace pins serde/rayon; regex used in src/main.rs (line 29: use regex::bytes) and src/walk.rs, src/config.rs, src/filter/size.rs",
       "mustNotBeUnused": ["regex"]
+    },
+    {
+      "name": "poetry",
+      "url": "https://github.com/python-poetry/poetry.git",
+      "sha": "94b6e35b9091991887aa54feeb3771a86d3bd692",
+      "covers": "poetry.lock class (first poetry pin); PEP 508 array declarations in pyproject; requests imported in src/poetry/utils/download.py",
+      "mustNotBeUnused": ["requests"]
+    },
+    {
+      "name": "pipenv",
+      "url": "https://github.com/pypa/pipenv.git",
+      "sha": "226bc1342043f387eec027fb07a8254768b3f718",
+      "covers": "Pipfile + Pipfile.lock present at pin; no declarations come from Pipfile (#432 gap). The pytest invariant comes from root pyproject.toml's tests optional group; pytest imported across tests/ incl. tests/unit/test_vendor.py. Documents current gap; golden pins emitted findings.",
+      "mustNotBeUnused": ["pytest"]
+    },
+    {
+      "name": "django",
+      "url": "https://github.com/django/django.git",
+      "sha": "3591e1c1acbd7c13174275367c3fdf012cb0413b",
+      "covers": "setup.py/setup.cfg legacy layout (stable/3.2.x, no pyproject.toml). setup.py is recorded unanalysable and setup.cfg install_requires is not parsed; declarations instead come from tests/requirements/py3.txt (asgiref line 2, sqlparse line 20, dev). asgiref imported in django/utils/timezone.py, sqlparse in django/db/backends/base/operations.py. Documents current gap; golden pins emitted findings.",
+      "mustNotBeUnused": ["asgiref", "sqlparse"]
     }
   ]
 }
