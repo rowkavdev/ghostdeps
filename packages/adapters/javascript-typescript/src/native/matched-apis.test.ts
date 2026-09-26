@@ -582,7 +582,7 @@ test("shorthand and method options are uninspectable", async () => {
     ],
     [
       'import axios from "axios"; axios.get("/", { timeout() { return 1000; } });',
-      "method option timeout is not a static property value",
+      "method option may hide or define timeout",
     ],
   ] as const) {
     const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
@@ -622,7 +622,7 @@ test("shorthand and method options are uninspectable", async () => {
     ],
     [
       'import axios from "axios"; axios.get("/", { timeout() { return 1000; } });',
-      "method option timeout is not a static property value",
+      "method option may hide or define timeout",
     ],
   ] as const) {
     const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
@@ -650,5 +650,24 @@ test("computed interceptor members and error properties are uninspectable", asyn
     assert.equal(record!.uninspectable.length, 1);
     const span = record!.uninspectable[0]!;
     assert.ok(Buffer.from(text).subarray(span.start, span.end).toString().length > 0);
+  }
+});
+
+test("computed interceptor intermediate access and computed option methods are uninspectable", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const cases = [
+    [
+      'import axios from "axios"; axios.interceptors[which].use(() => {});',
+      "interceptors.request.use",
+      "member-call",
+    ],
+    ['import axios from "axios"; axios.get("/", { [key]() {} });', "timeout", "option-key-value"],
+  ] as const;
+  for (const [text, patternId, kind] of cases) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), [
+      { patternId, kind },
+    ]);
+    assert.equal(record!.state, "uninspectable");
+    assert.equal(record!.uninspectable.length, 1);
   }
 });
