@@ -129,6 +129,15 @@ export async function scanRepository(
   options: ScanOptions = {},
 ): Promise<ScanResult> {
   const limits = resolveLimits(options.limits);
+  // Scoped accounting is defined against the built-in scanner policy only.
+  // A caller replacement would change the analysed files without changing
+  // the effective-scope digest; reject it until policy identity is modelled.
+  if (
+    options.fixtureScope === true &&
+    (options.excludedDirectories !== undefined || options.excludedFileSuffixes !== undefined)
+  ) {
+    throw new Error("fixture scope does not support custom scanner exclusions");
+  }
   const excludedDirs = options.excludedDirectories ?? DEFAULT_EXCLUDED_DIRECTORIES;
   const excludedSuffixes = options.excludedFileSuffixes ?? DEFAULT_EXCLUDED_FILE_SUFFIXES;
 

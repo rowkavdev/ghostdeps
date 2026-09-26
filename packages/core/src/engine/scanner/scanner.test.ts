@@ -428,6 +428,20 @@ describe("opt-in fixture scope accounting (#354)", () => {
     );
   });
 
+  it("rejects custom scanner exclusions rather than mislabeling the effective scope", async () => {
+    await config(root, ["fixtures"]);
+    await assert.rejects(
+      scanRepository(root, { fixtureScope: true, excludedFileSuffixes: [".js"] }),
+      /custom scanner exclusions/,
+    );
+    await assert.rejects(
+      scanRepository(root, { fixtureScope: true, excludedDirectories: new Set(["fixtures-old"]) }),
+      /custom scanner exclusions/,
+    );
+    const legacy = await scanRepository(root, { excludedFileSuffixes: [".json"] });
+    assert.equal(legacy.scope, undefined);
+  });
+
   it("discloses an unmatched root with exact zero counts", async () => {
     await config(root, ["missing"]);
     const scan = await scanRepository(root, { fixtureScope: true });
