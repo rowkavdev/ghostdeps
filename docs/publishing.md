@@ -1,6 +1,6 @@
-# Publishing the npm package (`ghostdeps`, pending rename)
+# Publishing the `ghost-deps` npm package
 
-The CLI is moving to the unscoped package `ghostdeps`. It currently ships scoped as `@rowkav09/ghostdeps`; the rename lands alongside the first unscoped publish, after which both `@rowkav09/ghostdeps` and the legacy `ghost-deps` (a separate package Rowan now owns) are deprecated pointers at `ghostdeps`. This document
+The CLI ships on npm as `ghost-deps`. It previously shipped scoped as `@rowkav09/ghostdeps`; the unscoped `ghostdeps` name was tried and definitively rejected by the registry similarity rule (2026-09-27), so the canonical name is `ghost-deps`, which Rowan owns outright. After the rename publish, both `@rowkav09/ghostdeps` and the old `ghost-deps` lineage converge: `@rowkav09/ghostdeps` becomes a deprecated pointer at `ghost-deps`. This document
 is the release process and the reasoning behind the layout.
 
 ## Layout
@@ -69,13 +69,11 @@ unreleased work: when a shippable change lands green on main, tag `v0.1.N`
 and push; release.yml is set up to publish via the OIDC trusted-publisher
 path - verified on the 0.1.1-0.1.4 line.
 
-The rename to `ghostdeps` repeats the bootstrap once: the first `ghostdeps`
-publish is manual (short-lived token, `--access public`), then the trusted
-publisher is configured on the new package name (repository
-`rowkavdev/ghostdeps`, workflow `release.yml`) and tag pushes take over. A
-past `ghostdeps` attempt was auto-rejected by the registry similarity rule
-against `ghost-deps`; Rowan owns `ghost-deps` now, so a retry is expected to
-pass - if it still bounces, fall back to `ghost-deps` and take the name up
-with npm support.
+The rename to `ghost-deps` repeated the bootstrap once: the first `ghost-deps`
+publish (0.1.6, 2026-09-27) was manual (short-lived token, `--access public`),
+then the trusted publisher was configured on the new package name (repository
+`rowkavdev/ghostdeps`, workflow `release.yml`) and tag pushes take over. The
+unscoped `ghostdeps` name is off the table - the registry similarity rule
+rejected it against `ghost-deps` even with Rowan owning both.
 Minor/major bumps are reserved for changes that are not small. Pre-releases
 use normal semver prerelease tags (`v0.2.0-rc.1`).
