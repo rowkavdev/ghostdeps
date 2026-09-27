@@ -357,6 +357,68 @@ describe("native semantic pillar (#450)", () => {
       result.checks.map((c) => c.state),
       ["inspected", "inspected", "inspected"],
     );
+    // Byte-exact member citations must not inherit the outer call-result tie
+    // when a nested lexical declaration shadows the response name.
+    const shadowSource = source.replace(
+      "if (response.status) throw Error(); return response.data;",
+      "{ const response = {status: 200, data: 1}; if (response.status) throw Error(); return response.data; }",
+    );
+    const shadowSpan = (needle: string) => {
+      const start = Buffer.from(shadowSource).indexOf(Buffer.from(needle));
+      assert.ok(start >= 0);
+      return { file, start, end: start + Buffer.byteLength(needle) };
+    };
+    const shadowMember = shadowSpan("response.status");
+    const shadowBinding = { ...shadowMember, end: shadowMember.start + 8 };
+    const shadowScope = shadowSpan(
+      shadowSource.slice(
+        shadowSource.indexOf("{ const response"),
+        shadowSource.lastIndexOf("}") + 1,
+      ),
+    );
+    const forgedStatus = {
+      ...records[1]!,
+      citations: [shadowMember],
+      explored: [call, shadowMember],
+      links: [
+        {
+          ...responseLink("status-check"),
+          span: shadowMember,
+          bindingSpan: shadowBinding,
+          tokenSpan: { ...shadowMember, start: shadowBinding.end },
+        },
+      ],
+    };
+    const shadowError = {
+      ...records[3]!,
+      citations: [shadowScope, argument],
+      explored: [call, shadowScope],
+      negativeProof: { scope: shadowScope, options: [argument], inspected: [call, shadowScope] },
+    };
+    const shadowRepository = {
+      ...repo(),
+      readFile: async () => shadowSource,
+      readFileBytes: async () => Buffer.from(shadowSource),
+    };
+    const shadowSnapshot = await mintNativeSnapshot(shadowRepository);
+    assert.equal(shadowSnapshot.status, "verified");
+    const shadowRule = {
+      ...AXIOS_FETCH_RULE,
+      semanticDifferences: [AXIOS_FETCH_RULE.semanticDifferences[0]!],
+    };
+    const shadowResult = await collectNativeSemanticEvidence(
+      shadowRepository,
+      shadowRule,
+      shadowSnapshot.snapshotSha256,
+      [call],
+      [records[0]!, forgedStatus, shadowError],
+    );
+    assert.equal(shadowResult.status, "blocked");
+    assert.equal(shadowResult.lineageVerification, "adapter-asserted");
+    assert.ok(
+      shadowResult.blocking.some((block) => block.reason === "association-unresolved"),
+      JSON.stringify(shadowResult.blocking),
+    );
     const truncatedScope = { ...scope, end: call.end + 1 };
     const truncated = records.map((r) =>
       r.kind === "cancellation-propagation"
