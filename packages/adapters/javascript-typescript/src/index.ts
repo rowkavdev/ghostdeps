@@ -32,3 +32,10 @@ export {
   MAX_PATTERN_OBSERVATIONS,
 } from "./native/pattern-inspections.js";
 export type { PatternInspection, PatternKind } from "./native/pattern-inspections.js";
+
+export { inspectSemanticFlows, MAX_SEMANTIC_NODES } from "./native/semantic-inspections.js";
+export type {
+  SemanticFlowInspection,
+  SemanticFlowKind,
+  SemanticFlowState,
+} from "./native/semantic-inspections.js";
