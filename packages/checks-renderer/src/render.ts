@@ -182,6 +182,23 @@ function scopeSection(scope: AnalysisResult["scanScope"]): string[] {
   ];
 }
 
+/** Blocked/no-verdict native candidates are limitations, never positive findings.
+ * Display them ahead of verdicts so a long finding list cannot hide the gap. */
+function nativeSection(result: AnalysisResult): string[] {
+  const unresolved = result.nativeEvaluations?.filter((item) => item.status !== "produced") ?? [];
+  if (!unresolved.length) return [];
+  return [
+    "",
+    "### Native evaluation",
+    "",
+    ...unresolved.map((item) =>
+      item.status === "blocked"
+        ? `- **${md(item.dependency)}** (${md(item.ruleId)}): blocked in ${md(item.pillar)} (${md(item.reason)})`
+        : `- **${md(item.dependency)}** (${md(item.ruleId)}): no verdict (${md(item.reason)})`,
+    ),
+  ];
+}
+
 function summaryLine(f: Finding): string {
   const dep = f.dependency ? `**${md(f.dependency)}** - ` : "";
   return `- ${dep}${md(f.summary)} _(${f.confidence} confidence)_`;
@@ -207,7 +224,11 @@ export function renderCheck(
   const awareness = group("awareness");
   const facts = group("fact");
   const scopeGap = (result.scanScope?.excludedFiles ?? 0) > 0;
-  const incomplete = group("incomplete").length + appNotes.length + Number(scopeGap);
+  const incomplete =
+    group("incomplete").length +
+    appNotes.length +
+    Number(scopeGap) +
+    (result.nativeEvaluations?.filter((item) => item.status !== "produced").length ?? 0);
   if (findings.length === 0 && incomplete === 0) {
     return {
       conclusion: "success",
@@ -217,6 +238,7 @@ export function renderCheck(
           [
             quietSummary,
             ...scopeSection(result.scanScope),
+            ...nativeSection(result),
             ...factsSection(facts),
             ...awarenessSection(awareness),
             ...notesSection(notes, appNotes),
@@ -237,6 +259,7 @@ export function renderCheck(
           [
             intro,
             ...scopeSection(result.scanScope),
+            ...nativeSection(result),
             ...factsSection(facts),
             ...awarenessSection(awareness),
             ...notesSection(notes, appNotes),
@@ -271,6 +294,7 @@ export function renderCheck(
     `GhostDeps found ${n} finding${n === 1 ? "" : "s"} worth review. This check is advisory and never blocks merging.`,
     // Audit goes before verdicts: a long findings list must not truncate it away.
     ...scopeSection(result.scanScope),
+    ...nativeSection(result),
   ];
   if (annotated.size > 0) parts.push("", `${annotated.size} annotated on lines this change added.`);
   if (overflow > 0)
