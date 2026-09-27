@@ -234,11 +234,14 @@ export const SKIPPED_REMOVED_USAGE_NOTE =
   "Removed-usage check skipped: this pull request's diff was too large or unavailable to read in full, so GhostDeps did not check whether it removed the last use of a dependency.";
 
 /**
- * App-authored status note (#196): the app couldn't read the PR's changes in
- * full, so it analysed the whole repository rather than scoping to the PR.
+ * App-authored status note (#196, #354): the app couldn't read the PR's
+ * changes in full, so it analysed the whole repository rather than scoping to
+ * the PR. The scan is UNSCOPED - no fixture roots are applied, and the
+ * base/head scope comparison is unavailable - because an unknown change set
+ * is not an empty one.
  */
 export const FULL_FALLBACK_NOTE =
-  "Pull request changes couldn't be read in full, so GhostDeps analysed the whole repository. Findings may include dependencies this pull request didn't change.";
+  "Pull request changes couldn't be read in full, so GhostDeps analysed the whole repository UNSCOPED: no fixture roots were applied, no excluded changed paths are disclosed, and any fixture-scope configuration change in this pull request could not be compared. Findings may include dependencies this pull request didn't change. An unknown change set is not an empty one.";
 
 const SCOPE_CONFIG = ".ghostdeps.json";
 
@@ -259,13 +262,18 @@ export function excludedChangesNote(excluded: {
   );
 }
 
-/** The base side's committed scope config: roots, none (404), or unknown. */
+/**
+ * The base side's committed scope config (#354): `roots: null` means no config
+ * file (404), a roots array means a committed config (possibly declaring an
+ * empty root list - presence matters for the old/new comparison), and
+ * `unknown` means it could not be read or parsed.
+ */
 async function baseScopeRoots(
   client: PullRequestClient,
   target: { owner: string; repo: string },
   baseSha: string,
   limits: ScanLimits,
-): Promise<{ roots: string[] } | { unknown: true }> {
+): Promise<{ roots: string[] | null } | { unknown: true }> {
   let text: unknown;
   try {
     ({ data: text } = await client.request("GET /repos/{owner}/{repo}/contents/{path}", {
@@ -277,7 +285,7 @@ async function baseScopeRoots(
     }));
   } catch (error) {
     const status = Number((error as { status?: unknown })?.status);
-    return status === 404 ? { roots: [] } : { unknown: true };
+    return status === 404 ? { roots: null } : { unknown: true };
   }
   if (typeof text !== "string") return { unknown: true };
   try {
@@ -294,19 +302,20 @@ async function baseScopeRoots(
  */
 function scopeComparisonNote(
   headScope: ScanScope,
-  base: { roots: string[] } | { unknown: true },
+  base: { roots: string[] | null } | { unknown: true },
 ): string | undefined {
   const headDigest = headScope.source === "none" ? null : headScope.configDigest;
+  // An unreadable base config never implies "unchanged", even when the head
+  // has no config either - the change state is simply unknown.
   if ("unknown" in base) {
-    return headDigest === null
-      ? undefined
-      : "The base revision's fixture scope configuration could not be read, so whether this pull request changed it is unknown; the diff interpretation is incomplete.";
+    return "The base revision's fixture scope configuration could not be read, so whether this pull request changed it is unknown; the diff interpretation is incomplete.";
   }
-  const baseDigest = base.roots.length > 0 ? fixtureRootsDigest(base.roots) : null;
+  const baseRoots = base.roots ?? [];
+  const baseDigest = base.roots === null ? null : fixtureRootsDigest(base.roots);
   if (baseDigest === headDigest) return undefined;
   const headRoots = headScope.roots.map((r) => r.root);
-  const added = headRoots.filter((r) => !base.roots.includes(r));
-  const removed = base.roots.filter((r) => !headRoots.includes(r));
+  const added = headRoots.filter((r) => !baseRoots.includes(r));
+  const removed = baseRoots.filter((r) => !headRoots.includes(r));
   return (
     `Fixture scope configuration changed in this pull request ` +
     `(config digest ${baseDigest ?? "none"} -> ${headDigest ?? "none"}; ` +
@@ -486,8 +495,18 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
           // A source-only PR changed no dependencies, so a full analysis would
           // post repository-wide verdicts it didn't cause. Stay PR-scoped and
           // quiet; without the full diff there is no removed-last-usage (#101).
+          // The excluded-path disclosure and scope comparison still apply: a
+          // fixture-only source PR must get a visible check (#354 review).
           run.pullRequestChanges = [];
           appNotes.push(SKIPPED_REMOVED_USAGE_NOTE);
+          if (pr.excludedChanged.count > 0) {
+            appNotes.push(excludedChangesNote(pr.excludedChanged));
+          }
+          const scopeNote = scopeComparisonNote(
+            headScope,
+            await baseScopeRoots(client, target, baseSha, limits),
+          );
+          if (scopeNote !== undefined) appNotes.push(scopeNote);
           options.log?.warn(
             { job: job.key, limitations: pr.dependencyChanges.limitations },
             "PR diff incomplete on a source-only PR; staying PR-scoped",

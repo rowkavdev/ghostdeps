@@ -310,4 +310,81 @@ describe("pullRequestContext fixture scope (#354)", () => {
     assert.equal(ctx.complete, false);
     assert.deepEqual(ctx.excludedChanged, { count: 0, examples: [] });
   });
+
+  it("filters lockfile and lockfile-gap records under excluded roots (#354)", async () => {
+    const diff = `diff --git a/fixtures/demo/package.json b/fixtures/demo/package.json
+index 1111111..2222222 100644
+--- a/fixtures/demo/package.json
++++ b/fixtures/demo/package.json
+@@ -1 +1 @@
+-{"name":"fixture","dependencies":{"left-pad":"^1.0.0"}}
++{"name":"fixture","dependencies":{"left-pad":"^1.3.0"}}
+diff --git a/fixtures/demo/package-lock.json b/fixtures/demo/package-lock.json
+index 3333333..4444444 100644
+--- a/fixtures/demo/package-lock.json
++++ b/fixtures/demo/package-lock.json
+@@ -1 +1 @@
+-{"lockfileVersion":3}
++{"lockfileVersion":3,"extra":1}
+diff --git a/package.json b/package.json
+index 5555555..6666666 100644
+--- a/package.json
++++ b/package.json
+@@ -1 +1 @@
+-{"name":"demo","dependencies":{"chalk":"^4.0.0"}}
++{"name":"demo","dependencies":{"chalk":"^4.1.2"}}
+`;
+    const client = fakeClient({
+      diff,
+      files: {
+        [`${BASE}:fixtures/demo/package.json`]: manifest({ "left-pad": "^1.0.0" }),
+        [`${HEAD}:fixtures/demo/package.json`]: manifest({ "left-pad": "^1.3.0" }),
+        [`${BASE}:package.json`]: manifest({ chalk: "^4.0.0" }),
+        [`${HEAD}:package.json`]: manifest({ chalk: "^4.1.2" }),
+      },
+    });
+    const ctx = await pullRequestContext(client, PR, ["fixtures"]);
+    assert.equal(ctx.complete, true);
+    assert.deepEqual(ctx.dependencyChanges.lockfilesChanged, []);
+    assert.deepEqual(ctx.dependencyChanges.manifestsWithoutLockfileChange, ["package.json"]);
+    assert.deepEqual(ctx.dependencyChanges.manifestsChanged, ["package.json"]);
+    assert.deepEqual(ctx.excludedChanged, {
+      count: 2,
+      examples: ["fixtures/demo/package-lock.json", "fixtures/demo/package.json"],
+    });
+  });
+
+  it("excludes both sides of a rename crossing the fixture boundary (#354)", async () => {
+    const diff = `diff --git a/fixtures/old.ts b/src/moved.ts
+similarity index 60%
+rename from fixtures/old.ts
+rename to src/moved.ts
+index 1111111..2222222 100644
+--- a/fixtures/old.ts
++++ b/src/moved.ts
+@@ -1,2 +1,3 @@
+ import leftPad from "left-pad";
+ console.log(leftPad("x", 3));
++console.log("moved");
+diff --git a/src/other.ts b/fixtures/archived.ts
+similarity index 60%
+rename from src/other.ts
+rename to fixtures/archived.ts
+index 3333333..4444444 100644
+--- a/src/other.ts
++++ b/fixtures/archived.ts
+@@ -1,2 +1,3 @@
+ import leftPad from "left-pad";
+ console.log(leftPad("y", 3));
++console.log("archived");
+`;
+    const ctx = await pullRequestContext(fakeClient({ diff }), PR, ["fixtures"]);
+    assert.equal(ctx.complete, true);
+    assert.deepEqual(ctx.dependencyChanges.changedSourceFiles, []);
+    assert.deepEqual(ctx.dependencyChanges.sourceLineChanges, []);
+    assert.deepEqual(ctx.excludedChanged, {
+      count: 2,
+      examples: ["fixtures/archived.ts", "fixtures/old.ts"],
+    });
+  });
 });
