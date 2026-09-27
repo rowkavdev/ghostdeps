@@ -39,7 +39,8 @@ export interface NativeRule {
   referenceSurface?: NativeReferenceSurface;
 }
 
-export { evaluateNativeRule, type NativeDecision } from "./evaluate.js";
+// Deliberately not exported: shape-only facts cannot enter the public verdict path.
+export { evaluateNativePolicy, type NativePolicyResult } from "./policy.js";
 
 export {
   produceNativeEvidence,

@@ -9,8 +9,11 @@ import type { NativeIncompatibleResult } from "./incompatible.js";
 import type { NativeSemanticResult } from "./semantic.js";
 import { verifyNativeSnapshot } from "./snapshot.js";
 
-/** Not exported: outside code cannot construct a sealed value structurally. */
-const seal: unique symbol = Symbol("native-eligibility-seal");
+/** Private runtime identity for assembler output; not producer-provenance. */
+const seal: unique symbol = Symbol("native-envelope-assembly");
+const liveSeals = new WeakMap<object, NativeEligibilityEvidence>();
+export const liveNativeSealEvidence = (value: unknown): NativeEligibilityEvidence | null =>
+  value && typeof value === "object" ? (liveSeals.get(value) ?? null) : null;
 export interface NativeSealedEvidence {
   readonly evidence: NativeEligibilityEvidence;
   readonly lineageVerification: "core-reconstructed";
@@ -22,7 +25,7 @@ export interface NativePillars {
   readonly incompatible: NativeIncompatibleResult | ReconstructedIncompatible;
   readonly semantic: NativeSemanticResult | ReconstructedSemantic;
 }
-/** Future core reconstruction can return this seam; no current producer does. */
+/** Synthetic assembler input seam; production producer wiring is a later slice. */
 type Reconstructed<T extends { readonly lineageVerification: string }> = T extends T
   ? Omit<T, "lineageVerification"> & { readonly lineageVerification: "core-reconstructed" }
   : never;
@@ -320,8 +323,11 @@ export async function assembleNativeEnvelope(
     deploymentTargets: targets,
     semanticChecks: semantics,
   };
-  return {
-    status: "produced",
-    evidence: { evidence, lineageVerification: "core-reconstructed", [seal]: true },
+  const sealed: NativeSealedEvidence = {
+    evidence,
+    lineageVerification: "core-reconstructed",
+    [seal]: true,
   };
+  liveSeals.set(sealed, structuredClone(evidence));
+  return { status: "produced", evidence: sealed };
 }
