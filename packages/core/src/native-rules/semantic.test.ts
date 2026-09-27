@@ -375,6 +375,21 @@ describe("native semantic pillar (#450)", () => {
     const truncatedResult = await run(truncated);
     assert.equal(truncatedResult.status, "blocked");
     assert.ok(truncatedResult.blocking.some((b) => b.reason === "absence-unreconstructed"));
+    const hiddenStatus = records.map((r) =>
+      r.kind === "status-check"
+        ? {
+            ...r,
+            state: "inspected-absent" as const,
+            links: [],
+            citations: [scope, argument],
+            explored: [call, scope],
+            negativeProof: negative,
+          }
+        : r,
+    );
+    const hiddenResult = await run(hiddenStatus);
+    assert.equal(hiddenResult.status, "blocked");
+    assert.ok(hiddenResult.blocking.some((b) => b.reason === "absence-unreconstructed"));
     const forged = records.map((r) =>
       r.kind === "cancellation-propagation"
         ? { ...r, negativeProof: { ...negative, options: [] } }
