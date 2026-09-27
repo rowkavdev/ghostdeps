@@ -854,3 +854,20 @@ test("unshadowed lexical require keeps cited package entry", async () => {
   assert.equal(ref.resolution, "direct");
   assertChainTokens(files, ref);
 });
+
+test("source-level require writes cannot produce a complete package-entry chain", async () => {
+  const cases = [
+    'require = () => ({get(){return "fake"}}); const ax=require("axios"); ax.get("/x");',
+    'const ax=require("axios"); globalThis.require = () => ({get(){}}); ax.get("/x");',
+    'const ax=require("axios"); globalThis["require"] = () => ({}); ax.get("/x");',
+    'function replace() { require = () => ({}); } const ax=require("axios"); ax.get("/x");',
+  ];
+  for (const source of cases) {
+    const files = { "src/a.cjs": source };
+    const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+    const ref = scan.references.find((r) => cited(files, r).includes('"/x"'))!;
+    assert.ok(ref, source);
+    assert.equal(ref.resolution, "indirect-unknown", source);
+    assert.match(ref.lineageChain!.brokenAt!.reason, /explicitly written/);
+  }
+});
