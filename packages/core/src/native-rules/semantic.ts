@@ -138,6 +138,56 @@ function tokenValid(kind: NativeFlowKind, token: string): boolean {
   return token === "signal" || token === '"signal"' || token === "'signal'";
 }
 
+/** Resolve the cited member's lexical symbol against the call-result declarator.
+ * Matching spelling and bytes is not evidence that a nested use denotes it. */
+async function sameLexicalResult(
+  bytes: Uint8Array,
+  declarationBinding: NativeReferenceSpan,
+  occurrence: NativeReferenceSpan,
+  member: NativeReferenceSpan,
+): Promise<boolean> {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return false;
+  }
+  const ts = (await import("typescript")).default;
+  const sf = ts.createSourceFile(occurrence.file, text, ts.ScriptTarget.Latest, true);
+  if (((sf as typeof sf & { parseDiagnostics?: readonly unknown[] }).parseDiagnostics ?? []).length)
+    return false;
+  const host = ts.createCompilerHost({ noLib: true, noResolve: true });
+  host.getSourceFile = (file) => (file === occurrence.file ? sf : undefined);
+  host.fileExists = (file) => file === occurrence.file;
+  host.readFile = (file) => (file === occurrence.file ? text : undefined);
+  const checker = ts
+    .createProgram([occurrence.file], { noLib: true, noResolve: true }, host)
+    .getTypeChecker();
+  const matches = (node: TsNode, span: NativeReferenceSpan): boolean =>
+    Buffer.byteLength(text.slice(0, node.getStart(sf))) === span.start &&
+    Buffer.byteLength(text.slice(0, node.getEnd())) === span.end;
+  let declared: TsNode | undefined;
+  let used: TsNode | undefined;
+  const visit = (node: TsNode): void => {
+    if (ts.isIdentifier(node)) {
+      if (matches(node, declarationBinding) && ts.isVariableDeclaration(node.parent))
+        declared = node;
+      if (
+        matches(node, occurrence) &&
+        (ts.isPropertyAccessExpression(node.parent) || ts.isElementAccessExpression(node.parent)) &&
+        node.parent.expression === node &&
+        matches(node.parent, member)
+      )
+        used = node;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  if (!declared || !used) return false;
+  const declaredSymbol = checker.getSymbolAtLocation(declared);
+  return !!declaredSymbol && declaredSymbol === checker.getSymbolAtLocation(used);
+}
+
 /** Offset-only ordered call argument coverage, matching the matched-API boundary. */
 async function optionsCoverCall(
   call: NativeReferenceSpan,
@@ -454,6 +504,16 @@ export async function collectNativeSemanticEvidence(
       )
         return "association-unresolved";
     } else if (tie.via === "call-result") {
+      if (
+        (record.kind === "status-check" || record.kind === "parsed-response") &&
+        !(await sameLexicalResult(
+          bytes.get(call.file)!,
+          tie.declarationBinding,
+          link.bindingSpan,
+          link.span,
+        ))
+      )
+        return "association-unresolved";
       const statement = await decoded(tie.declaration);
       const start = tie.declarationBinding.end - tie.declaration.start;
       const afterName = statement?.slice(start) ?? "";
