@@ -188,3 +188,87 @@ test("accepts full production JavaScript adapter output", async () => {
   assert.ok(real.dependencies.length > 0);
   assert.deepEqual(validateAnalysisResult(JSON.parse(JSON.stringify(real))), real);
 });
+
+const FINDING_KINDS = [
+  "unused",
+  "potentially-unnecessary",
+  "duplicate-capability",
+  "maintenance-risk",
+  "footprint",
+  "should-be-dev",
+  "type-only",
+  "info",
+] as const;
+const baseFinding = {
+  kind: "unused",
+  summary: "s",
+  recommendation: "r",
+  evidence: [],
+  confidence: "high",
+  limitations: [],
+  affectedFiles: [],
+};
+const baseNative = {
+  ruleId: "r",
+  dependency: "x",
+  declaringManifest: { ecosystem: "js", path: "package.json" },
+};
+const withFindings = (findings: unknown[]) => ({ ...empty, findings });
+const withNative = (nativeEvaluations: unknown[]) => ({ ...empty, nativeEvaluations });
+
+test("enforces the full native-evaluation status x pillar x reason matrix", () => {
+  const statuses = ["produced", "blocked", "no-verdict"] as const;
+  for (const status of statuses)
+    for (const pillar of [undefined, "p"])
+      for (const reason of [undefined, "r"]) {
+        const entry = {
+          ...baseNative,
+          status,
+          ...(pillar ? { pillar } : {}),
+          ...(reason ? { reason } : {}),
+        };
+        const valid =
+          (status === "produced" && !pillar && !reason) ||
+          (status === "blocked" && pillar && reason) ||
+          (status === "no-verdict" && !pillar && reason);
+        if (valid) assert.ok(validateAnalysisResult(withNative([entry])));
+        else rejected(withNative([entry]));
+      }
+  rejected(withNative([{ ...baseNative, status: "blocked", pillar: 1, reason: "r" }]));
+  rejected(withNative([{ ...baseNative, status: "blocked", pillar: "p", reason: ["r"] }]));
+});
+
+test("enforces the finding-kind x flag matrix for awareness, adapterNote and healthFact", () => {
+  for (const flag of ["awareness", "adapterNote", "healthFact"] as const)
+    for (const kind of FINDING_KINDS) {
+      const finding =
+        kind === "info"
+          ? { ...baseFinding, kind, severity: "info", [flag]: true }
+          : { ...baseFinding, kind, [flag]: true };
+      if (kind === "info") assert.ok(validateAnalysisResult(withFindings([finding])));
+      else rejected(withFindings([finding]));
+    }
+  rejected(withFindings([{ ...baseFinding, kind: "unused", awareness: false }]));
+  rejected(withFindings([{ ...baseFinding, kind: "unused", awareness: "true" }]));
+});
+
+test("enforces the info-kind severity rule one way only", () => {
+  for (const severity of ["critical", "high", "medium", "low", "info"] as const) {
+    const finding = { ...baseFinding, kind: "info", severity };
+    if (severity === "info") assert.ok(validateAnalysisResult(withFindings([finding])));
+    else rejected(withFindings([finding]));
+  }
+  rejected(withFindings([{ ...baseFinding, kind: "info" }]));
+  assert.ok(
+    validateAnalysisResult(withFindings([{ ...baseFinding, kind: "unused", severity: "info" }])),
+  );
+});
+
+test("rejects the whole result when one entry among many breaks an invariant", () => {
+  const goodNative = { ...baseNative, status: "no-verdict", reason: "r" };
+  const badNative = { ...baseNative, status: "produced", pillar: "p" };
+  rejected(withNative([goodNative, badNative, goodNative]));
+  const goodFinding = { ...baseFinding, kind: "info", severity: "info", awareness: true };
+  const badFinding = { ...baseFinding, kind: "unused", healthFact: true };
+  rejected(withFindings([goodFinding, badFinding]));
+});
