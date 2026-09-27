@@ -137,3 +137,33 @@ test("alias of controller may mutate instance, so cancellation remains unknown",
   );
   assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "unknown");
 });
+test("ordinary axios flow citations identify the exact check, data, catch and signal tokens", async () => {
+  const source =
+    'import axios from "axios"; async function f() { const controller = new AbortController(); try { const res = await axios.get("/é", { signal: controller.signal }); if (res.status !== 200) throw Error(); return res.data; } catch (error) { console.log(error.code); } }';
+  const records = await scan(source);
+  const cited = (kind: string) => {
+    const record = records.find((r) => r.kind === kind)!;
+    return record.citations.map((s) =>
+      Buffer.from(source).subarray(s.start, s.end).toString("utf8"),
+    );
+  };
+  assert.equal(records.find((r) => r.kind === "status-check")?.state, "inspected");
+  assert.ok(cited("status-check").includes("res.status !== 200"));
+  assert.equal(records.find((r) => r.kind === "parsed-response")?.state, "incompatible");
+  assert.ok(cited("parsed-response").includes("res.data"));
+  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "inspected");
+  assert.ok(cited("error-handling").some((text) => text.includes("error.code")));
+  assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "inspected");
+  assert.ok(cited("cancellation-propagation").includes("signal: controller.signal"));
+  assert.ok(cited("cancellation-propagation").includes("controller = new AbortController()"));
+});
+test("dynamic response handler and captured response stay unknown", async () => {
+  const dynamic = await scan('import axios from "axios"; axios.get("/").then(handler);');
+  assert.equal(dynamic.find((r) => r.kind === "response-handling")?.state, "unknown");
+  assert.match(dynamic.find((r) => r.kind === "response-handling")?.note ?? "", /dynamic/);
+  const captured = await scan(
+    'import axios from "axios"; async function f() { const res = await axios.get("/"); return () => res.data; }',
+  );
+  assert.equal(captured.find((r) => r.kind === "parsed-response")?.state, "unknown");
+  assert.match(captured.find((r) => r.kind === "parsed-response")?.note ?? "", /nested handler/);
+});

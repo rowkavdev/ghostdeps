@@ -893,3 +893,25 @@ test("global object alias or escape refuses unbroken require lineage", async () 
     assert.ok(ref.lineageChain?.brokenAt, source);
   }
 });
+test("pattern where-looked citations bind files and calls; skipped files remain explicit", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const text = 'import axios from "axios"; axios.get("/é", { timeout: 5 });';
+  const [record] = await inspectIncompatiblePatterns(
+    memoryHandle({ "src/é.ts": text, "src/large.ts": " ".repeat(1_000_001) }),
+    [{ patternId: "responseType", kind: "option-key-value" }],
+  );
+  assert.ok(record);
+  assert.equal(record.capped, true);
+  assert.equal(record.whereLooked.eligibility, "js-ts-pattern-files-v1");
+  const proof = record.whereLooked.files.find((f) => f.path === "src/é.ts")!;
+  assert.equal(proof.byteLength, Buffer.byteLength(text));
+  assert.match(proof.sha256, /^[a-f0-9]{64}$/);
+  assert.ok(
+    record.whereLooked.calls.some((s) =>
+      Buffer.from(text).subarray(s.start, s.end).toString("utf8").includes("axios.get"),
+    ),
+  );
+  assert.deepEqual(record.whereLooked.unchecked, [
+    { file: "src/large.ts", reason: "source too large" },
+  ]);
+});

@@ -319,8 +319,20 @@ export async function inspectSemanticFlows(
           ts.isPropertyAccessExpression(value.parent) &&
           value.parent.name.text === "then" &&
           ts.isCallExpression(value.parent.parent)
-        )
-          set("response-handling", "inspected", value.parent.parent);
+        ) {
+          const thenCall = value.parent.parent;
+          const handler = thenCall.arguments[0];
+          set(
+            "response-handling",
+            handler && (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler))
+              ? "inspected"
+              : "unknown",
+            thenCall,
+            handler && (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler))
+              ? undefined
+              : "dynamic response handler not inspected",
+          );
+        }
         let responseName: string | undefined;
         const responseDeclaration = ts.isVariableDeclaration(value.parent)
           ? value.parent
@@ -329,17 +341,21 @@ export async function inspectSemanticFlows(
           responseName = responseDeclaration.name.text;
           add(responseDeclaration);
         }
-        // A single lexical block is the bounded exploration unit. Identifiers
-        // outside it, reassignments, and unresolvable branches are not followed.
+        // Inspect only the enclosing lexical block. The containing try is
+        // separately linked to this call; an unrelated catch cannot supply an
+        // error-flow citation. Never use a neighbouring function's flow.
         let boundary: ts.Node = sf;
+        let containingTry: ts.TryStatement | undefined;
         for (let at: ts.Node | undefined = node.parent; at; at = at.parent) {
-          if (ts.isTryStatement(at)) {
-            boundary = at;
-            break;
-          }
+          if (ts.isTryStatement(at) && at.tryBlock.pos <= node.pos && node.end <= at.tryBlock.end)
+            containingTry ??= at;
           if (ts.isBlock(at) && boundary === sf) boundary = at;
           if (ts.isFunctionLike(at)) break;
         }
+        const withinCallFlow = (n: ts.Node): boolean =>
+          n.pos >= node.pos &&
+          // A use in the same statement as the call is not a downstream use.
+          n.pos >= (responseDeclaration?.end ?? node.end);
         const visit = (n: ts.Node): void => {
           if (capped) return;
           add(n);
@@ -347,10 +363,8 @@ export async function inspectSemanticFlows(
             responseName &&
             ts.isIdentifier(n) &&
             n.text === responseName &&
-            n !==
-              (value.parent && ts.isVariableDeclaration(value.parent)
-                ? value.parent.name
-                : undefined)
+            n !== responseDeclaration?.name &&
+            withinCallFlow(n)
           ) {
             if (responseDeclaration && locallyShadows(n, responseDeclaration, responseName)) {
               set("status-check", "unknown", n, "response name is shadowed in a nested scope");
@@ -378,7 +392,11 @@ export async function inspectSemanticFlows(
                   access.pos >= (ts.isIfStatement(test) ? test.expression : test.condition).pos &&
                   access.end <= (ts.isIfStatement(test) ? test.expression : test.condition).end
                 )
-                  set("status-check", "inspected", access);
+                  set(
+                    "status-check",
+                    "inspected",
+                    ts.isIfStatement(test) ? test.expression : test.condition,
+                  );
                 else
                   set("status-check", "unknown", access, "status read is not a checked condition");
               } else if (member(access, responseName, "data"))
@@ -402,7 +420,7 @@ export async function inspectSemanticFlows(
           }
           if (
             ts.isCatchClause(n) &&
-            boundary === n.parent &&
+            containingTry?.catchClause === n &&
             n.variableDeclaration &&
             ts.isIdentifier(n.variableDeclaration.name)
           ) {
@@ -418,7 +436,7 @@ export async function inspectSemanticFlows(
                 set(
                   "error-handling",
                   "inspected",
-                  child,
+                  n,
                   "Axios-specific error field observed; core decides compatibility",
                 );
               ts.forEachChild(child, check);
@@ -456,10 +474,30 @@ export async function inspectSemanticFlows(
                 );
             } else set("cancellation-propagation", "unknown", n, "signal origin not resolved");
           }
-          if (n !== node && ts.isFunctionLike(n)) return; // never infer nested closure flow
+          if (n !== node && ts.isFunctionLike(n)) {
+            // A closure may consume the response later. A parse-only walk
+            // cannot resolve invocation or captured state, so cite the escape.
+            if (responseName) {
+              let captured = false;
+              const capture = (child: ts.Node): void => {
+                if (ts.isIdentifier(child) && child.text === responseName) captured = true;
+                ts.forEachChild(child, capture);
+              };
+              capture(n);
+              if (captured) {
+                set("status-check", "unknown", n, "response captured by nested handler");
+                set("parsed-response", "unknown", n, "response captured by nested handler");
+              }
+            }
+            return;
+          }
           ts.forEachChild(n, visit);
         };
         visit(boundary);
+        // The catch clause is outside the try block used as a lexical
+        // boundary, so visit it explicitly only when the call is in that try.
+        if (containingTry?.catchClause && boundary !== containingTry)
+          visit(containingTry.catchClause);
       }
       for (const kind of KINDS) {
         const outcome = outcomes.get(kind);
