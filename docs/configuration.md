@@ -27,11 +27,11 @@ A repository can declare fixture-only directory roots that GhostDeps leaves out 
 }
 ```
 
-Roots are exact, repository-relative directory paths: no globs, negation, file-level entries or dependency-name matching, and no built-in `fixtures/` convention - a directory is excluded only because the owner declared it. The CLI (`scan` and `fix`) and the GitHub Action (which runs the CLI) honour the file; the GitHub App does not read it yet.
+Roots are exact, repository-relative directory paths: no globs, negation, file-level entries or dependency-name matching, and no built-in `fixtures/` convention - a directory is excluded only because the owner declared it. The CLI (`scan` and `fix`), the GitHub Action (which runs the CLI) and the GitHub App's full scans honour the file; the App's pull-request analyses stay unscoped until base and head share one effective scope (#354).
 
 Exclusion is always disclosed, never silent. The CLI summary, JSON result and GitHub Check carry a `Scan scope` record with the config source and schema version, an effective-scope digest, the separate built-in vendor/generated policy, and exact per-root counts of excluded files and recognised manifests. A configured root that does not exist in the analysed tree is shown literally as unmatched with zero counts; it hides nothing and does not fail the run. A run that excluded files caps absence-based verdicts (no `unused` verdict from the reduced corpus) and stays neutral in the check, even with no dependency findings.
 
-The file is bounded and strict: at most 16 KiB and 32 roots, no absolute paths, `..`, backslashes, control characters, symlinks, duplicates or overlapping roots. A malformed, oversized or unreadable config fails the scan with a named error - it is never silently ignored. Per-run CLI/Action overrides and App-side activation are separate later slices; see the [scan scope design](scan-scope-design.md).
+The file is bounded and strict: at most 16 KiB and 32 roots, no absolute paths, `..`, backslashes, control characters, symlinks, duplicates or overlapping roots. A malformed, oversized or unreadable config fails the scan with a named error - it is never silently ignored. Per-run CLI/Action overrides and App PR diff semantics are separate later slices; see the [scan scope design](scan-scope-design.md).
 
 ## GitHub Action
 
