@@ -738,7 +738,15 @@ export async function findMatchedApiReferences(
       return false;
     };
     let loaderWritten = false;
+    let globalObjectReferenced = false;
     const findLoaderWrites = (node: ts.Node): void => {
+      // Conservative alias/escape boundary: any reference to the global
+      // object can flow through a local binding, a function argument, or a
+      // computed write. We do not claim loader provenance from this file
+      // rather than pretending that literal-receiver checks prove it intact.
+      // This is only a source-level refusal, not runtime-global verification.
+      if (ts.isIdentifier(node) && ["globalThis", "global"].includes(node.text))
+        globalObjectReferenced = true;
       if (
         ts.isBinaryExpression(node) &&
         assignmentTargetContainsLoader(node.left) &&
@@ -928,9 +936,11 @@ export async function findMatchedApiReferences(
             });
             const loaderUnresolved = loaderWritten
               ? "require is explicitly written in this file; package loader provenance cannot be proven"
-              : isShadowedAt(frames, "require", loaderPosition) || importShadowsLoader
-                ? "require is shadowed by a local declaration; package loader provenance cannot be proven"
-                : undefined;
+              : globalObjectReferenced
+                ? "global object is referenced in this file; loader alias/escape provenance cannot be proven"
+                : isShadowedAt(frames, "require", loaderPosition) || importShadowsLoader
+                  ? "require is shadowed by a local declaration; package loader provenance cannot be proven"
+                  : undefined;
             if (ts.isIdentifier(decl.name)) {
               add(decl.name.text, {
                 kind: "namespace",
