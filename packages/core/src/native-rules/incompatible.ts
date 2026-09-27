@@ -1,6 +1,6 @@
 /** Slice 5b: bounded per-pattern checks. This is a pillar, never a verdict. */
 import { createHash } from "node:crypto";
-import ts from "typescript";
+import type * as ts from "typescript";
 import type { RepositoryHandle, RepositoryTreeEntry } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 import type {
@@ -96,18 +96,25 @@ const exact = (values: readonly string[]): boolean => new Set(values).size === v
 
 /** Independently enumerate the bounded syntax class before accepting a negative.
  * A where-looked list is a citation, not evidence of its own completeness. */
-function syntaxEvidence(
+async function syntaxEvidence(
   file: string,
   bytes: Uint8Array,
   kind: NativePatternInspection["kind"],
   patternId: string,
-): { calls: NativePatternSpan[]; matches: NativePatternSpan[]; uncertain: boolean } | null {
+): Promise<{
+  calls: NativePatternSpan[];
+  matches: NativePatternSpan[];
+  uncertain: boolean;
+} | null> {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return null;
   }
+  // Load the parser only for this core pillar. Rust's memory-baseline test
+  // imports the core barrel but must not initialize an unrelated JS parser.
+  const ts = (await import("typescript")).default;
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   if (
     ((sf as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [])
@@ -410,10 +417,12 @@ export async function collectNativeIncompatibleEvidence(
       record.inspectedFiles.length === expected.length &&
       (record.inspectedFiles as string[]).every((file, i) => file === expected[i]);
     const looked = record.whereLooked;
-    const independentlyScanned = expected.map((file) => {
-      const value = bytes.get(file);
-      return value ? syntaxEvidence(file, value, record.kind, patternId) : null;
-    });
+    const independentlyScanned = await Promise.all(
+      expected.map((file) => {
+        const value = bytes.get(file);
+        return value ? syntaxEvidence(file, value, record.kind, patternId) : null;
+      }),
+    );
     const independentlyFound = independentlyScanned.flatMap((scan) => scan?.matches ?? []);
     const independentlyCalled = independentlyScanned.flatMap((scan) => scan?.calls ?? []);
     const scopeBound =
