@@ -428,6 +428,17 @@ describe("opt-in fixture scope accounting (#354)", () => {
     );
   });
 
+  it("re-walks a scoped handle for snapshot listings without tripping the exclusion guard", async () => {
+    await config(root, ["fixtures"]);
+    const handle = await FsRepositoryHandle.open(root, { fixtureScope: true });
+    const first = await handle.listEntries();
+    const second = await handle.listEntries();
+    assert.ok(first.complete, `limitations: ${first.limitations.join(", ")}`);
+    assert.equal(first.policy, second.policy);
+    assert.ok(!first.entries.some((entry) => entry.path.startsWith("fixtures/")));
+    assert.ok(first.entries.some((entry) => entry.path === "fixtures-old/package.json"));
+  });
+
   it("rejects custom scanner exclusions rather than mislabeling the effective scope", async () => {
     await config(root, ["fixtures"]);
     await assert.rejects(

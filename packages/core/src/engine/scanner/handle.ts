@@ -71,12 +71,19 @@ export class FsRepositoryHandle implements RepositoryHandle {
 
   /** A fresh scanner walk, never the files captured when this handle opened. */
   async listEntries(): Promise<RepositoryTreeListing> {
-    const fresh = await scanRepository(this.scan.root, {
-      limits: this.scan.limits,
-      excludedDirectories: new Set(this.scan.excludedDirectories),
-      excludedFileSuffixes: this.scan.excludedFileSuffixes,
-      ...(this.scan.scope ? { fixtureScope: true } : {}),
-    });
+    // Under fixture scope the scanner accepts only the built-in policy and
+    // rejects explicit exclusions, even ones equal to the defaults a scoped
+    // open captured - so a scoped re-walk passes no exclusion options at all.
+    const fresh = await scanRepository(
+      this.scan.root,
+      this.scan.scope
+        ? { limits: this.scan.limits, fixtureScope: true }
+        : {
+            limits: this.scan.limits,
+            excludedDirectories: new Set(this.scan.excludedDirectories),
+            excludedFileSuffixes: this.scan.excludedFileSuffixes,
+          },
+    );
     const entries: RepositoryTreeListing["entries"] = [];
     const limitations: string[] = [];
     if (fresh.truncated) limitations.push(`truncated:${fresh.truncated}`);
