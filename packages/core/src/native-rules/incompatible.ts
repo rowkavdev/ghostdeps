@@ -152,6 +152,10 @@ function syntaxEvidence(
         ts.isSpreadAssignment(node) ||
         (ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name)) ||
         (ts.isShorthandPropertyAssignment(node) && node.name.text === id) ||
+        (ts.isMethodDeclaration(node) &&
+          (ts.isComputedPropertyName(node.name) ||
+            ((ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
+              node.name.text === id))) ||
         ts.isGetAccessorDeclaration(node) ||
         ts.isSetAccessorDeclaration(node)
       )

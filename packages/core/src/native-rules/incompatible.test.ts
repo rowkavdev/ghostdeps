@@ -257,6 +257,20 @@ describe("native incompatible evidence (#446)", () => {
       whereLooked: whereLooked(malformed),
     };
     assert.equal((await run([malformedRecord], malformed)).status, "blocked");
+    const method = {
+      ...clean,
+      "src/a.ts": 'const options = {timeout() { return 1000; }}; axios.get("/x", options);\n',
+    };
+    const methodRecord = {
+      ...base,
+      inspectedBytes: Object.values(method).reduce((n, v) => n + Buffer.byteLength(v), 0),
+      whereLooked: whereLooked(method),
+    };
+    const methodResult = await run([methodRecord], method);
+    assert.equal(methodResult.status, "blocked");
+    assert.equal(methodResult.checks[0]?.state, "unchecked");
+    assert.equal(methodResult.lineageVerification, "adapter-asserted");
+    assert.equal(methodResult.blocking[0]?.reason, "incomplete-scope");
   });
   it("keeps unsupported seed-rule concepts unchecked while checking literal syntax", async () => {
     for (const seed of [AXIOS_FETCH_RULE, UUID_RANDOMUUID_RULE, CLONEDEEP_STRUCTUREDCLONE_RULE]) {
