@@ -26,5 +26,30 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build production image (no push)
         run: docker build --tag ghostdeps:ci .
+      - name: Assert flagged fixture manifests are absent from runtime image
+        run: |
+          # Dockerfile copies pnpm's production deploy tree, not the source tree.
+          # Fail if alerted first-party fixture manifests leak back.
+          docker run --rm --entrypoint node ghostdeps:ci -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const root = "/app";
+            const offenders = [];
+            const coreDiffFixture = /\/@ghostdeps\/core\/test\/diffs\//;
+            const repoFixture = /\/fixtures\/(?:python|hostile|polyglot|go|rust|js)\//;
+            function walk(dir) {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const file = path.join(dir, entry.name);
+                if (entry.isDirectory()) walk(file);
+                else if (entry.isFile() && (coreDiffFixture.test(file) || repoFixture.test(file)))
+                  offenders.push(file);
+              }
+            }
+            walk(root);
+            if (offenders.length) {
+              console.error("alert fixture leak in runtime image:", offenders.slice(0, 20));
+              process.exitCode = 1;
+            }
+          '
       - name: Smoke-test bundled Probot CLI
         run: docker run --rm --entrypoint ./node_modules/.bin/probot ghostdeps:ci --help
