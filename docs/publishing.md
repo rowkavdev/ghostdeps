@@ -51,15 +51,20 @@ package that already exists. So the first publish bootstrapped manually:
    from `.npm-staging` with `npm publish --access public` using a short-lived
    access token. The npm account now uses a security key for 2FA; no
    long-lived token remains.
-2. **Trusted-publisher connection is pending** account verification on npm.
-   Until it is configured (package settings → Trusted Publisher → GitHub
-   Actions, repository `rowkavdev/ghostdeps`, workflow `release.yml`), tag
-   pushes will NOT authenticate - cut releases from a maintainer machine the
-   same way as the first publish.
-3. Once the connection is live, every later release is just the tag push
-   above; the workflow's OIDC token does the auth.
+2. **Trusted-publisher connection is live** (verified 2026-09-27): package
+   settings → Trusted Publisher → GitHub Actions, repository
+   `rowkavdev/ghostdeps`, workflow `release.yml`. Tag pushes authenticate via
+   the workflow's OIDC token - the rolling cadence below runs on this path.
 
 ## Versioning
 
 Single package, version comes from the git tag - the tag is the source of
-truth. Pre-releases use normal semver prerelease tags (`v0.2.0-rc.1`).
+truth.
+
+**Rolling patch cadence (Rowan's rule, 2026-09-27):** every small shippable
+change bumps the patch version and goes out - from 0.1.0 the next releases
+are 0.1.1, 0.1.2, and so on. One rolling release line, no sitting on
+unreleased work: when a shippable change lands green on main, tag `v0.1.N`
+and push; release.yml publishes it via the OIDC trusted-publisher path.
+Minor/major bumps are reserved for changes that are not small. Pre-releases
+use normal semver prerelease tags (`v0.2.0-rc.1`).
