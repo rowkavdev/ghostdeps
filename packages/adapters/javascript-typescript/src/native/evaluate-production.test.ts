@@ -162,6 +162,15 @@ describe("native production end to end (#462)", () => {
       },
       async (repo) => blocked(repo, "matched", "unresolved-reference"),
     );
+    // Mutation through an alias taints the shared object: the direct call
+    // through the source import is not a verified use either.
+    await fixture(
+      {
+        "src/a.ts":
+          'import axios from "axios"; const client=axios; client.get = (url:string) => url; async function f(){ const res=await axios.get("/x"); if(res.status) return res.data; }',
+      },
+      async (repo) => blocked(repo, "matched", "unresolved-reference"),
+    );
     // Opaque wrapper: the parameter mapping cannot be inspected.
     await fixture(
       {

@@ -861,6 +861,28 @@ test("#473 simple wrapper: call sites resolve with declaration and call-site lin
   assert.equal(arrow!.binding, "poster");
 });
 
+test("#473 mutation through any alias taints the shared object binding (review round 1)", async () => {
+  const cases = [
+    // Write through the alias, call through the source import.
+    'import axios from "axios"; const client = axios; client.get = (url: string) => url; axios.get("/x");',
+    // Object.assign through the alias, call through the source import.
+    'import axios from "axios"; const client = axios; Object.assign(client, { get: (url: string) => url }); axios.get("/x");',
+    // Write through a second alias in the chain, call through the first.
+    'import axios from "axios"; const a = axios; const b = a; b.get = (url: string) => url; a.get("/x");',
+    // Write through a second alias in the chain, call through the source.
+    'import axios from "axios"; const a = axios; const b = a; b.get = (url: string) => url; axios.get("/x");',
+  ];
+  for (const source of cases) {
+    const files = { "src/a.ts": source };
+    const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+    const ref = scan.references.find((r) => cited(files, r).includes('"/x"'));
+    assert.ok(ref, `the use must be cited, not dropped: ${source}`);
+    assert.equal(ref!.resolution, "indirect-unknown", source);
+    assert.ok(ref!.note?.includes("written"), source);
+    assert.ok(ref!.lineageChain?.brokenAt, source);
+  }
+});
+
 test("#473 rest pass-through and uncalled simple wrappers", async () => {
   const files = {
     "src/a.ts": [
