@@ -883,6 +883,28 @@ test("#473 mutation through any alias taints the shared object binding (review r
   }
 });
 
+test("#473 escape into a container or handoff taints the alias group (review round 2)", async () => {
+  const cases = [
+    // Object-literal escape, mutation through the container property.
+    'import axios from "axios"; const client = axios; const box = { client }; box.client.get = (url: string) => url; axios.get("/x");',
+    // Named-property escape, call through the source import.
+    'import axios from "axios"; const client = axios; const box = { c: client }; box.c.get = (url: string) => url; client.get("/x");',
+    // Array-literal escape.
+    'import axios from "axios"; const client = axios; const arr = [client]; arr[0].get = (url: string) => url; axios.get("/x");',
+    // Function-argument handoff; the local function writes its parameter.
+    'import axios from "axios"; const client = axios; function change(x: any) { x.get = (url: string) => url; } change(client); axios.get("/x");',
+  ];
+  for (const source of cases) {
+    const files = { "src/a.ts": source };
+    const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+    const ref = scan.references.find((r) => cited(files, r).includes('"/x"'));
+    assert.ok(ref, `the use must be cited, not dropped: ${source}`);
+    assert.equal(ref!.resolution, "indirect-unknown", source);
+    assert.ok(ref!.note?.includes("escapes"), source);
+    assert.ok(ref!.lineageChain?.brokenAt, source);
+  }
+});
+
 test("#473 rest pass-through and uncalled simple wrappers", async () => {
   const files = {
     "src/a.ts": [

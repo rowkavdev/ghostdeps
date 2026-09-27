@@ -171,6 +171,23 @@ describe("native production end to end (#462)", () => {
       },
       async (repo) => blocked(repo, "matched", "unresolved-reference"),
     );
+    // Container escape: the object flows into a literal and is written
+    // through the container's property, so the source call is unverified.
+    await fixture(
+      {
+        "src/a.ts":
+          'import axios from "axios"; const client=axios; const box={client}; box.client.get = (url:string) => url; async function f(){ const res=await axios.get("/x"); if(res.status) return res.data; }',
+      },
+      async (repo) => blocked(repo, "matched", "unresolved-reference"),
+    );
+    // Argument handoff: a local function writes the passed object.
+    await fixture(
+      {
+        "src/a.ts":
+          'import axios from "axios"; const client=axios; function change(x:any){ x.get=(url:string)=>url; } change(client); async function f(){ const res=await axios.get("/x"); if(res.status) return res.data; }',
+      },
+      async (repo) => blocked(repo, "matched", "unresolved-reference"),
+    );
     // Opaque wrapper: the parameter mapping cannot be inspected.
     await fixture(
       {
