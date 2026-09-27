@@ -454,6 +454,7 @@ export async function collectNativeMatchedApiEvidence(
       ref.span,
       ref.binding,
       proofBytes,
+      new Set(files.keys()),
     );
     if (lineageResult.status !== "core-reconstructed") {
       lineageComplete = false;

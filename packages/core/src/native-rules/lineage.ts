@@ -1,4 +1,5 @@
 /** Byte-bound reconstruction of adapter lineage citations. This is not a JS parser. */
+import path from "node:path";
 import type { NativeReferenceSpan, NativeLineageChain } from "./matched-api.js";
 
 export type LineageRead = (span: NativeReferenceSpan) => Promise<Uint8Array | null>;
@@ -18,12 +19,38 @@ const decode = (bytes: Uint8Array): string | null => {
   }
 };
 
+/** Conservative, snapshot-listed resolution. Ambiguous candidates do not establish a chain. */
+const extensions = [".ts", ".tsx", ".js", ".mjs", ".cjs", ".mts", ".cts", ".jsx"];
+function resolveRelative(
+  source: string,
+  specifier: string,
+  files: ReadonlySet<string>,
+): string | null {
+  if (!specifier.startsWith("./") && !specifier.startsWith("../")) return null;
+  const base = path.posix.normalize(path.posix.join(path.posix.dirname(source), specifier));
+  if (base === ".." || base.startsWith("../") || base.startsWith("/") || base === ".") return null;
+  const candidates = new Set<string>([base]);
+  if (!extensions.some((ext) => base.endsWith(ext))) {
+    for (const ext of extensions) {
+      candidates.add(base + ext);
+      candidates.add(base + "/index" + ext);
+    }
+  }
+  if (/\.(?:mjs|cjs|js|jsx)$/.test(base)) {
+    const stripped = base.replace(/\.(?:mjs|cjs|js|jsx)$/, "");
+    for (const ext of extensions) candidates.add(stripped + ext);
+  }
+  const hits = [...candidates].filter((candidate) => files.has(candidate));
+  return hits.length === 1 ? hits[0]! : null;
+}
+
 export async function reconstructLineage(
   chain: NativeLineageChain | undefined,
   packageName: string,
   call: NativeReferenceSpan,
   binding: string,
   read: LineageRead,
+  files: ReadonlySet<string>,
 ): Promise<LineageReconstruction> {
   const refuse = (reason: string): LineageReconstruction => ({
     status: "adapter-asserted",
@@ -159,8 +186,13 @@ export async function reconstructLineage(
         return refuse(`module link ${index} specifier is not the declaration source`);
       if (index === 0 && value !== packageName)
         return refuse("package entry specifier disagrees with package");
-      if (index > 0 && link.kind === "re-export" && !value.startsWith("."))
-        return refuse(`barrel link ${index} has no relative specifier`);
+      if (index > 0) {
+        if (
+          !files.has(link.span.file) ||
+          resolveRelative(link.span.file, value, files) !== links[index - 1]!.span.file
+        )
+          return refuse(`module link ${index} does not resolve to preceding cited file`);
+      }
     } else if (link.specifierSpan) return refuse(`non-module link ${index} has specifier`);
   }
   if (links.at(-1)!.to !== binding && links.at(-1)!.to !== binding.split(".").at(-1))
