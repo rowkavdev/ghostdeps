@@ -2,6 +2,8 @@
  * Not wired to any runner or reporter until the OS boundary is verified.
  * Reject unknown fields, partial surfaces and invented verdict fields rather
  * than silently interpreting an untrusted result as a complete scan.
+ * Severity is an enforcement stamp, not child data: the parent must stamp
+ * validated findings with severityOf(kind + confidence) before reporting.
  */
 import type { AnalysisResult } from "@ghostdeps/core";
 import { AnalysisProtocolError } from "./analysis-protocol.js";
@@ -88,7 +90,6 @@ const finding = record(
   {
     rule: str,
     dependency: str,
-    severity: enumOf("critical", "high", "medium", "low", "info"),
     awareness: "true",
     adapterNote: "true",
     healthFact: "true",
@@ -224,7 +225,6 @@ function checkResultInvariants(value: Record<string, unknown>): boolean {
   if (
     findings.some(
       (f) =>
-        (f.kind === "info" && f.severity !== "info") ||
         (f.awareness === true && f.kind !== "info") ||
         (f.adapterNote === true && f.kind !== "info") ||
         (f.healthFact === true && f.kind !== "info"),
