@@ -188,3 +188,163 @@ test("accepts full production JavaScript adapter output", async () => {
   assert.ok(real.dependencies.length > 0);
   assert.deepEqual(validateAnalysisResult(JSON.parse(JSON.stringify(real))), real);
 });
+
+test("rejects non-plain and non-data top-level values without crashing", () => {
+  class Result {}
+  const values: unknown[] = [
+    undefined,
+    null,
+    true,
+    1,
+    "result",
+    1n,
+    Symbol("s"),
+    () => ({}),
+    [],
+    new Date(),
+    new Map(),
+    new Result(),
+  ];
+  for (const value of values) rejected(value);
+});
+
+test("accepts a null-prototype object carrying the valid shape", () => {
+  const value = Object.assign(Object.create(null), clone(empty));
+  assert.equal(validateAnalysisResult(value), value);
+});
+
+test("duplicate keys parse last-wins before the validator ever sees them", () => {
+  const raw = JSON.stringify(empty);
+  const lateBad = raw.replace('"schemaVersion":1', '"schemaVersion":1,"schemaVersion":2');
+  rejected(JSON.parse(lateBad));
+  const lateGood = raw.replace('"schemaVersion":1', '"schemaVersion":2,"schemaVersion":1');
+  assert.ok(validateAnalysisResult(JSON.parse(lateGood)));
+});
+
+test("treats unicode, bidi-control and lone-surrogate strings as opaque string data", () => {
+  const weird = "x\u202E\u200D\u{1F600}\uD800";
+  const result = {
+    ...empty,
+    findings: [
+      {
+        kind: "unused",
+        summary: weird,
+        recommendation: "\u202E",
+        evidence: [{ kind: "k", statement: weird }],
+        confidence: "low",
+        limitations: [weird],
+        affectedFiles: ["\u200D"],
+      },
+    ],
+  };
+  assert.equal(validateAnalysisResult(result), result);
+});
+
+test("accepts safe-integer boundaries, rejects unsafe, fractional, negative and non-finite", () => {
+  const usage = (line: number) => ({
+    ...empty,
+    usages: [{ dependency: "x", file: "a", line, form: "static", symbols: [] }],
+  });
+  assert.ok(validateAnalysisResult(usage(0)));
+  assert.ok(validateAnalysisResult(usage(Number.MAX_SAFE_INTEGER)));
+  rejected(usage(Number.MAX_SAFE_INTEGER + 1));
+  rejected(usage(1.5));
+  rejected(usage(-1));
+  rejected(usage(Number.NaN));
+  rejected(usage(Number.POSITIVE_INFINITY));
+  rejected(usage(Number.MAX_VALUE));
+  const impact = (transitive: unknown) => ({
+    ...empty,
+    impact: [
+      { ecosystem: "js", project: ".", name: "x", graph: "none", transitive, exclusive: null },
+    ],
+  });
+  assert.ok(validateAnalysisResult(impact(null)));
+  assert.ok(validateAnalysisResult(impact(Number.MAX_SAFE_INTEGER)));
+  rejected(impact(-5));
+  rejected(impact(Number.MAX_SAFE_INTEGER + 1));
+  rejected(impact(1.5));
+});
+
+test("rejects arrays where records are expected and records where arrays are expected", () => {
+  rejected({ ...empty, graph: [] });
+  rejected({ ...empty, scanScope: [] });
+  rejected({ ...empty, projects: [[]] });
+  rejected({ ...empty, dependencies: [[]] });
+  rejected({ ...empty, usages: [[]] });
+  rejected({ ...empty, findings: [[]] });
+  rejected({ ...empty, detected: [[]] });
+  rejected({ ...empty, surface: [[]] });
+  rejected({ ...empty, projectTree: [[]] });
+  rejected({ ...empty, impact: [[]] });
+  rejected({ ...empty, graph: { nodes: [[]], ecosystems: [], truncated: false } });
+  rejected({
+    ...empty,
+    dependencies: [{ name: "x", constraint: "1", kind: "runtime", project: [], declaredIn: "m" }],
+  });
+  rejected({ ...empty, projects: {} });
+  rejected({ ...empty, findings: { 0: null } });
+  rejected({ ...empty, graph: { nodes: {}, ecosystems: [], truncated: false } });
+  rejected({ ...empty, projects: [{ path: ".", ecosystem: "js", packageManagers: {} }] });
+  rejected({
+    ...empty,
+    findings: [
+      {
+        kind: "unused",
+        summary: "s",
+        recommendation: "r",
+        evidence: {},
+        confidence: "high",
+        limitations: [],
+        affectedFiles: [],
+      },
+    ],
+  });
+});
+
+test("rejects deeply nested hostile values without deep recursion or crash", () => {
+  let deep: unknown = "bottom";
+  for (let i = 0; i < 1000; i++) deep = [deep];
+  rejected(deep);
+  rejected({ ...empty, findings: [deep] });
+  rejected({
+    ...empty,
+    usages: [{ dependency: "x", file: "a", line: 0, form: "static", symbols: [deep] }],
+  });
+});
+
+test("rejects near-miss enum, boolean-literal and version values", () => {
+  rejected({ ...empty, schemaVersion: "1" });
+  rejected({ ...empty, graph: { nodes: [], ecosystems: [], truncated: 0 } });
+  rejected({ ...empty, detected: [{ ecosystem: "js", confidence: "High", evidence: [] }] });
+  rejected({
+    ...empty,
+    dependencies: [
+      {
+        name: "x",
+        constraint: "1",
+        kind: "runTime",
+        project: { path: ".", ecosystem: "js", packageManagers: [] },
+        declaredIn: "m",
+      },
+    ],
+  });
+  rejected({
+    ...empty,
+    findings: [
+      {
+        kind: "INFO",
+        summary: "s",
+        recommendation: "r",
+        evidence: [],
+        confidence: "high",
+        limitations: [],
+        affectedFiles: [],
+      },
+    ],
+  });
+  rejected({
+    ...empty,
+    usages: [{ dependency: "x", file: "a", line: 0, form: "static", symbols: [], typeOnly: 1 }],
+  });
+});
