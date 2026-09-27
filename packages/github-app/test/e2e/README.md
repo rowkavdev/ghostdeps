@@ -1,7 +1,9 @@
 # End-to-end fixtures (#41)
 
 Each directory is one simulated pull request against `octo-org/example-app`
-(the repository in `../fixtures/pull_request.opened.json`):
+(the repository in `../fixtures/pull_request.opened.json`), except
+`push-main/`, which is the head tree for the recorded default-branch push
+(`../fixtures/push.default-branch.json`) and carries no PR files:
 
 - `head/` is the repository tree at the PR head. The test packs it into the
   tarball GitHub would serve.

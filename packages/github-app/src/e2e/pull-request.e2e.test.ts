@@ -512,3 +512,146 @@ describe("end-to-end: pull_request.synchronize supersedes the queued head (#337)
     }
   });
 });
+
+describe("end-to-end: push to the default branch (#337)", () => {
+  const PUSH_PAYLOAD = new URL("../../test/fixtures/push.default-branch.json", import.meta.url);
+  /** The recorded push fixture's `after`: the head the worker analyses. */
+  const HEAD = "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c";
+  const RUN_ID = 9003;
+
+  let server: Server;
+  let baseUrl: string;
+  const savedEnv: Record<string, string | undefined> = {};
+
+  before(() => {
+    nock.disableNetConnect();
+    nock.enableNetConnect("127.0.0.1");
+    for (const key of ["GHOSTDEPS_RECOMMENDATIONS", "GHOSTDEPS_SOURCE_PR_TRIGGER", "APP_ID"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  after(() => {
+    nock.enableNetConnect();
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  beforeEach(async () => {
+    const probot = new Probot({ appId: APP_ID, privateKey, secret: SECRET, logLevel: "fatal" });
+    const middleware = await createNodeMiddleware(createGhostDepsApp({ appId: APP_ID }), {
+      probot,
+    });
+    server = createServer((req, res) => {
+      void middleware(req, res, () => {
+        res.writeHead(404).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    nock.cleanAll();
+  });
+
+  it("scopes the analysis from the payload's file list with no API lookup", async () => {
+    const body = await readFile(PUSH_PAYLOAD, "utf8");
+    const payload = JSON.parse(body) as {
+      installation: { id: number };
+      repository: { id: number };
+      after: string;
+    };
+    const caseDir = join(E2E_DIR, "push-main");
+    const tarball = await tarballFor(caseDir, HEAD);
+
+    let created: Json | undefined;
+    let completed: (value: Json) => void = () => undefined;
+    const done = new Promise<Json>((resolve) => (completed = resolve));
+
+    // Worker side only. The payload carries the complete changed-file list
+    // (one commit, package.json + pnpm-lock.yaml), so the handler mints no
+    // token and calls neither the files nor the compare API - the strict
+    // pendingMocks assertion below proves it.
+    nock(API)
+      .post(`/app/installations/${payload.installation.id}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b.repository_ids, [payload.repository.id]);
+        assert.deepEqual(b.permissions, { contents: "read", checks: "write" });
+        return true;
+      })
+      .reply(201, { token: "worker-token", expires_at: "2099-01-01T00:00:00Z" });
+    nock(API)
+      .get(`${REPO_PATH}/commits/${HEAD}/check-runs`)
+      .query(true)
+      .reply(200, { total_count: 0, check_runs: [] });
+    nock(API)
+      .post(`${REPO_PATH}/check-runs`, (b: Json) => {
+        created = b;
+        return true;
+      })
+      .reply(201, { id: RUN_ID });
+    nock(API)
+      .get(`${REPO_PATH}/tarball/${HEAD}`)
+      .reply(302, "", {
+        location: `https://codeload.github.com/${OWNER}/${REPO}/legacy.tar.gz/${HEAD}`,
+      });
+    nock("https://codeload.github.com")
+      .get(`/${OWNER}/${REPO}/legacy.tar.gz/${HEAD}`)
+      .reply(200, Buffer.from(tarball), { "content-type": "application/x-gzip" });
+    nock(API)
+      .patch(`${REPO_PATH}/check-runs/${RUN_ID}`, (b: Json) => {
+        completed(b);
+        return true;
+      })
+      .reply(200, { id: RUN_ID });
+
+    const res = await fetch(`${baseUrl}/api/github/webhooks`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": "push",
+        "x-github-delivery": randomUUID(),
+        "x-hub-signature-256": sign(body),
+      },
+      body,
+    });
+    assert.equal(res.status, 200);
+
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(new Error(`no completed check run; pending: ${nock.pendingMocks().join(", ")}`)),
+        RUN_TIMEOUT_MS,
+      );
+    });
+    try {
+      const final = await Promise.race([done, timeout]);
+      assert.deepEqual(nock.pendingMocks(), []);
+      assert.ok(created, "check run was never created");
+      assert.equal(created.name, checkName);
+      assert.equal(created.head_sha, HEAD);
+      assert.equal(created.status, "in_progress");
+      assert.equal(typeof created.external_id, "string");
+
+      const file = join(caseDir, "expected-check.json");
+      const actual = `${JSON.stringify(stable(final), null, 2)}\n`;
+      if (process.env.UPDATE_GOLDEN === "1") await writeFile(file, actual);
+      assert.equal(
+        actual,
+        await readFile(file, "utf8"),
+        "push-main: check run differs from golden",
+      );
+      assert.equal(final.status, "completed");
+      // The pushed tree declares left-pad but never imports it.
+      const summary = (final.output as { summary: string }).summary.replace(/\\/g, "");
+      assert.match(summary, /left-pad is declared but never used/);
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+});
