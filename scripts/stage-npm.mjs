@@ -205,5 +205,5 @@ let bytes = 0;
   }
 })(out);
 console.log(
-  `staged ghostdeps@${version} in ${path.relative(root, out)}: ${files} files, ${(bytes / 1024 / 1024).toFixed(1)} MB unpacked`,
+  `staged ghost-deps@${version} in ${path.relative(root, out)}: ${files} files, ${(bytes / 1024 / 1024).toFixed(1)} MB unpacked`,
 );
