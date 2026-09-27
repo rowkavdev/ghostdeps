@@ -18,7 +18,7 @@ jobs:
   self-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: GhostDeps self-scan
         id: ghostdeps
         # Non-blocking by design (see header): the check run reports the
