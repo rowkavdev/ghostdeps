@@ -107,33 +107,45 @@ const underRoot = (path: string, roots: readonly string[]): boolean =>
   roots.some((root) => path === root || path.startsWith(`${root}/`));
 
 /**
- * Head fixture scope applies to both snapshots (#354): changes and source
- * lines under excluded roots are dropped (they are not analysed at the head,
- * so they must not drive verdicts or removed-last-usage) and disclosed by
- * count with bounded examples. Filtering happens after extraction so an
- * unreadable manifest still marks the result incomplete first.
+ * Head fixture scope applies to both snapshots (#354): every extracted
+ * record under excluded roots - dependency changes, manifests, lockfiles,
+ * manifests-without-lockfile and source lines - is dropped (it is not
+ * analysed at the head, so it must not drive verdicts or removed-last-usage)
+ * and disclosed by count with bounded examples. Filtering happens after
+ * extraction so an unreadable manifest still marks the result incomplete
+ * first. A rename crossing the boundary is excluded on BOTH sides: analysing
+ * only the in-scope half of a rename would let the excluded half hide.
  */
 function applyFixtureScope(
   result: PullRequestDependencyChanges,
   files: readonly FileDiff[],
   roots: readonly string[],
 ): { changes: PullRequestDependencyChanges; excluded: { count: number; examples: string[] } } {
-  const excludedPaths = files
-    .map((f) => f.newPath ?? f.oldPath)
-    .filter((p): p is string => p !== undefined && underRoot(p, roots))
-    .sort();
   if (roots.length === 0) {
     return { changes: result, excluded: { count: 0, examples: [] } };
   }
+  const excludedPaths = new Set<string>();
+  const display: string[] = [];
+  for (const f of files) {
+    const sides = [f.oldPath, f.newPath].filter((p): p is string => p !== undefined);
+    const under = sides.filter((p) => underRoot(p, roots));
+    if (under.length === 0) continue;
+    for (const p of sides) excludedPaths.add(p);
+    display.push(under[0]!);
+  }
+  display.sort();
+  const keep = (p: string) => !excludedPaths.has(p);
   return {
     changes: {
       ...result,
-      changes: result.changes.filter((c) => !underRoot(c.manifest, roots)),
-      manifestsChanged: result.manifestsChanged.filter((m) => !underRoot(m, roots)),
-      changedSourceFiles: result.changedSourceFiles.filter((f) => !underRoot(f.path, roots)),
-      sourceLineChanges: result.sourceLineChanges.filter((f) => !underRoot(f.path, roots)),
+      changes: result.changes.filter((c) => keep(c.manifest)),
+      manifestsChanged: result.manifestsChanged.filter(keep),
+      lockfilesChanged: result.lockfilesChanged.filter((l) => keep(l.path)),
+      manifestsWithoutLockfileChange: result.manifestsWithoutLockfileChange.filter(keep),
+      changedSourceFiles: result.changedSourceFiles.filter((f) => keep(f.path)),
+      sourceLineChanges: result.sourceLineChanges.filter((f) => keep(f.path)),
     },
-    excluded: { count: excludedPaths.length, examples: excludedPaths.slice(0, 10) },
+    excluded: { count: display.length, examples: display.slice(0, 10) },
   };
 }
 

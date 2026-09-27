@@ -209,6 +209,8 @@ describe("end-to-end: pull request webhook -> check run (#41)", () => {
       .get(`${REPO_PATH}/contents/package.json`)
       .query({ ref: headSha })
       .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+
+    nock(API).get(`${REPO_PATH}/contents/.ghostdeps.json`).query({ ref: baseSha }).reply(404);
     nock(API)
       .patch(`${REPO_PATH}/check-runs/${CHECK_RUN_ID}`, (b: Json) => {
         completed(b);
@@ -472,6 +474,8 @@ describe("end-to-end: pull_request.synchronize supersedes the queued head (#337)
         .get(`${REPO_PATH}/contents/package.json`)
         .query({ ref: headSha })
         .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+
+      nock(API).get(`${REPO_PATH}/contents/.ghostdeps.json`).query({ ref: baseSha }).reply(404);
       nock(API)
         .patch(`${REPO_PATH}/check-runs/${runId}`, (b: Json) => {
           completed.push(b);
@@ -780,6 +784,7 @@ describe("end-to-end: check_run.rerequested restarts the run (#337)", () => {
       .get(`${REPO_PATH}/contents/package.json`)
       .query({ ref: HEAD })
       .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+    nock(API).get(`${REPO_PATH}/contents/.ghostdeps.json`).query({ ref: baseSha }).reply(404);
     nock(API)
       .patch(`${REPO_PATH}/check-runs/${NEW_RUN_ID}`, (b: Json) => {
         completed(b);
@@ -1016,6 +1021,8 @@ describe("end-to-end: queue-full deliveries write one busy run per repository (#
         .get(`${REPO_PATH}/contents/package.json`)
         .query({ ref: headSha })
         .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+
+      nock(API).get(`${REPO_PATH}/contents/.ghostdeps.json`).query({ ref: baseSha }).reply(404);
       nock(API)
         .patch(`${REPO_PATH}/check-runs/${runId}`, (b: Json) => {
           completed.push(b);

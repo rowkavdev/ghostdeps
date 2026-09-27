@@ -53,8 +53,8 @@ function fakeClient(
     location?: string;
     /** base...head diff; an object throws with that status. */
     diff?: string | { status: number };
-    /** `${ref}:${path}` -> raw file text */
-    files?: Record<string, string>;
+    /** `${ref}:${path}` -> raw file text; an object throws with that status. */
+    files?: Record<string, string | { status: number }>;
   } = {},
 ): {
   client: RepositoryClient;
@@ -94,6 +94,7 @@ function fakeClient(
       if (route === "GET /repos/{owner}/{repo}/contents/{path}") {
         const file = options.files?.[`${String(params.ref)}:${String(params.path)}`];
         if (file === undefined) throw Object.assign(new Error("not found"), { status: 404 });
+        if (typeof file !== "string") throw Object.assign(new Error("http"), file);
         return { data: file };
       }
       rec.tarballRequests++;
@@ -706,6 +707,150 @@ index 3333333..4444444 100644
       (rec.updated[0]?.output as { title?: string }).title,
       "GhostDeps could not run",
     );
+  });
+
+  const headConfig = JSON.stringify({ schemaVersion: 1, fixtureRoots: ["fixtures"] });
+  const summaryText = (rec: Recorded): string => {
+    const out = rec.updated[0]?.output as { title?: string; summary?: string };
+    assert.notEqual(out.title, "GhostDeps could not run");
+    return (out.summary ?? "").replace(/\\/g, "");
+  };
+
+  it("discloses a fixture-manifest change without analysing it (#354)", async () => {
+    const fixtureDiff = `diff --git a/fixtures/package.json b/fixtures/package.json
+index 1111111..2222222 100644
+--- a/fixtures/package.json
++++ b/fixtures/package.json
+@@ -1 +1 @@
+-{"name":"fixture","private":true,"dependencies":{"decoy":"^1.0.0"}}
++{"name":"fixture","private":true,"dependencies":{"decoy":"^2.0.0"}}
+`;
+    const { client, rec } = fakeClient({
+      diff: fixtureDiff,
+      files: {
+        [`${BASE}:fixtures/package.json`]: JSON.stringify({
+          name: "fixture",
+          private: true,
+          dependencies: { decoy: "^1.0.0" },
+        }),
+        [`${HEAD}:fixtures/package.json`]: JSON.stringify({
+          name: "fixture",
+          private: true,
+          dependencies: { decoy: "^2.0.0" },
+        }),
+        [`${BASE}:.ghostdeps.json`]: headConfig,
+      },
+    });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(scopedRepo)),
+    });
+    await worker(prJob);
+    const text = summaryText(rec);
+    assert.match(
+      text,
+      /changes 1 file\(s\) under excluded fixture roots \(fixtures\/package\.json\)/,
+    );
+    assert.match(text, /### Scan scope/);
+    assert.doesNotMatch(text, /decoy/);
+  });
+
+  it("discloses old and new config digests when the PR changes the scope config (#354)", async () => {
+    const { client, rec } = fakeClient({
+      diff: DIFF,
+      files: {
+        ...files,
+        [`${BASE}:.ghostdeps.json`]: JSON.stringify({
+          schemaVersion: 1,
+          fixtureRoots: ["old-fixtures"],
+        }),
+      },
+    });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(scopedRepo)),
+    });
+    await worker(prJob);
+    const text = summaryText(rec);
+    assert.match(text, /Fixture scope configuration changed in this pull request/);
+    assert.match(text, /roots added: fixtures/);
+    assert.match(text, /roots removed: old-fixtures/);
+    assert.match(text, /diff interpretation is incomplete/);
+  });
+
+  it("treats a committed base config with empty roots as a config, not an absence (#354)", async () => {
+    const { client, rec } = fakeClient({
+      diff: DIFF,
+      files: {
+        ...files,
+        [`${BASE}:.ghostdeps.json`]: JSON.stringify({ schemaVersion: 1, fixtureRoots: [] }),
+      },
+    });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(scopedRepo)),
+    });
+    await worker(prJob);
+    const text = summaryText(rec);
+    assert.match(text, /Fixture scope configuration changed in this pull request/);
+    assert.match(text, /roots added: fixtures/);
+    assert.match(text, /roots removed: none/);
+  });
+
+  it("discloses an unreadable base config even when the head has none (#354)", async () => {
+    const { client, rec } = fakeClient({
+      diff: DIFF,
+      files: { ...files, [`${BASE}:.ghostdeps.json`]: { status: 500 } },
+    });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(prRepo)),
+    });
+    await worker(prJob);
+    const text = summaryText(rec);
+    assert.match(text, /base revision's fixture scope configuration could not be read/);
+    assert.match(text, /diff interpretation is incomplete/);
+  });
+
+  it("posts the excluded-paths disclosure on a fixture-only source-only PR (#354)", async () => {
+    const sourceDiff = `diff --git a/fixtures/tool.ts b/fixtures/tool.ts
+new file mode 100644
+index 0000000..1111111 100644
+--- /dev/null
++++ b/fixtures/tool.ts
+@@ -0,0 +1 @@
++export const x = 1;
+`;
+    const { client, rec } = fakeClient({
+      diff: sourceDiff,
+      files: { [`${BASE}:.ghostdeps.json`]: headConfig },
+    });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(scopedRepo)),
+    });
+    await worker(
+      job({
+        kind: "pull_request",
+        number: payload.number,
+        action: "opened",
+        baseSha: BASE,
+        sourceOnly: true,
+      }),
+    );
+    const text = summaryText(rec);
+    assert.match(text, /changes 1 file\(s\) under excluded fixture roots \(fixtures\/tool\.ts\)/);
+    assert.doesNotMatch(text, /analysed the whole repository/);
   });
 });
 
