@@ -27,10 +27,14 @@ updates:
     # they are analysis inputs, not real dependencies. Excluding them stops
     # spurious security-update jobs (dependency_file_not_supported failures)
     # and fixture bump PRs while real manifests stay covered.
+    # Patterns are relative to EACH configured directory: fixtures/** and the
+    # packages/* paths match under "/", and test/** covers the /packages/core
+    # and /packages/github-app directory entries.
     exclude-paths:
       - "fixtures/**"
       - "packages/core/test/**"
       - "packages/github-app/test/**"
+      - "test/**"
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
