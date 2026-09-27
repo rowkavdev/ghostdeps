@@ -559,6 +559,62 @@ describe("native semantic pillar (#450)", () => {
     assert.equal(result.lineageVerification, "adapter-asserted");
     assert.ok(result.blocking.some((b) => b.reason === "absence-unreconstructed"));
   });
+  it("refuses dynamic call options even with exact absent cancellation citations", async () => {
+    const content =
+      'import axios from "axios"; async function f(opts) { const res = await axios.get("/x", opts); if (res.status) return res.data; }';
+    const file = "src/opts.ts";
+    const locate = (needle: string) => {
+      const start = Buffer.from(content).indexOf(needle);
+      assert.ok(start >= 0);
+      return { file, start, end: start + Buffer.byteLength(needle) };
+    };
+    const use = locate('axios.get("/x", opts)');
+    const scope = locate(
+      '{ const res = await axios.get("/x", opts); if (res.status) return res.data; }',
+    );
+    const options = [locate('"/x"'), locate("opts")];
+    const inspected = [use, scope, ...options];
+    const repository: RepositoryHandle = {
+      listEntries: async () => ({
+        entries: [{ path: file, kind: "file" }],
+        complete: true,
+        limitations: [],
+        policy,
+      }),
+      readFileBytes: async () => Buffer.from(content),
+      listFiles: async () => [file],
+      readFile: async () => content,
+      exists: async () => true,
+    };
+    const snapshot = await mintNativeSnapshot(repository);
+    assert.equal(snapshot.status, "verified");
+    const record: NativeFlowInspection = {
+      difference: AXIOS_FETCH_RULE.semanticDifferences[2]!,
+      kind: "cancellation-propagation",
+      call: use,
+      lineage: [locate('import axios from "axios"')],
+      state: "inspected-absent",
+      citations: [scope, ...options],
+      explored: inspected,
+      links: [],
+      linksCapped: false,
+      capped: false,
+      negativeProof: { scope, options, inspected },
+    };
+    const result = await collectNativeSemanticEvidence(
+      repository,
+      AXIOS_FETCH_RULE,
+      snapshot.snapshotSha256,
+      [use],
+      [record],
+    );
+    assert.equal(result.status, "blocked");
+    assert.equal(result.lineageVerification, "adapter-asserted");
+    assert.ok(
+      result.blocking.some((b) => b.reason === "absence-unreconstructed"),
+      JSON.stringify(result.blocking),
+    );
+  });
   it("caller-asserted mismatch blocks, and the real scanner handle reads expected entries", async () => {
     const wrong = await collectNativeSemanticEvidence(
       repo(),
