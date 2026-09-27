@@ -83,3 +83,10 @@ export {
   type NativeIncompatibleResult,
   type NativePatternInspection,
 } from "./incompatible.js";
+
+export {
+  collectNativeSemanticEvidence,
+  type NativeSemanticResult,
+  type NativeFlowInspection,
+  type NativeSemanticBlock,
+} from "./semantic.js";
