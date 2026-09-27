@@ -40,6 +40,7 @@ export {
   type NativeSourceProof,
   type NativeMatchedApi,
   type NativeInspectedScope,
+  type NativeNegativeProof,
   type NativeIncompatibleCheck,
   type NativeDeploymentTarget,
   type NativeSemanticCheck,
@@ -70,3 +71,9 @@ export {
   type NativeMatchedApiBlock,
   type NativeAccountedReference,
 } from "./matched-api.js";
+
+export {
+  collectNativeIncompatibleEvidence,
+  type NativeIncompatibleResult,
+  type NativePatternInspection,
+} from "./incompatible.js";
