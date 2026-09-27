@@ -915,3 +915,26 @@ test("pattern where-looked citations bind files and calls; skipped files remain 
     { file: "src/large.ts", reason: "source too large" },
   ]);
 });
+test("malformed source cannot silently provide negative pattern proof", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const malformed = "const broken = (";
+  const [record] = await inspectIncompatiblePatterns(
+    memoryHandle({ "src/a.ts": 'axios.get("/");', "src/b.ts": malformed }),
+    [{ patternId: "timeout", kind: "option-key-value" }],
+  );
+  assert.ok(record);
+  assert.equal(record.state, "uninspectable");
+  assert.equal(record.capped, true);
+  assert.deepEqual(record.inspectedFiles, ["src/a.ts"]);
+  assert.deepEqual(
+    record.whereLooked.files.map((f) => f.path),
+    ["src/a.ts"],
+  );
+  assert.ok(
+    record.whereLooked.unchecked.some(
+      (u) => u.file === "src/b.ts" && u.reason === "source parse diagnostics",
+    ),
+  );
+  const cited = record.uninspectable.find((u) => u.file === "src/b.ts")!;
+  assert.ok(Buffer.from(malformed).subarray(cited.start, cited.end).length > 0);
+});
