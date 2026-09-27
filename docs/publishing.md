@@ -28,7 +28,7 @@ All three need real on-disk modules, so single-file bundling is out.
 ## Cutting a release
 
 1. Land everything on main, green CI.
-2. Tag: `git tag v0.1.0 && git push origin v0.1.0`.
+2. Tag the next unclaimed version: `git tag v0.1.1 && git push origin v0.1.1`.
 3. The Release workflow builds, tests, stages, prints the tarball contents
    (`npm pack --dry-run`) and publishes with `--provenance`.
 
@@ -38,23 +38,26 @@ All three need real on-disk modules, so single-file bundling is out.
 ## Trusted publishing (OIDC), and the first-publish exception
 
 Releases authenticate with npm
-[trusted publishing](https://docs.npmjs.com/trusted-publishers-for-2fa-and-gat-management/):
+[trusted publishing](https://docs.npmjs.com/trusted-publishers/):
 no long-lived npm token anywhere, and provenance attestations come free. This
 matters because npm is deprecating the granular-access-token 2FA bypass used
 by legacy token-based CI publishing.
 
 Chicken-and-egg: npm only lets you configure a trusted publisher for a
-package that already exists. So:
+package that already exists. So the first publish bootstrapped manually:
 
-1. **First publish (v0.1.0) is manual**, from a maintainer machine:
-   `pnpm install --frozen-lockfile && pnpm build && pnpm test`,
-   `node scripts/stage-npm.mjs --version 0.1.0`, then
-   `cd .npm-staging && npm publish --access public` (interactive npm login,
-   email OTP until 2FA is enrolled).
-2. On npmjs.com: package settings → Trusted Publisher → GitHub Actions,
-   repository `rowkavdev/ghostdeps`, workflow `release.yml`.
-3. Every later release is just the tag push above; the workflow's OIDC token
-   does the auth.
+1. **First publish (v0.1.0) is done** (2026-09-27): staged from a maintainer
+   machine with `node scripts/stage-npm.mjs --version 0.1.0` and published
+   from `.npm-staging` with `npm publish --access public` using a short-lived
+   access token. The npm account now uses a security key for 2FA; no
+   long-lived token remains.
+2. **Trusted-publisher connection is pending** account verification on npm.
+   Until it is configured (package settings → Trusted Publisher → GitHub
+   Actions, repository `rowkavdev/ghostdeps`, workflow `release.yml`), tag
+   pushes will NOT authenticate - cut releases from a maintainer machine the
+   same way as the first publish.
+3. Once the connection is live, every later release is just the tag push
+   above; the workflow's OIDC token does the auth.
 
 ## Versioning
 
