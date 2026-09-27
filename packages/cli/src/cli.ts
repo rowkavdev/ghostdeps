@@ -13,6 +13,7 @@ import { commandHelp, helpText } from "./help.js";
 import {
   DEFAULT_RULES,
   SAME_ECOSYSTEM_DUPLICATES_RULE,
+  JS_NATIVE_RULES,
   parseSeverity,
   type Confidence,
   type PolicyConfig,
@@ -160,8 +161,12 @@ const CONFIDENCES = new Set(["high", "medium", "low"]);
 
 /** A typo'd rule id must fail loudly, never silently match nothing. */
 function assertKnownRule(id: string, flag: string): void {
-  // Policy rules plus the engine-emitted rules ruleConfig reaches (#58).
-  const known = [...DEFAULT_RULES.map((rule) => rule.id), SAME_ECOSYSTEM_DUPLICATES_RULE];
+  // Policy rules and every engine-emitted rule, including source-validated native rules.
+  const known = [
+    ...DEFAULT_RULES.map((rule) => rule.id),
+    SAME_ECOSYSTEM_DUPLICATES_RULE,
+    ...JS_NATIVE_RULES.map((rule) => rule.id),
+  ];
   if (!known.includes(id)) {
     throw new UsageError(`unknown rule for ${flag}: ${id} (known rules: ${known.join(", ")})`);
   }
