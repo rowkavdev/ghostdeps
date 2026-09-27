@@ -655,3 +655,175 @@ describe("end-to-end: push to the default branch (#337)", () => {
     }
   });
 });
+
+describe("end-to-end: check_run.rerequested restarts the run (#337)", () => {
+  const REREQUEST_PAYLOAD = new URL(
+    "../../test/fixtures/check_run.rerequested.json",
+    import.meta.url,
+  );
+  /** The recorded re-run's head: the same SHA the opened cases analyse. */
+  const HEAD = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+  /** The recorded re-run's original check run id - never written to. */
+  const OLD_RUN_ID = 4001001;
+  const NEW_RUN_ID = 9004;
+
+  let server: Server;
+  let baseUrl: string;
+  const savedEnv: Record<string, string | undefined> = {};
+
+  before(() => {
+    nock.disableNetConnect();
+    nock.enableNetConnect("127.0.0.1");
+    for (const key of ["GHOSTDEPS_RECOMMENDATIONS", "GHOSTDEPS_SOURCE_PR_TRIGGER", "APP_ID"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  after(() => {
+    nock.enableNetConnect();
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  beforeEach(async () => {
+    const probot = new Probot({ appId: APP_ID, privateKey, secret: SECRET, logLevel: "fatal" });
+    const middleware = await createNodeMiddleware(createGhostDepsApp({ appId: APP_ID }), {
+      probot,
+    });
+    server = createServer((req, res) => {
+      void middleware(req, res, () => {
+        res.writeHead(404).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    nock.cleanAll();
+  });
+
+  it("re-analyses the SHA and completes a fresh run, never touching the old one", async () => {
+    const body = await readFile(REREQUEST_PAYLOAD, "utf8");
+    const payload = JSON.parse(body) as {
+      installation: { id: number };
+      repository: { id: number };
+      check_run: { pull_requests: { number: number }[] };
+    };
+    const caseDir = join(E2E_DIR, "added-used");
+    const diff = await readFile(join(caseDir, "pr.diff"), "utf8");
+    const basePackage = await readFile(join(caseDir, "base-package.json"), "utf8");
+    const headPackage = await readFile(join(caseDir, "head", "package.json"), "utf8");
+    const tarball = await tarballFor(caseDir, HEAD);
+    const baseSha = "9049f1265b7d61be4a8904a9a27120d2064dab3b";
+
+    let created: Json | undefined;
+    let completed: (value: Json) => void = () => undefined;
+    const done = new Promise<Json>((resolve) => (completed = resolve));
+
+    // Handler side: one narrowed token and one files lookup for the re-run's
+    // source-only check (#196), same shape as a first run.
+    nock(API)
+      .post(`/app/installations/${payload.installation.id}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b, {
+          repository_ids: [payload.repository.id],
+          permissions: { contents: "read", pull_requests: "read" },
+        });
+        return true;
+      })
+      .reply(201, { token: "handler-token", expires_at: "2099-01-01T00:00:00Z" });
+    nock(API)
+      .get(`${REPO_PATH}/pulls/${payload.check_run.pull_requests[0]!.number}/files`)
+      .query(true)
+      .reply(
+        200,
+        changedPaths(diff).map((filename) => ({ filename, status: "modified" })),
+      );
+
+    // Worker side: restart creates a fresh in_progress run (#97) - no
+    // listForRef, and the old run id is never patched. A fresh app has an
+    // empty result cache, so the re-run re-analyses in full.
+    nock(API)
+      .post(`/app/installations/${payload.installation.id}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b.repository_ids, [payload.repository.id]);
+        assert.deepEqual(b.permissions, { contents: "read", checks: "write" });
+        return true;
+      })
+      .reply(201, { token: "worker-token", expires_at: "2099-01-01T00:00:00Z" });
+    nock(API)
+      .post(`${REPO_PATH}/check-runs`, (b: Json) => {
+        created = b;
+        return true;
+      })
+      .reply(201, { id: NEW_RUN_ID });
+    nock(API)
+      .get(`${REPO_PATH}/tarball/${HEAD}`)
+      .reply(302, "", {
+        location: `https://codeload.github.com/${OWNER}/${REPO}/legacy.tar.gz/${HEAD}`,
+      });
+    nock("https://codeload.github.com")
+      .get(`/${OWNER}/${REPO}/legacy.tar.gz/${HEAD}`)
+      .reply(200, Buffer.from(tarball), { "content-type": "application/x-gzip" });
+    nock(API)
+      .get(`${REPO_PATH}/compare/${baseSha}...${HEAD}`)
+      .reply(200, diff, { "content-type": "text/plain; charset=utf-8" });
+    nock(API)
+      .get(`${REPO_PATH}/contents/package.json`)
+      .query({ ref: baseSha })
+      .reply(200, basePackage, { "content-type": "text/plain; charset=utf-8" });
+    nock(API)
+      .get(`${REPO_PATH}/contents/package.json`)
+      .query({ ref: HEAD })
+      .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+    nock(API)
+      .patch(`${REPO_PATH}/check-runs/${NEW_RUN_ID}`, (b: Json) => {
+        completed(b);
+        return true;
+      })
+      .reply(200, { id: NEW_RUN_ID });
+
+    const res = await fetch(`${baseUrl}/api/github/webhooks`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": "check_run",
+        "x-github-delivery": randomUUID(),
+        "x-hub-signature-256": sign(body),
+      },
+      body,
+    });
+    assert.equal(res.status, 200);
+
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(new Error(`no completed check run; pending: ${nock.pendingMocks().join(", ")}`)),
+        RUN_TIMEOUT_MS,
+      );
+    });
+    try {
+      const final = await Promise.race([done, timeout]);
+      // Every mock consumed: exactly one create (the restart), no read or
+      // write against the superseded run, no result-cache short-circuit.
+      assert.deepEqual(nock.pendingMocks(), []);
+      assert.ok(created, "check run was never created");
+      assert.equal(created.name, checkName);
+      assert.equal(created.head_sha, HEAD);
+      assert.equal(created.status, "in_progress");
+      assert.match(created.external_id as string, new RegExp(`:rerun:${OLD_RUN_ID}:`));
+
+      // Same head, same analysis: the re-run's completed output is the
+      // opened case's golden.
+      const expected = await readFile(join(caseDir, "expected-check.json"), "utf8");
+      assert.equal(`${JSON.stringify(stable(final), null, 2)}\n`, expected);
+      assert.equal(final.status, "completed");
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+});
