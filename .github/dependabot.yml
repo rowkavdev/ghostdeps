@@ -23,6 +23,14 @@ updates:
       # Tracked in #506.
       - dependency-name: "@types/node"
         versions: [">=23"]
+    # Test fixtures intentionally pin old, vulnerable and malformed manifests -
+    # they are analysis inputs, not real dependencies. Excluding them stops
+    # spurious security-update jobs (dependency_file_not_supported failures)
+    # and fixture bump PRs while real manifests stay covered.
+    exclude-paths:
+      - "fixtures/**"
+      - "packages/core/test/**"
+      - "packages/github-app/test/**"
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -32,3 +40,33 @@ updates:
       actions:
         patterns:
           - "*"
+  # Entries below exist only so their ecosystems honor exclude-paths for
+  # fixture trees; open-pull-requests-limit 0 disables version-update PRs
+  # (security updates still run, but skip the excluded fixture paths).
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    exclude-paths:
+      - "fixtures/**"
+      - "packages/core/test/**"
+      - "packages/github-app/test/**"
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    exclude-paths:
+      - "fixtures/**"
+      - "packages/core/test/**"
+      - "packages/github-app/test/**"
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    exclude-paths:
+      - "fixtures/**"
+      - "packages/core/test/**"
+      - "packages/github-app/test/**"
