@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "fixtureRoots": [
+    "fixtures/go",
+    "fixtures/js",
+    "fixtures/monorepo",
+    "fixtures/polyglot",
+    "fixtures/python",
+    "fixtures/rust"
+  ]
+}
