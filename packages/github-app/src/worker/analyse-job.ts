@@ -128,6 +128,15 @@ export interface AnalysisWorkerOptions {
 export type CheckoutScanOptions = NonNullable<Parameters<typeof FsRepositoryHandle.open>[1]>;
 
 /**
+ * Fixture scope (#354) applies to full scans only. A PR analysis compares the
+ * head against its base, and the design requires one effective scope on both
+ * sides with old/new config disclosure - the PR diff slice, not this one.
+ * Scoping only the head checkout would silently reinterpret the comparison.
+ */
+export const fixtureScopeEnabled = (run: AnalyseRunOptions): boolean =>
+  run.pullRequestChanges === undefined;
+
+/**
  * Scan the checkout and run core's isolated engine. The scan-completeness
  * notes go to core as AnalyseOptions.scanCompleteness (and scanIncomplete):
  * core appends the notes and caps absence findings, so the app never calls
@@ -141,10 +150,18 @@ export async function analyseCheckout(
   scan: CheckoutScanOptions = {},
   engine: typeof analyseRepositoryIsolated = analyseRepositoryIsolated,
 ): Promise<AnalysisResult> {
-  const handle = await FsRepositoryHandle.open(root, scan);
+  const handle = await FsRepositoryHandle.open(
+    root,
+    fixtureScopeEnabled(run) ? { ...scan, fixtureScope: true } : scan,
+  );
   const scanCompleteness = scanCompletenessFindings(handle.scan);
   const result = await engine(handle, {
     adapters: adapterModules,
+    // Mirror the CLI (#426/#481): a committed config is disclosed; the empty
+    // "none" record is not, so checks on unconfigured repos are unchanged.
+    ...(handle.scan.scope && handle.scan.scope.source !== "none"
+      ? { scanScope: handle.scan.scope }
+      : {}),
     ...(run.pullRequestChanges ? { pullRequestChanges: run.pullRequestChanges } : {}),
     ...(run.pullRequestSourceChanges
       ? { pullRequestSourceChanges: run.pullRequestSourceChanges }

@@ -716,6 +716,54 @@ describe("analyseCheckout: scan completeness (#136)", () => {
   });
 });
 
+describe("analyseCheckout: fixture scope (#354)", () => {
+  async function scopedCheckout(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "ghostdeps-scope-test-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "x", private: true, version: "0.0.0", dependencies: { a: "1" } }),
+    );
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src/index.js"), 'import a from "a";\n');
+    await mkdir(join(dir, "fixtures"));
+    await writeFile(
+      join(dir, "fixtures", "package.json"),
+      JSON.stringify({ name: "fake", dependencies: { leftpad: "1" } }),
+    );
+    await writeFile(
+      join(dir, ".ghostdeps.json"),
+      JSON.stringify({ schemaVersion: 1, fixtureRoots: ["fixtures"] }),
+    );
+    return dir;
+  }
+
+  it("applies and discloses the committed config on full scans", async () => {
+    const result = await analyseCheckout(await scopedCheckout(), [], {});
+    assert.equal(result.scanScope?.source, "repo-config");
+    assert.deepEqual(result.scanScope?.roots, [
+      { root: "fixtures", matched: true, files: 1, manifests: 1 },
+    ]);
+    assert.ok(result.findings.some((f) => f.summary.includes("fixture scope omitted 1 file")));
+  });
+
+  it("does not scope PR analyses before the base/head diff slice", async () => {
+    const changes = [
+      { change: "added", name: "a", ecosystem: "javascript-typescript", manifest: "package.json" },
+    ] as const;
+    const result = await analyseCheckout(await scopedCheckout(), [], {
+      pullRequestChanges: changes,
+    });
+    assert.equal(result.scanScope, undefined);
+    assert.ok(!result.findings.some((f) => f.summary.includes("fixture scope omitted")));
+  });
+
+  it("fails visibly on a malformed config instead of analysing anyway", async () => {
+    const dir = await scopedCheckout();
+    await writeFile(join(dir, ".ghostdeps.json"), '{"schemaVersion":2,"fixtureRoots":[]}');
+    await assert.rejects(analyseCheckout(dir, [], {}), /\.ghostdeps\.json/);
+  });
+});
+
 describe("analyseCheckout: recommendation policy on the app path", () => {
   async function unusedRepo(): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), "ghostdeps-policy-test-"));
