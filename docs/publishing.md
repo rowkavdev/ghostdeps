@@ -1,6 +1,6 @@
-# Publishing the `ghostdeps` npm package
+# Publishing the `@rowkav09/ghostdeps` npm package
 
-The CLI ships on npm as a single unscoped package, `ghostdeps`. This document
+The CLI ships on npm as a scoped package, `@rowkav09/ghostdeps` (the unscoped name is blocked by the registry similarity rule). This document
 is the release process and the reasoning behind the layout.
 
 ## Layout
