@@ -179,6 +179,7 @@ async function wholeBlock(
   bytes: Uint8Array,
   scope: NativeReferenceSpan,
   call: NativeReferenceSpan,
+  kind: NativeFlowKind,
 ): Promise<boolean> {
   let text: string;
   try {
@@ -210,8 +211,52 @@ async function wholeBlock(
             ts.isFunctionLike(node.parent) &&
             "body" in node.parent &&
             node.parent.body === node)
-        )
-          found = true;
+        ) {
+          // A status/data negative is safe only for a local binding whose
+          // every use is one directly inspected member read. Any bare value,
+          // assignment, closure, return, or shadowed name is unresolved.
+          if (kind === "status-check" || kind === "parsed-response") {
+            let resultName: string | null = null;
+            let declaration: TsNode | null = null;
+            const locate = (child: TsNode): void => {
+              if (
+                ts.isVariableDeclaration(child) &&
+                ts.isIdentifier(child.name) &&
+                child.initializer &&
+                within(toByte(child.initializer.getStart(sf), child.initializer.getEnd()), call)
+              ) {
+                resultName = child.name.text;
+                declaration = child.name;
+              }
+              ts.forEachChild(child, locate);
+            };
+            locate(node);
+            if (!resultName) return;
+            let unsafe = false;
+            const inspect = (child: TsNode): void => {
+              if (child !== node && ts.isFunctionLike(child)) {
+                if (child.getText(sf).includes(resultName!)) unsafe = true;
+                return;
+              }
+              if (ts.isIdentifier(child) && child.text === resultName && child !== declaration) {
+                const parent = child.parent;
+                if (!(
+                  (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) &&
+                  parent.expression === child &&
+                  ((ts.isPropertyAccessExpression(parent) &&
+                    ["status", "ok", "data"].includes(parent.name.text)) ||
+                    (ts.isElementAccessExpression(parent) &&
+                      ts.isStringLiteral(parent.argumentExpression) &&
+                      ["status", "ok", "data"].includes(parent.argumentExpression.text)))
+                ))
+                  unsafe = true;
+              }
+              ts.forEachChild(child, inspect);
+            };
+            inspect(node);
+            if (!unsafe) found = true;
+          } else found = true;
+        }
       }
     }
     ts.forEachChild(node, visit);
@@ -553,7 +598,12 @@ export async function collectNativeSemanticEvidence(
                       : /\b(?:await|then)\b/u;
             if (
               !within(negative.scope, call) ||
-              !(await wholeBlock(bytes.get(negative.scope.file)!, negative.scope, call)) ||
+              !(await wholeBlock(
+                bytes.get(negative.scope.file)!,
+                negative.scope,
+                call,
+                record.kind,
+              )) ||
               scopeText === null ||
               forbidden.test(scopeText) ||
               optionText.some((text) => text === null || forbidden.test(text)) ||
