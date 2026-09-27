@@ -590,6 +590,9 @@ index 3333333..4444444 100644
   });
 
   it("analyses the full repository when the changes cannot be read in full", async () => {
+    // The fallback stays PR-triggered, so fixture scope stays OFF (#354):
+    // a head-only scope here would hide changed fixture paths without the
+    // base/head comparison the PR contract requires.
     const { client, rec } = fakeClient({ diff: { status: 406 } });
     let seen: AnalyseRunOptions | undefined;
     const worker = createAnalysisWorker({
@@ -611,6 +614,52 @@ index 3333333..4444444 100644
     );
   });
 
+  const scopedRepo: TarEntry[] = [
+    ...prRepo,
+    {
+      name: `${ROOT}.ghostdeps.json`,
+      body: JSON.stringify({ schemaVersion: 1, fixtureRoots: ["fixtures"] }),
+    },
+    { name: `${ROOT}fixtures/`, type: "directory" },
+    {
+      name: `${ROOT}fixtures/package.json`,
+      body: JSON.stringify({ name: "fixture", private: true, dependencies: { decoy: "^1.0.0" } }),
+    },
+  ];
+
+  it("keeps the unavailable-diff fallback unscoped on a configured repo (#354)", async () => {
+    const { client, rec } = fakeClient({ diff: { status: 406 } });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(scopedRepo)),
+    });
+    await worker(prJob);
+    const out = rec.updated[0]?.output as { title?: string; summary?: string };
+    const text = (out.summary ?? "").replace(/\\/g, "");
+    // The fallback note stays; fixture scope and its omission note stay off,
+    // because a head-only scope would hide changed fixture paths (#354).
+    assert.match(text, /analysed the whole repository/);
+    assert.doesNotMatch(text, /### Scan scope/);
+    assert.doesNotMatch(text, /fixture scope omitted/);
+  });
+
+  it("scopes push full scans end to end on a configured repo (#354)", async () => {
+    const { client, rec } = fakeClient();
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(scopedRepo)),
+    });
+    await worker(job());
+    const out = rec.updated[0]?.output as { title?: string; summary?: string };
+    const text = (out.summary ?? "").replace(/\\/g, "");
+    assert.match(text, /### Scan scope/);
+    assert.match(text, /fixture scope omitted 1 file/);
+  });
+
   it("does not fetch a diff for push jobs or fork re-runs", async () => {
     for (const trigger of [undefined, { kind: "rerequested", checkRunId: 5 } as const]) {
       const { client, rec } = fakeClient({ diff: DIFF, files });
@@ -627,7 +676,8 @@ index 3333333..4444444 100644
       });
       await worker(job(trigger));
       assert.deepEqual(rec.compares, []);
-      assert.deepEqual(seen, {});
+      // Genuine full scans (no PR base) opt in to committed fixture scope (#354).
+      assert.deepEqual(seen, { fixtureScope: true });
     }
   });
 
@@ -738,7 +788,7 @@ describe("analyseCheckout: fixture scope (#354)", () => {
   }
 
   it("applies and discloses the committed config on full scans", async () => {
-    const result = await analyseCheckout(await scopedCheckout(), [], {});
+    const result = await analyseCheckout(await scopedCheckout(), [], { fixtureScope: true });
     assert.equal(result.scanScope?.source, "repo-config");
     assert.deepEqual(result.scanScope?.roots, [
       { root: "fixtures", matched: true, files: 1, manifests: 1 },
@@ -746,21 +796,23 @@ describe("analyseCheckout: fixture scope (#354)", () => {
     assert.ok(result.findings.some((f) => f.summary.includes("fixture scope omitted 1 file")));
   });
 
-  it("does not scope PR analyses before the base/head diff slice", async () => {
+  it("does not scope runs the worker has not marked as full scans", async () => {
+    // PR analyses pass pullRequestChanges; a PR-triggered full-repository
+    // fallback passes neither flag. Both stay unscoped.
     const changes = [
       { change: "added", name: "a", ecosystem: "javascript-typescript", manifest: "package.json" },
     ] as const;
-    const result = await analyseCheckout(await scopedCheckout(), [], {
-      pullRequestChanges: changes,
-    });
-    assert.equal(result.scanScope, undefined);
-    assert.ok(!result.findings.some((f) => f.summary.includes("fixture scope omitted")));
+    for (const run of [{ pullRequestChanges: changes }, {}] as const) {
+      const result = await analyseCheckout(await scopedCheckout(), [], run);
+      assert.equal(result.scanScope, undefined);
+      assert.ok(!result.findings.some((f) => f.summary.includes("fixture scope omitted")));
+    }
   });
 
   it("fails visibly on a malformed config instead of analysing anyway", async () => {
     const dir = await scopedCheckout();
     await writeFile(join(dir, ".ghostdeps.json"), '{"schemaVersion":2,"fixtureRoots":[]}');
-    await assert.rejects(analyseCheckout(dir, [], {}), /\.ghostdeps\.json/);
+    await assert.rejects(analyseCheckout(dir, [], { fixtureScope: true }), /\.ghostdeps\.json/);
   });
 });
 
