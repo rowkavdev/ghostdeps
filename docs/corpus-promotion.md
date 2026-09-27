@@ -60,7 +60,15 @@ touching
 its workflow is skipped by trigger path filtering, which would block every
 non-corpus PR. So the workflow fires on _all_ PRs and the `changes` job
 gates the scan to the paths above; a job skipped by a conditional reports
-Success, keeping the check satisfiable on untouched paths.
+Success, keeping the check satisfiable on untouched paths. The path list
+lives in one place (`scripts/corpus-gate.mjs`), pinned by
+`scripts/corpus-gate.test.mjs`.
+
+**Gating fails closed.** If the `changes` job does not succeed (its diff or
+classification broke), the `corpus` job runs and fails immediately instead
+of skipping: a skipped job would report Success and let a required check
+pass with no scan. Relevant, docs-only, and gating-failure behavior is
+pinned by the gate tests plus the fail-closed step in the workflow.
 
 **The flip (one line).** A maintainer adds the `corpus` check to the required
 status checks of the main branch ruleset. That is the whole change: the

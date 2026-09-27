@@ -8,7 +8,8 @@
  * (machine-readable fenced JSON + human summary) and the job summary.
  *
  * Rule (from the cap ruling): green +1, red resets, no-signal neither counts
- * nor resets, and a third consecutive no-signal day breaks the window.
+ * nor resets, and a third consecutive no-signal day breaks the window with
+ * older history - it stops the count without erasing a newer live streak.
  * A day is green when a scheduled run's corpus job concluded success that
  * UTC day, red when one concluded failure/cancelled, and no-signal when no
  * scheduled run exists for that day. Only fully elapsed days are evaluated
@@ -22,13 +23,12 @@
  * optional CORPUS_WORKFLOW (default corpus.yml), STREAK_ISSUE (default 172).
  */
 import { appendFileSync } from "node:fs";
+import { CAP_LIFT_TARGET, computeStreak } from "./corpus-streak-lib.mjs";
 
 const token = process.env.GITHUB_TOKEN;
 const repo = process.env.GITHUB_REPOSITORY;
 const workflow = process.env.CORPUS_WORKFLOW ?? "corpus.yml";
 const issueNumber = Number(process.env.STREAK_ISSUE ?? "172");
-const CAP_LIFT_TARGET = 14;
-const MISS_LIMIT = 3;
 const MAX_PAGES = 2; // 200 scheduled runs ~= 6+ months of nightlies
 const MARKER = "<!-- corpus-streak -->";
 
@@ -110,44 +110,27 @@ for (const run of runs) {
   if (byDay.get(d) !== "green") byDay.set(d, color);
 }
 
-// Walk fully elapsed days, newest first: yesterday, then backwards.
-let streak = 0;
-let consecutiveMisses = 0;
-let lastRedDate;
-let windowBroken = false;
+// Build the newest-first sequence of fully elapsed days, then let the pure
+// computeStreak apply the cap ruling (sequence semantics are unit-tested in
+// scripts/corpus-streak.test.mjs).
+const days = [];
 let exhausted = false;
 for (let offset = -1; offset > -370; offset -= 1) {
   const d = utcDay(offset);
   const color = byDay.get(d);
-  if (color === "green") {
-    streak += 1;
-    consecutiveMisses = 0;
+  if (color !== undefined) {
+    days.push({ date: d, color });
     continue;
-  }
-  if (color === "red") {
-    lastRedDate = d;
-    break;
   }
   if (runs.length === 0 || d < day(runs.at(-1).created_at)) {
     exhausted = true; // beyond recorded history; older days are unknowable
     break;
   }
-  consecutiveMisses += 1;
-  if (consecutiveMisses >= MISS_LIMIT) {
-    windowBroken = true;
-    streak = 0;
-    break;
-  }
+  days.push({ date: d, color: "miss" });
 }
 
 const state = {
-  streak,
-  target: CAP_LIFT_TARGET,
-  capLiftReady: streak >= CAP_LIFT_TARGET,
-  consecutiveMisses,
-  windowBroken,
-  exhaustedHistory: exhausted,
-  ...(lastRedDate === undefined ? {} : { lastRedDate }),
+  ...computeStreak(days, { exhaustedHistory: exhausted }),
   evaluatedThrough: utcDay(-1),
   rule: "green +1; red resets; no-signal skips; third consecutive miss breaks the window",
 };
@@ -161,7 +144,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     [
       "## Corpus streak (#172)",
       "",
-      `**${streak} / ${CAP_LIFT_TARGET} consecutive green nightlies**` +
+      `**${state.streak} / ${CAP_LIFT_TARGET} consecutive green nightlies**` +
         (state.capLiftReady ? " - cap lift ready" : ""),
       "",
       "```json",
@@ -175,7 +158,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 // Publish: one upserted comment on the issue, marked so it is findable.
 const body = [
   MARKER,
-  `**Corpus streak: ${streak} / ${CAP_LIFT_TARGET} consecutive green nightlies**` +
+  `**Corpus streak: ${state.streak} / ${CAP_LIFT_TARGET} consecutive green nightlies**` +
     (state.capLiftReady ? " - **cap lift ready**" : ""),
   "",
   "Machine-readable state (updated every nightly):",

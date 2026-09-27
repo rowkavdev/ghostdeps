@@ -15,7 +15,10 @@ on:
     # blocking non-corpus PRs on a never-reported status (#172). The changes
     # job gates the expensive scan to corpus-relevant paths; a skipped job
     # reports Success, so promotion is a one-line flip: mark the `corpus`
-    # check required in the main ruleset. See docs/corpus-promotion.md.
+    # check required in the main ruleset. Gating fails closed: if the
+    # changes job does not succeed, the corpus job runs and fails rather
+    # than satisfying a required check with no scan. See
+    # docs/corpus-promotion.md.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,7 +27,8 @@ concurrency:
 jobs:
   # Which corpus-relevant paths this PR touches. The full scan runs only when
   # one of these changes - engine code, the harness, the corpus itself, or
-  # the dependency surface the detectors see.
+  # the dependency surface the detectors see. The path list lives in
+  # scripts/corpus-gate.mjs, pinned by scripts/corpus-gate.test.mjs.
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -36,18 +40,20 @@ jobs:
           fetch-depth: 0
       - id: filter
         run: |
-          if git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD" \
-            | grep -Eq '^(corpus/|scripts/corpus|\.github/workflows/corpus\.yml|packages/|pnpm-lock\.yaml)'; then
-            echo "corpus=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "corpus=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "corpus=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD" | node scripts/corpus-gate.mjs)" >> "$GITHUB_OUTPUT"
   corpus:
     needs: changes
-    if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.outputs.corpus == 'true') }}
+    # Scan on schedule/dispatch, on relevant PRs, and - fail closed - on any
+    # PR whose gating did not succeed. Otherwise skip, which reports Success.
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.outputs.corpus == 'true' || needs.changes.result != 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Fail closed when path gating did not succeed
+        if: github.event_name == 'pull_request' && needs.changes.result != 'success'
+        run: |
+          echo "error: the changes job did not succeed, so corpus relevance is unknown - failing closed rather than passing unscanned (#172)" >&2
+          exit 1
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
