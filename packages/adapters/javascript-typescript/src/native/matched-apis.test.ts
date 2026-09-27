@@ -861,6 +861,10 @@ test("source-level require writes cannot produce a complete package-entry chain"
     'const ax=require("axios"); globalThis.require = () => ({get(){}}); ax.get("/x");',
     'const ax=require("axios"); globalThis["require"] = () => ({}); ax.get("/x");',
     'function replace() { require = () => ({}); } const ax=require("axios"); ax.get("/x");',
+    '({require}={require:()=>({get(){return "fake"}})}); const ax=require("axios"); ax.get("/x");',
+    '([require] = [() => ({get(){}})]); const ax=require("axios"); ax.get("/x");',
+    'Object.defineProperty(globalThis, "require", {value: () => ({get(){}})}); const ax=require("axios"); ax.get("/x");',
+    'Object.assign(globalThis, {require: () => ({get(){}})}); const ax=require("axios"); ax.get("/x");',
   ];
   for (const source of cases) {
     const files = { "src/a.cjs": source };

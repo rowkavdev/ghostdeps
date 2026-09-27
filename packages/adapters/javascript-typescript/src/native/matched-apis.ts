@@ -661,11 +661,87 @@ export async function findMatchedApiReferences(
         ["globalThis", "global"].includes(node.expression.text) &&
         ts.isStringLiteral(node.argumentExpression) &&
         node.argumentExpression.text === "require");
+    const assignmentTargetContainsLoader = (node: ts.Node): boolean => {
+      if (loaderTarget(node)) return true;
+      if (
+        ts.isParenthesizedExpression(node) ||
+        ts.isAsExpression(node) ||
+        ts.isSatisfiesExpression(node)
+      )
+        return assignmentTargetContainsLoader(node.expression);
+      if (ts.isObjectLiteralExpression(node))
+        return node.properties.some((property) =>
+          ts.isShorthandPropertyAssignment(property)
+            ? loaderTarget(property.name)
+            : ts.isPropertyAssignment(property)
+              ? assignmentTargetContainsLoader(property.initializer)
+              : ts.isSpreadAssignment(property) &&
+                assignmentTargetContainsLoader(property.expression),
+        );
+      if (ts.isArrayLiteralExpression(node))
+        return node.elements.some((element) =>
+          ts.isSpreadElement(element)
+            ? assignmentTargetContainsLoader(element.expression)
+            : assignmentTargetContainsLoader(element),
+        );
+      return false;
+    };
+    const reflectiveLoaderWrite = (node: ts.CallExpression): boolean => {
+      if (
+        !ts.isPropertyAccessExpression(node.expression) ||
+        !ts.isIdentifier(node.expression.expression) ||
+        node.expression.expression.text !== "Object"
+      )
+        return false;
+      if (
+        node.expression.name.text === "defineProperty" ||
+        node.expression.name.text === "defineProperties"
+      ) {
+        const [target, key] = node.arguments;
+        if (
+          !target ||
+          !key ||
+          !ts.isIdentifier(target) ||
+          !["globalThis", "global"].includes(target.text)
+        )
+          return false;
+        if (node.expression.name.text === "defineProperty")
+          return !ts.isStringLiteralLike(key) || key.text === "require";
+        return (
+          !ts.isObjectLiteralExpression(key) ||
+          key.properties.some(
+            (property) =>
+              !property.name ||
+              !ts.isStringLiteralLike(property.name) ||
+              property.name.text === "require",
+          )
+        );
+      }
+      if (node.expression.name.text === "assign") {
+        const [target, ...sources] = node.arguments;
+        return (
+          !!target &&
+          ts.isIdentifier(target) &&
+          ["globalThis", "global"].includes(target.text) &&
+          sources.some(
+            (source) =>
+              !ts.isObjectLiteralExpression(source) ||
+              source.properties.some(
+                (property) =>
+                  !property.name ||
+                  !ts.isStringLiteralLike(property.name) ||
+                  property.name.text === "require",
+              ),
+          )
+        );
+      }
+      return false;
+    };
     let loaderWritten = false;
     const findLoaderWrites = (node: ts.Node): void => {
       if (
         ts.isBinaryExpression(node) &&
-        loaderTarget(node.left) &&
+        assignmentTargetContainsLoader(node.left) &&
         node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
         node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
       )
@@ -678,6 +754,7 @@ export async function findMatchedApiReferences(
       )
         loaderWritten = true;
       if (ts.isDeleteExpression(node) && loaderTarget(node.expression)) loaderWritten = true;
+      if (ts.isCallExpression(node) && reflectiveLoaderWrite(node)) loaderWritten = true;
       ts.forEachChild(node, findLoaderWrites);
     };
     findLoaderWrites(sf);
