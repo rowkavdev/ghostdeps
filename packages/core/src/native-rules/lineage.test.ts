@@ -8,6 +8,7 @@ const src: Record<string, string> = {
   "src/req.cjs": 'const { get: g } = require("axios"); g("/x");',
   "src/one.ts": 'export { get as g } from "axios";',
   "src/two.ts": 'export { g as h } from "./one";',
+  "src/unrelated.ts": 'export { g as h } from "./one";',
   "src/barrel-use.ts": 'import { h as local } from "./two"; local("/x");',
   "src/wrapper.ts":
     'import axios from "axios"; function load() { return axios.get("/x"); } load();',
@@ -72,10 +73,12 @@ const entry = link(
 const alias = link("alias", "src/use.ts", "const a = g", "g", "a", "g", "a");
 const call = link("call", "src/use.ts", 'a("/x")', "a", "a", "a", "a");
 const chain = (links: NativeLineageChain["links"]): NativeLineageChain => ({ links });
+const files = new Set(Object.keys(src));
 describe("native lineage citation reconstruction (#458)", () => {
   it("upgrades a complete cited import, alias and call", async () => {
     assert.equal(
-      (await reconstructLineage(chain([entry, alias, call]), "axios", call.span, "a", read)).status,
+      (await reconstructLineage(chain([entry, alias, call]), "axios", call.span, "a", read, files))
+        .status,
       "core-reconstructed",
     );
   });
@@ -92,8 +95,16 @@ describe("native lineage citation reconstruction (#458)", () => {
     );
     const reqCall = link("call", "src/req.cjs", 'g("/x")', "g", "g", "g", "g");
     assert.equal(
-      (await reconstructLineage(chain([reqEntry, reqCall]), "axios", reqCall.span, "g", read))
-        .status,
+      (
+        await reconstructLineage(
+          chain([reqEntry, reqCall]),
+          "axios",
+          reqCall.span,
+          "g",
+          read,
+          files,
+        )
+      ).status,
       "core-reconstructed",
     );
     const first = link(
@@ -143,10 +154,68 @@ describe("native lineage citation reconstruction (#458)", () => {
           used.span,
           "local",
           read,
+          files,
         )
       ).status,
       "core-reconstructed",
     );
+  });
+  it("refuses a name-consistent barrel whose relative path resolves to another listed file", async () => {
+    const prior = src["src/two.ts"];
+    src["src/two.ts"] = 'export { g as h } from "./unrelated";';
+    try {
+      const first = link(
+        "re-export",
+        "src/one.ts",
+        'export { get as g } from "axios"',
+        "get",
+        "g",
+        "get",
+        "g",
+        '"axios"',
+      );
+      const falseEdge = link(
+        "re-export",
+        "src/two.ts",
+        'export { g as h } from "./unrelated"',
+        "g",
+        "h",
+        "g",
+        "h",
+        '"./unrelated"',
+      );
+      const imported = link(
+        "import",
+        "src/barrel-use.ts",
+        'import { h as local } from "./two"',
+        "h",
+        "local",
+        "h",
+        "local",
+        '"./two"',
+      );
+      const used = link(
+        "call",
+        "src/barrel-use.ts",
+        'local("/x")',
+        "local",
+        "local",
+        "local",
+        "local",
+      );
+      const result = await reconstructLineage(
+        chain([first, falseEdge, imported, used]),
+        "axios",
+        used.span,
+        "local",
+        read,
+        files,
+      );
+      assert.equal(result.status, "adapter-asserted");
+      assert.match(result.reason ?? "", /does not resolve to preceding cited file/);
+    } finally {
+      src["src/two.ts"] = prior!;
+    }
   });
   it("rejects a quoted package decoy outside the module source", async () => {
     const file = "src/use.ts";
@@ -166,7 +235,8 @@ describe("native lineage citation reconstruction (#458)", () => {
       const a = link("alias", file, "const a = g", "g", "a", "g", "a");
       const used = link("call", file, 'a("/x")', "a", "a", "a", "a");
       assert.match(
-        (await reconstructLineage(chain([forged, a, used]), "axios", used.span, "a", read)).reason!,
+        (await reconstructLineage(chain([forged, a, used]), "axios", used.span, "a", read, files))
+          .reason!,
         /declaration source/,
       );
     } finally {
@@ -176,12 +246,21 @@ describe("native lineage citation reconstruction (#458)", () => {
   it("rejects falsified package, missing edge, broken chain and invalid byte offset", async () => {
     const falsified = { ...entry, specifierSpan: span("src/use.ts", '"/x"') };
     assert.equal(
-      (await reconstructLineage(chain([falsified, alias, call]), "axios", call.span, "a", read))
-        .status,
+      (
+        await reconstructLineage(
+          chain([falsified, alias, call]),
+          "axios",
+          call.span,
+          "a",
+          read,
+          files,
+        )
+      ).status,
       "adapter-asserted",
     );
     assert.match(
-      (await reconstructLineage(chain([entry, call]), "axios", call.span, "a", read)).reason!,
+      (await reconstructLineage(chain([entry, call]), "axios", call.span, "a", read, files))
+        .reason!,
       /gap/,
     );
     const broken = {
@@ -189,13 +268,21 @@ describe("native lineage citation reconstruction (#458)", () => {
       brokenAt: { span: span("src/use.ts", "a"), reason: "dynamic import" },
     };
     assert.match(
-      (await reconstructLineage(broken, "axios", call.span, "a", read)).reason!,
+      (await reconstructLineage(broken, "axios", call.span, "a", read, files)).reason!,
       /dynamic import/,
     );
     const invalid = { ...alias, toSpan: { ...alias.toSpan, end: 99_999 } };
     assert.match(
-      (await reconstructLineage(chain([entry, invalid, call]), "axios", call.span, "a", read))
-        .reason!,
+      (
+        await reconstructLineage(
+          chain([entry, invalid, call]),
+          "axios",
+          call.span,
+          "a",
+          read,
+          files,
+        )
+      ).reason!,
       /offsets/,
     );
   });
@@ -237,6 +324,7 @@ describe("native lineage citation reconstruction (#458)", () => {
           outer.span,
           "load",
           read,
+          files,
         )
       ).status,
       "core-reconstructed",
