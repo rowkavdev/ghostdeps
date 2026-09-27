@@ -226,6 +226,43 @@ describe("native envelope seal (#454)", () => {
     if (result.status === "blocked")
       assert.ok(result.refusals.some((r) => r.reason === "declaration-unverified"));
   });
+  it("seals the actual top-level section despite a preceding nested namesake", async () => {
+    const data = {
+      ...contents,
+      "package.json":
+        '{"notes":{"dependencies":{"axios":"other"}},"dependencies":{"axios":"^1.0.0"}}',
+    };
+    const repository = repo(data),
+      snapshot = await mintNativeSnapshot(repository);
+    assert.equal(snapshot.status, "verified");
+    const result = await assembleNativeEnvelope(
+      repository,
+      rule,
+      dep,
+      snapshot.snapshotSha256,
+      components(snapshot.snapshotSha256),
+    );
+    assert.equal(result.status, "produced");
+  });
+  it("does not cite a nested section decoy for escaped top-level section and dependency keys", async () => {
+    const data = {
+      ...contents,
+      "package.json": String.raw`{"depend\u0065ncies":{"ax\u0069os":"^1.0.0"},"notes":{"dependencies":{"axios":"^1.0.0"}}}`,
+    };
+    const repository = repo(data),
+      snapshot = await mintNativeSnapshot(repository);
+    assert.equal(snapshot.status, "verified");
+    const result = await assembleNativeEnvelope(
+      repository,
+      rule,
+      dep,
+      snapshot.snapshotSha256,
+      components(snapshot.snapshotSha256),
+    );
+    assert.equal(result.status, "blocked");
+    if (result.status === "blocked")
+      assert.ok(result.refusals.some((r) => r.reason === "declaration-unverified"));
+  });
   it("refuses transitive or wrong direct declaration", async () => {
     const { repository, snapshotSha256, pillars } = await setup();
     for (const wrong of [
