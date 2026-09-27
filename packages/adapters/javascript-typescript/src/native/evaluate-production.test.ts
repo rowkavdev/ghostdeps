@@ -108,7 +108,7 @@ describe("native production end to end (#462)", () => {
       "18.0.0",
     );
   });
-  it("accounts for barrel, local alias and wrapper chains without laundering unresolved uses", async () => {
+  it("accounts for barrel, local alias and simple wrapper chains as verified positives (#473)", async () => {
     await fixture(
       {
         "src/barrel.ts": 'export { get } from "axios";',
@@ -120,17 +120,53 @@ describe("native production end to end (#462)", () => {
         assert.equal(result.evaluations[0]?.status, "produced", JSON.stringify(result.evaluations));
       },
     );
+    // #462 fail-closed fixtures flipped to positive: the exact
+    // statically-resolvable forms now carry full evidence end to end.
     await fixture(
       {
         "src/a.ts":
           'import axios from "axios"; const client=axios; async function f(){ const res=await client.get("/x"); if(res.status) return res.data; }',
       },
-      async (repo) => blocked(repo, "matched", "unresolved-reference"),
+      async (repo) => {
+        const result = await evaluate(repo);
+        assert.equal(result.evaluations[0]?.status, "produced", JSON.stringify(result.evaluations));
+        assert.ok(
+          result.findings[0]?.evidence.some(
+            (e) => e.kind === "native-api-matched" && e.file === "src/a.ts",
+          ),
+        );
+      },
     );
     await fixture(
       {
         "src/a.ts":
           'import axios from "axios"; function client(url:string){ return axios.get(url); } async function f(){ const res=await client("/x"); if(res.status) return res.data; }',
+      },
+      async (repo) => {
+        const result = await evaluate(repo);
+        assert.equal(result.evaluations[0]?.status, "produced", JSON.stringify(result.evaluations));
+        assert.ok(
+          result.findings[0]?.evidence.some(
+            (e) => e.kind === "native-api-matched" && e.file === "src/a.ts",
+          ),
+        );
+      },
+    );
+  });
+  it("keeps non-exact alias and wrapper forms fail-closed (#473)", async () => {
+    // Mutated alias: a member write defeats binding provenance.
+    await fixture(
+      {
+        "src/a.ts":
+          'import axios from "axios"; const client=axios; client.get = (url:string) => url; async function f(){ const res=await client.get("/x"); if(res.status) return res.data; }',
+      },
+      async (repo) => blocked(repo, "matched", "unresolved-reference"),
+    );
+    // Opaque wrapper: the parameter mapping cannot be inspected.
+    await fixture(
+      {
+        "src/a.ts":
+          'import axios from "axios"; function client(url:string){ return axios.get(`${url}/x`); } async function f(){ const res=await client("/x"); if(res.status) return res.data; }',
       },
       async (repo) => blocked(repo, "matched", "uninspected-use"),
     );
