@@ -199,7 +199,33 @@ async function wholeBlock(
   const visit = (node: TsNode): void => {
     if (ts.isBlock(node) || ts.isSourceFile(node)) {
       const exact = toByte(node.getStart(sf), node.getEnd());
-      if (key(exact) === key(scope) && within(scope, call)) found = true;
+      if (key(exact) === key(scope) && within(scope, call)) {
+        // A function-scoped var declared in a nested block escapes it.
+        // The result's lifetime is the containing function, not this block.
+        const escapedVar = (() => {
+          let unsafe = false;
+          const inspect = (child: TsNode): void => {
+            if (
+              ts.isVariableDeclaration(child) &&
+              child.initializer &&
+              !(child.parent.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) &&
+              within(toByte(child.getStart(sf), child.getEnd()), call) &&
+              !(
+                ts.isSourceFile(node) ||
+                (ts.isBlock(node) &&
+                  ts.isFunctionLike(node.parent) &&
+                  "body" in node.parent &&
+                  node.parent.body === node)
+              )
+            )
+              unsafe = true;
+            ts.forEachChild(child, inspect);
+          };
+          inspect(node);
+          return unsafe;
+        })();
+        if (!escapedVar) found = true;
+      }
     }
     ts.forEachChild(node, visit);
   };
