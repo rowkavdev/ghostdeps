@@ -20,6 +20,7 @@ import nock from "nock";
 import { createNodeMiddleware, Probot } from "probot";
 import { createGhostDepsApp } from "../app.js";
 import { checkName } from "@ghostdeps/checks-renderer";
+import { BUSY_PREFIX } from "../checks/reporter.js";
 import { createDefaultPolicy } from "@ghostdeps/core";
 import { InProcessJobQueue } from "../jobs.js";
 import { createAnalysisWorker } from "../worker/analyse-job.js";
@@ -822,6 +823,245 @@ describe("end-to-end: check_run.rerequested restarts the run (#337)", () => {
       const expected = await readFile(join(caseDir, "expected-check.json"), "utf8");
       assert.equal(`${JSON.stringify(stable(final), null, 2)}\n`, expected);
       assert.equal(final.status, "completed");
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+});
+
+describe("end-to-end: queue-full deliveries write one busy run per repository (#337)", () => {
+  const HEAD_A = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+  const HEAD_B = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+  /** Heads that arrive while the queue is full: C gets the busy run, D does not. */
+  const HEAD_C = "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1";
+  const HEAD_D = "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1";
+  const RUN_ID_A = 9001;
+  const RUN_ID_B = 9002;
+  const BUSY_RUN_ID = 9100;
+
+  let server: Server;
+  let baseUrl: string;
+  const savedEnv: Record<string, string | undefined> = {};
+  let openGate: () => void = () => undefined;
+
+  before(() => {
+    nock.disableNetConnect();
+    nock.enableNetConnect("127.0.0.1");
+    for (const key of ["GHOSTDEPS_RECOMMENDATIONS", "GHOSTDEPS_SOURCE_PR_TRIGGER", "APP_ID"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  after(() => {
+    nock.enableNetConnect();
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  // Deterministic overload: room for exactly one running and one queued job
+  // behind the test gate. A runs, B queues, C and D are refused. The worker
+  // is the real analysis worker (same construction as the app default).
+  beforeEach(async () => {
+    const probot = new Probot({ appId: APP_ID, privateKey, secret: SECRET, logLevel: "fatal" });
+    const gate = new Promise<void>((resolve) => (openGate = resolve));
+    const realWorker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: repoScopedClients(probot),
+      log: probot.log,
+      recommend: createDefaultPolicy(),
+    });
+    const queue = new InProcessJobQueue({
+      concurrency: 1,
+      maxPending: 1,
+      worker: async (job) => {
+        await gate;
+        await realWorker(job);
+      },
+    });
+    const middleware = await createNodeMiddleware(createGhostDepsApp({ appId: APP_ID, queue }), {
+      probot,
+    });
+    server = createServer((req, res) => {
+      void middleware(req, res, () => {
+        res.writeHead(404).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    nock.cleanAll();
+  });
+
+  async function deliver(payload: unknown, event = "pull_request"): Promise<void> {
+    const body = JSON.stringify(payload);
+    const res = await fetch(`${baseUrl}/api/github/webhooks`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": event,
+        "x-github-delivery": randomUUID(),
+        "x-hub-signature-256": sign(body),
+      },
+      body,
+    });
+    assert.equal(res.status, 200);
+  }
+
+  it("drops overloaded jobs with exactly one neutral busy run; queued work still completes", async () => {
+    const opened = JSON.parse(await readFile(PAYLOAD, "utf8")) as PullRequestPayload;
+    const syncFixture = new URL(
+      "../../test/fixtures/pull_request.synchronize.json",
+      import.meta.url,
+    );
+    const syncBase = JSON.parse(await readFile(syncFixture, "utf8")) as PullRequestPayload & {
+      before?: string;
+    };
+    const syncWith = (head: string) => ({
+      ...syncBase,
+      before: HEAD_A,
+      pull_request: { ...syncBase.pull_request, head: { sha: head } },
+    });
+
+    const installation = opened.installation.id;
+    const repoId = opened.repository.id;
+    const baseSha = opened.pull_request.base.sha;
+    const caseDir = join(E2E_DIR, "added-used");
+    const diff = await readFile(join(caseDir, "pr.diff"), "utf8");
+    const files = changedPaths(diff).map((filename) => ({ filename, status: "modified" }));
+
+    // Handler side: one narrowed token (cached across deliveries) and one
+    // files lookup per delivery. The busy writer gets checks:write only.
+    nock(API)
+      .post(`/app/installations/${installation}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b, {
+          repository_ids: [repoId],
+          permissions: { contents: "read", pull_requests: "read" },
+        });
+        return true;
+      })
+      .reply(201, { token: "handler-token", expires_at: "2099-01-01T00:00:00Z" });
+    for (let i = 0; i < 4; i++) {
+      nock(API).get(`${REPO_PATH}/pulls/${opened.number}/files`).query(true).reply(200, files);
+    }
+    nock(API)
+      .post(`/app/installations/${installation}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b.repository_ids, [repoId]);
+        assert.deepEqual(b.permissions, { checks: "write" });
+        return true;
+      })
+      .reply(201, { token: "busy-token", expires_at: "2099-01-01T00:00:00Z" });
+
+    const created: Json[] = [];
+    let busy: Json | undefined;
+    // The busy run is created already completed; only one is ever written.
+    nock(API)
+      .post(`${REPO_PATH}/check-runs`, (b: Json) => {
+        busy = b;
+        return true;
+      })
+      .reply(201, { id: BUSY_RUN_ID });
+    // Then the two real runs, in queue order.
+    for (const runId of [RUN_ID_A, RUN_ID_B]) {
+      nock(API)
+        .post(`${REPO_PATH}/check-runs`, (b: Json) => {
+          created.push(b);
+          return true;
+        })
+        .reply(201, { id: runId });
+    }
+
+    // Worker side for the two heads that run: one narrowed token per app
+    // instance, minted by the first job.
+    nock(API)
+      .post(`/app/installations/${installation}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b.repository_ids, [repoId]);
+        assert.deepEqual(b.permissions, { contents: "read", checks: "write" });
+        return true;
+      })
+      .reply(201, { token: "worker-token", expires_at: "2099-01-01T00:00:00Z" });
+    const completed: Json[] = [];
+    let finish: () => void = () => undefined;
+    const allCompleted = new Promise<void>((resolve) => (finish = resolve));
+
+    async function mockRun(headSha: string, runId: number): Promise<void> {
+      const basePackage = await readFile(join(caseDir, "base-package.json"), "utf8");
+      const headPackage = await readFile(join(caseDir, "head", "package.json"), "utf8");
+      const tarball = await tarballFor(caseDir, headSha);
+      nock(API)
+        .get(`${REPO_PATH}/commits/${headSha}/check-runs`)
+        .query(true)
+        .reply(200, { total_count: 0, check_runs: [] });
+      nock(API)
+        .get(`${REPO_PATH}/tarball/${headSha}`)
+        .reply(302, "", {
+          location: `https://codeload.github.com/${OWNER}/${REPO}/legacy.tar.gz/${headSha}`,
+        });
+      nock("https://codeload.github.com")
+        .get(`/${OWNER}/${REPO}/legacy.tar.gz/${headSha}`)
+        .reply(200, Buffer.from(tarball), { "content-type": "application/x-gzip" });
+      nock(API)
+        .get(`${REPO_PATH}/compare/${baseSha}...${headSha}`)
+        .reply(200, diff, { "content-type": "text/plain; charset=utf-8" });
+      nock(API)
+        .get(`${REPO_PATH}/contents/package.json`)
+        .query({ ref: baseSha })
+        .reply(200, basePackage, { "content-type": "text/plain; charset=utf-8" });
+      nock(API)
+        .get(`${REPO_PATH}/contents/package.json`)
+        .query({ ref: headSha })
+        .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+      nock(API)
+        .patch(`${REPO_PATH}/check-runs/${runId}`, (b: Json) => {
+          completed.push(b);
+          if (completed.length === 2) finish();
+          return true;
+        })
+        .reply(200, { id: runId });
+    }
+
+    await mockRun(HEAD_A, RUN_ID_A);
+    await mockRun(HEAD_B, RUN_ID_B);
+
+    await deliver(opened); // A runs behind the gate.
+    await deliver(syncWith(HEAD_B)); // B takes the one queue slot.
+    await deliver(syncWith(HEAD_C)); // C is refused: one busy run.
+    await deliver(syncWith(HEAD_D)); // D is refused: the limiter says no.
+
+    // The busy write happened inside C's delivery: completed at creation,
+    // neutral, busy-prefixed, on C's head - and D got nothing.
+    assert.ok(busy, "no busy run was written");
+    assert.equal(busy.head_sha, HEAD_C);
+    assert.equal(busy.status, "completed");
+    assert.equal(busy.conclusion, "neutral");
+    assert.ok((busy.external_id as string).startsWith(BUSY_PREFIX));
+
+    openGate();
+
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(new Error(`no completed check run; pending: ${nock.pendingMocks().join(", ")}`)),
+        RUN_TIMEOUT_MS,
+      );
+    });
+    try {
+      await Promise.race([allCompleted, timeout]);
+      // Every mock consumed: exactly one busy run, and the queued work ran.
+      assert.deepEqual(nock.pendingMocks(), []);
+      assert.equal(created.length, 2);
+      assert.equal(created[0]!.head_sha, HEAD_A);
+      assert.equal(created[1]!.head_sha, HEAD_B);
+      assert.equal(completed.length, 2);
+      const expected = await readFile(join(caseDir, "expected-check.json"), "utf8");
+      assert.equal(`${JSON.stringify(stable(completed[0]!), null, 2)}\n`, expected);
+      assert.equal(`${JSON.stringify(stable(completed[1]!), null, 2)}\n`, expected);
     } finally {
       clearTimeout(timer);
     }
