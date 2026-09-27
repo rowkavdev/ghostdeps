@@ -143,4 +143,140 @@ describe("scan fixture scope activation (#354)", () => {
       "the error names the config file",
     );
   });
+
+  it("a --fixture-roots payload replaces the committed roots with recorded provenance", async () => {
+    const root = await tempRepo();
+    await mkdir(path.join(root, "fixtures"), { recursive: true });
+    await writeFile(
+      path.join(root, "fixtures", "package.json"),
+      JSON.stringify({ name: "fixture-project", dependencies: { leftpad: "^1.0.0" } }),
+    );
+    await mkdir(path.join(root, "testdata"), { recursive: true });
+    await writeFile(
+      path.join(root, "testdata", "package.json"),
+      JSON.stringify({ name: "data-project", dependencies: { decoy: "^1.0.0" } }),
+    );
+    await writeConfig(root, { schemaVersion: 1, fixtureRoots: ["fixtures"] });
+
+    const json = capture();
+    const code = await run(
+      [
+        "scan",
+        "--json",
+        "--fixture-roots",
+        '{"schemaVersion":1,"fixtureRoots":["testdata"]}',
+        root,
+      ],
+      json.io,
+    );
+    assert.equal(code, 0, json.err.join("\n"));
+    const result = JSON.parse(json.out.join("\n")) as {
+      scanScope?: {
+        source: string;
+        digest: string;
+        configDigest: string | null;
+        overrideDigest: string | null;
+        excludedFiles: number;
+        roots: { root: string }[];
+      };
+      dependencies: { name: string }[];
+    };
+    assert.equal(result.scanScope?.source, "per-run-override");
+    assert.deepEqual(
+      result.scanScope?.roots.map((r) => r.root),
+      ["testdata"],
+      "the override replaces the committed roots, never merges",
+    );
+    assert.equal(
+      result.scanScope?.excludedFiles,
+      1,
+      "only the override root's file is excluded; the committed root is scanned again",
+    );
+    assert.ok(result.scanScope?.configDigest, "the committed config digest is disclosed");
+    assert.equal(
+      result.scanScope?.overrideDigest,
+      result.scanScope?.digest,
+      "the effective digest is the override's",
+    );
+
+    const human = capture();
+    assert.equal(
+      await run(
+        ["scan", "--fixture-roots", '{"schemaVersion":1,"fixtureRoots":["testdata"]}', root],
+        human.io,
+      ),
+      0,
+      human.err.join("\n"),
+    );
+    const text = human.out.join("\n");
+    assert.match(text, /Scan scope:/);
+    assert.match(text, /source per-run-override/);
+    assert.match(text, /config digest [0-9a-f]{64}/);
+    assert.match(text, /override digest [0-9a-f]{64}/);
+  });
+
+  it("an explicit empty override list clears committed roots and stays visible", async () => {
+    const root = await tempRepo();
+    await mkdir(path.join(root, "fixtures"), { recursive: true });
+    await writeFile(
+      path.join(root, "fixtures", "package.json"),
+      JSON.stringify({ name: "fixture-project", dependencies: { leftpad: "^1.0.0" } }),
+    );
+    await writeConfig(root, { schemaVersion: 1, fixtureRoots: ["fixtures"] });
+
+    const json = capture();
+    const code = await run(
+      ["scan", "--json", "--fixture-roots", '{"schemaVersion":1,"fixtureRoots":[]}', root],
+      json.io,
+    );
+    assert.equal(code, 0, json.err.join("\n"));
+    const result = JSON.parse(json.out.join("\n")) as {
+      scanScope?: { source: string; excludedFiles: number; roots: unknown[] };
+    };
+    assert.equal(result.scanScope?.source, "per-run-override", "the clear is recorded, not silent");
+    assert.deepEqual(result.scanScope?.roots, []);
+    assert.equal(result.scanScope?.excludedFiles, 0, "the cleared root's files are scanned");
+  });
+
+  it("fails visibly on a malformed --fixture-roots payload or a malformed committed config", async () => {
+    const root = await tempRepo();
+    await writeConfig(root, { schemaVersion: 1, fixtureRoots: ["fixtures"] });
+
+    const bad = capture();
+    assert.equal(await run(["scan", "--fixture-roots", "not json", root], bad.io), 2);
+    assert.match(bad.err.join("\n") + bad.out.join("\n"), /--fixture-roots/);
+
+    const badEquals = capture();
+    assert.equal(await run(["scan", "--fixture-roots=not json", root], badEquals.io), 2);
+    assert.match(badEquals.err.join("\n") + badEquals.out.join("\n"), /--fixture-roots/);
+
+    const missing = capture();
+    assert.equal(await run(["scan", "--fixture-roots"], missing.io), 2);
+    assert.match(missing.err.join("\n"), /--fixture-roots needs a value/);
+
+    // The committed file is read first: an override never launders a broken config.
+    await writeConfig(root, '{"schemaVersion":2,"fixtureRoots":[]}');
+    const laundered = capture();
+    assert.equal(
+      await run(
+        ["scan", "--fixture-roots", '{"schemaVersion":1,"fixtureRoots":[]}', root],
+        laundered.io,
+      ),
+      2,
+    );
+    assert.match(laundered.err.join("\n") + laundered.out.join("\n"), /\.ghostdeps\.json/);
+  });
+
+  it("rejects --fixture-roots on commands without fixture scope", async () => {
+    const root = await tempRepo();
+    const { io, err } = capture();
+    assert.equal(
+      await run(
+        ["languages", "--fixture-roots", '{"schemaVersion":1,"fixtureRoots":[]}', root],
+        io,
+      ),
+      2,
+    );
+    assert.match(err.join("\n"), /--fixture-roots only applies to ghostdeps scan and fix/);
+  });
 });

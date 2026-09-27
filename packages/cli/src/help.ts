@@ -8,6 +8,8 @@ const optionLines = [
   "  --disable-rule <id> scan: turn off a policy or engine rule (repeatable)",
   "  --downgrade <r>=<c> scan: cap a rule's confidence (repeatable)",
   "  --allowlist <e>:<p> scan: allowlist a tooling package, * suffix = prefix",
+  "  --fixture-roots <j> scan/fix: per-run fixture-scope override; schema-versioned",
+  "                      JSON like .ghostdeps.json; replaces committed roots",
   "  -h, --help          Show help",
   "  -V, --version       Show the version",
   "  --                  Treat everything after it as positional (paths starting with -)",

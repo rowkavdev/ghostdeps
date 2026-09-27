@@ -33,11 +33,20 @@ function engineRuleConfig(policy: PolicyConfig | undefined): { ruleConfig?: Engi
   return Object.keys(ruleConfig).length > 0 ? { ruleConfig } : {};
 }
 
-export async function analysePath(path: string, policy?: PolicyConfig): Promise<AnalysisResult> {
+export async function analysePath(
+  path: string,
+  policy?: PolicyConfig,
+  fixtureRootsOverride?: string,
+): Promise<AnalysisResult> {
   // Repo-config fixture scope (#354): a committed .ghostdeps.json narrows the
   // analysed view, and the result discloses it. Without a config file the scan
   // matches the unscoped view and the legacy output stays byte-identical.
-  const handle = await FsRepositoryHandle.open(path, { fixtureScope: true });
+  // A present --fixture-roots payload replaces the committed roots for the run;
+  // the committed file is still read, so a malformed config never launders.
+  const handle = await FsRepositoryHandle.open(path, {
+    fixtureScope: true,
+    ...(fixtureRootsOverride !== undefined ? { fixtureRootsOverride } : {}),
+  });
   const result = await analyseRepository(handle, {
     ...engineRuleConfig(policy),
     adapters: defaultAdapters(),
@@ -81,10 +90,14 @@ export async function analysePath(path: string, policy?: PolicyConfig): Promise<
 export async function runScan(
   config: CliConfig,
   io: Io,
-  analyse: (path: string, policy?: PolicyConfig) => Promise<AnalysisResult> = analysePath,
+  analyse: (
+    path: string,
+    policy?: PolicyConfig,
+    fixtureRootsOverride?: string,
+  ) => Promise<AnalysisResult> = analysePath,
 ): Promise<number> {
   await assertDirectory(config.path);
-  const result = await analyse(config.path, config.policy);
+  const result = await analyse(config.path, config.policy, config.fixtureRoots);
   if (config.json) {
     // Always the complete result (buildConfig rejects --severity with --json).
     printJson(result, io);
