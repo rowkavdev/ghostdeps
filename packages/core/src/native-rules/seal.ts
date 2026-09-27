@@ -120,6 +120,32 @@ async function declaration(
   const matches = [...text.matchAll(exact)];
   if (matches.length !== 1) return null;
   const match = matches[0]!;
+  // Bind the literal citation to the actual direct declaration section.
+  // Escaped keys, duplicate sections, or another identical entry elsewhere
+  // are not recoverable by a raw regex - refuse rather than cite a decoy.
+  const sectionNeedle = JSON.stringify(section);
+  const at = text.indexOf(sectionNeedle);
+  if (at < 0 || text.indexOf(sectionNeedle, at + sectionNeedle.length) !== -1) return null;
+  const open = text.indexOf("{", at + sectionNeedle.length);
+  if (open < 0 || !/^\s*:\s*$/.test(text.slice(at + sectionNeedle.length, open))) return null;
+  let depth = 0,
+    quoted = false,
+    escaped = false,
+    close = -1;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') quoted = false;
+    } else if (ch === '"') quoted = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) {
+      close = i;
+      break;
+    }
+  }
+  if (close < 0 || match.index <= open || match.index + match[0].length > close) return null;
   const before = Buffer.from(text.slice(0, match.index), "utf8");
   const raw = Buffer.from(match[0], "utf8");
   return {
