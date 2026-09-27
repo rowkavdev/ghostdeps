@@ -139,6 +139,13 @@ export function normaliseAnalysisResult(result: AnalysisResult): AnalysisResult 
           impact: [...result.impact].sort(by((i) => `${i.ecosystem}\0${i.project}\0${i.name}`)),
         }
       : {}),
+    ...(result.nativeEvaluations
+      ? {
+          nativeEvaluations: [...result.nativeEvaluations].sort(
+            by((n) => `${n.ruleId}\0${n.dependency}\0${n.status}`),
+          ),
+        }
+      : {}),
     dependencies: [...result.dependencies].sort(dependencyOrder),
     usages: [...result.usages].sort(usageOrder),
     findings: [...result.findings].sort(findingOrder),

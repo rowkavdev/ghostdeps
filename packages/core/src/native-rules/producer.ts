@@ -1,13 +1,4 @@
-/**
- * Snapshot-bound evidence producer boundary (#435). This module is inert: it
- * does not infer source facts, evaluate rules or emit findings. The existing
- * shape-only evaluator is NOT a producer and its synthetic inputs are not proof.
- */
-import type { Dependency, RepositoryHandle } from "../types/index.js";
-import type { UsageAnalysisReport } from "../adapter.js";
-import type { NativeRule } from "./index.js";
-import { collectNativeDeploymentEvidence } from "./deployment.js";
-import type { NativeSealedEvidence } from "./seal.js";
+/** Source-proof contracts for the validated native-evidence pipeline. */
 
 /** Location in a specific immutable repository snapshot; all paths are relative. */
 export interface NativeSourceProof {
@@ -101,13 +92,6 @@ export interface NativeSemanticCheck {
   readonly inspectedSource: readonly NativeSourceProof[];
 }
 
-/** Only source-validating code may ever populate this future output record.
- * Sealing requires all four pillars produced, verified repository binding,
- * and NO constituent `lineageVerification: "adapter-asserted"` stamp.
- * The matched-API pillar currently carries that stamp, so this producer
- * cannot seal it. A future lineage-link reconstruction or explicit
- * sealing-time ruling is needed; neither is implemented in this slice.
- */
 export interface NativeEligibilityEvidence {
   readonly version: 1;
   readonly ruleId: string;
@@ -123,30 +107,3 @@ export interface NativeEligibilityEvidence {
   readonly deploymentTargets: readonly NativeDeploymentTarget[];
   readonly semanticChecks: readonly NativeSemanticCheck[];
 }
-
-/** Inputs are leads to verify, not a caller's claims of native eligibility. */
-export interface NativeProducerInput {
-  readonly rule: NativeRule;
-  readonly snapshotSha256: string;
-  readonly repository: RepositoryHandle;
-  readonly dependency: Dependency;
-  readonly references: UsageAnalysisReport;
-}
-
-export type NativeProducerResult =
-  | { readonly status: "blocked"; readonly reason: string }
-  | { readonly status: "produced"; readonly evidence: NativeSealedEvidence };
-
-/** Future implementations must read the repository and validate every proof. */
-export type NativeEvidenceProducer = (input: NativeProducerInput) => Promise<NativeProducerResult>;
-
-/** No positive path is shipped in slice 1. Never pass caller-supplied facts through. */
-export const produceNativeEvidence: NativeEvidenceProducer = async (input) => {
-  // This is a per-pillar measurement, not an eligibility verdict. An unknown
-  // pillar or caller-asserted tree binding can never seal a produced envelope.
-  await collectNativeDeploymentEvidence(input.repository, input.rule, input.snapshotSha256);
-  return {
-    status: "blocked",
-    reason: "Source-validating native evidence production is not implemented.",
-  };
-};

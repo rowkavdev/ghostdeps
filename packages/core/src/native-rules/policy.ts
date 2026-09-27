@@ -1,7 +1,4 @@
-/** Policy gate for a live assembler seal. No production pipeline calls this yet.
- * The private seal attests assembly, not producer provenance; slice 10 closes
- * the synthetic pillar seam before this gate is wired into scanning.
- */
+/** Policy gate for a live, core-reconstructed assembler seal. */
 import type { Finding, RepositoryHandle } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 import type { NativeEnvelopeResult } from "./seal.js";

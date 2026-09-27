@@ -147,7 +147,7 @@ async function setup() {
   };
 }
 describe("native envelope seal (#454)", () => {
-  it("synthetic core-reconstructed seam seals only with computed complete coverage and direct declaration", async () => {
+  it("core-reconstructed pillars seal only with computed complete coverage and direct declaration", async () => {
     const { repository, snapshotSha256, pillars } = await setup();
     const result = await assembleNativeEnvelope(repository, rule, dep, snapshotSha256, pillars);
     assert.equal(result.status, "produced");

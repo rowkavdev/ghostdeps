@@ -25,17 +25,10 @@ export interface NativeSealedEvidence {
 }
 export interface NativePillars {
   readonly deployment: NativeDeploymentGateResult;
-  readonly matched: NativeMatchedApiResult | ReconstructedMatched;
-  readonly incompatible: NativeIncompatibleResult | ReconstructedIncompatible;
-  readonly semantic: NativeSemanticResult | ReconstructedSemantic;
+  readonly matched: NativeMatchedApiResult;
+  readonly incompatible: NativeIncompatibleResult;
+  readonly semantic: NativeSemanticResult;
 }
-/** Synthetic assembler input seam; production producer wiring is a later slice. */
-type Reconstructed<T extends { readonly lineageVerification: string }> = T extends T
-  ? Omit<T, "lineageVerification"> & { readonly lineageVerification: "core-reconstructed" }
-  : never;
-type ReconstructedMatched = Reconstructed<NativeMatchedApiResult>;
-type ReconstructedIncompatible = Reconstructed<NativeIncompatibleResult>;
-type ReconstructedSemantic = Reconstructed<NativeSemanticResult>;
 export interface NativeSealRefusal {
   readonly reason:
     | "pillar-blocked"

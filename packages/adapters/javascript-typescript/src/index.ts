@@ -47,3 +47,7 @@ export type {
   SemanticFlowLink,
   SemanticFlowState,
 } from "./native/semantic-inspections.js";
+export {
+  evaluateNativeProduction,
+  type NativeProductionOutput,
+} from "./native/evaluate-production.js";

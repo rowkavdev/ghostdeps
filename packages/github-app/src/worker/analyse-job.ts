@@ -20,11 +20,14 @@ import {
   FsRepositoryHandle,
   scanCompletenessFindings,
   type AnalysisResult,
+  normaliseAnalysisResult,
+  severityOf,
   type DependencyChange,
   type RecommendationPolicy,
   type PackageMetadataProvider,
   type SourceLineChanges,
 } from "@ghostdeps/core";
+import { evaluateNativeProduction } from "@ghostdeps/javascript-typescript";
 import type { AddedLines } from "@ghostdeps/checks-renderer";
 import { CheckReporter, type ChecksClient, type CheckTarget } from "../checks/reporter.js";
 import type { AnalysisJob, JobWorker } from "../jobs.js";
@@ -140,7 +143,7 @@ export async function analyseCheckout(
 ): Promise<AnalysisResult> {
   const handle = await FsRepositoryHandle.open(root, scan);
   const scanCompleteness = scanCompletenessFindings(handle.scan);
-  return engine(handle, {
+  const result = await engine(handle, {
     adapters: adapterModules,
     ...(run.pullRequestChanges ? { pullRequestChanges: run.pullRequestChanges } : {}),
     ...(run.pullRequestSourceChanges
@@ -149,6 +152,29 @@ export async function analyseCheckout(
     ...(run.recommend ? { recommend: run.recommend } : {}),
     ...(run.metadata ? { metadata: run.metadata } : {}),
     ...(scanCompleteness.length > 0 ? { scanIncomplete: true, scanCompleteness } : {}),
+  });
+  // Injected test engines may return a partial result; production engines always
+  // supply dependencies. An absent surface cannot be promoted to a verdict.
+  if (!Array.isArray(result.dependencies) || !run.recommend) return result;
+  const native = await evaluateNativeProduction(handle, result.dependencies);
+  const changed = run.pullRequestChanges;
+  const eligible = native.findings.filter(
+    (finding) =>
+      !changed ||
+      changed.some(
+        (c) =>
+          c.change !== "removed" &&
+          c.name === finding.dependency &&
+          c.manifest === finding.declaringManifest?.path,
+      ),
+  );
+  return normaliseAnalysisResult({
+    ...result,
+    findings: [
+      ...result.findings,
+      ...eligible.map((finding) => ({ ...finding, severity: severityOf(finding) })),
+    ],
+    ...(native.evaluations.length ? { nativeEvaluations: native.evaluations } : {}),
   });
 }
 

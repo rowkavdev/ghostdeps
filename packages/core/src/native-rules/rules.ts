@@ -1,4 +1,4 @@
-/** Inert seed catalog. No scan, policy or presenter consumes this list. */
+/** Versioned native-replacement candidates. Every claim needs production validation. */
 import type { NativeRule } from "./index.js";
 import { AXIOS_FETCH_RULE } from "./axios-fetch.js";
 import { CLONEDEEP_STRUCTUREDCLONE_RULE } from "./clonedeep-structuredclone.js";
