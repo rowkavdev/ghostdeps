@@ -70,6 +70,18 @@ const validPath = (file: string): boolean =>
   !file.includes("\\") &&
   file.normalize("NFC") === file &&
   file.split("/").every((p) => p !== "" && p !== "." && p !== "..");
+const validSpan = (s: unknown): s is NativeReferenceSpan => {
+  if (typeof s !== "object" || s === null) return false;
+  const span = s as Partial<NativeReferenceSpan>;
+  return (
+    typeof span.file === "string" &&
+    validPath(span.file) &&
+    Number.isSafeInteger(span.start) &&
+    Number.isSafeInteger(span.end) &&
+    span.start! >= 0 &&
+    span.end! > span.start!
+  );
+};
 const key = (s: NativeReferenceSpan): string => `${s.file}\0${s.start}\0${s.end}`;
 const hash = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 const kindDifference = (kind: NativeFlowKind, rule: NativeRule): string | undefined => {
@@ -177,14 +189,14 @@ export async function collectNativeSemanticEvidence(
   const safeRecords = Array.isArray(records) ? records : [];
   if (
     !safeUses.length ||
-    safeUses.some((s) => !s || typeof s.file !== "string") ||
-    new Set(safeUses.filter(Boolean).map(key)).size !== safeUses.length ||
+    safeUses.some((s) => !validSpan(s)) ||
+    new Set(safeUses.filter(validSpan).map(key)).size !== safeUses.length ||
     !Array.isArray(rule.semanticDifferences) ||
     !rule.semanticDifferences.length ||
     new Set(rule.semanticDifferences).size !== rule.semanticDifferences.length
   )
     fail("*", "missing-flow");
-  for (const call of safeUses.filter(Boolean)) {
+  for (const call of safeUses.filter(validSpan)) {
     const useProof = await proof(call);
     if (!useProof) {
       fail("*", "citation-inconsistent", call);
@@ -193,7 +205,7 @@ export async function collectNativeSemanticEvidence(
     for (const difference of rule.semanticDifferences) {
       const needed = kinds.filter((kind) => kindDifference(kind, rule) === difference);
       const matching = safeRecords.filter(
-        (r) => r?.difference === difference && r.call && key(r.call) === key(call),
+        (r) => r?.difference === difference && validSpan(r.call) && key(r.call) === key(call),
       );
       const collected: NativeSourceProof[] = [];
       let state: NativeSemanticCheck["state"] = "inspected";
@@ -210,7 +222,8 @@ export async function collectNativeSemanticEvidence(
           kindDifference(record.kind, rule) !== difference ||
           !Array.isArray(record.citations) ||
           !Array.isArray(record.explored) ||
-          !Array.isArray(record.lineage)
+          !Array.isArray(record.lineage) ||
+          [...record.lineage, ...record.explored, ...record.citations].some((s) => !validSpan(s))
         ) {
           reason = "citation-inconsistent";
           continue;
@@ -274,8 +287,8 @@ export async function collectNativeSemanticEvidence(
   if (
     safeRecords.some(
       (r) =>
-        !r?.call ||
-        !safeUses.some((u) => key(u) === key(r.call)) ||
+        !validSpan(r?.call) ||
+        !safeUses.filter(validSpan).some((u) => key(u) === key(r.call)) ||
         !rule.semanticDifferences.includes(r.difference),
     )
   )
