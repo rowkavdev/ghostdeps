@@ -796,6 +796,28 @@ export async function findMatchedApiReferences(
             const specifier = decl.initializer.arguments[0].text;
             if (packageOf(specifier) !== packageName) continue;
             const span = spanOf(decl);
+            const loaderPosition = decl.initializer.expression.getStart(sf);
+            // The spelling `require` is not enough: a parameter, local variable,
+            // function, class or catch binding can return arbitrary bytes for
+            // "axios". Import declarations are excluded from scope frames because
+            // they are package bindings, so check their local names separately.
+            const importShadowsLoader = sf.statements.some((top) => {
+              if (!ts.isImportDeclaration(top) || !top.importClause) return false;
+              const clause = top.importClause;
+              return (
+                clause.name?.text === "require" ||
+                (clause.namedBindings !== undefined &&
+                  (ts.isNamespaceImport(clause.namedBindings)
+                    ? clause.namedBindings.name.text === "require"
+                    : clause.namedBindings.elements.some(
+                        (element) => element.name.text === "require",
+                      )))
+              );
+            });
+            const loaderUnresolved =
+              isShadowedAt(frames, "require", loaderPosition) || importShadowsLoader
+                ? "require is shadowed by a local declaration; package loader provenance cannot be proven"
+                : undefined;
             if (ts.isIdentifier(decl.name)) {
               add(decl.name.text, {
                 kind: "namespace",
@@ -803,6 +825,7 @@ export async function findMatchedApiReferences(
                 hopKind: "require",
                 aliased: false,
                 span,
+                ...(loaderUnresolved ? { unresolved: loaderUnresolved } : {}),
                 link: link(
                   "require",
                   decl.name.text,
@@ -828,6 +851,7 @@ export async function findMatchedApiReferences(
                   hopKind: "require",
                   aliased: true,
                   span,
+                  ...(loaderUnresolved ? { unresolved: loaderUnresolved } : {}),
                   link: link(
                     "require",
                     imported,

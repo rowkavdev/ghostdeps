@@ -828,3 +828,29 @@ test("single wrapper cites its internal call, declaration and external invocatio
     ["import", "call", "wrapper", "call"],
   );
 });
+
+test("shadowed require cannot assert a package-entry edge (parameter, local, function, import)", async () => {
+  const cases = [
+    'function f(require) { const ax = require("axios"); ax.get("/x"); }',
+    'const require = name => ({ get() {} }); const ax = require("axios"); ax.get("/x");',
+    'function require(name) { return { get() {} }; } const ax = require("axios"); ax.get("/x");',
+    'import { loader as require } from "./loader"; const { get } = require("axios"); get("/x");',
+    'function f() { const require = n => ({ get() {} }); const ax = require("axios"); ax.get("/x"); }',
+  ];
+  for (const source of cases) {
+    const files = { "src/a.ts": source };
+    const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+    const call = scan.references.find((ref) => cited(files, ref).includes('"/x"'));
+    assert.ok(call, `must not drop shadowed loader: ${source}`);
+    assert.equal(call.resolution, "indirect-unknown", source);
+    assert.ok(call.lineageChain?.brokenAt, source);
+    assert.match(call.lineageChain.brokenAt.reason, /require is shadowed/);
+  }
+});
+
+test("unshadowed lexical require keeps cited package entry", async () => {
+  const files = { "src/a.cjs": 'function f() { const ax = require("axios"); ax.get("/x"); }' };
+  const ref = (await findMatchedApiReferences(memoryHandle(files), "axios")).references[0]!;
+  assert.equal(ref.resolution, "direct");
+  assertChainTokens(files, ref);
+});
