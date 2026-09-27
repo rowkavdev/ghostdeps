@@ -6,23 +6,45 @@ permissions:
 on:
   schedule:
     # Nightly, off the top of the hour. This is the clock the #173/#178 cap
-    # lift criterion counts: 14 consecutive green runs.
+    # lift criterion counts: 14 consecutive green runs (streak comment on
+    # #172, published by the streak job below).
     - cron: "17 3 * * *"
   workflow_dispatch:
   pull_request:
-    # Informational on PRs that touch the corpus itself (config, goldens,
-    # harness, this workflow) - validates golden updates like the #182 one.
-    paths:
-      - "corpus/**"
-      - "scripts/corpus.mjs"
-      - ".github/workflows/corpus.yml"
+    # Fires on every PR so the corpus check can become required without
+    # blocking non-corpus PRs on a never-reported status (#172). The changes
+    # job gates the expensive scan to corpus-relevant paths; a skipped job
+    # reports Success, so promotion is a one-line flip: mark the `corpus`
+    # check required in the main ruleset. See docs/corpus-promotion.md.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # Which corpus-relevant paths this PR touches. The full scan runs only when
+  # one of these changes - engine code, the harness, the corpus itself, or
+  # the dependency surface the detectors see.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      corpus: ${{ steps.filter.outputs.corpus }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        run: |
+          if git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD" \
+            | grep -Eq '^(corpus/|scripts/corpus|\.github/workflows/corpus\.yml|packages/|pnpm-lock\.yaml)'; then
+            echo "corpus=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "corpus=false" >> "$GITHUB_OUTPUT"
+          fi
   corpus:
+    needs: changes
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.outputs.corpus == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -35,3 +57,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: node scripts/corpus.mjs
+  # Publishes the machine-visible streak for the cap-lift clock (#172).
+  # Stateless: recomputed from scheduled-run history every night, so its own
+  # failure can never corrupt the streak it reports.
+  streak:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/corpus-streak.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
