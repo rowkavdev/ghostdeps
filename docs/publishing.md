@@ -53,8 +53,9 @@ package that already exists. So the first publish bootstrapped manually:
    long-lived token remains.
 2. **Trusted-publisher connection is live** (verified 2026-09-27): package
    settings → Trusted Publisher → GitHub Actions, repository
-   `rowkavdev/ghostdeps`, workflow `release.yml`. Tag pushes authenticate via
-   the workflow's OIDC token - the rolling cadence below runs on this path.
+   `rowkavdev/ghostdeps`, workflow `release.yml`. Tag pushes are set up to
+   authenticate via the workflow's OIDC token; the first tag publish remains
+   to be verified. The rolling cadence below runs on this path.
 
 ## Versioning
 
