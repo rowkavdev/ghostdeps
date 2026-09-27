@@ -35,7 +35,7 @@ jobs:
     outputs:
       corpus: ${{ steps.filter.outputs.corpus }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: filter
@@ -58,9 +58,9 @@ jobs:
         run: |
           echo "error: the changes job did not succeed, so corpus relevance is unknown - failing closed rather than passing unscanned (#172)" >&2
           exit 1
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -77,8 +77,8 @@ jobs:
       actions: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: node scripts/corpus-streak.mjs
