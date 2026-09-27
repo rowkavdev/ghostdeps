@@ -595,6 +595,7 @@ export async function findMatchedApiReferences(
   const reExportsByFile = new Map<string, ReExportFacts>();
   const constsByFile = new Map<string, Map<string, ts.Expression>>();
   const wrappersByFile = new Map<string, Map<string, WrapperInfo>>();
+  const mutationsByFile = new Map<string, Map<string, string>>();
 
   const packageOf = (specifier: string | undefined): string | undefined => {
     if (specifier === undefined) return undefined;
@@ -613,8 +614,12 @@ export async function findMatchedApiReferences(
         Partial<Pick<Binding, "scopeStart" | "scopeEnd" | "declPos">>,
     ): void => {
       const scope = scopeSpanOf(sf, binding.decl);
+      const mutation = mutatedNames.get(name);
       addBindingTo(bindings, name, {
         ...binding,
+        ...(mutation !== undefined && binding.unresolved === undefined
+          ? { unresolved: mutation }
+          : {}),
         scopeStart: scope.start,
         scopeEnd: scope.end,
         declPos: binding.decl.getStart(sf),
@@ -766,6 +771,74 @@ export async function findMatchedApiReferences(
       ts.forEachChild(node, findLoaderWrites);
     };
     findLoaderWrites(sf);
+
+    // Member-mutation scan (#473): any write to a name, or to a member of a
+    // name, anywhere in this file defeats the provenance of every package
+    // binding under that name - source ordering is not execution ordering.
+    // The binding stays on record but is marked unresolved at creation, so
+    // each use emits indirect-unknown with the mutation as the cited reason.
+    const mutatedNames = new Map<string, string>();
+    const noteMutation = (name: string): void => {
+      if (!mutatedNames.has(name)) {
+        mutatedNames.set(
+          name,
+          `"${name}" or one of its members is written in this file; the binding cannot be proven to still reference the package`,
+        );
+      }
+    };
+    const rootOf = (node: ts.Node): ts.Identifier | undefined => {
+      let current: ts.Expression = node as ts.Expression;
+      for (;;) {
+        if (ts.isIdentifier(current)) return current;
+        if (
+          ts.isPropertyAccessExpression(current) ||
+          ts.isElementAccessExpression(current) ||
+          ts.isParenthesizedExpression(current)
+        ) {
+          current = current.expression;
+          continue;
+        }
+        return undefined;
+      }
+    };
+    const findBindingWrites = (node: ts.Node): void => {
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      ) {
+        const root = rootOf(node.left);
+        if (root) noteMutation(root.text);
+      }
+      if (
+        (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+        (node.operator === ts.SyntaxKind.PlusPlusToken ||
+          node.operator === ts.SyntaxKind.MinusMinusToken)
+      ) {
+        const root = rootOf(node.operand);
+        if (root) noteMutation(root.text);
+      }
+      if (ts.isDeleteExpression(node)) {
+        const root = rootOf(node.expression);
+        if (root) noteMutation(root.text);
+      }
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === "Object" &&
+        (node.expression.name.text === "assign" ||
+          node.expression.name.text === "defineProperty" ||
+          node.expression.name.text === "defineProperties")
+      ) {
+        const target = node.arguments[0];
+        const root = target && rootOf(target);
+        if (root) noteMutation(root.text);
+      }
+      ts.forEachChild(node, findBindingWrites);
+    };
+    findBindingWrites(sf);
+    mutationsByFile.set(file, mutatedNames);
 
     /**
      * The package source of an alias initializer at its own position,
@@ -1163,6 +1236,11 @@ export async function findMatchedApiReferences(
   // Resolve barrel re-export chains into bindings on the importing files.
   for (const { file, sf, index } of parsed.values()) {
     const bindings = bindingsByFile.get(file)!;
+    const mutatedNames = mutationsByFile.get(file)!;
+    const mutationOf = (name: string): { unresolved: string } | Record<string, never> => {
+      const mutation = mutatedNames.get(name);
+      return mutation !== undefined ? { unresolved: mutation } : {};
+    };
     const resolveBarrel = (
       fromFile: string,
       exportName: string,
@@ -1302,6 +1380,7 @@ export async function findMatchedApiReferences(
             aliased: false,
             span: importSpan,
             barrel,
+            ...mutationOf(local),
             link: {
               kind: "import",
               from: exportName,
@@ -1330,6 +1409,7 @@ export async function findMatchedApiReferences(
           aliased: exportName !== resolved.imported,
           span: importSpan,
           barrel,
+          ...mutationOf(local),
           link: {
             kind: "import",
             from: exportName,
@@ -1371,6 +1451,7 @@ export async function findMatchedApiReferences(
             aliased: false,
             span: importSpan,
             barrel: { file: target, exportSpan: resolved.exportSpan, star: resolved.star },
+            ...mutationOf(named.name.text),
             scopeStart: 0,
             scopeEnd: sf.getEnd(),
             declPos: named.name.getStart(sf),
@@ -1460,16 +1541,37 @@ export async function findMatchedApiReferences(
         }
       | { status: "unrelated" };
 
+    /**
+     * Lineage hops for one binding, package entry first (#473): an alias
+     * keeps its source chain (import/require -> alias -> ...) so a resolved
+     * alias use carries the full hop path its lineageChain links already
+     * cite, instead of a bare alias hop with the package entry missing.
+     */
     const hopsFor = (binding: Binding): MatchedApiHop[] => {
       const hops: MatchedApiHop[] = [];
-      if (binding.barrel) {
+      const seen = new Set<Binding>();
+      const walk = (current: Binding): void => {
+        if (seen.has(current)) return;
+        seen.add(current);
+        if (current.source) {
+          walk(current.source);
+        } else if (current.barrel) {
+          hops.push({
+            kind: "re-export",
+            name: current.member ?? "default",
+            span: current.barrel.exportSpan,
+          });
+        }
         hops.push({
-          kind: "re-export",
-          name: binding.member ?? "default",
-          span: binding.barrel.exportSpan,
+          kind: current.hopKind,
+          name:
+            current.hopKind === "alias"
+              ? (current.link?.to ?? current.member ?? "default")
+              : (current.member ?? "default"),
+          span: current.span,
         });
-      }
-      hops.push({ kind: binding.hopKind, name: binding.member ?? "default", span: binding.span });
+      };
+      walk(binding);
       return hops;
     };
 
@@ -1714,13 +1816,12 @@ export async function findMatchedApiReferences(
             span: spanOf(node),
             note: "dynamic import binding flow is not tracked; downstream uses stay unknown",
           });
-        } else {
+        } else if (!simpleInnerCalls.has(node)) {
           emitCall(node);
         }
       }
       ts.forEachChild(node, visit);
     };
-    visit(sf);
 
     const bodyCallsPackage = (body: ts.Node): WrapperInfo["targets"] => {
       const out: WrapperInfo["targets"] = [];
@@ -1778,7 +1879,14 @@ export async function findMatchedApiReferences(
           candidates.set(name, {
             name,
             decl: node,
-            span: spanOf(node),
+            // A variable-initialised function cites its whole declaration so
+            // the wrapper lineage link contains the wrapper's name token.
+            span: spanOf(
+              (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+                ts.isVariableDeclaration(node.parent)
+                ? node.parent
+                : node,
+            ),
             body,
             targets: ts.isBlock(body) || ts.isExpression(body) ? bodyCallsPackage(body) : [],
             calls,
@@ -1817,6 +1925,145 @@ export async function findMatchedApiReferences(
       });
     }
 
+    // Simple-wrapper resolution (#473): a wrapper whose body is EXACTLY one
+    // matched call - a lone `return <call>` statement or an arrow expression
+    // body - whose arguments are only parameter pass-throughs (positional,
+    // default-valued or rest) or fully static expressions naming no
+    // parameter, and whose name never escapes a direct call site. Only then
+    // do the wrapper call-site records account for the inner call, so the
+    // inner call is not also emitted as a standalone record. Every other
+    // shape (conditional bodies, computed arguments, multi-call bodies,
+    // escaping names) keeps its inner record and stays fail-closed. A
+    // simple wrapper that is never called records nothing, exactly like an
+    // import with no call.
+    const simpleWrapperCall = (candidate: Candidate): ts.CallExpression | undefined => {
+      if (ts.isMethodDeclaration(candidate.decl)) return undefined; // dynamic receiver
+      const decl = candidate.decl as
+        ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+      let variableStatement: ts.Node | undefined;
+      if (ts.isArrowFunction(decl) || ts.isFunctionExpression(decl)) {
+        // The function must initialise a const declaration.
+        const variable = decl.parent;
+        if (!ts.isVariableDeclaration(variable)) return undefined;
+        const list = variable.parent;
+        if (!ts.isVariableDeclarationList(list) || (list.flags & ts.NodeFlags.Const) === 0)
+          return undefined;
+        variableStatement = list.parent;
+      }
+      // An exported wrapper has callers this file cannot show.
+      const hasExportModifier = (node: ts.Node): boolean =>
+        ts.canHaveModifiers(node) &&
+        (ts.getModifiers(node) ?? []).some((mod) => mod.kind === ts.SyntaxKind.ExportKeyword);
+      if (hasExportModifier(decl)) return undefined;
+      if (variableStatement !== undefined && hasExportModifier(variableStatement)) return undefined;
+      // The body is exactly one call expression.
+      let expr: ts.Expression;
+      if (ts.isBlock(candidate.body)) {
+        if (candidate.body.statements.length !== 1) return undefined;
+        const statement = candidate.body.statements[0]!;
+        if (!ts.isReturnStatement(statement) || statement.expression === undefined)
+          return undefined;
+        expr = statement.expression;
+      } else {
+        expr = candidate.body as ts.Expression;
+      }
+      for (;;) {
+        if (
+          ts.isParenthesizedExpression(expr) ||
+          ts.isAsExpression(expr) ||
+          ts.isSatisfiesExpression(expr)
+        ) {
+          expr = expr.expression;
+          continue;
+        }
+        break;
+      }
+      if (!ts.isCallExpression(expr)) return undefined;
+      const callee = resolveCallee(expr.expression, 0);
+      if (callee.status !== "ok" || callee.resolved.api === "") return undefined;
+      // Parameters must be plain identifiers; a destructured parameter is an
+      // opaque mapping.
+      const positional = new Set<string>();
+      let rest: string | undefined;
+      for (const param of decl.parameters) {
+        if (!ts.isIdentifier(param.name)) return undefined;
+        if (param.dotDotDotToken !== undefined) rest = param.name.text;
+        else positional.add(param.name.text);
+      }
+      const namesParam = (name: string): boolean => positional.has(name) || name === rest;
+      // this/super/arguments anywhere in the call defeat the exact form.
+      let defeated = false;
+      const scanForDefeat = (node: ts.Node): void => {
+        if (defeated) return;
+        if (
+          node.kind === ts.SyntaxKind.ThisKeyword ||
+          node.kind === ts.SyntaxKind.SuperKeyword ||
+          (ts.isIdentifier(node) && node.text === "arguments")
+        ) {
+          defeated = true;
+          return;
+        }
+        ts.forEachChild(node, scanForDefeat);
+      };
+      scanForDefeat(expr);
+      if (defeated) return undefined;
+      // Every argument is a pure pass-through or a fully static expression.
+      for (const arg of expr.arguments) {
+        if (ts.isSpreadElement(arg)) {
+          // Only a rest-parameter pass-through spread is exact.
+          if (
+            rest === undefined ||
+            !ts.isIdentifier(arg.expression) ||
+            arg.expression.text !== rest
+          )
+            return undefined;
+          continue;
+        }
+        if (ts.isIdentifier(arg) && namesParam(arg.text)) continue;
+        let refsParam = false;
+        const scanArg = (node: ts.Node): void => {
+          if (ts.isIdentifier(node) && namesParam(node.text)) refsParam = true;
+          ts.forEachChild(node, scanArg);
+        };
+        scanArg(arg);
+        if (refsParam || !inspectable(arg, consts, 0)) return undefined;
+      }
+      return expr;
+    };
+    const wrapperNameEscapes = (candidate: Candidate): boolean => {
+      // The wrapper name may appear only on its own declaration and as the
+      // callee of a direct call; anything else (export specifier, value
+      // handoff, tagged template, member access) is a flow this file cannot
+      // account for.
+      const declarationName = ts.isFunctionDeclaration(candidate.decl)
+        ? candidate.decl.name
+        : ts.isVariableDeclaration(candidate.decl.parent)
+          ? candidate.decl.parent.name
+          : undefined;
+      let escaped = false;
+      const walk = (node: ts.Node): void => {
+        if (escaped) return;
+        if (ts.isIdentifier(node) && node.text === candidate.name && node !== declarationName) {
+          const parent = node.parent;
+          if (!(ts.isCallExpression(parent) && parent.expression === node)) {
+            escaped = true;
+            return;
+          }
+        }
+        ts.forEachChild(node, walk);
+      };
+      walk(sf);
+      return escaped;
+    };
+    const simpleInnerCalls = new Set<ts.CallExpression>();
+    for (const name of wrapperNames) {
+      const candidate = candidates.get(name)!;
+      const call = simpleWrapperCall(candidate);
+      if (call === undefined || wrapperNameEscapes(candidate)) continue;
+      simpleInnerCalls.add(call);
+    }
+    visit(sf);
+
     // Calls to wrapper names resolve through the wrapper graph. A wrapper
     // name shadowed at the call site is indirect-unknown, never a wrapper
     // citation.
@@ -1828,7 +2075,13 @@ export async function findMatchedApiReferences(
           const span = spanOf(node);
           const argumentSpans = node.arguments.map((arg) => spanOf(arg));
           const { argsState, optionsState } = inspectArguments(node);
-          if (isShadowed(name, node.expression.getStart(sf), start.decl)) {
+          // A variable-initialised wrapper is declared by its const
+          // declaration, not by the function node: exclude the node the
+          // scope frames actually registered.
+          const declarationNode = ts.isVariableDeclaration(start.decl.parent)
+            ? start.decl.parent
+            : start.decl;
+          if (isShadowed(name, node.expression.getStart(sf), declarationNode)) {
             push({
               packageName,
               binding: name,
