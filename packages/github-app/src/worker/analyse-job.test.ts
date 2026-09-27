@@ -10,6 +10,7 @@ import { ResultCache } from "./result-cache.js";
 import {
   analyseCheckout,
   createAnalysisWorker,
+  excludedChangesNote,
   DEFAULT_ADAPTER_MODULES,
   failureReason,
   type AnalyseRunOptions,
@@ -398,7 +399,11 @@ index 3333333..4444444 100644
         sourceOnly: true,
       }),
     );
-    assert.deepEqual(seen, { pullRequestChanges: [] });
+    assert.deepEqual(seen, {
+      pullRequestChanges: [],
+      fixtureScope: true,
+      analysedSha: SHA,
+    });
     // The app made the skip, so the app says so; the run isn't a clean green (#195).
     const out = rec.updated[0]?.output as { title?: string; summary?: string };
     const text = (out.summary ?? "").replace(/\\/g, ""); // summary text is Markdown-escaped
@@ -463,7 +468,11 @@ index 3333333..4444444 100644
       { status: 406 },
     );
     assert.deepEqual(rerun, first);
-    assert.deepEqual(rerun.seen, { pullRequestChanges: [] });
+    assert.deepEqual(rerun.seen, {
+      pullRequestChanges: [],
+      fixtureScope: true,
+      analysedSha: SHA,
+    });
   });
 
   it("a re-run without the source-only flag falls back to full with a note, like a capped first run (#196)", async () => {
@@ -480,7 +489,7 @@ index 3333333..4444444 100644
       { status: 406 },
     );
     assert.deepEqual(rerun, first);
-    assert.deepEqual(rerun.seen, {});
+    assert.deepEqual(rerun.seen, { fixtureScope: false, analysedSha: SHA });
     assert.equal(rerun.conclusion, "neutral");
     const text = ((rerun.output as { summary?: string }).summary ?? "").replace(/\\/g, "");
     assert.match(text, /GhostDeps analysed the whole repository/);
@@ -606,7 +615,7 @@ index 3333333..4444444 100644
       },
     });
     await worker(prJob);
-    assert.deepEqual(seen, {});
+    assert.deepEqual(seen, { fixtureScope: false, analysedSha: SHA });
     assert.equal(rec.updated.length, 1);
     assert.notEqual(
       (rec.updated[0]?.output as { title?: string }).title,
@@ -1014,5 +1023,21 @@ describe("failureReason", () => {
     };
     assert.match(failureReason(limited), /rate limit was reached\. Wait a few minutes/);
     assert.equal(failureReason(new Error("boom")), "an internal error stopped the analysis.");
+  });
+});
+
+describe("excludedChangesNote (#354)", () => {
+  it("lists bounded examples and summarises the rest", () => {
+    assert.equal(
+      excludedChangesNote({ count: 2, examples: ["fixtures/a.ts", "fixtures/b.ts"] }),
+      "This pull request changes 2 file(s) under excluded fixture roots (fixtures/a.ts, fixtures/b.ts); they were not analysed.",
+    );
+    assert.equal(
+      excludedChangesNote({
+        count: 12,
+        examples: ["f/1", "f/2", "f/3", "f/4", "f/5", "f/6", "f/7", "f/8", "f/9", "f/10"],
+      }),
+      "This pull request changes 12 file(s) under excluded fixture roots (f/1, f/2, f/3, f/4, f/5, f/6, f/7, f/8, f/9, f/10, +2 more); they were not analysed.",
+    );
   });
 });

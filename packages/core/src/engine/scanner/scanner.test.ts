@@ -8,6 +8,7 @@ import { MAX_HEAD_READ_BYTES } from "../../limits.js";
 import { readRepositoryFileHead } from "../../repository-head.js";
 import type { RepositoryHandle } from "../../types/index.js";
 import { FsRepositoryHandle, RepositoryReadError } from "./handle.js";
+import { fixtureRootsDigest, parseFixtureRootsText } from "./scope.js";
 import { DEFAULT_SCAN_LIMITS, resolveLimits } from "./limits.js";
 import { scanRepository } from "./scanner.js";
 
@@ -616,5 +617,52 @@ describe("opt-in fixture scope accounting (#354)", () => {
       assert.ok(!listing.entries.some((e) => e.path.startsWith("fixtures-old/")));
       assert.ok(listing.entries.some((e) => e.path === "fixtures/package.json"));
     });
+  });
+});
+
+describe("fixtureRootsDigest and parseFixtureRootsText (#354)", () => {
+  it("digests the exact root list stably and distinctly", () => {
+    assert.equal(fixtureRootsDigest(["fixtures"]), fixtureRootsDigest(["fixtures"]));
+    assert.equal(fixtureRootsDigest([]), fixtureRootsDigest([]));
+    assert.notEqual(fixtureRootsDigest(["fixtures"]), fixtureRootsDigest(["fixtures-old"]));
+    assert.notEqual(fixtureRootsDigest([]), fixtureRootsDigest(["fixtures"]));
+    assert.match(fixtureRootsDigest(["fixtures"]), /^[0-9a-f]{64}$/);
+  });
+
+  it("parses a valid payload with the caller's limits", () => {
+    const limits = resolveLimits();
+    assert.deepEqual(
+      parseFixtureRootsText(
+        JSON.stringify({ schemaVersion: 1, fixtureRoots: ["fixtures", "test/fixtures"] }),
+        limits,
+        "base .ghostdeps.json",
+      ),
+      ["fixtures", "test/fixtures"],
+    );
+    assert.deepEqual(
+      parseFixtureRootsText(JSON.stringify({ schemaVersion: 1, fixtureRoots: [] }), limits, "o"),
+      [],
+    );
+  });
+
+  it("reports the caller's origin in every failure", () => {
+    const limits = resolveLimits();
+    assert.throws(
+      () => parseFixtureRootsText("not json", limits, "base .ghostdeps.json"),
+      /base \.ghostdeps\.json/,
+    );
+    assert.throws(
+      () =>
+        parseFixtureRootsText(
+          JSON.stringify({ schemaVersion: 1, fixtureRoots: ["../escape"] }),
+          limits,
+          "base .ghostdeps.json",
+        ),
+      /base \.ghostdeps\.json/,
+    );
+    assert.throws(
+      () => parseFixtureRootsText(" ".repeat(16385), limits, "base .ghostdeps.json"),
+      /base \.ghostdeps\.json exceeds 16 KiB/,
+    );
   });
 });

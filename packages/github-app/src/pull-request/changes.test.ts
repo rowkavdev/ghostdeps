@@ -193,3 +193,121 @@ rename to src/b.ts
     assert.equal(ctx.complete, true);
   });
 });
+
+const SCOPED_DIFF = `diff --git a/fixtures/demo/package.json b/fixtures/demo/package.json
+index 1111111..2222222 100644
+--- a/fixtures/demo/package.json
++++ b/fixtures/demo/package.json
+@@ -2,5 +2,6 @@
+   "name": "fixture",
+   "dependencies": {
+-    "left-pad": "^1.0.0"
++    "left-pad": "^1.3.0",
++    "axios": "^1.7.0"
+   }
+ }
+diff --git a/fixtures/demo/source.ts b/fixtures/demo/source.ts
+new file mode 100644
+index 0000000..7777777 100644
+--- /dev/null
++++ b/fixtures/demo/source.ts
+@@ -0,0 +1,2 @@
++import axios from "axios";
++export const get = (u: string) => axios.get(u);
+diff --git a/fixtures-old/package.json b/fixtures-old/package.json
+index 3333333..4444444 100644
+--- a/fixtures-old/package.json
++++ b/fixtures-old/package.json
+@@ -2,5 +2,6 @@
+   "name": "legacy",
+   "dependencies": {
+-    "debug": "^4.0.0"
++    "debug": "^4.3.0",
++    "axios": "^1.7.0"
+   }
+ }
+diff --git a/package.json b/package.json
+index 5555555..6666666 100644
+--- a/package.json
++++ b/package.json
+@@ -2,5 +2,6 @@
+   "name": "demo",
+   "dependencies": {
+-    "chalk": "^4.0.0"
++    "chalk": "^4.1.2",
++    "axios": "^1.7.0"
+   }
+ }
+diff --git a/src/http.ts b/src/http.ts
+new file mode 100644
+index 0000000..3333333 100644
+--- /dev/null
++++ b/src/http.ts
+@@ -0,0 +1,2 @@
++import axios from "axios";
++export const get = (u: string) => axios.get(u);
+`;
+
+const scopedFiles = {
+  [`${BASE}:fixtures/demo/package.json`]: manifest({ "left-pad": "^1.0.0" }),
+  [`${HEAD}:fixtures/demo/package.json`]: manifest({ "left-pad": "^1.3.0", axios: "^1.7.0" }),
+  [`${BASE}:fixtures-old/package.json`]: manifest({ debug: "^4.0.0" }),
+  [`${HEAD}:fixtures-old/package.json`]: manifest({ debug: "^4.3.0", axios: "^1.7.0" }),
+  [`${BASE}:package.json`]: manifest({ chalk: "^4.0.0" }),
+  [`${HEAD}:package.json`]: manifest({ chalk: "^4.1.2", axios: "^1.7.0" }),
+};
+
+describe("pullRequestContext fixture scope (#354)", () => {
+  it("drops changes under excluded roots and discloses them by count", async () => {
+    const client = fakeClient({ diff: SCOPED_DIFF, files: scopedFiles });
+    const ctx = await pullRequestContext(client, PR, ["fixtures"]);
+    assert.equal(ctx.complete, true);
+    assert.deepEqual(ctx.dependencyChanges.manifestsChanged.sort(), [
+      "fixtures-old/package.json",
+      "package.json",
+    ]);
+    assert.deepEqual([...new Set(ctx.dependencyChanges.changes.map((c) => c.manifest))].sort(), [
+      "fixtures-old/package.json",
+      "package.json",
+    ]);
+    assert.deepEqual(
+      ctx.dependencyChanges.changedSourceFiles.map((f) => f.path),
+      ["src/http.ts"],
+    );
+    assert.deepEqual(
+      ctx.dependencyChanges.sourceLineChanges.map((f) => f.path),
+      ["src/http.ts"],
+    );
+    assert.deepEqual(ctx.excludedChanged, {
+      count: 2,
+      examples: ["fixtures/demo/package.json", "fixtures/demo/source.ts"],
+    });
+  });
+
+  it("matches roots on component boundaries only", async () => {
+    const client = fakeClient({ diff: SCOPED_DIFF, files: scopedFiles });
+    const ctx = await pullRequestContext(client, PR, ["fixtures", "fixtures-old"]);
+    assert.deepEqual(ctx.dependencyChanges.manifestsChanged, ["package.json"]);
+    assert.deepEqual(ctx.excludedChanged, {
+      count: 3,
+      examples: [
+        "fixtures-old/package.json",
+        "fixtures/demo/package.json",
+        "fixtures/demo/source.ts",
+      ],
+    });
+  });
+
+  it("scopes nothing and counts nothing without roots", async () => {
+    const client = fakeClient({ diff: SCOPED_DIFF, files: scopedFiles });
+    const ctx = await pullRequestContext(client, PR, []);
+    assert.equal(ctx.dependencyChanges.manifestsChanged.length, 3);
+    assert.deepEqual(ctx.excludedChanged, { count: 0, examples: [] });
+  });
+
+  it("counts nothing when the diff is unavailable", async () => {
+    const ctx = await pullRequestContext(fakeClient({ diff: { status: 406 } }), PR, ["fixtures"]);
+    assert.equal(ctx.complete, false);
+    assert.deepEqual(ctx.excludedChanged, { count: 0, examples: [] });
+  });
+});
