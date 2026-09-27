@@ -137,6 +137,18 @@ describe("native semantic pillar (#450)", () => {
       );
     }
   });
+  it("malformed runtime spans block rather than throwing", async () => {
+    const base = allKinds.map((k) => flow(k));
+    for (const field of ["explored", "lineage", "citations"] as const) {
+      const bad = base.map((r) => (r.kind === "status-check" ? { ...r, [field]: [null] } : r));
+      const result = await run(bad as unknown as NativeFlowInspection[]);
+      assert.equal(result.status, "blocked");
+      assert.equal(
+        result.blocking.some((b) => b.reason === "citation-inconsistent"),
+        true,
+      );
+    }
+  });
   it("caller-asserted mismatch blocks, and the real scanner handle reads expected entries", async () => {
     const wrong = await collectNativeSemanticEvidence(
       repo(),
