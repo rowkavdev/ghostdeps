@@ -38,3 +38,54 @@ test("an empty diff is not relevant", () => {
 test("one relevant file in a mixed diff gates the scan on", () => {
   assert.equal(isCorpusRelevant(["README.md", "packages/cli/src/main.ts", "docs/x.md"]), true);
 });
+
+// Integration tests for the changes job's filter step (#172 review): the
+// exact shell construct the workflow runs must fail the step when git diff
+// fails - never write corpus=false from a swallowed substitution.
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const gatePath = join(dirname(fileURLToPath(import.meta.url)), "corpus-gate.mjs");
+
+function gitRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "corpus-gate-"));
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "base"], { cwd: dir });
+  return dir;
+}
+
+// Mirrors the filter step in .github/workflows/corpus.yml, runner shell
+// included (bash -eo pipefail).
+function runFilterStep(dir, ref, outFile) {
+  execFileSync(
+    "bash",
+    [
+      "-eo",
+      "pipefail",
+      "-c",
+      `relevant=$(git diff --name-only "${ref}...HEAD" | node "${gatePath}")\n` +
+        `echo "corpus=\${relevant}" >> "${outFile}"`,
+    ],
+    { cwd: dir, stdio: ["ignore", "pipe", "pipe"] },
+  );
+}
+
+test("a failed git diff fails the step and writes nothing", () => {
+  const dir = gitRepo();
+  const outFile = join(dir, "github-output");
+  assert.throws(() => runFilterStep(dir, "0000000000000000000000000000000000000000", outFile));
+  assert.throws(() => readFileSync(outFile, "utf8"), /ENOENT/);
+});
+
+test("a valid diff writes the gated value the corpus job reads", () => {
+  const dir = gitRepo();
+  const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  execFileSync("git", ["checkout", "-q", "-b", "pr"], { cwd: dir });
+  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "docs"], { cwd: dir });
+  const outFile = join(dir, "github-output");
+  runFilterStep(dir, base, outFile);
+  assert.equal(readFileSync(outFile, "utf8").trim(), "corpus=false");
+});
