@@ -5,8 +5,9 @@
 import type { Finding, RepositoryHandle } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 import type { NativeEnvelopeResult } from "./seal.js";
-import { liveNativeSealEvidence } from "./seal.js";
+import { liveNativeSealRecord } from "./seal.js";
 import { verifyNativeSnapshot } from "./snapshot.js";
+import { nativeRuleIdentity } from "./rule-identity.js";
 
 export type NativePolicyResult =
   | { readonly status: "blocked"; readonly reason: string; readonly pillar?: string }
@@ -45,8 +46,11 @@ export async function evaluateNativePolicy(
     const refusal = envelope?.status === "blocked" ? envelope.refusals?.[0] : null;
     return blocked(refusal?.reason ?? "unsealed-envelope", refusal?.pillar);
   }
-  const e = liveNativeSealEvidence(envelope.evidence);
-  if (!e) return blocked("not-live-assembler-seal");
+  const record = liveNativeSealRecord(envelope.evidence);
+  if (!record) return blocked("not-live-assembler-seal");
+  const e = record.evidence;
+  if (e.ruleId !== rule.id || !/\/v\d+$/.test(rule.id)) return blocked("rule-version-mismatch");
+  if (record.ruleIdentity !== nativeRuleIdentity(rule)) return blocked("rule-content-mismatch");
   if (!e.referencesComplete || e.binding !== "verified")
     return blocked("incomplete-sealed-evidence");
   if (

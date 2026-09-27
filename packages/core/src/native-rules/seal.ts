@@ -8,11 +8,15 @@ import type { NativeMatchedApiResult } from "./matched-api.js";
 import type { NativeIncompatibleResult } from "./incompatible.js";
 import type { NativeSemanticResult } from "./semantic.js";
 import { verifyNativeSnapshot } from "./snapshot.js";
+import { nativeRuleIdentity } from "./rule-identity.js";
 
 /** Private runtime identity for assembler output; not producer-provenance. */
 const seal: unique symbol = Symbol("native-envelope-assembly");
-const liveSeals = new WeakMap<object, NativeEligibilityEvidence>();
-export const liveNativeSealEvidence = (value: unknown): NativeEligibilityEvidence | null =>
+const liveSeals = new WeakMap<
+  object,
+  { evidence: NativeEligibilityEvidence; ruleIdentity: string }
+>();
+export const liveNativeSealRecord = (value: unknown) =>
   value && typeof value === "object" ? (liveSeals.get(value) ?? null) : null;
 export interface NativeSealedEvidence {
   readonly evidence: NativeEligibilityEvidence;
@@ -40,7 +44,8 @@ export interface NativeSealRefusal {
     | "identity-mismatch"
     | "coverage-incomplete"
     | "declaration-unverified"
-    | "snapshot-unverified";
+    | "snapshot-unverified"
+    | "rule-identity-unavailable";
   readonly pillar?: keyof NativePillars;
   readonly detail: string;
 }
@@ -216,6 +221,9 @@ export async function assembleNativeEnvelope(
     refusals: refusals as [NativeSealRefusal, ...NativeSealRefusal[]],
     pillars,
   });
+  const ruleIdentity = nativeRuleIdentity(rule);
+  if (!ruleIdentity)
+    refuse("rule-identity-unavailable", "Rule policy identity could not be computed");
   const verified = await verifyNativeSnapshot(repository, snapshotSha256);
   if (verified.status !== "verified") refuse("snapshot-unverified", verified.reason);
   const names = ["deployment", "matched", "incompatible", "semantic"] as const;
@@ -328,6 +336,6 @@ export async function assembleNativeEnvelope(
     lineageVerification: "core-reconstructed",
     [seal]: true,
   };
-  liveSeals.set(sealed, structuredClone(evidence));
+  liveSeals.set(sealed, { evidence: structuredClone(evidence), ruleIdentity: ruleIdentity! });
   return { status: "produced", evidence: sealed };
 }
