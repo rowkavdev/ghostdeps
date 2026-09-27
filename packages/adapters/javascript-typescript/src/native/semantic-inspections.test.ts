@@ -9,6 +9,8 @@ async function scan(text: string) {
   const repository = memoryHandle(files);
   const matches = await findMatchedApiReferences(repository, "axios");
   const records = await inspectSemanticFlows(repository, matches.references);
+  const bytesOf = (s: { file: string; start: number; end: number }) =>
+    Buffer.from(files[s.file as keyof typeof files]).subarray(s.start, s.end);
   for (const record of records) {
     for (const citation of [
       ...record.citations,
@@ -21,9 +23,43 @@ async function scan(text: string) {
       assert.ok(citation.end <= bytes.length);
       assert.ok(bytes.subarray(citation.start, citation.end).toString("utf8"));
     }
+    for (const link of record.links) {
+      // Every link cites both the flow tokens and the binding occurrence.
+      assert.ok(link.bindingSpan.start >= link.span.start && link.bindingSpan.end <= link.span.end);
+      assert.ok(link.tokenSpan.start >= link.span.start && link.tokenSpan.end <= link.span.end);
+      assert.ok(link.bindingSpan.end > link.bindingSpan.start);
+      assert.ok(link.tokenSpan.end > link.tokenSpan.start);
+      assert.equal(bytesOf(link.bindingSpan).toString("utf8"), link.binding);
+      if (link.tie.state === "resolved") {
+        const tie = link.tie;
+        assert.ok(
+          tie.declarationBinding.start >= tie.declaration.start &&
+            tie.declarationBinding.end <= tie.declaration.end,
+        );
+        assert.equal(bytesOf(tie.declarationBinding).toString("utf8"), link.binding);
+        if (tie.via === "call-site") {
+          assert.equal(tie.declaration.start, record.call.start);
+          assert.equal(tie.declaration.end, record.call.end);
+        } else if (tie.via === "call-result") {
+          assert.ok(tie.declaration.start <= record.call.start);
+          assert.ok(tie.declaration.end >= record.call.end);
+        } else {
+          assert.ok(link.bindingSpan.start >= record.call.start);
+          assert.ok(link.bindingSpan.end <= record.call.end);
+        }
+      }
+    }
+    // Links never promote: a non-unknown claim rests on a resolved tie.
+    if (record.state !== "unknown")
+      assert.ok(record.links.some((link) => link.tie.state === "resolved"));
   }
   return records;
 }
+
+const citedText =
+  (source: string) =>
+  (s: { start: number; end: number }): string =>
+    Buffer.from(source).subarray(s.start, s.end).toString("utf8");
 test("awaited response: cited status check and parsed data observation", async () => {
   const records = await scan(
     'import axios from "axios";\nasync function f() { const response = await axios.get("/é"); if (response.status !== 200) throw Error(); return response.data; }',
@@ -166,4 +202,122 @@ test("dynamic response handler and captured response stay unknown", async () => 
   );
   assert.equal(captured.find((r) => r.kind === "parsed-response")?.state, "unknown");
   assert.match(captured.find((r) => r.kind === "parsed-response")?.note ?? "", /nested handler/);
+});
+
+test("status check on the awaited binding is a fully resolved flow link", async () => {
+  const source =
+    'import axios from "axios"; async function f() { const res = await axios.get("/x"); if (res.status === 200) console.log("ok"); }';
+  const cited = citedText(source);
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "status-check")!;
+  assert.equal(record.state, "inspected");
+  const resolved = record.links.filter((l) => l.tie.state === "resolved");
+  assert.equal(resolved.length, 1);
+  const link = resolved[0]!;
+  assert.equal(link.binding, "res");
+  assert.equal(cited(link.span), "res.status === 200");
+  assert.equal(cited(link.bindingSpan), "res");
+  assert.equal(cited(link.tokenSpan), ".status");
+  assert.ok(link.tie.state === "resolved" && link.tie.via === "call-result");
+  if (link.tie.state === "resolved") {
+    assert.ok(cited(link.tie.declaration).startsWith("res = await axios.get("));
+    assert.equal(cited(link.tie.declarationBinding), "res");
+  }
+  const handling = records.find((r) => r.kind === "response-handling")!;
+  const awaitLink = handling.links.find((l) => l.tie.state === "resolved")!;
+  assert.equal(awaitLink.binding, "axios");
+  assert.ok(cited(awaitLink.tokenSpan).startsWith("await"));
+  assert.equal(cited(awaitLink.bindingSpan), "axios");
+});
+test("parsed response use links the response binding to the call", async () => {
+  const source =
+    'import axios from "axios"; async function f() { const res = await axios.get("/x"); return res.data; }';
+  const cited = citedText(source);
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "parsed-response")!;
+  assert.equal(record.state, "incompatible");
+  const link = record.links.find((l) => l.tie.state === "resolved")!;
+  assert.equal(link.binding, "res");
+  assert.equal(cited(link.span), "res.data");
+  assert.equal(cited(link.tokenSpan), ".data");
+  assert.ok(link.tie.state === "resolved" && link.tie.via === "call-result");
+});
+test("try/catch around the call links the awaited binding and the catch region", async () => {
+  const source =
+    'import axios from "axios"; async function f() { try { const res = await axios.get("/x"); } catch (error) { console.log(error.code); } }';
+  const cited = citedText(source);
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "error-handling")!;
+  assert.equal(record.state, "inspected");
+  const link = record.links.find((l) => l.tie.state === "resolved")!;
+  assert.equal(link.binding, "res");
+  assert.ok(cited(link.span).startsWith("try {"));
+  assert.ok(cited(link.span).includes("} catch (error) {"));
+  assert.ok(cited(link.tokenSpan).startsWith("catch (error)"));
+  assert.equal(cited(link.bindingSpan), "res");
+  assert.ok(link.tie.state === "resolved" && link.tie.via === "call-result");
+});
+test("AbortController signal links the controller binding into the call options", async () => {
+  const source =
+    'import axios from "axios"; const controller = new AbortController(); axios.get("/x", { signal: controller.signal });';
+  const cited = citedText(source);
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "cancellation-propagation")!;
+  assert.equal(record.state, "inspected");
+  const link = record.links.find((l) => l.tie.state === "resolved")!;
+  assert.equal(link.binding, "controller");
+  assert.equal(cited(link.span), "signal: controller.signal");
+  assert.equal(cited(link.bindingSpan), "controller");
+  assert.equal(cited(link.tokenSpan), "signal");
+  assert.ok(link.tie.state === "resolved" && link.tie.via === "call-option");
+  if (link.tie.state === "resolved") {
+    assert.equal(cited(link.tie.declaration), "controller = new AbortController()");
+    assert.equal(cited(link.tie.declarationBinding), "controller");
+  }
+});
+test("status check on an unrelated variable is unresolved, never associated", async () => {
+  const source =
+    'import axios from "axios"; async function f() { const res = await axios.get("/x"); const other = { status: 500 }; if (other.status === 500) console.log("x"); }';
+  const cited = citedText(source);
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "status-check")!;
+  assert.equal(record.state, "unknown");
+  const link = record.links.find((l) => l.binding === "other")!;
+  assert.equal(link.tie.state, "unresolved");
+  assert.equal(cited(link.span), "other.status === 500");
+  assert.equal(cited(link.bindingSpan), "other");
+  assert.equal(cited(link.tokenSpan), ".status");
+  assert.ok(!record.links.some((l) => l.tie.state === "resolved"));
+});
+test("unrelated status checks never promote a linked response status check", async () => {
+  const source =
+    'import axios from "axios"; async function f() { const res = await axios.get("/x"); const other = { status: 500 }; if (res.status === 200) ok(); if (other.status === 500) bad(); }';
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "status-check")!;
+  assert.equal(record.state, "inspected");
+  assert.ok(record.links.some((l) => l.binding === "res" && l.tie.state === "resolved"));
+  assert.ok(record.links.some((l) => l.binding === "other" && l.tie.state === "unresolved"));
+});
+test("dynamic response handler stays unknown but cites its flow span", async () => {
+  const source = 'import axios from "axios"; axios.get("/").then(handler);';
+  const cited = citedText(source);
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "response-handling")!;
+  assert.equal(record.state, "unknown");
+  assert.match(record.note ?? "", /dynamic/);
+  const link = record.links.find((l) => l.tie.state === "resolved")!;
+  assert.equal(link.binding, "axios");
+  assert.equal(cited(link.span), 'axios.get("/").then(handler)');
+  assert.equal(cited(link.tokenSpan), ".then");
+  assert.equal(cited(link.bindingSpan), "axios");
+});
+test("reassigned response binding severs flow link ties", async () => {
+  const source =
+    'import axios from "axios"; async function f() { let res = await axios.get("/x"); res = {}; if (res.status === 200) console.log("x"); }';
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "status-check")!;
+  assert.equal(record.state, "unknown");
+  const links = record.links.filter((l) => l.binding === "res");
+  assert.ok(links.length >= 1);
+  assert.ok(links.every((l) => l.tie.state === "unresolved"));
 });
