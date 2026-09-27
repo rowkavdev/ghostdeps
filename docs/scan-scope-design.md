@@ -1,6 +1,6 @@
 # Scan scope design (#354)
 
-- Status: Accepted design (lead ruling 2026-09-25); implementation authorised 2026-09-26 (lead ruling; first slice in #422)
+- Status: Accepted design (lead ruling 2026-09-25); implementation authorised 2026-09-26 (lead ruling; first slice in #422). Core (#422) and presenters (#426) merged; CLI/Action activation landed 2026-09-27. Remaining slices: GitHub App activation, per-run CLI/Action overrides, PR diff/cache semantics.
 - Date: 2026-09-25
 - Driving case: GhostDeps's own fixture manifests produce noisy but correct self-scan findings
 
