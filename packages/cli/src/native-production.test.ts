@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { analysePath, runScan } from "./scan.js";
+import { run } from "./cli.js";
 import { renderJsonReport } from "@ghostdeps/core";
 
 describe("production CLI native evaluation (#462)", () => {
@@ -40,6 +41,24 @@ describe("production CLI native evaluation (#462)", () => {
           f.evidence.some((e) => e.kind === "native-incompatibility-excluded"),
         ),
       );
+      const rule = "javascript-typescript/axios-to-fetch/v1";
+      const capture = async (flags: string[]) => {
+        const out: string[] = [];
+        const err: string[] = [];
+        const code = await run(["scan", "--json", ...flags, root], {
+          stdout: (line) => void out.push(line),
+          stderr: (line) => void err.push(line),
+        });
+        assert.equal(code, 0, err.join("\n"));
+        return JSON.parse(out.join("\n")) as typeof result;
+      };
+      const disabled = await capture(["--disable-rule", rule]);
+      assert.ok(!disabled.findings.some((f) => f.rule === rule));
+      const downgraded = await capture(["--downgrade", `${rule}=low`]);
+      const downgradedFinding = downgraded.findings.find((f) => f.rule === rule);
+      assert.equal(downgradedFinding?.confidence, "low");
+      assert.equal(downgradedFinding?.severity, "info");
+      assert.equal(downgraded.nativeEvaluations?.[0]?.status, "produced");
       await writeFile(
         path.join(root, "ghostdeps.targets.json"),
         JSON.stringify({

@@ -2,8 +2,8 @@
  * Native replacement rule schema (docs/architecture.md, "Native replacement
  * rules"). Rules are data with tests, not vibes. Seed dataset research:
  * issue #64 (e18e/module-replacements, min versions from Node docs).
- * No native replacement finding is shipped by this inert data contract. A
- * source-validating producer must first establish runtime and semantic facts.
+ * Rule data alone never produces a finding. Production validation verifies
+ * runtime and semantic facts against the scanner-bound repository snapshot.
  */
 
 import type { NativeReferenceSurface } from "./matched-api.js";

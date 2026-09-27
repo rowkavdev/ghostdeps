@@ -7,6 +7,7 @@ import {
   FsRepositoryHandle,
   normaliseAnalysisResult,
   severityOf,
+  capConfidence,
   type PolicyConfig,
 } from "@ghostdeps/core";
 import { stat } from "node:fs/promises";
@@ -44,7 +45,14 @@ export async function analysePath(path: string, policy?: PolicyConfig): Promise<
   });
   const native = await evaluateNativeProduction(handle, result.dependencies);
   const disabled = new Set(policy?.disabled ?? []);
-  const allowed = native.findings.filter((finding) => !disabled.has(finding.rule ?? ""));
+  const allowed = native.findings
+    .filter((finding) => !disabled.has(finding.rule ?? ""))
+    .map((finding) => ({
+      ...finding,
+      confidence: policy?.downgrade?.[finding.rule ?? ""]
+        ? capConfidence(finding.confidence, policy.downgrade[finding.rule ?? ""]!)
+        : finding.confidence,
+    }));
   return normaliseAnalysisResult({
     ...result,
     findings: [
