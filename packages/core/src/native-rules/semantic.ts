@@ -144,7 +144,8 @@ async function sameLexicalResult(
   bytes: Uint8Array,
   declarationBinding: NativeReferenceSpan,
   occurrence: NativeReferenceSpan,
-  member: NativeReferenceSpan,
+  token: NativeReferenceSpan,
+  region: NativeReferenceSpan,
 ): Promise<boolean> {
   let text: string;
   try {
@@ -176,7 +177,10 @@ async function sameLexicalResult(
         matches(node, occurrence) &&
         (ts.isPropertyAccessExpression(node.parent) || ts.isElementAccessExpression(node.parent)) &&
         node.parent.expression === node &&
-        matches(node.parent, member)
+        Buffer.byteLength(text.slice(0, node.parent.getStart(sf))) === occurrence.start &&
+        Buffer.byteLength(text.slice(0, node.parent.getEnd())) === token.end &&
+        within(region, occurrence) &&
+        within(region, token)
       )
         used = node;
     }
@@ -510,6 +514,7 @@ export async function collectNativeSemanticEvidence(
           bytes.get(call.file)!,
           tie.declarationBinding,
           link.bindingSpan,
+          link.tokenSpan,
           link.span,
         ))
       )

@@ -361,7 +361,7 @@ describe("native semantic pillar (#450)", () => {
     // when a nested lexical declaration shadows the response name.
     const shadowSource = source.replace(
       "if (response.status) throw Error(); return response.data;",
-      "{ const response = {status: 200, data: 1}; if (response.status) throw Error(); return response.data; }",
+      "{ const response = {status: 200, data: 1}; if (response.status === 200) throw Error(); return response.data; }",
     );
     const shadowSpan = (needle: string) => {
       const start = Buffer.from(shadowSource).indexOf(Buffer.from(needle));
@@ -369,6 +369,7 @@ describe("native semantic pillar (#450)", () => {
       return { file, start, end: start + Buffer.byteLength(needle) };
     };
     const shadowMember = shadowSpan("response.status");
+    const shadowCondition = shadowSpan("response.status === 200");
     const shadowBinding = { ...shadowMember, end: shadowMember.start + 8 };
     const shadowScope = shadowSpan(
       shadowSource.slice(
@@ -378,12 +379,12 @@ describe("native semantic pillar (#450)", () => {
     );
     const forgedStatus = {
       ...records[1]!,
-      citations: [shadowMember],
-      explored: [call, shadowMember],
+      citations: [shadowCondition],
+      explored: [call, shadowCondition],
       links: [
         {
           ...responseLink("status-check"),
-          span: shadowMember,
+          span: shadowCondition,
           bindingSpan: shadowBinding,
           tokenSpan: { ...shadowMember, start: shadowBinding.end },
         },
@@ -419,6 +420,52 @@ describe("native semantic pillar (#450)", () => {
       shadowResult.blocking.some((block) => block.reason === "association-unresolved"),
       JSON.stringify(shadowResult.blocking),
     );
+    // The adapter may cite the full condition, not merely its member access.
+    const conditionSource = source.replace("response.status)", "response.status === 200)");
+    const conditionSpan = (needle: string) => {
+      const start = Buffer.from(conditionSource).indexOf(Buffer.from(needle));
+      assert.ok(start >= 0);
+      return { file, start, end: start + Buffer.byteLength(needle) };
+    };
+    const fullCondition = conditionSpan("response.status === 200");
+    const ordinary = {
+      ...records[1]!,
+      citations: [fullCondition],
+      explored: [call, fullCondition],
+      links: [{ ...responseLink("status-check"), span: fullCondition }],
+    };
+    const conditionRepository = {
+      ...repo(),
+      readFile: async () => conditionSource,
+      readFileBytes: async () => Buffer.from(conditionSource),
+    };
+    const conditionSnapshot = await mintNativeSnapshot(conditionRepository);
+    assert.equal(conditionSnapshot.status, "verified");
+    const conditionScope = conditionSpan(
+      conditionSource.slice(
+        conditionSource.indexOf("{ const response"),
+        conditionSource.lastIndexOf("}") + 1,
+      ),
+    );
+    const conditionError = {
+      ...records[3]!,
+      citations: [conditionScope, argument],
+      explored: [call, conditionScope],
+      negativeProof: {
+        scope: conditionScope,
+        options: [argument],
+        inspected: [call, conditionScope],
+      },
+    };
+    const conditionResult = await collectNativeSemanticEvidence(
+      conditionRepository,
+      shadowRule,
+      conditionSnapshot.snapshotSha256,
+      [call],
+      [records[0]!, ordinary, conditionError],
+    );
+    assert.equal(conditionResult.status, "pass", JSON.stringify(conditionResult.blocking));
+    assert.equal(conditionResult.lineageVerification, "core-reconstructed");
     const truncatedScope = { ...scope, end: call.end + 1 };
     const truncated = records.map((r) =>
       r.kind === "cancellation-propagation"
