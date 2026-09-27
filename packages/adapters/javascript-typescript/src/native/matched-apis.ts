@@ -646,6 +646,41 @@ export async function findMatchedApiReferences(
     });
     const frames = buildScopeFrames(sf);
     framesByFile.set(file, frames);
+    // A syntactic replacement of the loader anywhere in this file defeats
+    // package-entry provenance. Even a later write may run before this call
+    // through another function; source ordering is not execution ordering.
+    // This is intentionally conservative, not a claim about global integrity.
+    const loaderTarget = (node: ts.Node): boolean =>
+      (ts.isIdentifier(node) && node.text === "require") ||
+      (ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        ["globalThis", "global"].includes(node.expression.text) &&
+        node.name.text === "require") ||
+      (ts.isElementAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        ["globalThis", "global"].includes(node.expression.text) &&
+        ts.isStringLiteral(node.argumentExpression) &&
+        node.argumentExpression.text === "require");
+    let loaderWritten = false;
+    const findLoaderWrites = (node: ts.Node): void => {
+      if (
+        ts.isBinaryExpression(node) &&
+        loaderTarget(node.left) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      )
+        loaderWritten = true;
+      if (
+        (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+        loaderTarget(node.operand) &&
+        (node.operator === ts.SyntaxKind.PlusPlusToken ||
+          node.operator === ts.SyntaxKind.MinusMinusToken)
+      )
+        loaderWritten = true;
+      if (ts.isDeleteExpression(node) && loaderTarget(node.expression)) loaderWritten = true;
+      ts.forEachChild(node, findLoaderWrites);
+    };
+    findLoaderWrites(sf);
 
     /**
      * The package source of an alias initializer at its own position,
@@ -814,8 +849,9 @@ export async function findMatchedApiReferences(
                       )))
               );
             });
-            const loaderUnresolved =
-              isShadowedAt(frames, "require", loaderPosition) || importShadowsLoader
+            const loaderUnresolved = loaderWritten
+              ? "require is explicitly written in this file; package loader provenance cannot be proven"
+              : isShadowedAt(frames, "require", loaderPosition) || importShadowsLoader
                 ? "require is shadowed by a local declaration; package loader provenance cannot be proven"
                 : undefined;
             if (ts.isIdentifier(decl.name)) {
