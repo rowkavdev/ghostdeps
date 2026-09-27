@@ -1,6 +1,6 @@
-# Publishing the `ghostdeps` npm package
+# Publishing the npm package (`ghostdeps`, pending rename)
 
-The CLI ships on npm as the unscoped package `ghostdeps`. It previously shipped scoped as `@rowkav09/ghostdeps`; the rename lands alongside the first unscoped publish, after which both `@rowkav09/ghostdeps` and the legacy `ghost-deps` (a separate package Rowan now owns) are deprecated pointers at `ghostdeps`. This document
+The CLI is moving to the unscoped package `ghostdeps`. It currently ships scoped as `@rowkav09/ghostdeps`; the rename lands alongside the first unscoped publish, after which both `@rowkav09/ghostdeps` and the legacy `ghost-deps` (a separate package Rowan now owns) are deprecated pointers at `ghostdeps`. This document
 is the release process and the reasoning behind the layout.
 
 ## Layout

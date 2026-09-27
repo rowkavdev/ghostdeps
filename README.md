@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/rowkavdev/ghostdeps/actions/workflows/ci.yml/badge.svg)](https://github.com/rowkavdev/ghostdeps/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![npm](https://img.shields.io/npm/v/ghostdeps)](https://www.npmjs.com/package/ghostdeps)
-[![npm downloads/week](https://img.shields.io/npm/dw/ghostdeps)](https://www.npmjs.com/package/ghostdeps)
-[![npm downloads/month](https://img.shields.io/npm/dm/ghostdeps)](https://www.npmjs.com/package/ghostdeps)
+[![npm](https://img.shields.io/npm/v/@rowkav09/ghostdeps)](https://www.npmjs.com/package/@rowkav09/ghostdeps)
+[![npm downloads/week](https://img.shields.io/npm/dw/@rowkav09/ghostdeps)](https://www.npmjs.com/package/@rowkav09/ghostdeps)
+[![npm downloads/month](https://img.shields.io/npm/dm/@rowkav09/ghostdeps)](https://www.npmjs.com/package/@rowkav09/ghostdeps)
 
 GhostDeps reads your manifests, lockfiles and source code and tells you which declared dependencies your code does not actually need, with the evidence and confidence behind every claim. It runs as a check on your pull requests (GitHub App or Action) and as a local CLI, and it never executes your code.
 
@@ -41,11 +41,11 @@ The action runs the analysis inside your job; there is no external service to in
 
 ## Use the CLI
 
-The CLI is on npm as `ghostdeps` (Node 22+):
+The CLI is on npm as `@rowkav09/ghostdeps` (Node 22+), renaming to unscoped `ghostdeps` with the next release:
 
 ```bash
-npx ghostdeps scan .
-# or install it: npm install --global ghostdeps && ghostdeps scan .
+npx @rowkav09/ghostdeps scan .
+# or install it: npm install --global @rowkav09/ghostdeps && ghostdeps scan .
 ```
 
 Or build from source (pnpm via corepack):
