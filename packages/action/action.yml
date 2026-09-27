@@ -62,7 +62,13 @@ outputs:
 runs:
   using: composite
   steps:
+    # pnpm version comes from THIS repo's root package.json (packageManager
+    # field), not the consumer's - pnpm/action-setup otherwise reads the
+    # consumer workspace and dies with "No pnpm version is specified" for
+    # any consumer that does not itself use pnpm (rollout wave-1 dogfood).
     - uses: pnpm/action-setup@v4
+      with:
+        package_json_file: ${{ github.action_path }}/../../package.json
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
