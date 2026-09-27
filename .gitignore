@@ -19,3 +19,5 @@ site/
 # npm publish staging (scripts/stage-npm.mjs)
 .npm-staging/
 fixtures/hostile/repo-symlink-tree/src/broken.js
+fixtures/hostile/repo-symlink-tree/src/alias.js
+fixtures/hostile/repo-symlink-tree/src/loop
