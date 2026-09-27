@@ -875,3 +875,21 @@ test("source-level require writes cannot produce a complete package-entry chain"
     assert.match(ref.lineageChain!.brokenAt!.reason, /explicitly written/);
   }
 });
+
+test("global object alias or escape refuses unbroken require lineage", async () => {
+  const cases = [
+    'const globals=globalThis; globals.require=()=>({get(){return "fake"}}); const ax=require("axios"); ax.get("/x");',
+    'const globals=global; Object.defineProperty(globals, "require", {value:()=>({get(){}})}); const ax=require("axios"); ax.get("/x");',
+    'function escape(x) { x.require = () => ({get(){}}); } escape(globalThis); const ax=require("axios"); ax.get("/x");',
+    'const ax=require("axios"); console.log(globalThis); ax.get("/x");',
+  ];
+  for (const source of cases) {
+    const files = { "src/a.cjs": source };
+    const ref = (await findMatchedApiReferences(memoryHandle(files), "axios")).references.find(
+      (r) => cited(files, r).includes('"/x"'),
+    )!;
+    assert.ok(ref, source);
+    assert.equal(ref.resolution, "indirect-unknown", source);
+    assert.ok(ref.lineageChain?.brokenAt, source);
+  }
+});
