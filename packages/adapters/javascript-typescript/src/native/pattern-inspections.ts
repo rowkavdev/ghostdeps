@@ -3,6 +3,7 @@
  * repository/scope completeness. The core owns completeness proofs.
  */
 import ts from "typescript";
+import { createHash } from "node:crypto";
 import { MAX_SOURCE_BYTES } from "../usage/find-usage.js";
 import { scriptKindFor, SCANNABLE_EXTENSIONS } from "../usage/scan.js";
 import type { RepositoryHandle } from "@ghostdeps/core";
@@ -21,6 +22,15 @@ export interface PatternInspection {
   observations: readonly { file: string; start: number; end: number }[];
   uninspectable: readonly { file: string; start: number; end: number; note: string }[];
   state: PatternObservationState;
+  /** Adapter-side input to the core #446 negative-proof aggregate. These are
+   * byte citations, not a snapshot binding or a completeness verdict. Core
+   * re-reads the verified listing and bytes before accepting an absence. */
+  whereLooked: {
+    readonly eligibility: "js-ts-pattern-files-v1";
+    readonly files: readonly { path: string; byteLength: number; sha256: string }[];
+    readonly calls: readonly { file: string; start: number; end: number }[];
+    readonly unchecked: readonly { file: string; reason: string }[];
+  };
 }
 const excluded = new Set(["node_modules", ".git", "dist", "build", "coverage"]);
 function eligible(file: string): boolean {
@@ -156,6 +166,9 @@ export async function inspectIncompatiblePatterns(
     .sort();
   const selected = files.slice(0, MAX_PATTERN_FILES);
   const inspectedFiles: string[] = [];
+  const fileProof: { path: string; byteLength: number; sha256: string }[] = [];
+  const unchecked: { file: string; reason: string }[] = [];
+  const calls: { file: string; start: number; end: number }[] = [];
   const found = new Map<string, { file: string; start: number; end: number }[]>();
   const unknown = new Map<string, { file: string; start: number; end: number; note: string }[]>();
   for (const p of patterns) {
@@ -170,17 +183,28 @@ export async function inspectIncompatiblePatterns(
       text = await repository.readFile(file);
     } catch {
       capped = true;
+      unchecked.push({ file, reason: "source unreadable" });
       continue;
     }
     const size = Buffer.byteLength(text, "utf8");
     if (size > MAX_SOURCE_BYTES || inspectedBytes + size > MAX_PATTERN_BYTES) {
       capped = true;
+      unchecked.push({
+        file,
+        reason: size > MAX_SOURCE_BYTES ? "source too large" : "scan byte cap reached",
+      });
       continue;
     }
     inspectedBytes += size;
     inspectedFiles.push(file);
+    fileProof.push({
+      path: file,
+      byteLength: size,
+      sha256: createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex"),
+    });
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindFor(file));
     const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) calls.push(byteSpan(file, text, node));
       for (const p of patterns) {
         const records = found.get(p.patternId)!;
         const uncertain = isUnresolved(p.kind, p.patternId, node);
@@ -201,6 +225,8 @@ export async function inspectIncompatiblePatterns(
     };
     visit(sf);
   }
+  for (const file of files.slice(MAX_PATTERN_FILES))
+    unchecked.push({ file, reason: "file count cap reached" });
   return patterns.map(({ patternId, kind }) => {
     const observations = found.get(patternId)!;
     const uninspectable = unknown.get(patternId)!;
@@ -212,6 +238,15 @@ export async function inspectIncompatiblePatterns(
       capped,
       observations,
       uninspectable,
+      whereLooked: {
+        eligibility: "js-ts-pattern-files-v1" as const,
+        files: fileProof,
+        calls,
+        unchecked: [
+          ...unchecked,
+          ...uninspectable.map(({ file, note }) => ({ file, reason: note })),
+        ],
+      },
       state: observations.length
         ? "observed"
         : uninspectable.length
