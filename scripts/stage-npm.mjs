@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Assembles the publishable single-package layout for the `ghostdeps` npm
+ * Assembles the publishable single-package layout for the `ghost-deps` npm
  * package into .npm-staging/ (or --out). Run after `pnpm -r run build`.
  *
  * The published package vendors the built @ghostdeps/* workspace packages
@@ -149,7 +149,7 @@ const jsTs = readJson(path.join(root, "packages/adapters/javascript-typescript/p
 const python = readJson(path.join(root, "packages/adapters/python/package.json"));
 
 const manifest = {
-  name: "ghostdeps",
+  name: "ghost-deps",
   version,
   description: "Find dependencies your code doesn't really need, in any language.",
   license: "MIT",

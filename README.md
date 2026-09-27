@@ -41,11 +41,11 @@ The action runs the analysis inside your job; there is no external service to in
 
 ## Use the CLI
 
-The CLI is on npm as `@rowkav09/ghostdeps` (Node 22+), renaming to unscoped `ghostdeps` with the next release:
+The CLI is on npm as `ghost-deps` (Node 22+):
 
 ```bash
-npx @rowkav09/ghostdeps scan .
-# or install it: npm install --global @rowkav09/ghostdeps && ghostdeps scan .
+npx ghost-deps scan .
+# or install it: npm install --global ghost-deps && ghostdeps scan .
 ```
 
 Or build from source (pnpm via corepack):
