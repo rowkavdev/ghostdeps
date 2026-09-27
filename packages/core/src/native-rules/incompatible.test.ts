@@ -27,7 +27,11 @@ const repo = (content: Record<string, string> = files): RepositoryHandle => {
     exists: async (file) => file in content,
   };
 };
-const rule: NativeRule = { ...AXIOS_FETCH_RULE, incompatibleUses: ["timeout"] };
+const rule: NativeRule = {
+  ...AXIOS_FETCH_RULE,
+  incompatibleUses: ["timeout"],
+  incompatiblePatternKinds: { timeout: "option-key-value" },
+};
 const inspected = (change: Partial<NativePatternInspection> = {}): NativePatternInspection => ({
   patternId: "timeout",
   kind: "option-key-value",
@@ -66,6 +70,25 @@ describe("native incompatible evidence (#446)", () => {
     assert.match(check.negativeProof.sha256, /^[a-f0-9]{64}$/);
     assert.equal(check.negativeProof.policy, policy);
     assert.equal((await run([inspected()])).checks[0]?.state, "absent");
+  });
+  it("rejects adapter kind substitution even with a complete byte-perfect scope", async () => {
+    const result = await run([inspected({ kind: "property-chain" })]);
+    assert.equal(result.status, "blocked");
+    assert.equal(result.checks[0]?.state, "unchecked");
+    assert.equal(result.blocking[0]?.reason, "missing-inspection");
+    const repository = repo();
+    const binding = await mintNativeSnapshot(repository);
+    assert.equal(binding.status, "verified");
+    const { incompatiblePatternKinds: _unused, ...withoutMapping } = rule;
+    void _unused;
+    const noMapping = await collectNativeIncompatibleEvidence(
+      repository,
+      withoutMapping,
+      binding.snapshotSha256,
+      [inspected()],
+    );
+    assert.equal(noMapping.status, "blocked");
+    assert.equal(noMapping.checks[0]?.state, "unchecked");
   });
   it("observed blocks with every verified location, including repeats", async () => {
     const first = cited(),
