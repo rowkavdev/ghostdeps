@@ -52,8 +52,8 @@ const complete = (): NativeShapeOnlyFacts => ({
 describe("axios to native fetch evidence contract (#56)", () => {
   it("checks contract shape only with synthetic facts; never authorizes a finding", () => {
     const result = evaluateNativeRule(AXIOS_FETCH_RULE, complete());
-    assert.equal(result.status, "candidate");
-    if (result.status !== "candidate") return;
+    assert.equal(result.status, "shape-only");
+    if (result.status !== "shape-only") return;
     assert.equal(result.ruleId, "javascript-typescript/axios-to-fetch/v1");
     assert.deepEqual(result.matchedApis, ["get"]);
     assert.ok(result.excludedIncompatibilities.includes("interceptors"));

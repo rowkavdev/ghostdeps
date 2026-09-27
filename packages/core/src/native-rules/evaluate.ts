@@ -1,4 +1,4 @@
-/** Data-only native-alternative evaluator. This never edits sources or infers facts from imports. */
+/** Legacy shape-only diagnostics. This never emits a finding. */
 import type { Alternative, Confidence, Evidence } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 
@@ -6,7 +6,7 @@ import type { NativeRule } from "./index.js";
  * Synthetic, caller-filled shape-only facts. NOT source-validated eligibility evidence.
  * @deprecated Internal shape-test input only; future source-backed producers use
  * NativeEligibilityEvidence from producer.ts. Do not turn this evaluator's
- * candidate output into a finding.
+ * shape-only output into a finding.
  */
 export interface NativeShapeOnlyFacts {
   version: 1;
@@ -49,7 +49,7 @@ export interface NativeShapeOnlyFacts {
 export type NativeDecision =
   | { status: "blocked"; reason: string }
   | {
-      status: "candidate";
+      status: "shape-only";
       ruleId: string;
       matchedApis: string[];
       excludedIncompatibilities: string[];
@@ -82,7 +82,7 @@ const safeEvidence = (e: Evidence | undefined): boolean =>
   );
 
 /** Shape-only evaluator. This does not validate that evidence came from source.
- * No caller may convert a candidate to a Finding without a separate core-owned
+ * No caller may convert this output to a Finding without a separate core-owned
  * source-validating producer, which this slice does not provide.
  */
 export function evaluateNativeRule(rule: NativeRule, facts: NativeShapeOnlyFacts): NativeDecision {
@@ -186,7 +186,7 @@ export function evaluateNativeRule(rule: NativeRule, facts: NativeShapeOnlyFacts
   ];
   const confidence: Confidence = "medium";
   return {
-    status: "candidate",
+    status: "shape-only",
     ruleId: rule.id,
     matchedApis,
     excludedIncompatibilities: [...rule.incompatibleUses],

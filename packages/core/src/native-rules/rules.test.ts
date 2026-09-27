@@ -74,7 +74,7 @@ describe("JS native rule seed data (#57)", () => {
 
   for (const rule of JS_NATIVE_RULES) {
     it(`${rule.id}: matches only a fully covered synthetic record`, () => {
-      assert.equal(evaluateNativeRule(rule, synthetic(rule)).status, "candidate");
+      assert.equal(evaluateNativeRule(rule, synthetic(rule)).status, "shape-only");
     });
     for (const [reason, change] of [
       ["absent reference coverage", { referencesComplete: false }],
