@@ -137,6 +137,54 @@ describe("renderCheck", () => {
     assert.equal(out.output.annotations.length, 0);
   });
 
+  it("shows blocked and no-verdict native outcomes as neutral, even with no findings", () => {
+    const blocked = renderCheck(
+      {
+        ...result([]),
+        nativeEvaluations: [
+          {
+            status: "blocked",
+            ruleId: "javascript-typescript/axios-to-fetch/v1",
+            dependency: "axios",
+            pillar: "deployment",
+            reason: "below-floor",
+          },
+          {
+            status: "no-verdict",
+            ruleId: "javascript-typescript/uuid-v4-to-randomuuid/v1",
+            dependency: "uuid",
+            reason: "no matched call evidence",
+          },
+        ],
+      },
+      added,
+    );
+    assert.equal(blocked.conclusion, "neutral");
+    assert.equal(blocked.output.title, incompleteTitle);
+    assert.notEqual(blocked.output.summary, quietSummary);
+    assert.match(blocked.output.summary, /Native evaluation/);
+    assert.ok(blocked.output.summary.includes(String.raw`blocked in deployment (below\-floor)`));
+    assert.match(blocked.output.summary, /no verdict \(no matched call evidence\)/);
+    assert.deepEqual(blocked.output.annotations, []);
+    const withVerdict = renderCheck(
+      {
+        ...result([finding()]),
+        nativeEvaluations: [
+          {
+            status: "blocked",
+            ruleId: "javascript-typescript/axios-to-fetch/v1",
+            dependency: "axios",
+            pillar: "matched",
+            reason: "unresolved-reference",
+          },
+        ],
+      },
+      added,
+    );
+    assert.equal(withVerdict.conclusion, "neutral");
+    assert.match(withVerdict.output.summary, /Native evaluation/);
+  });
+
   const capNote: Finding = {
     ...finding(),
     kind: "info",

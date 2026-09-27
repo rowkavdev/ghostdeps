@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { createDefaultPolicy, severityOf, type AnalysisResult } from "@ghostdeps/core";
+import { renderCheck } from "@ghostdeps/checks-renderer";
 import type { AnalysisJob } from "../jobs.js";
 import { ResultCache } from "./result-cache.js";
 import {
@@ -732,6 +733,35 @@ describe("analyseCheckout: recommendation policy on the app path", () => {
     return dir;
   }
   const policy = { recommend: createDefaultPolicy() };
+
+  it("keeps a blocked native evaluation visible and neutral in the real App check output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ghostdeps-native-app-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ dependencies: { axios: "^1.0.0" } }),
+    );
+    await writeFile(
+      join(dir, "ghostdeps.targets.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        complete: true,
+        targets: [{ id: "production", runtime: "node", minVersion: "18.0.0" }],
+      }),
+    );
+    await mkdir(join(dir, "src"));
+    await writeFile(
+      join(dir, "src/a.ts"),
+      'import axios from "axios"; async function f() { const res = await axios.get("/x"); if (res.status === 200) return res.data; }',
+    );
+    const result = await analyseCheckout(dir, DEFAULT_ADAPTER_MODULES, policy);
+    assert.equal(result.nativeEvaluations?.[0]?.status, "blocked");
+    assert.ok(!result.findings.some((f) => f.kind === "potentially-unnecessary"));
+    const check = renderCheck(result, new Map());
+    assert.equal(check.conclusion, "neutral");
+    assert.notEqual(check.output.title, "No significant dependency issues found.");
+    assert.match(check.output.summary, /Native evaluation/);
+    assert.ok(check.output.summary.includes(String.raw`blocked in deployment (below\-floor)`));
+  });
 
   it("reports an unused dependency, capped at medium severity and confidence (#173, #178)", async () => {
     const result = await analyseCheckout(await unusedRepo(), DEFAULT_ADAPTER_MODULES, policy);
