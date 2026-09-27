@@ -17,17 +17,25 @@ import type { Confidence } from "../types/index.js";
 
 const hostileDir = join(dirname(fileURLToPath(import.meta.url)), "../../../../fixtures/hostile");
 
-// repo-symlink-tree's dangling link is created at test time, never committed:
-// a committed dangling symlink breaks the Actions runner's action-download
-// staging for every external consumer of the ghostdeps action (dogfood
-// finding, #521-adjacent). Keep the git tree free of it.
-const brokenLink = join(hostileDir, "repo-symlink-tree/src/broken.js");
-try {
-  await rm(brokenLink, { force: true });
-  await symlink("does-not-exist.js", brokenLink);
-} catch {
-  // POSIX-only fixture; suites that cannot create symlinks skip it, matching
-  // the fixture README.
+// repo-symlink-tree's links are created at test time, never committed: the
+// Actions runner's action-download staging follows symlinks while extracting
+// the repo tarball, so a committed dangling link ("Could not find file") or
+// link cycle ("Too many levels of symbolic links") kills every external
+// consumer of the ghostdeps action at Set up job (rollout wave-1 dogfood).
+const symlinkTree = join(hostileDir, "repo-symlink-tree/src");
+const links: Array<[string, string]> = [
+  ["real.js", "alias.js"],
+  ["../src", "loop"],
+  ["does-not-exist.js", "broken.js"],
+];
+for (const [target, name] of links) {
+  try {
+    await rm(join(symlinkTree, name), { force: true });
+    await symlink(target, join(symlinkTree, name));
+  } catch {
+    // POSIX-only fixture; suites that cannot create symlinks skip it,
+    // matching the fixture README.
+  }
 }
 
 const CONFIDENCE_VALUES: readonly Confidence[] = ["high", "medium", "low"];
