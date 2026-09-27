@@ -175,6 +175,16 @@ describe("sealed native policy gate (#460)", () => {
     const changed = { ...rule, id: "javascript-typescript/axios-to-fetch/v2" };
     const wrong = await evaluateNativePolicy(repo, changed, digest, envelope);
     assert.deepEqual(wrong, { status: "blocked", reason: "rule-version-mismatch" });
+    for (const altered of [
+      { nativeCapability: "replacement()" },
+      { minimumRuntime: { node: "1.0.0" } },
+      { coveredApis: ["get", "post"] },
+      { semanticDifferences: ["response handled", "new behavior"] },
+      { incompatibleUses: ["timeout", "new risk"] },
+    ]) {
+      const result = await evaluateNativePolicy(repo, { ...rule, ...altered }, digest, envelope);
+      assert.deepEqual(result, { status: "blocked", reason: "rule-content-mismatch" });
+    }
     const stale = await evaluateNativePolicy(
       repository({ ...files, "src/a.ts": 'axios.get("/changed")' }),
       rule,
