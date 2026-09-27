@@ -40,6 +40,24 @@ export interface NativeInspectedScope {
   readonly complete: boolean;
 }
 
+/** Canonical bounded negative proof over every inspected eligible file, including
+ * the empty set. An ordinary source span cannot prove multi-file absence.
+ */
+export interface NativeNegativeProof {
+  readonly snapshotSha256: string;
+  readonly policy: string;
+  readonly patternId: string;
+  readonly kind: "member-call" | "option-key-value" | "property-chain";
+  readonly eligibility: "js-ts-pattern-files-v1";
+  readonly listingSha256: string;
+  readonly files: readonly {
+    readonly path: string;
+    readonly byteLength: number;
+    readonly sha256: string;
+  }[];
+  readonly sha256: string;
+}
+
 /** A pattern is excluded only if checked, absent, and its inspected scope is complete. */
 export type NativeIncompatibleCheck =
   | {
@@ -60,7 +78,7 @@ export type NativeIncompatibleCheck =
       readonly scope: NativeInspectedScope & { readonly complete: true };
       readonly locations: readonly [];
       /** Bounded negative check grounded in this snapshot, not an unscoped assertion. */
-      readonly negativeProof: NativeSourceProof;
+      readonly negativeProof: NativeNegativeProof;
     };
 
 /** Unknown is explicit; a CI matrix or a bare engines declaration is not all targets. */

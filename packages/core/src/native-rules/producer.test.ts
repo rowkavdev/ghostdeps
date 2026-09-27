@@ -99,7 +99,16 @@ const absent: NativeIncompatibleCheck = {
   state: "absent",
   scope: inspected,
   locations: [],
-  negativeProof: source,
+  negativeProof: {
+    snapshotSha256,
+    policy: "a".repeat(64),
+    patternId: "interceptors",
+    kind: "member-call",
+    eligibility: "js-ts-pattern-files-v1",
+    listingSha256: "b".repeat(64),
+    files: [{ path: source.file, byteLength: 10, sha256: "c".repeat(64) }],
+    sha256: "d".repeat(64),
+  },
 };
 const observed: NativeIncompatibleCheck = {
   patternId: "interceptors",
@@ -163,7 +172,16 @@ if (false) {
     state: "absent",
     scope: { ...inspected, complete: false as const },
     locations: [],
-    negativeProof: source,
+    negativeProof: {
+      snapshotSha256,
+      policy: "a".repeat(64),
+      patternId: "interceptors",
+      kind: "member-call",
+      eligibility: "js-ts-pattern-files-v1",
+      listingSha256: "b".repeat(64),
+      files: [{ path: source.file, byteLength: 10, sha256: "c".repeat(64) }],
+      sha256: "d".repeat(64),
+    },
   };
   // @ts-expect-error absence requires a bounded snapshot-bound negative proof
   const absentWithoutProof: NativeIncompatibleCheck = {
@@ -180,7 +198,7 @@ if (false) {
 it("carries bounded negative-check proof and matched/semantic source identity", () => {
   assert.deepEqual(absent.scope, inspected);
   assert.equal(absent.negativeProof.snapshotSha256, snapshotSha256);
-  assert.equal(absent.negativeProof.file, source.file);
+  assert.equal(absent.negativeProof.files[0]?.path, source.file);
   assert.equal(evidence.snapshotSha256, matched.source.snapshotSha256);
   assert.equal(matched.callTarget, "axios.get");
   assert.equal(matched.arguments, "inspected");
