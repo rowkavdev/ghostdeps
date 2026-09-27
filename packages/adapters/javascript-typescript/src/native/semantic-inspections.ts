@@ -1,7 +1,7 @@
 /**
  * Bounded downstream observations for the Axios catalog (#451). These are
  * citations, not proofs of exhaustiveness or native-API equivalence. In
- * particular an "inspected" record only identifies a local syntactic flow;
+ * particular an "inspected-observed" record only identifies a local syntactic flow;
  * core must reconstruct spans, verify coverage, and decide whether it blocks.
  */
 import ts from "typescript";
@@ -74,7 +74,17 @@ export type SemanticFlowKind =
   | "parsed-response"
   | "error-handling"
   | "cancellation-propagation";
-export type SemanticFlowState = "inspected" | "unknown" | "incompatible";
+export type SemanticFlowState = "inspected-observed" | "inspected-absent" | "unknown";
+/** Adapter-side bounded negative citation, not a core-verified absence verdict.
+ * `scope` is the visited lexical block/function body; `options` cites every
+ * call argument (including the options object, if present). `inspected` is
+ * the visited syntax in that scope. Core must re-read these under the snapshot.
+ */
+export interface SemanticNegativeProof {
+  scope: MatchedApiSpan;
+  options: readonly MatchedApiSpan[];
+  inspected: readonly MatchedApiSpan[];
+}
 export interface SemanticFlowInspection {
   difference: string;
   kind: SemanticFlowKind;
@@ -84,6 +94,8 @@ export interface SemanticFlowInspection {
   /** Same typed package-entry chain as the matched call, never independently inferred. */
   lineageChain?: MatchedApiLineageChain;
   state: SemanticFlowState;
+  /** Present only on a looked-for, unobserved kind. */
+  negativeProof?: SemanticNegativeProof;
   /** Exact syntactic evidence supporting the state. */
   citations: readonly MatchedApiSpan[];
   /**
@@ -97,7 +109,7 @@ export interface SemanticFlowInspection {
   /**
    * True when MAX_FLOW_LINKS dropped further links: `links` is then a
    * prefix, NOT complete association evidence for the citations. Never
-   * silent - a capped record keeps state and citations but must not be
+   * silent - a capped record becomes unknown and must not be
    * treated as fully linked.
    */
   linksCapped: boolean;
@@ -433,7 +445,7 @@ export async function inspectSemanticFlows(
             : undefined;
         };
         if (ts.isAwaitExpression(value)) {
-          set("response-handling", "inspected", value);
+          set("response-handling", "inspected-observed", value);
           const site = callSite();
           if (site)
             addLink("response-handling", {
@@ -457,7 +469,7 @@ export async function inspectSemanticFlows(
           set(
             "response-handling",
             handler && (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler))
-              ? "inspected"
+              ? "inspected-observed"
               : "unknown",
             thenCall,
             handler && (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler))
@@ -568,7 +580,7 @@ export async function inspectSemanticFlows(
                   access.end <= (ts.isIfStatement(test) ? test.expression : test.condition).end
                 ) {
                   const condition = ts.isIfStatement(test) ? test.expression : test.condition;
-                  set("status-check", "inspected", condition);
+                  set("status-check", "inspected-observed", condition);
                   const tie = responseTie();
                   if (tie)
                     addLink("status-check", {
@@ -593,9 +605,9 @@ export async function inspectSemanticFlows(
               } else if (member(access, responseName, "data")) {
                 set(
                   "parsed-response",
-                  "incompatible",
+                  "inspected-observed",
                   access,
-                  "Axios response.data requires a parsing decision",
+                  "Axios response.data consumption observed; replacement needs a parsing decision",
                 );
                 const tie = responseTie();
                 if (tie)
@@ -618,14 +630,16 @@ export async function inspectSemanticFlows(
                     tie,
                   });
               }
-            } else if (!ts.isVariableDeclaration(n.parent)) {
-              set("status-check", "unknown", n, "response value escapes local member inspection");
-              set(
-                "parsed-response",
-                "unknown",
-                n,
-                "response value escapes local member inspection",
-              );
+            } else {
+              // A variable initializer is an alias handoff, not a harmless
+              // reference. Until its binding lineage is followed, later
+              // consumption (including .data or .status) is uninspectable.
+              const reason =
+                ts.isVariableDeclaration(n.parent) && n.parent.initializer === n
+                  ? "response alias handoff is not resolved"
+                  : "response value escapes local member inspection";
+              set("status-check", "unknown", n, reason);
+              set("parsed-response", "unknown", n, reason);
             }
           }
           // Status-shaped checks on any other binding: present, but never
@@ -679,14 +693,14 @@ export async function inspectSemanticFlows(
               } else if (member(child, errorName, "code") || member(child, errorName, "response"))
                 set(
                   "error-handling",
-                  "inspected",
+                  "inspected-observed",
                   n,
                   "Axios-specific error field observed; core decides compatibility",
                 );
               ts.forEachChild(child, check);
             };
             check(n.block);
-            if (!outcomes.has("error-handling")) set("error-handling", "inspected", n);
+            if (!outcomes.has("error-handling")) set("error-handling", "inspected-observed", n);
             // The try/catch region and the awaited binding inside it.
             const result = responseName ? callResultTie() : undefined;
             const site = result ? undefined : callSite();
@@ -722,7 +736,7 @@ export async function inspectSemanticFlows(
               const origin = controllerOrigin(n, n.initializer.expression.text);
               if (origin && isolatedController(origin, n.initializer)) {
                 add(origin);
-                set("cancellation-propagation", "inspected", n);
+                set("cancellation-propagation", "inspected-observed", n);
                 // The constructor citation is as essential as the option site.
                 outcomes.get("cancellation-propagation")!.citations.push(span(file, text, origin));
                 addLink("cancellation-propagation", {
@@ -787,6 +801,39 @@ export async function inspectSemanticFlows(
           ts.forEachChild(n, visit);
         };
         visit(boundary);
+        // Absence is only asserted for fully visited, statically inspectable
+        // local regions. The call arguments (including options) are cited in
+        // negativeProof separately; an opaque options object is cannot-look.
+        const optionsLookable =
+          ref.options === "inspected" &&
+          ref.arguments === "inspected" &&
+          node.arguments.every((argument) => !ts.isSpreadElement(argument));
+        const abortConstructorInScope = (() => {
+          let found = false;
+          const walk = (n: ts.Node): void => {
+            if (
+              ts.isNewExpression(n) &&
+              ts.isIdentifier(n.expression) &&
+              n.expression.text === "AbortController"
+            )
+              found = true;
+            ts.forEachChild(n, walk);
+          };
+          walk(boundary);
+          return found;
+        })();
+        if (
+          !outcomes.has("cancellation-propagation") &&
+          (!optionsLookable || abortConstructorInScope)
+        )
+          set(
+            "cancellation-propagation",
+            "unknown",
+            node,
+            !optionsLookable
+              ? "call options cannot be fully inspected"
+              : "AbortController exists in the cited scope but signal handoff was not resolved",
+          );
         // The catch clause is outside the try block used as a lexical
         // boundary, so visit it explicitly only when the call is in that try.
         if (containingTry?.catchClause && boundary !== containingTry)
@@ -794,6 +841,69 @@ export async function inspectSemanticFlows(
       }
       for (const kind of KINDS) {
         const outcome = outcomes.get(kind);
+        // No binding means downstream member paths cannot be inspected, even
+        // when the local syntax walk itself completed. A returned value can be
+        // consumed outside the lexical scope. Preserve unknown for that case.
+        const downstream = kind === "status-check" || kind === "parsed-response";
+        const boundary =
+          node && sf
+            ? (() => {
+                for (let at: ts.Node | undefined = node.parent; at; at = at.parent) {
+                  if (ts.isBlock(at)) return at;
+                  if (ts.isSourceFile(at)) return at;
+                }
+                return sf;
+              })()
+            : undefined;
+        let value: ts.Node | undefined = node;
+        while (
+          value &&
+          (ts.isAwaitExpression(value.parent) || ts.isParenthesizedExpression(value.parent))
+        )
+          value = value.parent;
+        const responseDeclaration =
+          value && ts.isVariableDeclaration(value.parent) && ts.isIdentifier(value.parent.name)
+            ? value.parent
+            : undefined;
+        // `var` is function-scoped: the result may be consumed after an
+        // enclosing if/try/loop block. The walk above only visited the
+        // immediate lexical block, so absence there cannot prove absence
+        // over the binding's actual lifetime.
+        const varEscapesBoundary =
+          !!responseDeclaration &&
+          !!boundary &&
+          ts.isVariableDeclarationList(responseDeclaration.parent) &&
+          !(responseDeclaration.parent.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)) &&
+          !ts.isSourceFile(boundary) &&
+          !(
+            ts.isBlock(boundary) &&
+            ts.isFunctionLike(boundary.parent) &&
+            "body" in boundary.parent &&
+            boundary.parent.body === boundary
+          );
+        const cannotInspectDownstream =
+          downstream && !outcome && (!responseDeclaration || varEscapesBoundary);
+        const absent =
+          !!node &&
+          !!text &&
+          !!boundary &&
+          !capped &&
+          !linksCappedKinds.has(kind) &&
+          !outcome &&
+          !cannotInspectDownstream &&
+          (kind !== "response-handling" || (value && ts.isAwaitExpression(value)));
+        const state: SemanticFlowState =
+          !node || capped || linksCappedKinds.has(kind)
+            ? "unknown"
+            : (outcome?.state ?? (absent ? "inspected-absent" : "unknown"));
+        const negativeProof: SemanticNegativeProof | undefined =
+          absent && text && boundary
+            ? {
+                scope: span(file, text, boundary),
+                options: node.arguments.map((arg) => span(file, text!, arg)),
+                inspected: [...explored],
+              }
+            : undefined;
         records.push({
           difference: difference(kind),
           kind,
@@ -802,19 +912,26 @@ export async function inspectSemanticFlows(
           ...(ref.lineageChain ? { lineageChain: ref.lineageChain } : {}),
           links: linksByKind.get(kind) ?? [],
           linksCapped: linksCappedKinds.has(kind),
-          state: !node || capped ? "unknown" : (outcome?.state ?? "unknown"),
-          citations: outcome?.citations ?? [call],
+          state,
+          ...(negativeProof ? { negativeProof } : {}),
+          citations:
+            outcome?.citations ??
+            (negativeProof ? [negativeProof.scope, ...negativeProof.options] : [call]),
           explored,
           capped,
-          ...(!node || capped || !outcome
+          ...(!node || capped || linksCappedKinds.has(kind) || (!outcome && !absent)
             ? {
                 note: !node
                   ? "source uninspectable or call citation not located"
                   : capped
                     ? "exploration cap reached"
-                    : "no resolved local flow for this difference",
+                    : linksCappedKinds.has(kind)
+                      ? "flow link cap reached"
+                      : varEscapesBoundary
+                        ? "var result may escape the inspected lexical block"
+                        : "downstream flow cannot be inspected in this lexical scope",
               }
-            : outcome.note
+            : outcome?.note
               ? { note: outcome.note }
               : {}),
         });

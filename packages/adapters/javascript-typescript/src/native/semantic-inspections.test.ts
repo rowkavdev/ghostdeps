@@ -50,8 +50,14 @@ async function scan(text: string) {
       }
     }
     // Links never promote: a non-unknown claim rests on a resolved tie.
-    if (record.state !== "unknown")
+    if (record.state === "inspected-observed")
       assert.ok(record.links.some((link) => link.tie.state === "resolved"));
+    if (record.state === "inspected-absent") {
+      assert.ok(record.negativeProof);
+      assert.ok(record.negativeProof.inspected.length);
+      assert.ok(record.negativeProof.scope.start <= record.call.start);
+      assert.ok(record.negativeProof.scope.end >= record.call.end);
+    } else assert.equal(record.negativeProof, undefined);
     // The link cap is bounded and its signal is honest.
     assert.ok(record.links.length <= MAX_FLOW_LINKS);
     if (record.links.length < MAX_FLOW_LINKS) assert.equal(record.linksCapped, false);
@@ -67,9 +73,9 @@ test("awaited response: cited status check and parsed data observation", async (
   const records = await scan(
     'import axios from "axios";\nasync function f() { const response = await axios.get("/é"); if (response.status !== 200) throw Error(); return response.data; }',
   );
-  assert.equal(records.find((r) => r.kind === "response-handling")?.state, "inspected");
-  assert.equal(records.find((r) => r.kind === "status-check")?.state, "inspected");
-  assert.equal(records.find((r) => r.kind === "parsed-response")?.state, "incompatible");
+  assert.equal(records.find((r) => r.kind === "response-handling")?.state, "inspected-observed");
+  assert.equal(records.find((r) => r.kind === "status-check")?.state, "inspected-observed");
+  assert.equal(records.find((r) => r.kind === "parsed-response")?.state, "inspected-observed");
   assert.equal(
     records.find((r) => r.kind === "parsed-response")?.citations.map((s) => s.start).length,
     1,
@@ -83,14 +89,14 @@ test("catch error.code is a cited inspection, not an eligibility verdict", async
   const records = await scan(
     'import axios from "axios"; async function f() { try { await axios.get("/x"); } catch (error) { console.log(error.code); } }',
   );
-  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "inspected");
+  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "inspected-observed");
   assert.equal(records.find((r) => r.kind === "error-handling")?.citations.length, 1);
 });
-test("unrelated catch cannot inspect the call", async () => {
+test("unrelated catch is an inspected absence for this call", async () => {
   const records = await scan(
     'import axios from "axios"; try { throw 1; } catch (error) { console.log(error.code); } axios.get("/x");',
   );
-  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "unknown");
+  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "inspected-absent");
 });
 test("signal citation in call options; swallowed wrapper result remains unknown", async () => {
   const records = await scan(
@@ -100,7 +106,7 @@ test("signal citation in call options; swallowed wrapper result remains unknown"
     (r) =>
       r.kind === "cancellation-propagation" &&
       r.call.file === "src/é.ts" &&
-      r.state === "inspected",
+      r.state === "inspected-observed",
   );
   assert.ok(cancellation);
   assert.equal(
@@ -146,7 +152,7 @@ test("AbortController origin cites both constructor and call option", async () =
     'import axios from "axios"; const controller = new AbortController(); axios.get("/x", {signal: controller.signal});',
   );
   const record = records.find((r) => r.kind === "cancellation-propagation")!;
-  assert.equal(record.state, "inspected");
+  assert.equal(record.state, "inspected-observed");
   assert.equal(record.citations.length, 2);
 });
 test("local class shadow of AbortController leaves cancellation unknown", async () => {
@@ -186,13 +192,16 @@ test("ordinary axios flow citations identify the exact check, data, catch and si
       Buffer.from(source).subarray(s.start, s.end).toString("utf8"),
     );
   };
-  assert.equal(records.find((r) => r.kind === "status-check")?.state, "inspected");
+  assert.equal(records.find((r) => r.kind === "status-check")?.state, "inspected-observed");
   assert.ok(cited("status-check").includes("res.status !== 200"));
-  assert.equal(records.find((r) => r.kind === "parsed-response")?.state, "incompatible");
+  assert.equal(records.find((r) => r.kind === "parsed-response")?.state, "inspected-observed");
   assert.ok(cited("parsed-response").includes("res.data"));
-  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "inspected");
+  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "inspected-observed");
   assert.ok(cited("error-handling").some((text) => text.includes("error.code")));
-  assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "inspected");
+  assert.equal(
+    records.find((r) => r.kind === "cancellation-propagation")?.state,
+    "inspected-observed",
+  );
   assert.ok(cited("cancellation-propagation").includes("signal: controller.signal"));
   assert.ok(cited("cancellation-propagation").includes("controller = new AbortController()"));
 });
@@ -213,7 +222,7 @@ test("status check on the awaited binding is a fully resolved flow link", async 
   const cited = citedText(source);
   const records = await scan(source);
   const record = records.find((r) => r.kind === "status-check")!;
-  assert.equal(record.state, "inspected");
+  assert.equal(record.state, "inspected-observed");
   const resolved = record.links.filter((l) => l.tie.state === "resolved");
   assert.equal(resolved.length, 1);
   const link = resolved[0]!;
@@ -238,7 +247,7 @@ test("parsed response use links the response binding to the call", async () => {
   const cited = citedText(source);
   const records = await scan(source);
   const record = records.find((r) => r.kind === "parsed-response")!;
-  assert.equal(record.state, "incompatible");
+  assert.equal(record.state, "inspected-observed");
   const link = record.links.find((l) => l.tie.state === "resolved")!;
   assert.equal(link.binding, "res");
   assert.equal(cited(link.span), "res.data");
@@ -251,7 +260,7 @@ test("try/catch around the call links the awaited binding and the catch region",
   const cited = citedText(source);
   const records = await scan(source);
   const record = records.find((r) => r.kind === "error-handling")!;
-  assert.equal(record.state, "inspected");
+  assert.equal(record.state, "inspected-observed");
   const link = record.links.find((l) => l.tie.state === "resolved")!;
   assert.equal(link.binding, "res");
   assert.ok(cited(link.span).startsWith("try {"));
@@ -266,7 +275,7 @@ test("AbortController signal links the controller binding into the call options"
   const cited = citedText(source);
   const records = await scan(source);
   const record = records.find((r) => r.kind === "cancellation-propagation")!;
-  assert.equal(record.state, "inspected");
+  assert.equal(record.state, "inspected-observed");
   const link = record.links.find((l) => l.tie.state === "resolved")!;
   assert.equal(link.binding, "controller");
   assert.equal(cited(link.span), "signal: controller.signal");
@@ -278,13 +287,14 @@ test("AbortController signal links the controller binding into the call options"
     assert.equal(cited(link.tie.declarationBinding), "controller");
   }
 });
-test("status check on an unrelated variable is unresolved, never associated", async () => {
+test("status check on an unrelated variable is not associated and is inspected absent", async () => {
   const source =
     'import axios from "axios"; async function f() { const res = await axios.get("/x"); const other = { status: 500 }; if (other.status === 500) console.log("x"); }';
   const cited = citedText(source);
   const records = await scan(source);
   const record = records.find((r) => r.kind === "status-check")!;
-  assert.equal(record.state, "unknown");
+  assert.equal(record.state, "inspected-absent");
+  assert.ok(record.negativeProof);
   const link = record.links.find((l) => l.binding === "other")!;
   assert.equal(link.tie.state, "unresolved");
   assert.equal(cited(link.span), "other.status === 500");
@@ -297,7 +307,7 @@ test("unrelated status checks never promote a linked response status check", asy
     'import axios from "axios"; async function f() { const res = await axios.get("/x"); const other = { status: 500 }; if (res.status === 200) ok(); if (other.status === 500) bad(); }';
   const records = await scan(source);
   const record = records.find((r) => r.kind === "status-check")!;
-  assert.equal(record.state, "inspected");
+  assert.equal(record.state, "inspected-observed");
   assert.ok(record.links.some((l) => l.binding === "res" && l.tie.state === "resolved"));
   assert.ok(record.links.some((l) => l.binding === "other" && l.tie.state === "unresolved"));
 });
@@ -332,10 +342,69 @@ test("flow link cap sets linksCapped, never drops silently", async () => {
   const source = `import axios from "axios"; async function f() { const res = await axios.get("/x"); ${checks} }`;
   const records = await scan(source);
   const record = records.find((r) => r.kind === "status-check")!;
-  assert.equal(record.state, "inspected");
+  assert.equal(record.state, "unknown");
+  assert.match(record.note ?? "", /flow link cap/);
   assert.equal(record.citations.length, 10);
   assert.equal(record.links.length, MAX_FLOW_LINKS);
   assert.equal(record.linksCapped, true);
   const parsed = records.find((r) => r.kind === "parsed-response")!;
   assert.equal(parsed.linksCapped, false);
+});
+
+test("plain response.data: observed difference, absent cancellation, observed status", async () => {
+  const source =
+    'import axios from "axios"; async function f() { const res = await axios.get("/x", {}); if (res.status === 200) return res.data; }';
+  const records = await scan(source);
+  const byKind = (kind: string) => records.find((r) => r.kind === kind)!;
+  assert.equal(byKind("parsed-response").state, "inspected-observed");
+  assert.equal(byKind("status-check").state, "inspected-observed");
+  const parsedLink = byKind("parsed-response").links.find((l) => l.tie.state === "resolved")!;
+  assert.equal(parsedLink.tie.state, "resolved");
+  assert.equal(citedText(source)(parsedLink.tokenSpan), ".data");
+  const absent = byKind("cancellation-propagation");
+  assert.equal(absent.state, "inspected-absent");
+  assert.ok(absent.negativeProof);
+  assert.equal(absent.negativeProof.options.length, 2);
+  assert.equal(citedText(source)(absent.negativeProof.options[1]!), "{}");
+  assert.ok(citedText(source)(absent.negativeProof.scope).includes("const res = await axios.get"));
+});
+test("dynamic options cannot claim absent cancellation", async () => {
+  const records = await scan(
+    'import axios from "axios"; async function f(opts) { const res = await axios.get("/x", opts); return res.data; }',
+  );
+  const cancellation = records.find((r) => r.kind === "cancellation-propagation")!;
+  assert.equal(cancellation.state, "unknown");
+  assert.equal(cancellation.negativeProof, undefined);
+  assert.match(cancellation.note ?? "", /options cannot/);
+});
+test("non-parsed response with bound result is inspected absent", async () => {
+  const records = await scan(
+    'import axios from "axios"; async function f() { const res = await axios.get("/x"); if (res.status) return 1; }',
+  );
+  assert.equal(records.find((r) => r.kind === "parsed-response")?.state, "inspected-absent");
+});
+
+test("var result escaping inner block cannot prove downstream absence", async () => {
+  const source =
+    'import axios from "axios"; async function f() { if (true) { var res = await axios.get("/x"); } if (res.status === 200) return res.data; }';
+  const records = await scan(source);
+  for (const kind of ["status-check", "parsed-response"]) {
+    const record = records.find((r) => r.kind === kind)!;
+    assert.equal(record.state, "unknown");
+    assert.equal(record.negativeProof, undefined);
+    assert.match(record.note ?? "", /var result may escape/);
+  }
+});
+
+test("response alias handoff prevents false status and parsed-response absence", async () => {
+  const source =
+    'import axios from "axios"; async function f() { const res = await axios.get("/x"); const alias = res; return alias.data; }';
+  const records = await scan(source);
+  for (const kind of ["status-check", "parsed-response"]) {
+    const record = records.find((r) => r.kind === kind)!;
+    assert.equal(record.state, "unknown");
+    assert.equal(record.negativeProof, undefined);
+    assert.match(record.note ?? "", /alias handoff/);
+    assert.ok(record.citations.some((span) => citedText(source)(span) === "res"));
+  }
 });
