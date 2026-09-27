@@ -8,12 +8,27 @@ import type { RepositoryHandle, RepositoryTreeEntry } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 import type { NativeMatchedApi, NativeSourceProof } from "./producer.js";
 import { verifyNativeSnapshot } from "./snapshot.js";
+import { reconstructLineage } from "./lineage.js";
 
 /** Structural input keeps core independent of the JS/TS adapter package. */
 export interface NativeReferenceSpan {
   readonly file: string;
   readonly start: number;
   readonly end: number;
+}
+export interface NativeLineageLink {
+  readonly kind: "import" | "require" | "alias" | "re-export" | "wrapper" | "call";
+  readonly from: string;
+  readonly to: string;
+  readonly span: NativeReferenceSpan;
+  readonly fromSpan: NativeReferenceSpan;
+  readonly toSpan: NativeReferenceSpan;
+  readonly specifierSpan?: NativeReferenceSpan;
+  readonly memberSpan?: NativeReferenceSpan;
+}
+export interface NativeLineageChain {
+  readonly links: readonly NativeLineageLink[];
+  readonly brokenAt?: { readonly span: NativeReferenceSpan; readonly reason: string };
 }
 export interface NativeReferenceRecord {
   readonly packageName: string;
@@ -22,6 +37,7 @@ export interface NativeReferenceRecord {
   readonly api: string;
   readonly resolution:
     "direct" | "alias" | "wrapper" | "re-export" | "script" | "config" | "indirect-unknown";
+  readonly lineageChain?: NativeLineageChain;
   readonly lineage: readonly {
     readonly kind: "import" | "require" | "alias" | "wrapper" | "re-export";
     readonly name: string;
@@ -46,6 +62,11 @@ export interface NativeAccountedReference {
   readonly ruleSurface: "cli" | "config";
   readonly ruleCitation: string;
 }
+export interface NativeLineageAccounting {
+  readonly referenceIndex: number;
+  readonly status: "core-reconstructed" | "adapter-asserted" | "excluded-surface";
+  readonly reason?: string;
+}
 export interface NativeMatchedApiBlock {
   readonly reason:
     | "snapshot-unverified"
@@ -55,33 +76,35 @@ export interface NativeMatchedApiBlock {
     | "citation-inconsistent"
     | "unresolved-reference"
     | "uninspected-use"
-    | "unsupported-surface";
+    | "unsupported-surface"
+    | "lineage-unreconstructed";
   readonly referenceIndex?: number;
   readonly detail: string;
 }
-/** A pillar result, not sealed eligibility evidence. Core verifies citation structure
- * and byte provenance; receiver/binding lineage remains adapter-asserted, NOT
- * core-verified. Even a pass is input to the still-blocked producer only.
+/** A pillar result, not sealed eligibility evidence. Core verifies cited bytes
+ * and a complete chain before stamping lineage; this is not a JS semantic parser.
  */
 export type NativeMatchedApiResult =
   | {
       readonly status: "blocked";
       readonly snapshotSha256: string;
       readonly binding: "caller-asserted" | "verified";
-      readonly lineageVerification: "adapter-asserted";
+      readonly lineageVerification: "adapter-asserted" | "core-reconstructed";
       readonly policy: string | null;
       readonly matchedApis: readonly NativeMatchedApi[];
       readonly accounted: readonly NativeAccountedReference[];
+      readonly lineageAccounting: readonly NativeLineageAccounting[];
       readonly blocking: readonly [NativeMatchedApiBlock, ...NativeMatchedApiBlock[]];
     }
   | {
       readonly status: "pass";
       readonly snapshotSha256: string;
       readonly binding: "caller-asserted" | "verified";
-      readonly lineageVerification: "adapter-asserted";
+      readonly lineageVerification: "adapter-asserted" | "core-reconstructed";
       readonly policy: string | null;
       readonly matchedApis: readonly NativeMatchedApi[];
       readonly accounted: readonly NativeAccountedReference[];
+      readonly lineageAccounting: readonly NativeLineageAccounting[];
       readonly blocking: readonly [];
     };
 
@@ -174,8 +197,24 @@ export async function collectNativeMatchedApiEvidence(
     referenceIndex?: number,
   ) =>
     blocking.push({ reason, detail, ...(referenceIndex === undefined ? {} : { referenceIndex }) });
-  const finish = (): NativeMatchedApiResult =>
-    blocking.length
+  let lineageComplete = true;
+  const lineageAccounting: NativeLineageAccounting[] = [];
+  const excludedIndices = new Set<number>();
+  const finish = (): NativeMatchedApiResult => {
+    const seen = new Set(lineageAccounting.map((entry) => entry.referenceIndex));
+    for (let i = 0; i < (Array.isArray(scan?.references) ? scan.references.length : 0); i++) {
+      if (seen.has(i)) continue;
+      const excluded = excludedIndices.has(i);
+      lineageAccounting.push({
+        referenceIndex: i,
+        status: excluded ? "excluded-surface" : "adapter-asserted",
+        reason: excluded
+          ? "rule-cited surface exclusion"
+          : (blocking.find((b) => b.referenceIndex === i)?.detail ?? "reference not reconstructed"),
+      });
+    }
+    lineageAccounting.sort((a, b) => a.referenceIndex - b.referenceIndex);
+    return blocking.length
       ? {
           status: "blocked",
           snapshotSha256,
@@ -184,18 +223,24 @@ export async function collectNativeMatchedApiEvidence(
           policy,
           matchedApis,
           accounted,
+          lineageAccounting,
           blocking: blocking as [NativeMatchedApiBlock, ...NativeMatchedApiBlock[]],
         }
       : {
           status: "pass",
           snapshotSha256,
           binding,
-          lineageVerification: "adapter-asserted",
+          lineageVerification:
+            lineageComplete && matchedApis.length > 0 && !blocking.length
+              ? "core-reconstructed"
+              : "adapter-asserted",
           policy,
           matchedApis,
           accounted,
+          lineageAccounting,
           blocking: [],
         };
+  };
   const initial = await verifyNativeSnapshot(repository, snapshotSha256);
   if (initial.status !== "verified") {
     block("snapshot-unverified", initial.reason);
@@ -264,6 +309,10 @@ export async function collectNativeMatchedApiEvidence(
       },
     };
   };
+  const proofBytes = async (span: NativeReferenceSpan): Promise<Uint8Array | null> => {
+    if (!(await proof(span))) return null;
+    return bytesByFile.get(span.file)?.subarray(span.start, span.end) ?? null;
+  };
   for (const [index, ref] of scan.references.entries()) {
     if (
       !ref ||
@@ -310,7 +359,15 @@ export async function collectNativeMatchedApiEvidence(
       continue;
     }
     if (ref.resolution === "indirect-unknown") {
-      block("unresolved-reference", ref.note ?? "Indirect reference not resolved", index);
+      const broken = ref.lineageChain?.brokenAt;
+      const breakProof = broken ? await proof(broken.span) : null;
+      const reason =
+        broken && breakProof && typeof broken.reason === "string" && broken.reason.trim()
+          ? `broken at ${broken.span.file}:${broken.span.start}: ${broken.reason}`
+          : "Indirect reference lacks a valid cited break";
+      block("unresolved-reference", reason, index);
+      lineageAccounting.push({ referenceIndex: index, status: "adapter-asserted", reason });
+      lineageComplete = false;
       continue;
     }
     if (ref.resolution === "script" || ref.resolution === "config") {
@@ -328,6 +385,7 @@ export async function collectNativeMatchedApiEvidence(
         citation &&
         citation.startsWith(rule.id + ":")
       ) {
+        excludedIndices.add(index);
         accounted.push({
           resolution: ref.resolution,
           source,
@@ -390,6 +448,18 @@ export async function collectNativeMatchedApiEvidence(
       block("citation-inconsistent", inconsistency ?? "call bytes unavailable", index);
       continue;
     }
+    const lineageResult = await reconstructLineage(
+      ref.lineageChain,
+      ref.packageName,
+      ref.span,
+      ref.binding,
+      proofBytes,
+    );
+    if (lineageResult.status !== "core-reconstructed") {
+      lineageComplete = false;
+      block("lineage-unreconstructed", lineageResult.reason ?? "Lineage not reconstructed", index);
+    }
+    lineageAccounting.push({ referenceIndex: index, ...lineageResult });
     matchedApis.push({
       packageName: ref.packageName,
       binding: ref.binding,
@@ -410,6 +480,9 @@ export async function collectNativeMatchedApiEvidence(
     binding = "caller-asserted";
     policy = null;
     matchedApis.length = 0;
+    lineageComplete = false;
+    lineageAccounting.length = 0;
+    excludedIndices.clear();
     accounted.length = 0;
     block("snapshot-unverified", final.status === "verified" ? "policy-changed" : final.reason);
   }
