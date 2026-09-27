@@ -58,7 +58,7 @@ If changed-file listing or diff parsing is truncated, fall back to the existing 
 ## Proposed amendment: symlinks inside declared fixture roots (#482)
 
 - Status: **Proposed**, pending design review. This does not amend the accepted v1 rules or authorise a scanner change.
-- Driving case: GhostDeps deliberately commits three symlinks under `fixtures/hostile/repo-symlink-tree/src` for adversarial scanner tests. Declaring `fixtures/hostile` currently fails the metadata count, so the self-scan must still include its fake manifests.
+- Driving case: GhostDeps deliberately keeps symlinks under `fixtures/hostile/repo-symlink-tree/src` for adversarial scanner tests (two committed, the dangling one generated at test time so action consumers can download the repo). Declaring `fixtures/hostile` currently fails the metadata count, so the self-scan must still include its fake manifests.
 
 **Proposed ruling:** count a symlink _as one excluded directory entry_, not as a regular file, manifest or traversable directory. Keep exact counts of omitted regular files and recognised regular-file manifests, and report an additional exact `excludedSymlinks` count (aggregate and per root). Never dereference a link, count its target, infer whether the target exists, or claim that a link represents one target file. The scanner already treats symlinks as skipped, even when their target is inside the checkout. The fixture-root path and every ancestor must remain real directories; this change concerns only entries _inside_ a matched root. Reject other special entries, unreadable or changing metadata and any walk that exceeds existing ceilings. Missing or unmatched roots keep their present semantics.
 
