@@ -6,7 +6,11 @@
  */
 import ts from "typescript";
 import type { RepositoryHandle } from "@ghostdeps/core";
-import type { MatchedApiReference, MatchedApiSpan } from "./matched-apis.js";
+import type {
+  MatchedApiLineageChain,
+  MatchedApiReference,
+  MatchedApiSpan,
+} from "./matched-apis.js";
 import { MAX_SOURCE_BYTES } from "../usage/find-usage.js";
 import { scriptKindFor } from "../usage/scan.js";
 
@@ -24,6 +28,8 @@ export interface SemanticFlowInspection {
   call: MatchedApiSpan;
   /** The original matched-API hop citations, not a newly inferred binding. */
   lineage: readonly MatchedApiSpan[];
+  /** Same typed package-entry chain as the matched call, never independently inferred. */
+  lineageChain?: MatchedApiLineageChain;
   state: SemanticFlowState;
   /** Exact syntactic evidence supporting the state. */
   citations: readonly MatchedApiSpan[];
@@ -462,6 +468,7 @@ export async function inspectSemanticFlows(
           kind,
           call,
           lineage,
+          ...(ref.lineageChain ? { lineageChain: ref.lineageChain } : {}),
           state: !node || capped ? "unknown" : (outcome?.state ?? "unknown"),
           citations: outcome?.citations ?? [call],
           explored,

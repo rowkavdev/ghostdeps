@@ -56,6 +56,27 @@ export interface MatchedApiHop {
   span: MatchedApiSpan;
 }
 
+/** A reconstruction-checkable binding edge; every token citation is inside span. */
+export interface MatchedApiLineageLink {
+  kind: "import" | "require" | "alias" | "re-export" | "wrapper" | "call";
+  /** Source and destination names, in package-entry to use-site order. */
+  from: string;
+  to: string;
+  span: MatchedApiSpan;
+  fromSpan: MatchedApiSpan;
+  toSpan: MatchedApiSpan;
+  /** Quoted package/relative specifier, when this edge crosses a module. */
+  specifierSpan?: MatchedApiSpan;
+  /** Member token on namespace-member alias or call. */
+  memberSpan?: MatchedApiSpan;
+}
+
+export interface MatchedApiLineageChain {
+  links: MatchedApiLineageLink[];
+  /** A missing or unprovable edge; never interpret the partial links as a proof. */
+  brokenAt?: { span: MatchedApiSpan; reason: string };
+}
+
 /** One typed reference record for one observed use of the package. */
 export interface MatchedApiReference {
   packageName: string;
@@ -68,6 +89,8 @@ export interface MatchedApiReference {
   resolution: MatchedApiResolution;
   /** Resolved lineage, outermost hop first; empty for script/config references. */
   lineage: MatchedApiHop[];
+  /** Byte-exact package-entry to call-site chain; broken chains must not be sealed. */
+  lineageChain?: MatchedApiLineageChain;
   /** "inspected" only when every argument node is a statically inspectable form. */
   arguments: "inspected" | "unknown";
   /**
@@ -162,11 +185,19 @@ interface Binding {
   /** True when the local name differs from a plain direct import (alias class). */
   aliased: boolean;
   span: MatchedApiSpan;
+  /** Original binding edge; aliases retain their source instead of flattening it. */
+  link?: MatchedApiLineageLink;
+  source?: Binding;
   /**
    * Set when this binding arrives through a barrel re-export: the barrel's
    * export statement and the barrel file. Resolution is then "re-export".
    */
-  barrel?: { file: string; exportSpan: MatchedApiSpan; star: boolean };
+  barrel?: {
+    file: string;
+    exportSpan: MatchedApiSpan;
+    star: boolean;
+    links?: MatchedApiLineageLink[];
+  };
   /**
    * Set when the barrel chain could not be fully resolved (cycle or depth
    * limit): every call through this binding is indirect-unknown.
@@ -190,7 +221,13 @@ interface WrapperInfo {
   /** The function body node; wrapper-graph edges are collected inside it. */
   body: ts.Node;
   /** Semantic call targets this wrapper's body invokes, e.g. ["axios.get"]. */
-  targets: { callTarget: string; api: string; span: MatchedApiSpan; lineage: MatchedApiHop[] }[];
+  targets: {
+    callTarget: string;
+    api: string;
+    span: MatchedApiSpan;
+    lineage: MatchedApiHop[];
+    lineageChain: MatchedApiLineageChain;
+  }[];
   /** Other local wrapper names this wrapper calls (graph edges). */
   callsWrappers: string[];
 }
@@ -588,6 +625,25 @@ export async function findMatchedApiReferences(
 
     const spanOf = (node: ts.Node): MatchedApiSpan =>
       index.span(file, node.getStart(sf), node.getEnd());
+    const link = (
+      kind: MatchedApiLineageLink["kind"],
+      from: string,
+      to: string,
+      containing: ts.Node,
+      fromNode: ts.Node,
+      toNode: ts.Node,
+      specifier?: ts.Node,
+      member?: ts.Node,
+    ): MatchedApiLineageLink => ({
+      kind,
+      from,
+      to,
+      span: spanOf(containing),
+      fromSpan: spanOf(fromNode),
+      toSpan: spanOf(toNode),
+      ...(specifier ? { specifierSpan: spanOf(specifier) } : {}),
+      ...(member ? { memberSpan: spanOf(member) } : {}),
+    });
     const frames = buildScopeFrames(sf);
     framesByFile.set(file, frames);
 
@@ -651,6 +707,15 @@ export async function findMatchedApiReferences(
             hopKind: "import",
             aliased: false,
             span,
+            link: link(
+              "import",
+              clause.name.text,
+              clause.name.text,
+              statement,
+              clause.name,
+              clause.name,
+              statement.moduleSpecifier,
+            ),
           });
         }
         const named = clause.namedBindings;
@@ -661,6 +726,15 @@ export async function findMatchedApiReferences(
             hopKind: "import",
             aliased: false,
             span,
+            link: link(
+              "import",
+              named.name.text,
+              named.name.text,
+              statement,
+              named.name,
+              named.name,
+              statement.moduleSpecifier,
+            ),
           });
         } else if (named && ts.isNamedImports(named)) {
           for (const element of named.elements) {
@@ -674,6 +748,15 @@ export async function findMatchedApiReferences(
               hopKind: "import",
               aliased: element.propertyName !== undefined,
               span,
+              link: link(
+                "import",
+                imported,
+                local,
+                statement,
+                element.propertyName ?? element.name,
+                element.name,
+                statement.moduleSpecifier,
+              ),
             });
           }
         }
@@ -720,6 +803,15 @@ export async function findMatchedApiReferences(
                 hopKind: "require",
                 aliased: false,
                 span,
+                link: link(
+                  "require",
+                  decl.name.text,
+                  decl.name.text,
+                  decl,
+                  decl.name,
+                  decl.name,
+                  decl.initializer.arguments[0],
+                ),
               });
             } else if (ts.isObjectBindingPattern(decl.name)) {
               for (const element of decl.name.elements) {
@@ -736,6 +828,15 @@ export async function findMatchedApiReferences(
                   hopKind: "require",
                   aliased: true,
                   span,
+                  link: link(
+                    "require",
+                    imported,
+                    element.name.text,
+                    decl,
+                    element.propertyName ?? element.name,
+                    element.name,
+                    decl.initializer.arguments[0],
+                  ),
                 });
               }
             }
@@ -803,6 +904,17 @@ export async function findMatchedApiReferences(
                   hopKind: "alias",
                   aliased: true,
                   span: spanOf(decl),
+                  source: target,
+                  link: link(
+                    "alias",
+                    init.text,
+                    element.name.text,
+                    decl,
+                    init,
+                    element.name,
+                    undefined,
+                    element.propertyName ?? element.name,
+                  ),
                 });
               }
             }
@@ -831,6 +943,8 @@ export async function findMatchedApiReferences(
                 hopKind: "alias",
                 aliased: true,
                 span: spanOf(decl),
+                source: source.binding,
+                link: link("alias", init.text, name, decl, init, decl.name),
               });
             }
             continue;
@@ -851,8 +965,6 @@ export async function findMatchedApiReferences(
               continue;
             }
             if (!source || source.binding.kind !== "namespace") continue;
-          }
-          if (ts.isPropertyAccessExpression(init) && ts.isIdentifier(init.expression)) {
             add(name, {
               kind: "member",
               member: init.name.text,
@@ -860,6 +972,17 @@ export async function findMatchedApiReferences(
               hopKind: "alias",
               aliased: true,
               span: spanOf(decl),
+              source: source.binding,
+              link: link(
+                "alias",
+                init.expression.text,
+                name,
+                decl,
+                init.expression,
+                decl.name,
+                undefined,
+                init.name,
+              ),
             });
             continue;
           }
@@ -898,23 +1021,74 @@ export async function findMatchedApiReferences(
       exportName: string,
       depth: number,
     ):
-      | { imported: string; exportSpan: MatchedApiSpan; star: boolean }
+      | {
+          imported: string;
+          exportSpan: MatchedApiSpan;
+          star: boolean;
+          links: MatchedApiLineageLink[];
+        }
       | { unresolved: string }
       | undefined => {
       if (depth > MAX_RESOLUTION_DEPTH) return { unresolved: "re-export chain depth limit" };
       const facts = reExportsByFile.get(fromFile);
       if (!facts) return undefined;
+      const parsedBarrel = parsed.get(fromFile)!;
+      const moduleLink = (
+        span: MatchedApiSpan,
+        kind: "import" | "re-export",
+        from: string,
+        to: string,
+      ): MatchedApiLineageLink | undefined => {
+        const statement = parsedBarrel.sf.statements.find(
+          (node) =>
+            parsedBarrel.index.span(fromFile, node.getStart(parsedBarrel.sf), node.getEnd())
+              .start === span.start,
+        );
+        if (
+          !statement ||
+          !ts.isExportDeclaration(statement) ||
+          !statement.moduleSpecifier ||
+          !ts.isStringLiteral(statement.moduleSpecifier)
+        )
+          return undefined;
+        const element =
+          statement.exportClause && ts.isNamedExports(statement.exportClause)
+            ? statement.exportClause.elements.find((e) => e.name.text === to)
+            : undefined;
+        const source = element?.propertyName ?? element?.name;
+        const dest = element?.name;
+        const tokenSpan = (node: ts.Node): MatchedApiSpan =>
+          parsedBarrel.index.span(fromFile, node.getStart(parsedBarrel.sf), node.getEnd());
+        return {
+          kind,
+          from,
+          to,
+          span,
+          fromSpan: tokenSpan(source ?? statement.moduleSpecifier),
+          toSpan: tokenSpan(dest ?? statement.moduleSpecifier),
+          specifierSpan: tokenSpan(statement.moduleSpecifier),
+        };
+      };
       const named = facts.named.get(exportName);
       if (named) {
         if (packageOf(named.specifier) === packageName) {
-          return { imported: named.imported, exportSpan: named.span, star: false };
+          const edge = moduleLink(named.span, "re-export", named.imported, exportName);
+          return {
+            imported: named.imported,
+            exportSpan: named.span,
+            star: false,
+            links: edge ? [edge] : [],
+          };
         }
         if (named.specifier.startsWith(".")) {
           const next = resolveRelative(named.specifier, dirname(fromFile), fileSet);
           if (next !== undefined) {
             const inner = resolveBarrel(next, named.imported, depth + 1);
             if (inner && "unresolved" in inner) return inner;
-            if (inner) return inner;
+            if (inner) {
+              const edge = moduleLink(named.span, "re-export", named.imported, exportName);
+              return { ...inner, links: [...inner.links, ...(edge ? [edge] : [])] };
+            }
           }
         }
         return undefined;
@@ -922,14 +1096,23 @@ export async function findMatchedApiReferences(
       if (facts.star.length > 0) {
         for (const star of facts.star) {
           if (packageOf(star.specifier) === packageName) {
-            return { imported: exportName, exportSpan: star.span, star: true };
+            const edge = moduleLink(star.span, "re-export", exportName, exportName);
+            return {
+              imported: exportName,
+              exportSpan: star.span,
+              star: true,
+              links: edge ? [edge] : [],
+            };
           }
           if (star.specifier.startsWith(".")) {
             const next = resolveRelative(star.specifier, dirname(fromFile), fileSet);
             if (next !== undefined) {
               const inner = resolveBarrel(next, exportName, depth + 1);
               if (inner && "unresolved" in inner) return inner;
-              if (inner) return { ...inner, star: true };
+              if (inner) {
+                const edge = moduleLink(star.span, "re-export", exportName, exportName);
+                return { ...inner, star: true, links: [...inner.links, ...(edge ? [edge] : [])] };
+              }
             }
           }
         }
@@ -949,13 +1132,19 @@ export async function findMatchedApiReferences(
       const clause = statement.importClause;
       if (!clause || clause.isTypeOnly) continue;
       const importSpan = index.span(file, statement.getStart(sf), statement.getEnd());
-      const bind = (local: string, exportName: string): void => {
+      const bind = (
+        local: string,
+        exportName: string,
+        importedNode: ts.Node,
+        localNode: ts.Node,
+      ): void => {
         const resolved = resolveBarrel(target, exportName, 0);
         if (!resolved) return;
         const barrel = {
           file: target,
           exportSpan: "unresolved" in resolved ? importSpan : resolved.exportSpan,
           star: "unresolved" in resolved ? false : resolved.star,
+          links: "unresolved" in resolved ? [] : resolved.links,
         };
         if ("unresolved" in resolved) {
           addBindingTo(bindings, local, {
@@ -966,6 +1155,19 @@ export async function findMatchedApiReferences(
             aliased: false,
             span: importSpan,
             barrel,
+            link: {
+              kind: "import",
+              from: exportName,
+              to: local,
+              span: importSpan,
+              fromSpan: index.span(file, importedNode.getStart(sf), importedNode.getEnd()),
+              toSpan: index.span(file, localNode.getStart(sf), localNode.getEnd()),
+              specifierSpan: index.span(
+                file,
+                statement.moduleSpecifier.getStart(sf),
+                statement.moduleSpecifier.getEnd(),
+              ),
+            },
             unresolved: resolved.unresolved,
             scopeStart: 0,
             scopeEnd: sf.getEnd(),
@@ -981,17 +1183,35 @@ export async function findMatchedApiReferences(
           aliased: exportName !== resolved.imported,
           span: importSpan,
           barrel,
+          link: {
+            kind: "import",
+            from: exportName,
+            to: local,
+            span: importSpan,
+            fromSpan: index.span(file, importedNode.getStart(sf), importedNode.getEnd()),
+            toSpan: index.span(file, localNode.getStart(sf), localNode.getEnd()),
+            specifierSpan: index.span(
+              file,
+              statement.moduleSpecifier.getStart(sf),
+              statement.moduleSpecifier.getEnd(),
+            ),
+          },
           scopeStart: 0,
           scopeEnd: sf.getEnd(),
           declPos: statement.getStart(sf),
         });
       };
-      if (clause.name) bind(clause.name.text, "default");
+      if (clause.name) bind(clause.name.text, "default", clause.name, clause.name);
       const named = clause.namedBindings;
       if (named && ts.isNamedImports(named)) {
         for (const element of named.elements) {
           if (element.isTypeOnly) continue;
-          bind(element.name.text, (element.propertyName ?? element.name).text);
+          bind(
+            element.name.text,
+            (element.propertyName ?? element.name).text,
+            element.propertyName ?? element.name,
+            element.name,
+          );
         }
       } else if (named && ts.isNamespaceImport(named)) {
         // import * as ns from "./barrel": member access is resolved per call below.
@@ -1013,6 +1233,43 @@ export async function findMatchedApiReferences(
     }
   }
 
+  /** Follow actual binding predecessors, never infer a missing hop from a flattened label. */
+  const chainFor = (
+    binding: Binding,
+    call: MatchedApiSpan,
+    callee: MatchedApiSpan,
+    callName: string,
+  ): MatchedApiLineageChain => {
+    const links: MatchedApiLineageLink[] = [];
+    const visited = new Set<Binding>();
+    const walk = (current: Binding, depth: number): string | undefined => {
+      if (depth > MAX_RESOLUTION_DEPTH || visited.has(current))
+        return "binding cycle or depth limit";
+      visited.add(current);
+      if (current.source) {
+        const failure = walk(current.source, depth + 1);
+        if (failure) return failure;
+      } else if (current.barrel) {
+        if (!current.barrel.links?.length) return "barrel source edge not cited";
+        links.push(...current.barrel.links);
+      }
+      if (!current.link) return "binding declaration edge not cited";
+      links.push(current.link);
+      return current.unresolved;
+    };
+    const failure = walk(binding, 0);
+    if (failure) return { links, brokenAt: { span: binding.span, reason: failure } };
+    links.push({
+      kind: "call",
+      from: links.at(-1)!.to,
+      to: callName,
+      span: call,
+      fromSpan: callee,
+      toSpan: callee,
+    });
+    return { links };
+  };
+
   // Call pass: resolve every call expression; collect wrappers; emit records.
   //
   // Fail-closed contract: every observable use of a tracked binding yields
@@ -1026,6 +1283,12 @@ export async function findMatchedApiReferences(
     const spanOf = (node: ts.Node): MatchedApiSpan =>
       index.span(file, node.getStart(sf), node.getEnd());
 
+    const callChain = (
+      binding: Binding,
+      node: ts.CallExpression,
+      localName: string,
+    ): MatchedApiLineageChain =>
+      chainFor(binding, spanOf(node), spanOf(node.expression), localName);
     const frames = framesByFile.get(file)!;
     const isShadowed = (name: string, pos: number, exclude?: ts.Node): boolean =>
       isShadowedAt(frames, name, pos, exclude);
@@ -1224,6 +1487,7 @@ export async function findMatchedApiReferences(
           api: callee.api ?? "<unresolved>",
           resolution: "indirect-unknown",
           lineage: callee.hops,
+          lineageChain: { links: [], brokenAt: { span, reason: callee.reason } },
           arguments: argsState,
           options: optionsState,
           span,
@@ -1244,6 +1508,7 @@ export async function findMatchedApiReferences(
         api,
         resolution,
         lineage: resolved.hops,
+        lineageChain: callChain(resolved.binding, node, resolved.localName),
         arguments: argsState,
         options: optionsState,
         span,
@@ -1290,6 +1555,13 @@ export async function findMatchedApiReferences(
             api: "<dynamic-import>",
             resolution: "indirect-unknown",
             lineage: [{ kind: "import", name: "import()", span: spanOf(node) }],
+            lineageChain: {
+              links: [],
+              brokenAt: {
+                span: spanOf(node),
+                reason: "dynamic import binding flow is not tracked",
+              },
+            },
             arguments: "unknown",
             options: "unknown",
             span: spanOf(node),
@@ -1303,15 +1575,8 @@ export async function findMatchedApiReferences(
     };
     visit(sf);
 
-    const bodyCallsPackage = (
-      body: ts.Node,
-    ): { callTarget: string; api: string; span: MatchedApiSpan; lineage: MatchedApiHop[] }[] => {
-      const out: {
-        callTarget: string;
-        api: string;
-        span: MatchedApiSpan;
-        lineage: MatchedApiHop[];
-      }[] = [];
+    const bodyCallsPackage = (body: ts.Node): WrapperInfo["targets"] => {
+      const out: WrapperInfo["targets"] = [];
       const seen = new Set<number>();
       const inner = (node: ts.Node): void => {
         if (ts.isCallExpression(node) && !seen.has(node.getStart(sf))) {
@@ -1323,6 +1588,7 @@ export async function findMatchedApiReferences(
               api: callee.resolved.api,
               span: spanOf(node),
               lineage: callee.resolved.hops,
+              lineageChain: callChain(callee.resolved.binding, node, callee.resolved.localName),
             });
           }
         }
@@ -1423,6 +1689,7 @@ export async function findMatchedApiReferences(
               api: "<unresolved>",
               resolution: "indirect-unknown",
               lineage: [{ kind: "wrapper", name, span: start.span }],
+              lineageChain: { links: [], brokenAt: { span, reason: "wrapper call is shadowed" } },
               arguments: argsState,
               options: optionsState,
               span,
@@ -1453,6 +1720,53 @@ export async function findMatchedApiReferences(
               return { targets, hops: [...hops, ...subHops] };
             };
             const resolved = chain(start, 0, []);
+            const wrapperChain = (
+              target: WrapperInfo["targets"][number],
+            ): MatchedApiLineageChain => {
+              if (target.lineageChain.brokenAt) return target.lineageChain;
+              const wrapperHops =
+                "cycle" in resolved ? [] : resolved.hops.filter((hop) => hop.kind === "wrapper");
+              const links = [...target.lineageChain.links];
+              // Each wrapper declaration contains its own internal call and name.
+              // Do not claim a complete chain for a nested wrapper unless its
+              // intermediate invocation has an explicit cited call edge.
+              if (wrapperHops.length !== 1)
+                return {
+                  links,
+                  brokenAt: { span, reason: "nested wrapper invocation edges not cited" },
+                };
+              const decl = start.decl;
+              const declName = ts.isFunctionDeclaration(decl)
+                ? decl.name
+                : ts.isMethodDeclaration(decl)
+                  ? decl.name
+                  : ts.isVariableDeclaration(decl.parent)
+                    ? decl.parent.name
+                    : undefined;
+              if (!declName || !ts.isIdentifier(declName))
+                return {
+                  links,
+                  brokenAt: { span: start.span, reason: "wrapper declaration name not cited" },
+                };
+              const declarationNameSpan = spanOf(declName);
+              links.push({
+                kind: "wrapper",
+                from: target.callTarget,
+                to: start.name,
+                span: start.span,
+                fromSpan: target.span,
+                toSpan: declarationNameSpan,
+              });
+              links.push({
+                kind: "call",
+                from: start.name,
+                to: name,
+                span,
+                fromSpan: spanOf(node.expression),
+                toSpan: spanOf(node.expression),
+              });
+              return { links };
+            };
             if ("cycle" in resolved) {
               push({
                 packageName,
@@ -1461,6 +1775,10 @@ export async function findMatchedApiReferences(
                 api: "<unresolved>",
                 resolution: "indirect-unknown",
                 lineage: [{ kind: "wrapper", name, span: start.span }],
+                lineageChain: {
+                  links: [],
+                  brokenAt: { span, reason: "wrapper graph cycle or depth limit" },
+                },
                 arguments: "unknown",
                 options: "unknown",
                 span,
@@ -1476,6 +1794,7 @@ export async function findMatchedApiReferences(
                   api: target.api,
                   resolution: "wrapper",
                   lineage: [...resolved.hops, ...target.lineage],
+                  lineageChain: wrapperChain(target),
                   arguments: argsState,
                   options: optionsState,
                   span,
