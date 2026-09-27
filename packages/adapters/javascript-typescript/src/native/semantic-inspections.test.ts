@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { memoryHandle } from "../testing/fs-handle.js";
 import { findMatchedApiReferences } from "./matched-apis.js";
-import { inspectSemanticFlows } from "./semantic-inspections.js";
+import { inspectSemanticFlows, MAX_FLOW_LINKS } from "./semantic-inspections.js";
 
 async function scan(text: string) {
   const files = { "src/é.ts": text };
@@ -52,6 +52,9 @@ async function scan(text: string) {
     // Links never promote: a non-unknown claim rests on a resolved tie.
     if (record.state !== "unknown")
       assert.ok(record.links.some((link) => link.tie.state === "resolved"));
+    // The link cap is bounded and its signal is honest.
+    assert.ok(record.links.length <= MAX_FLOW_LINKS);
+    if (record.links.length < MAX_FLOW_LINKS) assert.equal(record.linksCapped, false);
   }
   return records;
 }
@@ -320,4 +323,19 @@ test("reassigned response binding severs flow link ties", async () => {
   const links = record.links.filter((l) => l.binding === "res");
   assert.ok(links.length >= 1);
   assert.ok(links.every((l) => l.tie.state === "unresolved"));
+});
+
+test("flow link cap sets linksCapped, never drops silently", async () => {
+  const checks = Array.from({ length: 10 }, (_, i) => `if (res.status === ${200 + i}) ok();`).join(
+    " ",
+  );
+  const source = `import axios from "axios"; async function f() { const res = await axios.get("/x"); ${checks} }`;
+  const records = await scan(source);
+  const record = records.find((r) => r.kind === "status-check")!;
+  assert.equal(record.state, "inspected");
+  assert.equal(record.citations.length, 10);
+  assert.equal(record.links.length, MAX_FLOW_LINKS);
+  assert.equal(record.linksCapped, true);
+  const parsed = records.find((r) => r.kind === "parsed-response")!;
+  assert.equal(parsed.linksCapped, false);
 });

@@ -15,7 +15,7 @@ import { MAX_SOURCE_BYTES } from "../usage/find-usage.js";
 import { scriptKindFor } from "../usage/scan.js";
 
 export const MAX_SEMANTIC_NODES = 2_000;
-/** Maximum flow links per kind record; citations remain the complete evidence. */
+/** Maximum flow links per kind record; dropped links set `linksCapped`. */
 export const MAX_FLOW_LINKS = 8;
 
 /**
@@ -94,6 +94,13 @@ export interface SemanticFlowInspection {
    * evidence.
    */
   links: readonly SemanticFlowLink[];
+  /**
+   * True when MAX_FLOW_LINKS dropped further links: `links` is then a
+   * prefix, NOT complete association evidence for the citations. Never
+   * silent - a capped record keeps state and citations but must not be
+   * treated as fully linked.
+   */
+  linksCapped: boolean;
   /** What was actually visited, capped per call. Never a completeness claim. */
   explored: readonly MatchedApiSpan[];
   capped: boolean;
@@ -355,10 +362,15 @@ export async function inspectSemanticFlows(
       type Observation = { state: SemanticFlowState; citations: MatchedApiSpan[]; note?: string };
       const outcomes = new Map<SemanticFlowKind, Observation>();
       const linksByKind = new Map<SemanticFlowKind, SemanticFlowLink[]>();
+      const linksCappedKinds = new Set<SemanticFlowKind>();
       const addLink = (kind: SemanticFlowKind, flowLink: SemanticFlowLink): void => {
         if (!text) return;
         const list = linksByKind.get(kind) ?? [];
-        if (list.length >= MAX_FLOW_LINKS) return;
+        if (list.length >= MAX_FLOW_LINKS) {
+          // Explicit incomplete-scope signal: never drop a link silently.
+          linksCappedKinds.add(kind);
+          return;
+        }
         if (
           list.some(
             (prior) =>
@@ -789,6 +801,7 @@ export async function inspectSemanticFlows(
           lineage,
           ...(ref.lineageChain ? { lineageChain: ref.lineageChain } : {}),
           links: linksByKind.get(kind) ?? [],
+          linksCapped: linksCappedKinds.has(kind),
           state: !node || capped ? "unknown" : (outcome?.state ?? "unknown"),
           citations: outcome?.citations ?? [call],
           explored,
