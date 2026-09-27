@@ -20,6 +20,10 @@ import nock from "nock";
 import { createNodeMiddleware, Probot } from "probot";
 import { createGhostDepsApp } from "../app.js";
 import { checkName } from "@ghostdeps/checks-renderer";
+import { createDefaultPolicy } from "@ghostdeps/core";
+import { InProcessJobQueue } from "../jobs.js";
+import { createAnalysisWorker } from "../worker/analyse-job.js";
+import { repoScopedClients } from "../worker/github-client.js";
 import { tarGz, type TarEntry } from "../worker/test-tar.js";
 
 const SECRET = "test-only-webhook-secret";
@@ -273,5 +277,238 @@ describe("end-to-end: pull request webhook -> check run (#41)", () => {
     assert.equal(completed.status, "completed");
     assert.equal(completed.conclusion, "success");
     assert.doesNotMatch(JSON.stringify(completed.output), /left/);
+  });
+});
+
+describe("end-to-end: pull_request.synchronize supersedes the queued head (#337)", () => {
+  const SYNC_PAYLOAD = new URL(
+    "../../test/fixtures/pull_request.synchronize.json",
+    import.meta.url,
+  );
+  /** The opened fixture's head: the head job A analyses. */
+  const HEAD_A = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
+  /** The recorded synchronize fixture's head: job B, superseded while queued. */
+  const HEAD_B = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+  /** A second synchronize's head: job C, the head that survives and runs. */
+  const HEAD_C = "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00";
+  const RUN_ID_A = 9001;
+  const RUN_ID_C = 9002;
+
+  let server: Server;
+  let baseUrl: string;
+  const savedEnv: Record<string, string | undefined> = {};
+  let openGate: () => void = () => undefined;
+
+  before(() => {
+    nock.disableNetConnect();
+    nock.enableNetConnect("127.0.0.1");
+    for (const key of ["GHOSTDEPS_RECOMMENDATIONS", "GHOSTDEPS_SOURCE_PR_TRIGGER", "APP_ID"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  after(() => {
+    nock.enableNetConnect();
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  // The supersede drop only reaches queued jobs, never running ones (#257),
+  // so a deterministic case needs job A running while job B waits in the
+  // queue: a concurrency-1 queue whose worker is the real analysis worker
+  // (same construction as the app default - repo-scoped clients, default
+  // recommendation policy) behind a gate the test controls. Deliveries
+  // arrive while the gate is closed; opening it lets A finish and C run.
+  beforeEach(async () => {
+    const probot = new Probot({ appId: APP_ID, privateKey, secret: SECRET, logLevel: "fatal" });
+    const gate = new Promise<void>((resolve) => (openGate = resolve));
+    const realWorker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: repoScopedClients(probot),
+      log: probot.log,
+      recommend: createDefaultPolicy(),
+    });
+    const queue = new InProcessJobQueue({
+      concurrency: 1,
+      worker: async (job) => {
+        await gate;
+        await realWorker(job);
+      },
+    });
+    const middleware = await createNodeMiddleware(createGhostDepsApp({ appId: APP_ID, queue }), {
+      probot,
+    });
+    server = createServer((req, res) => {
+      void middleware(req, res, () => {
+        res.writeHead(404).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    nock.cleanAll();
+  });
+
+  async function deliver(payload: unknown): Promise<void> {
+    const body = JSON.stringify(payload);
+    const res = await fetch(`${baseUrl}/api/github/webhooks`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-github-event": "pull_request",
+        "x-github-delivery": randomUUID(),
+        "x-hub-signature-256": sign(body),
+      },
+      body,
+    });
+    assert.equal(res.status, 200);
+  }
+
+  async function assertGolden(name: string, completed: Json): Promise<void> {
+    const file = join(E2E_DIR, name, "expected-check.json");
+    const actual = `${JSON.stringify(stable(completed), null, 2)}\n`;
+    if (process.env.UPDATE_GOLDEN === "1") await writeFile(file, actual);
+    assert.equal(actual, await readFile(file, "utf8"), `${name}: check run differs from golden`);
+  }
+
+  it("drops the queued old head, finishes the running one, and analyses the new head", async () => {
+    const opened = JSON.parse(await readFile(PAYLOAD, "utf8")) as PullRequestPayload;
+    const syncBase = JSON.parse(await readFile(SYNC_PAYLOAD, "utf8")) as PullRequestPayload & {
+      before?: string;
+    };
+    // B replaced A; C replaced B. The recorded fixture's `before` is null, so
+    // each delivery gets its place in the chain here (#257 keys on it).
+    const syncB = { ...syncBase, before: HEAD_A };
+    const syncC = {
+      ...syncBase,
+      before: HEAD_B,
+      pull_request: { ...syncBase.pull_request, head: { sha: HEAD_C } },
+    };
+
+    const installation = opened.installation.id;
+    const repoId = opened.repository.id;
+    const baseSha = opened.pull_request.base.sha;
+    const diffA = await readFile(join(E2E_DIR, "added-used", "pr.diff"), "utf8");
+    const diffC = await readFile(join(E2E_DIR, "synchronized", "pr.diff"), "utf8");
+
+    // Handler side: one narrowed token per app instance (the auth cache
+    // reuses it for later deliveries of the same repository) and one
+    // changed-files lookup per delivery, matched in delivery order. B never
+    // reaches the worker, so it gets nothing else - a strict pendingMocks
+    // assertion proves it.
+    nock(API)
+      .post(`/app/installations/${installation}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b, {
+          repository_ids: [repoId],
+          permissions: { contents: "read", pull_requests: "read" },
+        });
+        return true;
+      })
+      .reply(201, { token: "handler-token", expires_at: "2099-01-01T00:00:00Z" });
+    for (const files of [changedPaths(diffA), changedPaths(diffA), changedPaths(diffC)]) {
+      nock(API)
+        .get(`${REPO_PATH}/pulls/${opened.number}/files`)
+        .query(true)
+        .reply(
+          200,
+          files.map((filename) => ({ filename, status: "modified" })),
+        );
+    }
+    // Worker side: also one narrowed token per app instance, minted by the
+    // first job that runs.
+    nock(API)
+      .post(`/app/installations/${installation}/access_tokens`, (b: Json) => {
+        assert.deepEqual(b.repository_ids, [repoId]);
+        assert.deepEqual(b.permissions, { contents: "read", checks: "write" });
+        return true;
+      })
+      .reply(201, { token: "worker-token", expires_at: "2099-01-01T00:00:00Z" });
+
+    // Worker side: the full analysis path for the two heads that run.
+    const created: Json[] = [];
+    const completed: Json[] = [];
+    let finish: () => void = () => undefined;
+    const allCompleted = new Promise<void>((resolve) => (finish = resolve));
+
+    async function mockRun(caseName: string, headSha: string, runId: number): Promise<void> {
+      const caseDir = join(E2E_DIR, caseName);
+      const diff = await readFile(join(caseDir, "pr.diff"), "utf8");
+      const basePackage = await readFile(join(caseDir, "base-package.json"), "utf8");
+      const headPackage = await readFile(join(caseDir, "head", "package.json"), "utf8");
+      const tarball = await tarballFor(caseDir, headSha);
+      nock(API)
+        .get(`${REPO_PATH}/commits/${headSha}/check-runs`)
+        .query(true)
+        .reply(200, { total_count: 0, check_runs: [] });
+      nock(API)
+        .post(`${REPO_PATH}/check-runs`, (b: Json) => {
+          created.push(b);
+          return true;
+        })
+        .reply(201, { id: runId });
+      nock(API)
+        .get(`${REPO_PATH}/tarball/${headSha}`)
+        .reply(302, "", {
+          location: `https://codeload.github.com/${OWNER}/${REPO}/legacy.tar.gz/${headSha}`,
+        });
+      nock("https://codeload.github.com")
+        .get(`/${OWNER}/${REPO}/legacy.tar.gz/${headSha}`)
+        .reply(200, Buffer.from(tarball), { "content-type": "application/x-gzip" });
+      nock(API)
+        .get(`${REPO_PATH}/compare/${baseSha}...${headSha}`)
+        .reply(200, diff, { "content-type": "text/plain; charset=utf-8" });
+      nock(API)
+        .get(`${REPO_PATH}/contents/package.json`)
+        .query({ ref: baseSha })
+        .reply(200, basePackage, { "content-type": "text/plain; charset=utf-8" });
+      nock(API)
+        .get(`${REPO_PATH}/contents/package.json`)
+        .query({ ref: headSha })
+        .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+      nock(API)
+        .patch(`${REPO_PATH}/check-runs/${runId}`, (b: Json) => {
+          completed.push(b);
+          if (completed.length === 2) finish();
+          return true;
+        })
+        .reply(200, { id: runId });
+    }
+
+    await mockRun("added-used", HEAD_A, RUN_ID_A);
+    await mockRun("synchronized", HEAD_C, RUN_ID_C);
+
+    await deliver(opened); // A dequeued at once, running behind the gate.
+    await deliver(syncB); // B queued behind A (concurrency 1).
+    await deliver(syncC); // C drops the queued B, then waits itself.
+    openGate();
+
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(new Error(`no completed check run; pending: ${nock.pendingMocks().join(", ")}`)),
+        RUN_TIMEOUT_MS,
+      );
+    });
+    try {
+      await Promise.race([allCompleted, timeout]);
+      assert.deepEqual(nock.pendingMocks(), []);
+      // One check run per head that ran; B's head never got one.
+      assert.equal(created.length, 2);
+      assert.equal(created[0]!.head_sha, HEAD_A);
+      assert.equal(created[1]!.head_sha, HEAD_C);
+      assert.ok(!created.some((b) => b.head_sha === HEAD_B));
+      assert.equal(completed.length, 2);
+      await assertGolden("added-used", completed[0]!);
+      await assertGolden("synchronized", completed[1]!);
+    } finally {
+      clearTimeout(timer);
+    }
   });
 });
