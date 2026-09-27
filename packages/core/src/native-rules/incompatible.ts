@@ -255,6 +255,7 @@ export async function collectNativeIncompatibleEvidence(
     exact(rule.incompatibleUses);
   for (const patternId of ruleValid ? rule.incompatibleUses : []) {
     const records = all.filter((r) => r?.patternId === patternId);
+    const expectedKind = rule.incompatiblePatternKinds?.[patternId];
     const record = records[0];
     const scope: NativeInspectedScope = {
       snapshotSha256,
@@ -269,7 +270,8 @@ export async function collectNativeIncompatibleEvidence(
     if (
       records.length !== 1 ||
       !record ||
-      !["member-call", "option-key-value", "property-chain"].includes(record.kind) ||
+      !expectedKind ||
+      record.kind !== expectedKind ||
       !Array.isArray(record.inspectedFiles) ||
       !Array.isArray(record.observations) ||
       !Array.isArray(record.uninspectable) ||
@@ -358,7 +360,11 @@ export async function collectNativeIncompatibleEvidence(
       ),
     });
   }
-  if (!ruleValid || all.some((r) => !rule.incompatibleUses.includes(r?.patternId)))
+  if (
+    !ruleValid ||
+    all.some((r) => !rule.incompatibleUses.includes(r?.patternId)) ||
+    Object.keys(rule.incompatiblePatternKinds ?? {}).some((p) => !rule.incompatibleUses.includes(p))
+  )
     block("*", "missing-inspection", "Rule/inspection pattern set invalid");
   const final = await verifyNativeSnapshot(repository, snapshotSha256);
   if (final.status !== "verified" || final.policy !== policy) {

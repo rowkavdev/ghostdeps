@@ -23,6 +23,12 @@ export interface NativeRule {
   coveredApis: string[];
   /** Usage patterns that disqualify the replacement, e.g. ["interceptors", "adapter", "CancelToken"]. */
   incompatibleUses: string[];
+  /** Rule-authored syntax class for each incompatible pattern. Missing kinds
+   * cannot produce negative evidence; a record cannot select its own class.
+   */
+  incompatiblePatternKinds?: Readonly<
+    Record<string, "member-call" | "option-key-value" | "property-chain">
+  >;
   /** Behavioural differences a user must accept, in plain language. */
   semanticDifferences: string[];
   /** When the rule may fire at high confidence. */
