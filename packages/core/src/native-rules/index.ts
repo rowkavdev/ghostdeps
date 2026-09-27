@@ -74,6 +74,9 @@ export {
   type NativeMatchedApiResult,
   type NativeReferenceScan,
   type NativeReferenceRecord,
+  type NativeLineageLink,
+  type NativeLineageChain,
+  type NativeLineageAccounting,
   type NativeMatchedApiBlock,
   type NativeAccountedReference,
 } from "./matched-api.js";
