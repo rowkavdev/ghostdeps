@@ -200,31 +200,18 @@ async function wholeBlock(
     if (ts.isBlock(node) || ts.isSourceFile(node)) {
       const exact = toByte(node.getStart(sf), node.getEnd());
       if (key(exact) === key(scope) && within(scope, call)) {
-        // A function-scoped var declared in a nested block escapes it.
-        // The result's lifetime is the containing function, not this block.
-        const escapedVar = (() => {
-          let unsafe = false;
-          const inspect = (child: TsNode): void => {
-            if (
-              ts.isVariableDeclaration(child) &&
-              child.initializer &&
-              !(child.parent.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) &&
-              within(toByte(child.getStart(sf), child.getEnd()), call) &&
-              !(
-                ts.isSourceFile(node) ||
-                (ts.isBlock(node) &&
-                  ts.isFunctionLike(node.parent) &&
-                  "body" in node.parent &&
-                  node.parent.body === node)
-              )
-            )
-              unsafe = true;
-            ts.forEachChild(child, inspect);
-          };
-          inspect(node);
-          return unsafe;
-        })();
-        if (!escapedVar) found = true;
+        // A block is a valid negative boundary only if the call result cannot
+        // escape it. A local parse without data-flow analysis cannot establish
+        // that for a nested block, including const assigned to an outer name.
+        // Restrict negatives to the complete function body or source file.
+        if (
+          ts.isSourceFile(node) ||
+          (ts.isBlock(node) &&
+            ts.isFunctionLike(node.parent) &&
+            "body" in node.parent &&
+            node.parent.body === node)
+        )
+          found = true;
       }
     }
     ts.forEachChild(node, visit);
