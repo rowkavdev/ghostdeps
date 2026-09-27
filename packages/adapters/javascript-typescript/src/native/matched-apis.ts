@@ -1209,6 +1209,30 @@ export async function findMatchedApiReferences(
         }
       }
     }
+
+    // Taint propagation (#473 review): a member mutation through ANY alias
+    // rewrites the one object the source import and every sibling alias
+    // reference. Mark the whole alias component unresolved, not just the
+    // name the write happened to use.
+    const rootBindingOf = (binding: Binding): Binding => {
+      let current = binding;
+      const seen = new Set<Binding>();
+      while (current.source !== undefined && !seen.has(current)) {
+        seen.add(current);
+        current = current.source;
+      }
+      return current;
+    };
+    const fileBindings = [...bindings.values()].flat();
+    for (const [mutatedName, reason] of mutatedNames) {
+      const mutated = bindings.get(mutatedName);
+      if (!mutated?.length) continue;
+      const roots = new Set<Binding>(mutated.map(rootBindingOf));
+      for (const candidate of fileBindings) {
+        if (candidate.unresolved !== undefined) continue;
+        if (roots.has(rootBindingOf(candidate))) candidate.unresolved = reason;
+      }
+    }
   }
 
   // Backfill declStatement: the enclosing statement of each binding's declaration.
