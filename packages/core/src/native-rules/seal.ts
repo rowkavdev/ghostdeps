@@ -57,6 +57,59 @@ const validPath = (p: string): boolean =>
   p.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 const same = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
+/** Locate direct object members by JSON token boundaries, never by key substrings. */
+function objectEntries(
+  text: string,
+  open: number,
+): { key: string; start: number; valueStart: number; valueEnd: number }[] | null {
+  if (text[open] !== "{") return null;
+  const entries: { key: string; start: number; valueStart: number; valueEnd: number }[] = [];
+  let pos = open + 1;
+  const whitespace = (): void => {
+    while (/\s/.test(text[pos] ?? "")) pos++;
+  };
+  while (pos < text.length) {
+    whitespace();
+    if (text[pos] === "}") return entries;
+    if (text[pos] !== '"') return null;
+    const start = pos++;
+    let escaped = false;
+    for (; pos < text.length; pos++) {
+      const c = text[pos]!;
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') break;
+    }
+    if (pos >= text.length) return null;
+    const key = JSON.parse(text.slice(start, ++pos)) as string;
+    whitespace();
+    if (text[pos++] !== ":") return null;
+    whitespace();
+    const valueStart = pos;
+    let nesting = 0,
+      quoted = false;
+    escaped = false;
+    for (; pos < text.length; pos++) {
+      const c = text[pos]!;
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c === "\\") escaped = true;
+        else if (c === '"') quoted = false;
+      } else if (c === '"') quoted = true;
+      else if (c === "{" || c === "[") nesting++;
+      else if (c === "}" || c === "]") {
+        if (nesting === 0) break;
+        nesting--;
+      } else if (c === "," && nesting === 0) break;
+    }
+    if (pos >= text.length || nesting !== 0 || quoted) return null;
+    const valueEnd = pos;
+    entries.push({ key, start, valueStart, valueEnd });
+    if (text[pos] === "}") return entries;
+    pos++;
+  }
+  return null;
+}
 /** Parse only direct package.json declaration fields, never lockfile transitives. */
 async function declaration(
   repository: RepositoryHandle,
@@ -108,46 +161,31 @@ async function declaration(
     (deps as Record<string, unknown>)[dependency.name] !== dependency.constraint
   )
     return null;
-  // Entry bytes must be uniquely locatable. Ambiguous repeated key/value text
-  // or duplicate JSON keys block rather than cite an unrelated string.
-  const escapedName = JSON.stringify(dependency.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const exact = new RegExp(
-    escapedName +
-      "\\s*:\\s*" +
-      JSON.stringify(dependency.constraint).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-    "g",
-  );
-  const matches = [...text.matchAll(exact)];
-  if (matches.length !== 1) return null;
-  const match = matches[0]!;
-  // Bind the literal citation to the actual direct declaration section.
-  // Escaped keys, duplicate sections, or another identical entry elsewhere
-  // are not recoverable by a raw regex - refuse rather than cite a decoy.
-  const sectionNeedle = JSON.stringify(section);
-  const at = text.indexOf(sectionNeedle);
-  if (at < 0 || text.indexOf(sectionNeedle, at + sectionNeedle.length) !== -1) return null;
-  const open = text.indexOf("{", at + sectionNeedle.length);
-  if (open < 0 || !/^\s*:\s*$/.test(text.slice(at + sectionNeedle.length, open))) return null;
-  let depth = 0,
-    quoted = false,
-    escaped = false,
-    close = -1;
-  for (let i = open; i < text.length; i++) {
-    const ch = text[i]!;
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') quoted = false;
-    } else if (ch === '"') quoted = true;
-    else if (ch === "{") depth++;
-    else if (ch === "}" && --depth === 0) {
-      close = i;
-      break;
-    }
-  }
-  if (close < 0 || match.index <= open || match.index + match[0].length > close) return null;
-  const before = Buffer.from(text.slice(0, match.index), "utf8");
-  const raw = Buffer.from(match[0], "utf8");
+  // Require the literal citation to be the decoded key's direct member in
+  // the actual top-level section. Escapes and duplicates block conservatively.
+  const sections = objectEntries(text, text.search(/\S/))?.filter((e) => e.key === section);
+  if (sections?.length !== 1) return null;
+  const declarationSection = sections[0]!;
+  if (
+    text.slice(
+      declarationSection.start,
+      declarationSection.start + JSON.stringify(section).length,
+    ) !== JSON.stringify(section)
+  )
+    return null;
+  const sectionStart = declarationSection.valueStart;
+  const sectionValue = text.slice(sectionStart, declarationSection.valueEnd).trimEnd();
+  if (!sectionValue.startsWith("{") || !sectionValue.endsWith("}")) return null;
+  const entries = objectEntries(text, sectionStart)?.filter((e) => e.key === dependency.name);
+  if (entries?.length !== 1) return null;
+  const entry = entries[0]!;
+  const rawKey = JSON.stringify(dependency.name);
+  if (text.slice(entry.start, entry.start + rawKey.length) !== rawKey) return null;
+  if (text.slice(entry.valueStart, entry.valueEnd).trim() !== JSON.stringify(dependency.constraint))
+    return null;
+  const matchIndex = entry.start;
+  const raw = Buffer.from(text.slice(matchIndex, entry.valueEnd).trimEnd(), "utf8");
+  const before = Buffer.from(text.slice(0, matchIndex), "utf8");
   return {
     snapshotSha256,
     file,
