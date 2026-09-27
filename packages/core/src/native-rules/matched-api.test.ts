@@ -93,6 +93,56 @@ async function run(
     limitations,
   });
 }
+describe("native matched-API lineage upgrade (#458)", () => {
+  it("upgrades a verified direct-import chain and keeps broken records accounted and blocked", async () => {
+    const file = "src/zero.ts";
+    const imported = span(file, 'import { get } from "axios"');
+    const name = span(file, "get");
+    const specifier = span(file, '"axios"');
+    const called = span(file, "get()");
+    const callee = { ...called, end: called.start + 3 };
+    const reference: NativeReferenceRecord = {
+      ...direct(),
+      binding: "get",
+      span: called,
+      argumentSpans: [],
+      lineage: [{ kind: "import", name: "get", span: imported }],
+      lineageChain: {
+        links: [
+          {
+            kind: "import",
+            from: "get",
+            to: "get",
+            span: imported,
+            fromSpan: name,
+            toSpan: name,
+            specifierSpan: specifier,
+          },
+          { kind: "call", from: "get", to: "get", span: called, fromSpan: callee, toSpan: callee },
+        ],
+      },
+    };
+    const produced = await run([reference]);
+    assert.equal(produced.status, "pass");
+    assert.equal(produced.lineageVerification, "core-reconstructed");
+    assert.deepEqual(produced.lineageAccounting, [
+      { referenceIndex: 0, status: "core-reconstructed" },
+    ]);
+    const broken = await run([
+      {
+        ...reference,
+        lineageChain: {
+          links: [reference.lineageChain!.links[0]!],
+          brokenAt: { span: called, reason: "dynamic import" },
+        },
+      },
+    ]);
+    assert.equal(broken.status, "blocked");
+    assert.equal(broken.lineageVerification, "adapter-asserted");
+    assert.match(broken.lineageAccounting[0]?.reason ?? "", /dynamic import/);
+    assert.equal(broken.blocking[0]?.reason, "lineage-unreconstructed");
+  });
+});
 describe("native matched-API pillar (#442)", () => {
   it("byte-rechecks direct, alias, and re-export call, lineage and argument citations", async () => {
     const alias: NativeReferenceRecord = {
@@ -116,10 +166,11 @@ describe("native matched-API pillar (#442)", () => {
       ],
     };
     const result = await run([direct(), alias, barrel]);
-    assert.equal(result.status, "pass");
+    assert.equal(result.status, "blocked");
     assert.equal(result.binding, "verified");
     assert.equal(result.lineageVerification, "adapter-asserted");
     assert.equal(result.matchedApis.length, 3);
+    assert.equal(result.lineageAccounting.length, 3);
     assert.equal(result.matchedApis[2]?.lineage?.length, 2);
     assert.match(
       String((result.matchedApis[0]?.source.span as { sha256: string }).sha256),
@@ -139,7 +190,7 @@ describe("native matched-API pillar (#442)", () => {
     assert.equal(result.matchedApis.length, 1);
     assert.deepEqual(
       result.blocking.map((x) => x.reason),
-      ["unresolved-reference", "uninspected-use"],
+      ["lineage-unreconstructed", "unresolved-reference", "uninspected-use"],
     );
     assert.equal(
       (await run([direct()], AXIOS_FETCH_RULE, files, [{ kind: "parse-error" }])).status,
@@ -150,7 +201,7 @@ describe("native matched-API pillar (#442)", () => {
     assert.equal((await run([script()])).status, "blocked");
     assert.equal((await run([config()], excluded)).status, "blocked");
     const result = await run([direct(), script()], excluded);
-    assert.equal(result.status, "pass");
+    assert.equal(result.status, "blocked");
     assert.equal(result.accounted[0]?.ruleId, AXIOS_FETCH_RULE.id);
     assert.equal(result.accounted[0]?.ruleCitation, excluded.referenceSurface?.cliCitation);
   });
@@ -170,7 +221,7 @@ describe("native matched-API pillar (#442)", () => {
         binding.snapshotSha256,
         { packageName: "axios", references: [direct()], limitations: [] },
       );
-      assert.equal(result.status, "pass");
+      assert.equal(result.status, "blocked");
       assert.equal(result.matchedApis.length, 1);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -215,7 +266,7 @@ describe("native matched-API pillar (#442)", () => {
         { kind: "import", name: "get", span: span("src/zero.ts", 'import { get } from "axios"') },
       ],
     };
-    assert.equal((await run([zero])).status, "pass");
+    assert.equal((await run([zero])).status, "blocked");
     const twoText = 'a.get("/x", "get")';
     const twoFiles = { ...files, "src/app.ts": files["src/app.ts"]! + twoText };
     const call = {
@@ -234,7 +285,7 @@ describe("native matched-API pillar (#442)", () => {
       end: call.end - 1,
     };
     const base: NativeReferenceRecord = { ...direct(), span: call, argumentSpans: [first, second] };
-    assert.equal((await run([base], AXIOS_FETCH_RULE, twoFiles)).status, "pass");
+    assert.equal((await run([base], AXIOS_FETCH_RULE, twoFiles)).status, "blocked");
     const wrong = [
       { ...base, argumentSpans: [first, { ...second, start: first.end - 1 }] },
       { ...base, argumentSpans: [second, first] },
@@ -287,15 +338,15 @@ describe("native matched-API pillar (#442)", () => {
     assert.equal(result.status, "blocked");
     assert.deepEqual(
       result.blocking.map((x) => x.reason),
-      ["citation-inconsistent"],
+      ["citation-inconsistent", "lineage-unreconstructed"],
     );
     assert.equal(result.matchedApis.length, 1);
     const chainRule: NativeRule = { ...AXIOS_FETCH_RULE, coveredApis: ["use", "get"] };
     const chain = member("axios.interceptors.request.use()", "use", null);
-    assert.equal((await run([chain], chainRule)).status, "pass");
+    assert.equal((await run([chain], chainRule)).status, "blocked");
     const wrongChain = { ...chain, api: "get", callTarget: "axios.get" };
     assert.equal((await run([wrongChain], chainRule)).blocking[0]?.reason, "citation-inconsistent");
-    assert.equal((await run([{ ...right, binding: "a.get" }])).status, "pass");
+    assert.equal((await run([{ ...right, binding: "a.get" }])).status, "blocked");
   });
   it("blocks false, missing, out-of-tree and changed byte citations", async () => {
     assert.equal(
