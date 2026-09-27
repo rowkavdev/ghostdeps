@@ -5,6 +5,7 @@
 [![npm](https://img.shields.io/npm/v/ghost-deps)](https://www.npmjs.com/package/ghost-deps)
 [![npm downloads/week](https://img.shields.io/npm/dw/ghost-deps)](https://www.npmjs.com/package/ghost-deps)
 [![npm downloads/month](https://img.shields.io/npm/dm/ghost-deps)](https://www.npmjs.com/package/ghost-deps)
+[![npm downloads total](https://img.shields.io/npm/dt/ghost-deps)](https://www.npmjs.com/package/ghost-deps)
 
 GhostDeps reads your manifests, lockfiles and source code and tells you which declared dependencies your code does not actually need, with the evidence and confidence behind every claim. It runs as a check on your pull requests (GitHub App or Action) and as a local CLI, and it never executes your code.
 
