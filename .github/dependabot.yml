@@ -14,14 +14,15 @@ updates:
       development-dependencies:
         dependency-type: development
     ignore:
-      # Held at 5.9.x: TS 7 removes the programmatic createSourceFile API the
-      # JS adapter depends on. Migration tracked in #505.
+      # Held at 5.9.x (ignore >=6): TS 7 removes the programmatic
+      # createSourceFile API the JS adapter depends on. Migration tracked in #505.
       - dependency-name: "typescript"
-        versions: [">=7"]
-      # Held at 22.x while Node 22 is the engine baseline: the 26 line breaks
-      # assert overloads and types runtime APIs we do not test. Tracked in #506.
+        versions: [">=6"]
+      # Held at 22.x (ignore >=23) while Node 22 is the engine baseline: the
+      # 26 line breaks assert overloads and types runtime APIs we do not test.
+      # Tracked in #506.
       - dependency-name: "@types/node"
-        versions: [">=26"]
+        versions: [">=23"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
