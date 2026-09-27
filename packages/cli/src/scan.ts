@@ -1,12 +1,17 @@
 import {
-  analyseDirectory,
+  analyseRepository,
+  scanCompletenessFindings,
   createDefaultPolicy,
   type EngineRuleConfig,
   type AnalysisResult,
+  FsRepositoryHandle,
+  normaliseAnalysisResult,
+  severityOf,
   type PolicyConfig,
 } from "@ghostdeps/core";
 import { stat } from "node:fs/promises";
 import { defaultAdapters } from "./adapters.js";
+import { evaluateNativeProduction } from "@ghostdeps/javascript-typescript";
 import type { CliConfig } from "./config.js";
 import type { Io } from "./cli.js";
 import { atOrAboveSeverity, findingGroup } from "@ghostdeps/core";
@@ -28,11 +33,25 @@ function engineRuleConfig(policy: PolicyConfig | undefined): { ruleConfig?: Engi
 }
 
 export async function analysePath(path: string, policy?: PolicyConfig): Promise<AnalysisResult> {
-  return analyseDirectory(path, {
+  const handle = await FsRepositoryHandle.open(path);
+  const result = await analyseRepository(handle, {
     ...engineRuleConfig(policy),
     adapters: defaultAdapters(),
     network: { mode: "offline" },
     recommend: createDefaultPolicy(policy ?? {}),
+    scanCompleteness: scanCompletenessFindings(handle.scan),
+    ...(handle.scan.scope ? { scanScope: handle.scan.scope } : {}),
+  });
+  const native = await evaluateNativeProduction(handle, result.dependencies);
+  const disabled = new Set(policy?.disabled ?? []);
+  const allowed = native.findings.filter((finding) => !disabled.has(finding.rule ?? ""));
+  return normaliseAnalysisResult({
+    ...result,
+    findings: [
+      ...result.findings,
+      ...allowed.map((finding) => ({ ...finding, severity: severityOf(finding) })),
+    ],
+    ...(native.evaluations.length ? { nativeEvaluations: native.evaluations } : {}),
   });
 }
 

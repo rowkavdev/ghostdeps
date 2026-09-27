@@ -326,6 +326,18 @@ export function renderRepositorySummary(result: AnalysisResult): string {
     ...renderVerdicts(result.findings, result.impact),
     ...renderFacts(result.findings),
     ...renderNotes(result.findings),
+    ...(result.nativeEvaluations?.some((evaluation) => evaluation.status !== "produced")
+      ? [
+          "",
+          "Native evaluation:",
+          ...result.nativeEvaluations
+            .filter((evaluation) => evaluation.status !== "produced")
+            .map(
+              (evaluation) =>
+                `  ${escapeTerminal(evaluation.dependency)} (${escapeTerminal(evaluation.ruleId)}): ${evaluation.status === "blocked" ? `blocked in ${escapeTerminal(evaluation.pillar)} (${escapeTerminal(evaluation.reason)})` : `no verdict (${escapeTerminal(evaluation.reason)})`}`,
+            ),
+        ]
+      : []),
     ...renderAwarenessNotes(result.findings),
   ].join("\n");
 }

@@ -5,7 +5,6 @@ import { AXIOS_FETCH_RULE } from "./axios-fetch.js";
 import { assembleNativeEnvelope, type NativePillars, type NativeEnvelopeResult } from "./seal.js";
 import { evaluateNativePolicy } from "./policy.js";
 import { mintNativeSnapshot } from "./snapshot.js";
-import { produceNativeEvidence } from "./producer.js";
 
 const rule = {
   ...AXIOS_FETCH_RULE,
@@ -211,16 +210,7 @@ describe("sealed native policy gate (#460)", () => {
       assert.equal(stillBound.status, "produced");
     }
   });
-  it("leaves the production producer inert and the shape-only evaluator outside public verdict exports", async () => {
-    const { repo, digest } = await assembled();
-    const result = await produceNativeEvidence({
-      repository: repo,
-      rule,
-      snapshotSha256: digest,
-      dependency,
-      references: {} as Parameters<typeof produceNativeEvidence>[0]["references"],
-    });
-    assert.equal(result.status, "blocked");
+  it("keeps the shape-only evaluator outside public verdict exports", async () => {
     const api = await import("./index.js");
     assert.equal("evaluateNativeRule" in api, false);
     assert.equal("assembleNativeEnvelope" in api, true);

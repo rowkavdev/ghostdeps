@@ -39,11 +39,9 @@ export interface NativeRule {
   referenceSurface?: NativeReferenceSurface;
 }
 
-// Deliberately not exported: shape-only facts cannot enter the public verdict path.
 export { evaluateNativePolicy, type NativePolicyResult } from "./policy.js";
 
 export {
-  produceNativeEvidence,
   type NativeSourceProof,
   type NativeMatchedApi,
   type NativeInspectedScope,
@@ -52,9 +50,6 @@ export {
   type NativeDeploymentTarget,
   type NativeSemanticCheck,
   type NativeEligibilityEvidence,
-  type NativeProducerInput,
-  type NativeProducerResult,
-  type NativeEvidenceProducer,
 } from "./producer.js";
 
 export {
@@ -101,3 +96,6 @@ export {
   type NativeEnvelopeResult,
   type NativePillars,
 } from "./seal.js";
+
+/** Versioned native candidates; source checks decide whether each can fire. */
+export { JS_NATIVE_RULES } from "./rules.js";
