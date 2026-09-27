@@ -7,6 +7,7 @@ import type { Dependency, RepositoryHandle } from "../types/index.js";
 import type { UsageAnalysisReport } from "../adapter.js";
 import type { NativeRule } from "./index.js";
 import { collectNativeDeploymentEvidence } from "./deployment.js";
+import type { NativeSealedEvidence } from "./seal.js";
 
 /** Location in a specific immutable repository snapshot; all paths are relative. */
 export interface NativeSourceProof {
@@ -134,7 +135,7 @@ export interface NativeProducerInput {
 
 export type NativeProducerResult =
   | { readonly status: "blocked"; readonly reason: string }
-  | { readonly status: "produced"; readonly evidence: NativeEligibilityEvidence };
+  | { readonly status: "produced"; readonly evidence: NativeSealedEvidence };
 
 /** Future implementations must read the repository and validate every proof. */
 export type NativeEvidenceProducer = (input: NativeProducerInput) => Promise<NativeProducerResult>;
