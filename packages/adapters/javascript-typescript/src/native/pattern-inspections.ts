@@ -195,6 +195,37 @@ export async function inspectIncompatiblePatterns(
       });
       continue;
     }
+    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindFor(file));
+    // A recovered TypeScript AST is not a complete negative inspection. Do
+    // not digest a malformed source as inspected even when it has no matches.
+    const diagnostics =
+      (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [];
+    if (diagnostics.length) {
+      capped = true;
+      unchecked.push({ file, reason: "source parse diagnostics" });
+      if (size) {
+        const diagnostic = diagnostics[0]!;
+        const start = Buffer.byteLength(text.slice(0, diagnostic.start ?? 0), "utf8");
+        const end = Math.min(
+          size,
+          Math.max(
+            start + 1,
+            Buffer.byteLength(
+              text.slice(0, (diagnostic.start ?? 0) + (diagnostic.length ?? 0)),
+              "utf8",
+            ),
+          ),
+        );
+        const citation = {
+          file,
+          start: Math.min(start, end - 1),
+          end,
+          note: "source parse diagnostics",
+        };
+        for (const p of patterns) unknown.get(p.patternId)!.push(citation);
+      }
+      continue;
+    }
     inspectedBytes += size;
     inspectedFiles.push(file);
     fileProof.push({
@@ -202,7 +233,6 @@ export async function inspectIncompatiblePatterns(
       byteLength: size,
       sha256: createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex"),
     });
-    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindFor(file));
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node)) calls.push(byteSpan(file, text, node));
       for (const p of patterns) {
