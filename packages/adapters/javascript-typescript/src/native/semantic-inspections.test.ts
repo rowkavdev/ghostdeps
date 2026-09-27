@@ -110,3 +110,18 @@ test("AbortController origin cites both constructor and call option", async () =
   assert.equal(record.state, "inspected");
   assert.equal(record.citations.length, 2);
 });
+test("local class shadow of AbortController leaves cancellation unknown", async () => {
+  const records = await scan(
+    'import axios from "axios"; const AbortController = class { signal = "fake" }; const controller = new AbortController(); axios.get("/x", {signal: controller.signal});',
+  );
+  assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "unknown");
+});
+test("import and function parameter shadows cannot prove platform constructor", async () => {
+  for (const body of [
+    'import { AbortController } from "fake"; const controller = new AbortController(); axios.get("/x", {signal: controller.signal});',
+    'function f(AbortController) { const controller = new AbortController(); axios.get("/x", {signal: controller.signal}); }',
+  ]) {
+    const records = await scan('import axios from "axios"; ' + body);
+    assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "unknown");
+  }
+});
