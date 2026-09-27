@@ -763,6 +763,62 @@ describe("analyseCheckout: recommendation policy on the app path", () => {
     assert.ok(check.output.summary.includes(String.raw`blocked in deployment (below\-floor)`));
   });
 
+  it("does not count an unchanged native candidate on a source-only or unrelated-dependency PR", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ghostdeps-native-pr-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ dependencies: { axios: "^1.0.0" } }),
+    );
+    await writeFile(
+      join(dir, "ghostdeps.targets.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        complete: true,
+        targets: [{ id: "production", runtime: "node", minVersion: "18.0.0" }],
+      }),
+    );
+    await mkdir(join(dir, "src"));
+    await writeFile(
+      join(dir, "src/a.ts"),
+      'import axios from "axios"; async function f() { const res = await axios.get("/x"); if (res.status === 200) return res.data; }',
+    );
+    const noDiff = await analyseCheckout(dir, DEFAULT_ADAPTER_MODULES, {
+      ...policy,
+      pullRequestChanges: [],
+    });
+    assert.equal(noDiff.nativeEvaluations, undefined);
+    assert.ok(!noDiff.findings.some((f) => f.kind === "potentially-unnecessary"));
+    const quiet = renderCheck(noDiff, new Map());
+    assert.equal(quiet.conclusion, "success", quiet.output.summary);
+    assert.doesNotMatch(quiet.output.summary, /Native evaluation/);
+    const other = await analyseCheckout(dir, DEFAULT_ADAPTER_MODULES, {
+      ...policy,
+      pullRequestChanges: [
+        {
+          change: "added",
+          name: "other",
+          ecosystem: "javascript-typescript",
+          manifest: "package.json",
+        },
+      ],
+    });
+    assert.equal(other.nativeEvaluations, undefined);
+    assert.doesNotMatch(renderCheck(other, new Map()).output.summary, /Native evaluation/);
+    const changed = await analyseCheckout(dir, DEFAULT_ADAPTER_MODULES, {
+      ...policy,
+      pullRequestChanges: [
+        {
+          change: "added",
+          name: "axios",
+          ecosystem: "javascript-typescript",
+          manifest: "package.json",
+        },
+      ],
+    });
+    assert.equal(changed.nativeEvaluations?.[0]?.status, "blocked");
+    assert.match(renderCheck(changed, new Map()).output.summary, /Native evaluation/);
+  });
+
   it("reports an unused dependency, capped at medium severity and confidence (#173, #178)", async () => {
     const result = await analyseCheckout(await unusedRepo(), DEFAULT_ADAPTER_MODULES, policy);
     const unused = result.findings.filter((f) => f.kind === "unused");

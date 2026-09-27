@@ -472,21 +472,16 @@ export interface PackageMetadataProvider {
 
 /** Native candidate result from the complete source-validated pipeline. A blocked
  * result is a limitation, not a replacement recommendation. */
-export type NativeEvaluation =
-  | { readonly status: "produced"; readonly ruleId: string; readonly dependency: string }
-  | {
-      readonly status: "blocked";
-      readonly ruleId: string;
-      readonly dependency: string;
-      readonly pillar: string;
-      readonly reason: string;
-    }
-  | {
-      readonly status: "no-verdict";
-      readonly ruleId: string;
-      readonly dependency: string;
-      readonly reason: string;
-    };
+export type NativeEvaluation = {
+  readonly ruleId: string;
+  readonly dependency: string;
+  /** Direct declaration identity; same package names in workspaces stay distinct. */
+  readonly declaringManifest: { readonly ecosystem: string; readonly path: string };
+} & (
+  | { readonly status: "produced" }
+  | { readonly status: "blocked"; readonly pillar: string; readonly reason: string }
+  | { readonly status: "no-verdict"; readonly reason: string }
+);
 
 export interface AnalysisResult {
   schemaVersion: 1;
