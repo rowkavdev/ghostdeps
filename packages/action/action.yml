@@ -62,13 +62,14 @@ outputs:
 runs:
   using: composite
   steps:
-    # pnpm version comes from THIS repo's root package.json (packageManager
-    # field), not the consumer's - pnpm/action-setup otherwise reads the
-    # consumer workspace and dies with "No pnpm version is specified" for
-    # any consumer that does not itself use pnpm (rollout wave-1 dogfood).
+    # pnpm/action-setup resolves package_json_file relative to the CONSUMER's
+    # workspace (readTarget joins GITHUB_WORKSPACE), so it can never read this
+    # repo's package.json from a consumer run - pin the version explicitly.
+    # Keep in sync with the root package.json packageManager field;
+    # packages/action/src/pnpm-version.test.ts fails the build if they drift.
     - uses: pnpm/action-setup@v4
       with:
-        package_json_file: ${{ github.action_path }}/../../package.json
+        version: 12.6.0
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
