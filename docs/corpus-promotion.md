@@ -22,10 +22,15 @@ the nightly clock):
 - **no-signal** - no scheduled run exists for that day
 
 The rule (the cap ruling): green +1, red resets, no-signal neither counts nor
-resets, and a third consecutive no-signal day breaks the window (streak = 0).
-Only fully elapsed days are evaluated: the night still in progress is not a
-miss yet. Days older than the first recorded scheduled run end the count
-(`exhaustedHistory`), they are not misses.
+resets, and a third consecutive no-signal day breaks the window - the count
+stops there, so greens older than the break cannot join the streak, but a
+newer live streak that has already accumulated in front of those misses is
+kept (`windowBroken: true` records the break). Only fully elapsed days are
+evaluated: the night still in progress is not a miss yet. Days older than
+the first recorded scheduled run end the count (`exhaustedHistory`), they
+are not misses. The day-walk is a pure function
+(`scripts/corpus-streak-lib.mjs`) pinned by sequence tests
+(`scripts/corpus-streak.test.mjs`).
 
 Two deliberate choices:
 

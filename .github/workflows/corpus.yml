@@ -40,7 +40,11 @@ jobs:
           fetch-depth: 0
       - id: filter
         run: |
-          echo "corpus=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD" | node scripts/corpus-gate.mjs)" >> "$GITHUB_OUTPUT"
+          # Checked BEFORE writing GITHUB_OUTPUT: under the runner's
+          # bash -eo pipefail, a failed diff fails this step (fail closed),
+          # never a swallowed substitution writing corpus=false (#172).
+          relevant=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD" | node scripts/corpus-gate.mjs)
+          echo "corpus=${relevant}" >> "$GITHUB_OUTPUT"
   corpus:
     needs: changes
     # Scan on schedule/dispatch, on relevant PRs, and - fail closed - on any
