@@ -140,7 +140,10 @@ describe("end-to-end: pull request webhook -> check run (#41)", () => {
    * Deliver one PR webhook for a fixture case and return the check-run
    * create and complete request bodies the app sent.
    */
-  async function runCase(name: string): Promise<{ created: Json; completed: Json }> {
+  async function runCase(
+    name: string,
+    opts: { baseConfig?: string; extraContents?: Record<string, string> } = {},
+  ): Promise<{ created: Json; completed: Json }> {
     const caseDir = join(E2E_DIR, name);
     const body = await readFile(PAYLOAD, "utf8");
     const payload = JSON.parse(body) as PullRequestPayload;
@@ -201,16 +204,34 @@ describe("end-to-end: pull request webhook -> check run (#41)", () => {
     nock(API)
       .get(`${REPO_PATH}/compare/${baseSha}...${headSha}`)
       .reply(200, diff, { "content-type": "text/plain; charset=utf-8" });
-    nock(API)
-      .get(`${REPO_PATH}/contents/package.json`)
-      .query({ ref: baseSha })
-      .reply(200, basePackage, { "content-type": "text/plain; charset=utf-8" });
-    nock(API)
-      .get(`${REPO_PATH}/contents/package.json`)
-      .query({ ref: headSha })
-      .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+    // Root manifest reads only happen when the diff touches it.
+    if (changedPaths(diff).includes("package.json")) {
+      nock(API)
+        .get(`${REPO_PATH}/contents/package.json`)
+        .query({ ref: baseSha })
+        .reply(200, basePackage, { "content-type": "text/plain; charset=utf-8" });
+      nock(API)
+        .get(`${REPO_PATH}/contents/package.json`)
+        .query({ ref: headSha })
+        .reply(200, headPackage, { "content-type": "text/plain; charset=utf-8" });
+    }
 
-    nock(API).get(`${REPO_PATH}/contents/.ghostdeps.json`).query({ ref: baseSha }).reply(404);
+    for (const [key, text] of Object.entries(opts.extraContents ?? {})) {
+      const [ref, ...rest] = key.split(":");
+      // Octokit URL-encodes the {path} parameter (slashes become %2F).
+      nock(API)
+        .get(`${REPO_PATH}/contents/${encodeURIComponent(rest.join(":"))}`)
+        .query({ ref })
+        .reply(200, text, { "content-type": "text/plain; charset=utf-8" });
+    }
+    if (opts.baseConfig !== undefined) {
+      nock(API)
+        .get(`${REPO_PATH}/contents/.ghostdeps.json`)
+        .query({ ref: baseSha })
+        .reply(200, opts.baseConfig, { "content-type": "text/plain; charset=utf-8" });
+    } else {
+      nock(API).get(`${REPO_PATH}/contents/.ghostdeps.json`).query({ ref: baseSha }).reply(404);
+    }
     nock(API)
       .patch(`${REPO_PATH}/check-runs/${CHECK_RUN_ID}`, (b: Json) => {
         completed(b);
@@ -280,6 +301,39 @@ describe("end-to-end: pull request webhook -> check run (#41)", () => {
     assert.equal(completed.status, "completed");
     assert.equal(completed.conclusion, "success");
     assert.doesNotMatch(JSON.stringify(completed.output), /left/);
+  });
+
+  it("config-only PR: event selection fires and the scope change is disclosed (#354)", async () => {
+    const { created, completed } = await runCase("config-only");
+    assertCreated(created, "6dcb09b5b57875f334f61aebed695e2e4193db5e");
+    await assertGolden("config-only", completed);
+    assert.equal(completed.status, "completed");
+    const summary = (completed.output as { summary: string }).summary.replace(/\\/g, "");
+    assert.match(summary, /Fixture scope configuration changed in this pull request/);
+    assert.match(summary, /roots added: fixtures/);
+    assert.match(summary, /diff interpretation is incomplete/);
+  });
+
+  it("declarations under an excluded root: check fires with the exclusion disclosure (#354)", async () => {
+    const { created, completed } = await runCase("excluded-declarations", {
+      baseConfig: '{"schemaVersion":1,"fixtureRoots":["fixtures"]}',
+      extraContents: {
+        "9049f1265b7d61be4a8904a9a27120d2064dab3b:fixtures/package.json":
+          '{"name":"fixture","private":true,"dependencies":{"decoy":"^1.0.0"}}',
+        "6dcb09b5b57875f334f61aebed695e2e4193db5e:fixtures/package.json":
+          '{"name":"fixture","private":true,"dependencies":{"decoy":"^2.0.0"}}',
+      },
+    });
+    assertCreated(created, "6dcb09b5b57875f334f61aebed695e2e4193db5e");
+    await assertGolden("excluded-declarations", completed);
+    assert.equal(completed.status, "completed");
+    const summary = (completed.output as { summary: string }).summary.replace(/\\/g, "");
+    assert.match(
+      summary,
+      /changes 1 file\(s\) under excluded fixture roots \(fixtures\/package\.json\)/,
+    );
+    assert.doesNotMatch(summary, /Fixture scope configuration changed/);
+    assert.doesNotMatch(summary, /decoy/);
   });
 });
 

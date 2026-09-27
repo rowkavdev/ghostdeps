@@ -9,7 +9,12 @@ import {
   type Candidate,
   type ChangedFilesLookup,
 } from "./filter.js";
-import { isAnalysableSource, isDependencyFile } from "./manifests.js";
+import {
+  isAnalysableSource,
+  isDependencyFile,
+  isScopeConfigFile,
+  scopeConfigIn,
+} from "./manifests.js";
 
 const repository = { id: 9, name: "demo", owner: { login: "acme" }, default_branch: "main" };
 const installation = { id: 42 };
@@ -225,7 +230,10 @@ describe("decide", () => {
 
   it("skips a source-only PR while the source trigger is off (the default)", async () => {
     const d = await decide("pull_request", pr("opened"), "g1", files(["src/a.ts", "README.md"]));
-    assert.deepEqual(d, { analyse: false, reason: "no dependency manifest or lockfile changed" });
+    assert.deepEqual(d, {
+      analyse: false,
+      reason: "no dependency manifest, lockfile or scope config changed",
+    });
   });
 
   it("analyses a source-only PR with the source trigger on (#101)", async () => {
@@ -271,13 +279,16 @@ describe("decide", () => {
     );
     assert.deepEqual(d, {
       analyse: false,
-      reason: "no dependency manifest, lockfile or analysable source changed",
+      reason: "no dependency manifest, lockfile, scope config or analysable source changed",
     });
   });
 
   it("keeps pushes manifest-only: source-only pushes are skipped", async () => {
     const d = await decide("push", push(), "g1", noLookup, { sourcePrTrigger: true });
-    assert.deepEqual(d, { analyse: false, reason: "no dependency manifest or lockfile changed" });
+    assert.deepEqual(d, {
+      analyse: false,
+      reason: "no dependency manifest, lockfile or scope config changed",
+    });
   });
 
   it("analyses when the file list was capped, even with no manifest in it", async () => {
@@ -363,5 +374,71 @@ describe("withRerunSourceOnly (#196)", () => {
       const out = await withRerunSourceOnly(rerun, lookup, { sourcePrTrigger: on });
       assert.equal(flag(out), undefined);
     }
+  });
+});
+
+describe("scope config trigger (#354)", () => {
+  it("matches only the root-level scope config", () => {
+    assert.equal(isScopeConfigFile(".ghostdeps.json"), true);
+    assert.equal(isScopeConfigFile("packages/web/.ghostdeps.json"), false);
+    assert.equal(isScopeConfigFile("ghostdeps.json"), false);
+    assert.deepEqual(scopeConfigIn([".ghostdeps.json", "src/a.ts"]), [".ghostdeps.json"]);
+  });
+
+  it("analyses a config-only PR instead of filtering it out", async () => {
+    const d = await decide("pull_request", pr("opened"), "g1", files([".ghostdeps.json"]), {
+      sourcePrTrigger: true,
+    });
+    assert.equal(d.analyse, true);
+    if (d.analyse) {
+      assert.deepEqual(d.dependencyFiles, []);
+      assert.equal("sourceOnly" in d.job.trigger, false);
+    }
+  });
+
+  it("analyses a config-only push to the default branch", async () => {
+    const d = await decide(
+      "push",
+      push({ commits: [{ added: [], modified: [".ghostdeps.json"], removed: [] }] }),
+      "g1",
+      noLookup,
+    );
+    assert.equal(d.analyse, true);
+  });
+
+  it("a config change keeps a source-touching PR out of source-only", async () => {
+    const d = await decide(
+      "pull_request",
+      pr("opened"),
+      "g1",
+      files([".ghostdeps.json", "src/a.ts"]),
+      { sourcePrTrigger: true },
+    );
+    assert.equal(d.analyse, true);
+    if (d.analyse) assert.equal("sourceOnly" in d.job.trigger, false);
+  });
+
+  it("a re-run over a config-only file list is not flagged source-only", async () => {
+    const rerun: AnalysisJob = {
+      key: "k",
+      deliveryId: "d",
+      installationId: 1,
+      repository: { id: 2, owner: "o", name: "r" },
+      headSha: "a".repeat(40),
+      trigger: {
+        kind: "rerequested",
+        checkRunId: 3,
+        pullRequest: { number: 42, baseSha: "b".repeat(40) },
+      },
+    };
+    const out = await withRerunSourceOnly(
+      rerun,
+      async () => ({ files: [".ghostdeps.json"], complete: true }),
+      { sourcePrTrigger: true },
+    );
+    assert.equal(
+      out.trigger.kind === "rerequested" ? out.trigger.pullRequest?.sourceOnly : undefined,
+      undefined,
+    );
   });
 });

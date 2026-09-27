@@ -8,7 +8,7 @@
  * repository id + head SHA), so this module does not track delivery GUIDs.
  */
 import { analysisJobKey, type AnalysisJob, type AnalysisTrigger } from "../jobs.js";
-import { dependencyFilesIn, sourceFilesIn } from "./manifests.js";
+import { dependencyFilesIn, scopeConfigIn, sourceFilesIn } from "./manifests.js";
 
 /** Event/action pairs that can lead to analysis. `push` has no action. */
 export const analysedEvents = {
@@ -176,6 +176,7 @@ export function isSourceOnly(changed: ChangedFiles, sourcePrTrigger: boolean): b
     sourcePrTrigger &&
     changed.complete &&
     dependencyFilesIn(changed.files).length === 0 &&
+    scopeConfigIn(changed.files).length === 0 &&
     sourceFilesIn(changed.files).length > 0
   );
 }
@@ -247,13 +248,21 @@ export async function decide(
     eventName === "pull_request" && options.sourcePrTrigger === true
       ? sourceFilesIn(changed.files)
       : [];
-  if (dependencyFiles.length === 0 && sourceFiles.length === 0 && changed.complete) {
+  // A scope-config edit re-interprets every scan (#354): the PR must get a
+  // check so the old/new config comparison is disclosed. Never filtered out.
+  const scopeConfig = scopeConfigIn(changed.files);
+  if (
+    dependencyFiles.length === 0 &&
+    sourceFiles.length === 0 &&
+    scopeConfig.length === 0 &&
+    changed.complete
+  ) {
     return {
       analyse: false,
       reason:
         eventName === "pull_request" && options.sourcePrTrigger === true
-          ? "no dependency manifest, lockfile or analysable source changed"
-          : "no dependency manifest or lockfile changed",
+          ? "no dependency manifest, lockfile, scope config or analysable source changed"
+          : "no dependency manifest, lockfile or scope config changed",
     };
   }
   const sourceOnly =

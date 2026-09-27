@@ -820,6 +820,44 @@ index 1111111..2222222 100644
     assert.match(text, /diff interpretation is incomplete/);
   });
 
+  it("calls the excluded count a minimum on a truncated source-only diff (#354)", async () => {
+    const truncatedDiff = `diff --git a/fixtures/tool.ts b/fixtures/tool.ts
+new file mode 100644
+index 0000000..1111111 100644
+--- /dev/null
++++ b/fixtures/tool.ts
+@@ -0,0 +1 @@
++export const x = 1;
+diff --git a/src/cut.ts b/src/cut.ts
+index 2222222..3333333 100644
+--- a/src/cut.ts
++++ b/src/cut.ts
+`;
+    const { client, rec } = fakeClient({
+      diff: truncatedDiff,
+      files: { [`${BASE}:.ghostdeps.json`]: headConfig },
+    });
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(scopedRepo)),
+    });
+    await worker(
+      job({
+        kind: "pull_request",
+        number: payload.number,
+        action: "opened",
+        baseSha: BASE,
+        sourceOnly: true,
+      }),
+    );
+    const text = summaryText(rec);
+    assert.match(text, /changes at least 1 file\(s\) under excluded fixture roots/);
+    assert.match(text, /count is a minimum, not the pull request's total/);
+    assert.match(text, /Removed-usage check skipped/);
+  });
+
   it("posts the excluded-paths disclosure on a fixture-only source-only PR (#354)", async () => {
     const sourceDiff = `diff --git a/fixtures/tool.ts b/fixtures/tool.ts
 new file mode 100644
@@ -1183,6 +1221,13 @@ describe("excludedChangesNote (#354)", () => {
         examples: ["f/1", "f/2", "f/3", "f/4", "f/5", "f/6", "f/7", "f/8", "f/9", "f/10"],
       }),
       "This pull request changes 12 file(s) under excluded fixture roots (f/1, f/2, f/3, f/4, f/5, f/6, f/7, f/8, f/9, f/10, +2 more); they were not analysed.",
+    );
+  });
+
+  it("states a minimum, not a total, when the diff was not read in full", () => {
+    assert.equal(
+      excludedChangesNote({ count: 1, examples: ["fixtures/tool.ts"] }, true),
+      "This pull request changes at least 1 file(s) under excluded fixture roots (fixtures/tool.ts); they were not analysed. The diff was not read in full, so this count is a minimum, not the pull request's total.",
     );
   });
 });

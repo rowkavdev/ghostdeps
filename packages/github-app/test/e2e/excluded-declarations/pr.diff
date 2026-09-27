@@ -1,0 +1,7 @@
+diff --git a/fixtures/package.json b/fixtures/package.json
+index 1111111..2222222 100644
+--- a/fixtures/package.json
++++ b/fixtures/package.json
+@@ -1 +1 @@
+-{"name":"fixture","private":true,"dependencies":{"decoy":"^1.0.0"}}
++{"name":"fixture","private":true,"dependencies":{"decoy":"^2.0.0"}}

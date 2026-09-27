@@ -1,0 +1,7 @@
+diff --git a/.ghostdeps.json b/.ghostdeps.json
+index 1111111..2222222 100644
+--- a/.ghostdeps.json
++++ b/.ghostdeps.json
+@@ -1 +1 @@
+-{"schemaVersion":1,"fixtureRoots":["old-fixtures"]}
++{"schemaVersion":1,"fixtureRoots":["fixtures"]}
