@@ -66,6 +66,7 @@ truth.
 change bumps the patch version and goes out - from 0.1.0 the next releases
 are 0.1.1, 0.1.2, and so on. One rolling release line, no sitting on
 unreleased work: when a shippable change lands green on main, tag `v0.1.N`
-and push; release.yml publishes it via the OIDC trusted-publisher path.
+and push; release.yml is set up to publish via the OIDC trusted-publisher
+path - verify the first tag publish when it runs.
 Minor/major bumps are reserved for changes that are not small. Pre-releases
 use normal semver prerelease tags (`v0.2.0-rc.1`).
