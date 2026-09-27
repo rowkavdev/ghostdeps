@@ -17,7 +17,11 @@ import {
   analyseRepositoryIsolated,
   extractTarball,
   ExtractionError,
+  fixtureRootsDigest,
+  fixtureScope,
   FsRepositoryHandle,
+  parseFixtureRootsText,
+  resolveLimits,
   scanCompletenessFindings,
   type AnalysisResult,
   normaliseAnalysisResult,
@@ -25,6 +29,8 @@ import {
   type DependencyChange,
   type RecommendationPolicy,
   type PackageMetadataProvider,
+  type ScanLimits,
+  type ScanScope,
   type SourceLineChanges,
 } from "@ghostdeps/core";
 import { evaluateNativeProduction } from "@ghostdeps/javascript-typescript";
@@ -234,6 +240,82 @@ export const SKIPPED_REMOVED_USAGE_NOTE =
 export const FULL_FALLBACK_NOTE =
   "Pull request changes couldn't be read in full, so GhostDeps analysed the whole repository. Findings may include dependencies this pull request didn't change.";
 
+const SCOPE_CONFIG = ".ghostdeps.json";
+
+/**
+ * Bounded disclosure of changed paths under excluded fixture roots (#354): the
+ * count and up to 10 sorted examples, so a fixture-only pull request still
+ * gets a visible check instead of looking like nothing happened.
+ */
+export function excludedChangesNote(excluded: {
+  count: number;
+  examples: readonly string[];
+}): string {
+  const shown = excluded.examples.join(", ");
+  const extra = excluded.count - excluded.examples.length;
+  return (
+    `This pull request changes ${excluded.count} file(s) under excluded fixture roots ` +
+    `(${shown}${extra > 0 ? `, +${extra} more` : ""}); they were not analysed.`
+  );
+}
+
+/** The base side's committed scope config: roots, none (404), or unknown. */
+async function baseScopeRoots(
+  client: PullRequestClient,
+  target: { owner: string; repo: string },
+  baseSha: string,
+  limits: ScanLimits,
+): Promise<{ roots: string[] } | { unknown: true }> {
+  let text: unknown;
+  try {
+    ({ data: text } = await client.request("GET /repos/{owner}/{repo}/contents/{path}", {
+      owner: target.owner,
+      repo: target.repo,
+      path: SCOPE_CONFIG,
+      ref: baseSha,
+      mediaType: { format: "raw" },
+    }));
+  } catch (error) {
+    const status = Number((error as { status?: unknown })?.status);
+    return status === 404 ? { roots: [] } : { unknown: true };
+  }
+  if (typeof text !== "string") return { unknown: true };
+  try {
+    return { roots: parseFixtureRootsText(text, limits, SCOPE_CONFIG) };
+  } catch {
+    return { unknown: true };
+  }
+}
+
+/**
+ * Old/new scope comparison (#354): a config edit in the PR is disclosed with
+ * both digests and the added/removed roots, and marks the diff interpretation
+ * incomplete. Never claims the config is unchanged - silence means identical.
+ */
+function scopeComparisonNote(
+  headScope: ScanScope,
+  base: { roots: string[] } | { unknown: true },
+): string | undefined {
+  const headDigest = headScope.source === "none" ? null : headScope.configDigest;
+  if ("unknown" in base) {
+    return headDigest === null
+      ? undefined
+      : "The base revision's fixture scope configuration could not be read, so whether this pull request changed it is unknown; the diff interpretation is incomplete.";
+  }
+  const baseDigest = base.roots.length > 0 ? fixtureRootsDigest(base.roots) : null;
+  if (baseDigest === headDigest) return undefined;
+  const headRoots = headScope.roots.map((r) => r.root);
+  const added = headRoots.filter((r) => !base.roots.includes(r));
+  const removed = base.roots.filter((r) => !headRoots.includes(r));
+  return (
+    `Fixture scope configuration changed in this pull request ` +
+    `(config digest ${baseDigest ?? "none"} -> ${headDigest ?? "none"}; ` +
+    `roots added: ${added.length > 0 ? added.join(", ") : "none"}; ` +
+    `roots removed: ${removed.length > 0 ? removed.join(", ") : "none"}); ` +
+    "the diff interpretation is incomplete."
+  );
+}
+
 /** Source-only per the changed-file list, on the first run or a re-run (#101, #196). */
 function sourceOnly(job: AnalysisJob): boolean {
   if (job.trigger.kind === "pull_request") return job.trigger.sourceOnly === true;
@@ -363,24 +445,41 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       // moved since, base...head still diffs from the merge base, so the
       // change list is still the PR's own.
       const baseSha = pullRequestBase(job);
-      // Full scans (no PR base: pushes, fork/unlinked re-runs) honour a
-      // committed .ghostdeps.json (#354). PR-triggered runs never do, even
-      // when their diff cannot be read and the fallback below analyses the
-      // whole repository: a head-only scope would hide changed fixture paths
-      // from the PR contract until the base/head diff slice lands.
+      const root = await checkoutRoot(destDir);
+      run.analysedSha = job.headSha;
       if (baseSha === undefined) {
+        // Full scans (pushes, fork/unlinked re-runs) honour the committed
+        // .ghostdeps.json at the analysed ref (#354).
         run.fixtureScope = true;
-        run.analysedSha = job.headSha;
-      }
-      if (baseSha !== undefined) {
-        const pr = await pullRequestContext(client, {
-          owner: target.owner,
-          repo: target.repo,
-          baseSha,
-          headSha: job.headSha,
-        });
+      } else {
+        // PR-linked runs use the head's effective fixture scope for BOTH
+        // snapshots (#354): the change extraction is filtered to it below and
+        // the head checkout is scanned with it, so excluded fixture paths
+        // never drive verdicts on either side. The head config is read up
+        // front; a malformed one fails the run, as on full scans.
+        const limits = resolveLimits(options.scan?.limits);
+        const headScope = await fixtureScope(root, limits);
+        run.fixtureScope = true;
+        const pr = await pullRequestContext(
+          client,
+          {
+            owner: target.owner,
+            repo: target.repo,
+            baseSha,
+            headSha: job.headSha,
+          },
+          headScope.roots.map((r) => r.root),
+        );
         added = pr.added;
         if (pr.complete) {
+          if (pr.excludedChanged.count > 0) {
+            appNotes.push(excludedChangesNote(pr.excludedChanged));
+          }
+          const scopeNote = scopeComparisonNote(
+            headScope,
+            await baseScopeRoots(client, target, baseSha, limits),
+          );
+          if (scopeNote !== undefined) appNotes.push(scopeNote);
           run.pullRequestChanges = pr.dependencyChanges.changes;
           run.pullRequestSourceChanges = pr.dependencyChanges.sourceLineChanges;
         } else if (sourceOnly(job)) {
@@ -394,15 +493,18 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
             "PR diff incomplete on a source-only PR; staying PR-scoped",
           );
         } else {
-          // Scoping to a partial change list could hide a finding: analyse in full.
+          // Unknown is not an empty change set (#354): fall back to an
+          // UNSCOPED full head scan with the note, and claim no excluded-path
+          // counts, no config comparison and no removed-last-usage.
+          run.fixtureScope = false;
           appNotes.push(FULL_FALLBACK_NOTE);
           options.log?.warn(
             { job: job.key, limitations: pr.dependencyChanges.limitations },
-            "PR dependency changes incomplete; analysing the full repository",
+            "PR dependency changes incomplete; analysing the full repository unscoped",
           );
         }
       }
-      const result = await analyse(await checkoutRoot(destDir), adapterModules, run);
+      const result = await analyse(root, adapterModules, run);
       const posted = await reporter.complete(target, checkRunId, result, added, appNotes);
       // Slice 3 (gated): maintain the one PR comment from the SAME result.
       // The comment is additive - any failure leaves the completed check as

@@ -95,17 +95,59 @@ export interface PullRequestContext {
    * scope the analysis; otherwise a missing change could hide a finding.
    */
   readonly complete: boolean;
+  /**
+   * Changed paths under the head's excluded fixture roots (#354): counted and
+   * bounded examples (sorted, at most 10) for disclosure, never analysed.
+   */
+  readonly excludedChanged: { readonly count: number; readonly examples: readonly string[] };
+}
+
+/** Component-boundary prefix match, the same rule the scanner applies. */
+const underRoot = (path: string, roots: readonly string[]): boolean =>
+  roots.some((root) => path === root || path.startsWith(`${root}/`));
+
+/**
+ * Head fixture scope applies to both snapshots (#354): changes and source
+ * lines under excluded roots are dropped (they are not analysed at the head,
+ * so they must not drive verdicts or removed-last-usage) and disclosed by
+ * count with bounded examples. Filtering happens after extraction so an
+ * unreadable manifest still marks the result incomplete first.
+ */
+function applyFixtureScope(
+  result: PullRequestDependencyChanges,
+  files: readonly FileDiff[],
+  roots: readonly string[],
+): { changes: PullRequestDependencyChanges; excluded: { count: number; examples: string[] } } {
+  const excludedPaths = files
+    .map((f) => f.newPath ?? f.oldPath)
+    .filter((p): p is string => p !== undefined && underRoot(p, roots))
+    .sort();
+  if (roots.length === 0) {
+    return { changes: result, excluded: { count: 0, examples: [] } };
+  }
+  return {
+    changes: {
+      ...result,
+      changes: result.changes.filter((c) => !underRoot(c.manifest, roots)),
+      manifestsChanged: result.manifestsChanged.filter((m) => !underRoot(m, roots)),
+      changedSourceFiles: result.changedSourceFiles.filter((f) => !underRoot(f.path, roots)),
+      sourceLineChanges: result.sourceLineChanges.filter((f) => !underRoot(f.path, roots)),
+    },
+    excluded: { count: excludedPaths.length, examples: excludedPaths.slice(0, 10) },
+  };
 }
 
 const unavailable = (limitation: string): PullRequestContext => ({
   dependencyChanges: empty(limitation),
   added: new Map(),
   complete: false,
+  excludedChanged: { count: 0, examples: [] },
 });
 
 export async function pullRequestContext(
   client: PullRequestClient,
   pr: PullRequestTarget,
+  scopeRoots: readonly string[] = [],
 ): Promise<PullRequestContext> {
   let diffText: unknown;
   try {
@@ -166,5 +208,11 @@ export async function pullRequestContext(
   }
   const truncated = silentTruncation(diff.files);
   if (truncated !== undefined) dependencyChanges.limitations.push(truncated);
-  return { dependencyChanges, added, complete: dependencyChanges.limitations.length === 0 };
+  const scoped = applyFixtureScope(dependencyChanges, diff.files, scopeRoots);
+  return {
+    dependencyChanges: scoped.changes,
+    added,
+    complete: dependencyChanges.limitations.length === 0,
+    excludedChanged: scoped.excluded,
+  };
 }

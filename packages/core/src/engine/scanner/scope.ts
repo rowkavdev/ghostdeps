@@ -43,6 +43,11 @@ export interface ScanScope {
   builtInPolicy: "default-v1";
 }
 
+/** Canonical scope-content digest; shared by config, override and base/head comparison (#354). */
+export function fixtureRootsDigest(roots: readonly string[]): string {
+  return digest(roots);
+}
+
 function digest(roots: readonly string[]): string {
   return createHash("sha256")
     .update(JSON.stringify({ schemaVersion: 1, fixtureRoots: roots, policy: "default-v1" }))
@@ -167,12 +172,21 @@ function parsePayload(text: string, limits: ScanLimits, origin: string): string[
   return roots;
 }
 
+/**
+ * One bounded payload grammar wherever a root list arrives as text (#354):
+ * the per-run override (origin `--fixture-roots`) and a base-side committed
+ * config read over the API (origin `.ghostdeps.json`).
+ */
+export function parseFixtureRootsText(text: string, limits: ScanLimits, origin: string): string[] {
+  if (new TextEncoder().encode(text).length > MAX_CONFIG_BYTES) {
+    throw new Error(`${origin} exceeds 16 KiB`);
+  }
+  return parsePayload(text, limits, origin);
+}
+
 /** The per-run override payload is bounded exactly like the committed file. */
 export function parseFixtureRootsOverride(text: string, limits: ScanLimits): string[] {
-  if (new TextEncoder().encode(text).length > MAX_CONFIG_BYTES) {
-    throw new Error("--fixture-roots exceeds 16 KiB");
-  }
-  return parsePayload(text, limits, "--fixture-roots");
+  return parseFixtureRootsText(text, limits, "--fixture-roots");
 }
 
 /** Reject a nonexistent, symlinked or non-directory root before counting. */
