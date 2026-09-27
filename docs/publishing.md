@@ -1,6 +1,6 @@
-# Publishing the `@rowkav09/ghostdeps` npm package
+# Publishing the `ghostdeps` npm package
 
-The CLI ships on npm as a scoped package, `@rowkav09/ghostdeps` (the unscoped name is blocked by the registry similarity rule). This document
+The CLI ships on npm as the unscoped package `ghostdeps`. It previously shipped scoped as `@rowkav09/ghostdeps`; the rename lands alongside the first unscoped publish, after which both `@rowkav09/ghostdeps` and the legacy `ghost-deps` (a separate package Rowan now owns) are deprecated pointers at `ghostdeps`. This document
 is the release process and the reasoning behind the layout.
 
 ## Layout
@@ -44,14 +44,14 @@ matters because npm is deprecating the granular-access-token 2FA bypass used
 by legacy token-based CI publishing.
 
 Chicken-and-egg: npm only lets you configure a trusted publisher for a
-package that already exists. So the first publish bootstrapped manually:
+package that already exists. So each new package name bootstraps manually:
 
-1. **First publish (v0.1.0) is done** (2026-09-27): staged from a maintainer
+1. **First publish of `@rowkav09/ghostdeps` (v0.1.0) is done** (2026-09-27): staged from a maintainer
    machine with `node scripts/stage-npm.mjs --version 0.1.0` and published
    from `.npm-staging` with `npm publish --access public` using a short-lived
    access token. The npm account now uses a security key for 2FA; no
    long-lived token remains.
-2. **Trusted-publisher connection is live** (verified 2026-09-27): package
+2. **Trusted-publisher connection is live for `@rowkav09/ghostdeps`** (verified 2026-09-27): package
    settings → Trusted Publisher → GitHub Actions, repository
    `rowkavdev/ghostdeps`, workflow `release.yml`. Tag pushes are set up to
    authenticate via the workflow's OIDC token; the first tag publish remains
@@ -67,6 +67,15 @@ change bumps the patch version and goes out - from 0.1.0 the next releases
 are 0.1.1, 0.1.2, and so on. One rolling release line, no sitting on
 unreleased work: when a shippable change lands green on main, tag `v0.1.N`
 and push; release.yml is set up to publish via the OIDC trusted-publisher
-path - verify the first tag publish when it runs.
+path - verified on the 0.1.1-0.1.4 line.
+
+The rename to `ghostdeps` repeats the bootstrap once: the first `ghostdeps`
+publish is manual (short-lived token, `--access public`), then the trusted
+publisher is configured on the new package name (repository
+`rowkavdev/ghostdeps`, workflow `release.yml`) and tag pushes take over. A
+past `ghostdeps` attempt was auto-rejected by the registry similarity rule
+against `ghost-deps`; Rowan owns `ghost-deps` now, so a retry is expected to
+pass - if it still bounces, fall back to `ghost-deps` and take the name up
+with npm support.
 Minor/major bumps are reserved for changes that are not small. Pre-releases
 use normal semver prerelease tags (`v0.2.0-rc.1`).
