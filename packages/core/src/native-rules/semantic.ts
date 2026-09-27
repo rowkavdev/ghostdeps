@@ -143,6 +143,7 @@ async function optionsCoverCall(
   call: NativeReferenceSpan,
   options: readonly NativeReferenceSpan[],
   read: (s: NativeReferenceSpan) => Promise<string | null>,
+  kind: NativeFlowKind,
 ): Promise<boolean> {
   const text = await read(call);
   if (!text || !text.endsWith(")") || !Array.isArray(options)) return false;
@@ -168,6 +169,17 @@ async function optionsCoverCall(
       return false;
     const gap = text.slice(cursor, span.start - call.start);
     if (!(i === 0 ? /^\s*$/u : /^\s*,\s*$/u).test(gap)) return false;
+    if (kind === "cancellation-propagation" && i > 0) {
+      const option = await read(span);
+      // Only a literal object without spreads/computed keys is inspectable
+      // without resolving an identifier or an opaque expression.
+      if (
+        !option ||
+        !/^\{[\s\S]*\}$/u.test(option.trim()) ||
+        /\.\.\.|\[|\]|=>|\bfunction\b/u.test(option)
+      )
+        return false;
+    }
     cursor = span.end - call.start;
   }
   return /^\s*$/u.test(text.slice(cursor, innerEnd));
@@ -610,7 +622,7 @@ export async function collectNativeSemanticEvidence(
               fields.some((s) => !validSpan(s)) ||
               !(await proof(negative.scope)) ||
               citedOptions.some((p) => !p) ||
-              !(await optionsCoverCall(call, negative.options, decoded)) ||
+              !(await optionsCoverCall(call, negative.options, decoded, record.kind)) ||
               negative.inspected.some((s: NativeReferenceSpan) => !within(negative.scope, s)) ||
               negative.inspected.length !== record.explored.length ||
               !negative.inspected.some((s: NativeReferenceSpan) => key(s) === key(call)) ||
