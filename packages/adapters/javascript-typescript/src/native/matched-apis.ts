@@ -1224,14 +1224,115 @@ export async function findMatchedApiReferences(
       return current;
     };
     const fileBindings = [...bindings.values()].flat();
+    const taintedRoots = new Map<Binding, string>();
     for (const [mutatedName, reason] of mutatedNames) {
       const mutated = bindings.get(mutatedName);
       if (!mutated?.length) continue;
-      const roots = new Set<Binding>(mutated.map(rootBindingOf));
-      for (const candidate of fileBindings) {
-        if (candidate.unresolved !== undefined) continue;
-        if (roots.has(rootBindingOf(candidate))) candidate.unresolved = reason;
+      for (const item of mutated) {
+        const root = rootBindingOf(item);
+        if (!taintedRoots.has(root)) taintedRoots.set(root, reason);
       }
+    }
+    // Escape scan (#473 review round 2): a package-bound name may appear
+    // only as its own declaration, as the source of a tracked alias
+    // initializer, or as the root of a call callee. Anywhere else - an
+    // object/array literal, a call argument, a return, an export - the
+    // object flows somewhere a parse-only scan cannot track, and a write
+    // through that container (box.client.get = ...) cannot be ruled out.
+    // The escape taints the binding's whole alias component.
+    const isDeclarationName = (id: ts.Identifier, binding: Binding): boolean => {
+      if (binding.decl === id) return true;
+      if (ts.isVariableDeclaration(binding.decl) && binding.decl.name === id) return true;
+      if (ts.isBindingElement(binding.decl) && binding.decl.name === id) return true;
+      if (ts.isImportSpecifier(binding.decl) && binding.decl.name === id) return true;
+      return false;
+    };
+    const isAliasSource = (id: ts.Identifier, binding: Binding): boolean => {
+      // const a = <id>; const m = <id>.member; const { m } = <id> - only
+      // when the declared names actually became bindings sourced here.
+      let decl: ts.VariableDeclaration | undefined;
+      if (ts.isVariableDeclaration(id.parent) && id.parent.initializer === id) {
+        decl = id.parent;
+      } else if (
+        ts.isPropertyAccessExpression(id.parent) &&
+        id.parent.expression === id &&
+        ts.isVariableDeclaration(id.parent.parent) &&
+        id.parent.parent.initializer === id.parent
+      ) {
+        decl = id.parent.parent;
+      }
+      if (!decl) return false;
+      const names: string[] = [];
+      const collectNames = (name: ts.BindingName): void => {
+        if (ts.isIdentifier(name)) names.push(name.text);
+        else {
+          for (const element of name.elements) {
+            if (!ts.isOmittedExpression(element) && ts.isIdentifier(element.name))
+              names.push(element.name.text);
+          }
+        }
+      };
+      collectNames(decl.name);
+      return names.some((name) =>
+        (bindings.get(name) ?? []).some((candidate) => {
+          for (let at: Binding | undefined = candidate; at; at = at.source) {
+            if (at === binding) return true;
+          }
+          return false;
+        }),
+      );
+    };
+    const isCalleeRoot = (id: ts.Identifier): boolean => {
+      let current: ts.Expression = id;
+      for (;;) {
+        const parent = current.parent;
+        if (
+          (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) &&
+          parent.expression === current
+        ) {
+          current = parent;
+          continue;
+        }
+        if (ts.isParenthesizedExpression(parent)) {
+          current = parent;
+          continue;
+        }
+        return ts.isCallExpression(parent) && parent.expression === current;
+      }
+    };
+    const findEscapes = (node: ts.Node): void => {
+      if (ts.isIdentifier(node)) {
+        // A property-name token never references a local binding: `x.get`
+        // reads member "get" of x, and `{ get: v }` only names the key.
+        // (A shorthand `{ client }` name IS a value use and stays checked.)
+        const isMemberToken =
+          (ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) ||
+          (ts.isPropertyAssignment(node.parent) && node.parent.name === node);
+        const pos = node.getStart(sf);
+        const binding = isMemberToken ? undefined : bindingAt(bindings, node.text, pos);
+        if (
+          binding &&
+          !isShadowedAt(frames, node.text, pos, binding.decl) &&
+          !isDeclarationName(node, binding) &&
+          !isAliasSource(node, binding) &&
+          !isCalleeRoot(node)
+        ) {
+          const root = rootBindingOf(binding);
+          if (!taintedRoots.has(root)) {
+            taintedRoots.set(
+              root,
+              `"${node.text}" escapes a tracked position in this file (container, handoff or non-call use); the binding cannot be proven to still reference the package`,
+            );
+          }
+        }
+      }
+      ts.forEachChild(node, findEscapes);
+    };
+    findEscapes(sf);
+    for (const candidate of fileBindings) {
+      if (candidate.unresolved !== undefined) continue;
+      const reason = taintedRoots.get(rootBindingOf(candidate));
+      if (reason !== undefined) candidate.unresolved = reason;
     }
   }
 
