@@ -4,6 +4,8 @@
 # Least privilege. This file must match the permissions table in
 # docs/github-app.md exactly; src/manifest.test.ts enforces that.
 # Any change here is a product change: installers see this list.
+# PREPARATION ONLY: do not register/reapprove these permissions until
+# M3, slice-2 evidence, and ADR 0004 security gates pass.
 
 name: GhostDeps
 description: Finds dependencies your code doesn't really need. Reports through GitHub Checks, never gates.
@@ -20,9 +22,11 @@ default_events:
   - pull_request
   - push
   - check_run
+  - issue_comment
 
 default_permissions:
-  contents: read
+  contents: write
   pull_requests: read
   checks: write
+  issues: write
   metadata: read
