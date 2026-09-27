@@ -1,6 +1,6 @@
 # Configuration
 
-Choose the channel first. The CLI and Action run locally without a registry metadata provider. The GitHub App can opt in to public npm install-size lookups. There is no repository config file or per-installation settings page. Flags and Action inputs are per run; App environment values apply to the running service. See [CLI](cli.md), [GitHub Action](github-action.md), and [self-hosting](deployment.md) for usage and setup.
+Choose the channel first. The CLI and Action run locally without a registry metadata provider. The GitHub App can opt in to public npm install-size lookups. The only repository config file is `.ghostdeps.json`, which declares scan scope (below); there is no per-installation settings page. Flags and Action inputs are per run; App environment values apply to the running service. See [CLI](cli.md), [GitHub Action](github-action.md), and [self-hosting](deployment.md) for usage and setup.
 
 ## CLI scan
 
@@ -15,6 +15,23 @@ Choose the channel first. The CLI and Action run locally without a registry meta
 | `--allowlist <ecosystem>:<name>`  | None             | Marks expected tooling; a trailing `*` matches a name prefix. Repeatable.                                                                                             | When a known tool is expected despite weak source references. |
 
 `--fail-on` and the policy flags apply only to `scan`. Unknown rule IDs or ecosystems are usage errors, not silently ignored. Awareness notes and factual health observations never trigger `--fail-on`, even at `info`. A successful scan exits 0 unless its `--fail-on` threshold is reached (exit 1); usage and scan errors exit 2, and unimplemented commands exit 3. No `--fail-on` means findings do not fail a successful scan. The CLI is offline and does not fetch registry metadata. See [CLI flags and exit codes](cli.md#flags).
+
+## Repository scan scope (`.ghostdeps.json`)
+
+A repository can declare fixture-only directory roots that GhostDeps leaves out of dependency analysis. Commit `.ghostdeps.json` at the repository root:
+
+```json
+{
+  "schemaVersion": 1,
+  "fixtureRoots": ["fixtures"]
+}
+```
+
+Roots are exact, repository-relative directory paths: no globs, negation, file-level entries or dependency-name matching, and no built-in `fixtures/` convention - a directory is excluded only because the owner declared it. The CLI (`scan` and `fix`) and the GitHub Action (which runs the CLI) honour the file; the GitHub App does not read it yet.
+
+Exclusion is always disclosed, never silent. The CLI summary, JSON result and GitHub Check carry a `Scan scope` record with the config source and schema version, an effective-scope digest, the separate built-in vendor/generated policy, and exact per-root counts of excluded files and recognised manifests. A configured root that does not exist in the analysed tree is shown literally as unmatched with zero counts; it hides nothing and does not fail the run. A run that excluded files caps absence-based verdicts (no `unused` verdict from the reduced corpus) and stays neutral in the check, even with no dependency findings.
+
+The file is bounded and strict: at most 16 KiB and 32 roots, no absolute paths, `..`, backslashes, control characters, symlinks, duplicates or overlapping roots. A malformed, oversized or unreadable config fails the scan with a named error - it is never silently ignored. Per-run CLI/Action overrides and App-side activation are separate later slices; see the [scan scope design](scan-scope-design.md).
 
 ## GitHub Action
 

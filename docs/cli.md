@@ -40,7 +40,11 @@ Implementation status: `ghostdeps scan` runs the engine today. It calls
 core's `analyseDirectory`, which scans the directory through the inert
 `FsRepositoryHandle`, runs the JavaScript/TypeScript, Rust, Go and Python adapters
 offline, and reports skipped files as scan-incompleteness `info`
-findings. `--json` prints the schema-stable `AnalysisResult`; without it, scan
+findings. When the scanned repository commits a `.ghostdeps.json` scan-scope
+file (#354), scan honours its declared fixture roots and discloses the
+exclusion in the human summary and JSON; without the file the output is
+unchanged. A malformed scope file fails the scan with a named error.
+`--json` prints the schema-stable `AnalysisResult`; without it, scan
 prints the canonical repository summary from docs/output-formats.md (#39,
 renderer from #109). Core's default recommendation policy (#136) turns the
 facts into verdicts; conservative rules mean a dependency is only called

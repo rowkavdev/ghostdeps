@@ -1,5 +1,7 @@
-/** Opt-in, bounded fixture-root scope. Entry points must not enable this until
- * their result renderers disclose the scope and cap absence verdicts (#354).
+/** Opt-in, bounded fixture-root scope. The CLI (scan and fix) enables this now
+ * that the CLI human/JSON and GitHub Check renderers disclose the scope and
+ * absence verdicts are capped (#354); the GitHub App still scans unscoped
+ * until its own activation slice.
  */
 import { createHash } from "node:crypto";
 import { lstat, open, readdir, realpath } from "node:fs/promises";

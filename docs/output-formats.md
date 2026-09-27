@@ -35,9 +35,10 @@ then every configured fixture root, including an unmatched root named literally
 with zero files and zero recognised manifests. The same structured field appears
 in JSON and the GitHub Check's visible `Scan scope` section. Excluded files
 make the check advisory/neutral and cap absence claims; an all-unmatched config
-hides nothing and does not itself change the conclusion. The CLI and App still
-do not turn on fixture scope, and the standard empty-scan example above remains
-the default output. Activation awaits separate gates.
+hides nothing and does not itself change the conclusion. The CLI (scan and
+fix) applies fixture scope when the scanned repository commits `.ghostdeps.json`;
+without that file the standard empty-scan example above remains the default
+output. The GitHub App still scans unscoped until its own activation slice.
 
 The following expanded example is **proposed**, not a sample of one currently
 shippable run. It combines future native/duplicate verdicts and a PR-only
