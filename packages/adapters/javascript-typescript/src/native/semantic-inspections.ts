@@ -114,6 +114,46 @@ function locallyShadows(use: ts.Node, declaration: ts.Node, name: string): boole
   }
   return false;
 }
+/** Reject any source-level binding that could replace the platform constructor.
+ * This is intentionally conservative across the whole file, including imports,
+ * parameter destructuring and assignments. A parse-only scan cannot prove
+ * runtime global integrity, so this is only a local citation, not a verdict.
+ */
+function platformConstructorCandidate(site: ts.Node): boolean {
+  const file = site.getSourceFile();
+  let candidate = true;
+  const visit = (node: ts.Node): void => {
+    if (!candidate) return;
+    if (
+      (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node)) &&
+      declares(node.name, "AbortController")
+    )
+      candidate = false;
+    if (
+      (ts.isClassDeclaration(node) ||
+        ts.isFunctionDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node) ||
+        ts.isEnumDeclaration(node)) &&
+      node.name?.text === "AbortController"
+    )
+      candidate = false;
+    if (ts.isImportClause(node) && node.name?.text === "AbortController") candidate = false;
+    if (ts.isImportSpecifier(node) && node.name.text === "AbortController") candidate = false;
+    if (ts.isNamespaceImport(node) && node.name.text === "AbortController") candidate = false;
+    if (
+      ts.isBinaryExpression(node) &&
+      ts.isIdentifier(node.left) &&
+      node.left.text === "AbortController" &&
+      node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+    )
+      candidate = false;
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return candidate;
+}
 /** Only this narrowly traced constructor proves the provenance of a signal. */
 function controllerOrigin(use: ts.Node, name: string): ts.VariableDeclaration | undefined {
   for (let scope: ts.Node | undefined = use.parent; scope; scope = scope.parent) {
@@ -136,7 +176,8 @@ function controllerOrigin(use: ts.Node, name: string): ts.VariableDeclaration | 
           declaration.initializer &&
           ts.isNewExpression(declaration.initializer) &&
           ts.isIdentifier(declaration.initializer.expression) &&
-          declaration.initializer.expression.text === "AbortController"
+          declaration.initializer.expression.text === "AbortController" &&
+          platformConstructorCandidate(declaration.initializer.expression)
         )
           return declaration;
         return undefined;
