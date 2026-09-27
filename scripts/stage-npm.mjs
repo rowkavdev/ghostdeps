@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Assembles the publishable single-package layout for the `@rowkav09/ghostdeps` npm
+ * Assembles the publishable single-package layout for the `ghostdeps` npm
  * package into .npm-staging/ (or --out). Run after `pnpm -r run build`.
  *
  * The published package vendors the built @ghostdeps/* workspace packages
@@ -149,7 +149,7 @@ const jsTs = readJson(path.join(root, "packages/adapters/javascript-typescript/p
 const python = readJson(path.join(root, "packages/adapters/python/package.json"));
 
 const manifest = {
-  name: "@rowkav09/ghostdeps",
+  name: "ghostdeps",
   version,
   description: "Find dependencies your code doesn't really need, in any language.",
   license: "MIT",
@@ -205,5 +205,5 @@ let bytes = 0;
   }
 })(out);
 console.log(
-  `staged @rowkav09/ghostdeps@${version} in ${path.relative(root, out)}: ${files} files, ${(bytes / 1024 / 1024).toFixed(1)} MB unpacked`,
+  `staged ghostdeps@${version} in ${path.relative(root, out)}: ${files} files, ${(bytes / 1024 / 1024).toFixed(1)} MB unpacked`,
 );
