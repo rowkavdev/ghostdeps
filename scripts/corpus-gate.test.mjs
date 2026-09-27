@@ -50,10 +50,15 @@ import { fileURLToPath } from "node:url";
 
 const gatePath = join(dirname(fileURLToPath(import.meta.url)), "corpus-gate.mjs");
 
+// Scratch repos carry their own identity: CI runners have none configured.
+const GIT_IDENTITY = ["-c", "user.name=corpus-gate-test", "-c", "user.email=test@example.invalid"];
+
 function gitRepo() {
   const dir = mkdtempSync(join(tmpdir(), "corpus-gate-"));
   execFileSync("git", ["init", "-q"], { cwd: dir });
-  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "base"], { cwd: dir });
+  execFileSync("git", [...GIT_IDENTITY, "commit", "-q", "--allow-empty", "-m", "base"], {
+    cwd: dir,
+  });
   return dir;
 }
 
@@ -84,7 +89,9 @@ test("a valid diff writes the gated value the corpus job reads", () => {
   const dir = gitRepo();
   const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
   execFileSync("git", ["checkout", "-q", "-b", "pr"], { cwd: dir });
-  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "docs"], { cwd: dir });
+  execFileSync("git", [...GIT_IDENTITY, "commit", "-q", "--allow-empty", "-m", "docs"], {
+    cwd: dir,
+  });
   const outFile = join(dir, "github-output");
   runFilterStep(dir, base, outFile);
   assert.equal(readFileSync(outFile, "utf8").trim(), "corpus=false");
