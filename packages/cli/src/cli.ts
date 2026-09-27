@@ -37,6 +37,13 @@ interface ParsedArgs {
   /** Raw --fail-on / --severity values; validated against Severity in buildConfig. */
   failOn?: string | undefined;
   severity?: string | undefined;
+  /**
+   * scan/fix --fixture-roots: per-run scope override payload (the same
+   * schema-versioned JSON grammar as .ghostdeps.json), replacing the committed
+   * roots for the run. `undefined` means the flag was absent; an empty-list
+   * payload explicitly clears committed roots. Validated by core at scan time.
+   */
+  fixtureRoots?: string | undefined;
   /** Repeatable policy flags; validated in buildConfig. */
   disableRules: string[];
   downgrades: string[];
@@ -57,6 +64,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const disableRules: string[] = [];
   const downgrades: string[] = [];
   const allowlist: string[] = [];
+  let fixtureRoots: string | undefined;
   let positionalOnly = false;
   let sawDoubleDash = false;
   for (let i = 0; i < argv.length; i++) {
@@ -78,7 +86,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       arg === "--severity" ||
       arg === "--disable-rule" ||
       arg === "--downgrade" ||
-      arg === "--allowlist"
+      arg === "--allowlist" ||
+      arg === "--fixture-roots"
     ) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("-")) {
@@ -88,6 +97,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       else if (arg === "--severity") severity = value;
       else if (arg === "--disable-rule") disableRules.push(value);
       else if (arg === "--downgrade") downgrades.push(value);
+      else if (arg === "--fixture-roots") fixtureRoots = value;
       else allowlist.push(value);
       i++;
     } else if (arg.startsWith("--fail-on=")) {
@@ -100,6 +110,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       downgrades.push(arg.slice("--downgrade=".length));
     } else if (arg.startsWith("--allowlist=")) {
       allowlist.push(arg.slice("--allowlist=".length));
+    } else if (arg.startsWith("--fixture-roots=")) {
+      fixtureRoots = arg.slice("--fixture-roots=".length);
     } else if (arg.startsWith("-")) {
       throw new UsageError(`unknown option: ${arg}`);
     } else {
@@ -112,6 +124,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     version,
     failOn,
     severity,
+    fixtureRoots,
     disableRules,
     downgrades,
     allowlist,
@@ -232,11 +245,17 @@ function buildConfig(
   flags: {
     failOn?: string | undefined;
     severity?: string | undefined;
+    fixtureRoots?: string | undefined;
     disableRules: string[];
     downgrades: string[];
     allowlist: string[];
   },
 ): CliConfig {
+  // The per-run scope override applies where fixture scope is active (#354).
+  if (flags.fixtureRoots !== undefined && command !== "scan" && command !== "fix") {
+    throw new UsageError("--fixture-roots only applies to ghostdeps scan and fix");
+  }
+  const fixtureRoots = flags.fixtureRoots;
   const failOn = severityFlag("--fail-on", flags.failOn);
   const severity = severityFlag("--severity", flags.severity);
   const hasPolicyFlags =
@@ -264,7 +283,7 @@ function buildConfig(
     if (args.length > 1) {
       throw new UsageError(`ghostdeps ${command} takes at most one path argument`);
     }
-    return { command, json, path: args[0] ?? ".", failOn, severity, policy };
+    return { command, json, path: args[0] ?? ".", failOn, severity, policy, fixtureRoots };
   }
   if (packageCommands.has(command)) {
     const packageName = args[0];
@@ -274,7 +293,7 @@ function buildConfig(
     if (args.length > 2) {
       throw new UsageError(`ghostdeps ${command} takes a package name and at most one path`);
     }
-    return { command, json, path: args[1] ?? ".", packageName };
+    return { command, json, path: args[1] ?? ".", packageName, fixtureRoots };
   }
   throw unknownCommand(command);
 }

@@ -81,6 +81,7 @@ up) flows only through the core metadata service, never from the CLI.
 | `--disable-rule <id>`             | Turn a recommendation rule off for the run (repeatable)            |
 | `--downgrade <rule>=<confidence>` | Cap a rule's confidence at high, medium or low - never raises it   |
 | `--allowlist <ecosystem>:<name>`  | Mark expected tooling; a trailing `*` makes the name a prefix      |
+| `--fixture-roots <json>`          | Per-run fixture-scope override (`scan` and `fix`); see below       |
 
 The policy flags are validated loudly: an unknown rule id or ecosystem is a
 usage error (exit 2) that names the known values, so a typo can never read as
@@ -94,6 +95,26 @@ usage error (exit 2) that names the known values, so a typo can never read as
 | 1    | scan `--fail-on` threshold met or exceeded                      |
 | 2    | usage error, or the scan itself failed (no usable result)       |
 | 3    | command not implemented yet                                     |
+
+## Per-run fixture-scope override (#354)
+
+`--fixture-roots` carries a bounded (16 KiB), schema-versioned JSON payload with
+exactly the grammar of the committed `.ghostdeps.json`:
+
+```
+ghostdeps scan --fixture-roots '{"schemaVersion":1,"fixtureRoots":["testdata"]}'
+```
+
+A present payload **replaces** the committed roots for the run; it never merges.
+An explicit empty list (`"fixtureRoots":[]`) clears the committed roots. Either
+way the run's Scan scope block records `source per-run-override` with the
+committed config's digest and the override's digest, so the disclosure names
+both. The committed file is still read: a malformed, oversized or unreadable
+`.ghostdeps.json` fails the scan even when an override is present. There is no
+environment-variable or hidden override. The override may widen or narrow the
+analysed set, but it cannot switch off the scope block, the omitted-file note
+or the absence-reference cap, and it never makes the scanner follow symlinks or
+execute repository code.
 
 GhostDeps advises, it does not gate: without `--fail-on`, findings never
 produce a non-zero exit on an otherwise successful scan. `ghostdeps scan

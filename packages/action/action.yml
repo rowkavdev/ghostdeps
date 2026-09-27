@@ -27,6 +27,19 @@ inputs:
     description: Comma-separated ecosystem:name entries to mark as expected tooling.
     required: false
     default: ""
+  fixture-roots:
+    description: >-
+      Per-run fixture-scope override (#354): a bounded (16 KiB),
+      schema-versioned JSON payload with the same grammar as the committed
+      .ghostdeps.json, e.g. '{"schemaVersion":1,"fixtureRoots":["fixtures"]}'.
+      A set value REPLACES the committed roots for this run (it never merges);
+      an explicit empty list '{"schemaVersion":1,"fixtureRoots":[]}' clears
+      them. Both are recorded as an override in the Scan scope block, alongside
+      the committed config's digest. Unset (empty) means the committed file
+      governs. A malformed committed config still fails the run even when this
+      input is set.
+    required: false
+    default: ""
   check-name:
     description: Name of the check run to create.
     required: false
@@ -138,6 +151,7 @@ runs:
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_DISABLE_RULE: ${{ inputs.disable-rule }}
         INPUT_ALLOWLIST: ${{ inputs.allowlist }}
+        INPUT_FIXTURE_ROOTS: ${{ inputs.fixture-roots }}
       run: |
         args=(scan --json "$INPUT_PATH")
         if [ -n "$INPUT_FAIL_ON" ]; then args+=(--fail-on "$INPUT_FAIL_ON"); fi
@@ -145,6 +159,7 @@ runs:
         for r in "${rules[@]}"; do [ -n "$r" ] && args+=(--disable-rule "$r"); done
         IFS=',' read -ra allow <<< "$INPUT_ALLOWLIST"
         for a in "${allow[@]}"; do [ -n "$a" ] && args+=(--allowlist "$a"); done
+        if [ -n "$INPUT_FIXTURE_ROOTS" ]; then args+=(--fixture-roots "$INPUT_FIXTURE_ROOTS"); fi
         set +e
         node "$ACTION_ROOT/packages/cli/dist/main.js" "${args[@]}" > "$RESULT"
         echo "exit=$?" >> "$GITHUB_OUTPUT"

@@ -29,6 +29,16 @@ export interface ScanOptions {
   limits?: Partial<ScanLimits>;
   /** Opt-in only until all entry points disclose and cap scoped results (#354). */
   fixtureScope?: boolean;
+  /**
+   * Per-run override payload (#354): the same bounded, schema-versioned JSON
+   * grammar as `.ghostdeps.json`, replacing the committed roots for this run.
+   * Present with an empty fixtureRoots list to clear committed roots. The
+   * committed file is still read, so a malformed config fails even then.
+   * Implies fixture scope; never honoured without disclosure.
+   */
+  fixtureRootsOverride?: string;
+  /** Stamped onto the scope record when the caller knows the analysed commit. */
+  analysedSha?: string;
   /** Replaces the default excluded directory names. */
   excludedDirectories?: ReadonlySet<string>;
   /** Replaces the default excluded file suffixes. */
@@ -95,6 +105,8 @@ export interface ScanResult {
   excludedFileSuffixes: string[];
   /** Present for opt-in scans, including a repository without a config. */
   scope?: ScanScope;
+  /** Inputs a scoped re-walk (listEntries) must reuse to match this scan. */
+  scopeInputs?: { fixtureRootsOverride?: string; analysedSha?: string };
 }
 
 // C0/C1 control characters, DEL, and backslash (ambiguous separator on Windows).
@@ -135,8 +147,9 @@ export async function scanRepository(
   // Scoped accounting is defined against the built-in scanner policy only.
   // A caller replacement would change the analysed files without changing
   // the effective-scope digest; reject it until policy identity is modelled.
+  const scopeEnabled = options.fixtureScope === true || options.fixtureRootsOverride !== undefined;
   if (
-    options.fixtureScope === true &&
+    scopeEnabled &&
     (options.excludedDirectories !== undefined || options.excludedFileSuffixes !== undefined)
   ) {
     throw new Error("fixture scope does not support custom scanner exclusions");
@@ -152,7 +165,14 @@ export async function scanRepository(
     throw new Error("scan root must be a directory");
   }
   const root = await realpath(rootDir);
-  const scope = options.fixtureScope === true ? await fixtureScope(root, limits) : undefined;
+  const scope = scopeEnabled
+    ? await fixtureScope(root, limits, {
+        ...(options.fixtureRootsOverride !== undefined
+          ? { override: options.fixtureRootsOverride }
+          : {}),
+        ...(options.analysedSha !== undefined ? { analysedSha: options.analysedSha } : {}),
+      })
+    : undefined;
   const excludedRoots = new Set(scope?.roots.map((r) => r.root) ?? []);
 
   const files: ScannedFile[] = [];
@@ -305,6 +325,14 @@ export async function scanRepository(
     excludedFileSuffixes: [...excludedSuffixes].sort(),
   };
   if (truncated !== undefined) result.truncated = truncated;
-  if (scope !== undefined) result.scope = scope;
+  if (scope !== undefined) {
+    result.scope = scope;
+    result.scopeInputs = {
+      ...(options.fixtureRootsOverride !== undefined
+        ? { fixtureRootsOverride: options.fixtureRootsOverride }
+        : {}),
+      ...(options.analysedSha !== undefined ? { analysedSha: options.analysedSha } : {}),
+    };
+  }
   return result;
 }

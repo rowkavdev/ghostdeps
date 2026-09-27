@@ -500,4 +500,121 @@ describe("opt-in fixture scope accounting (#354)", () => {
     await symlink(path.join(root, "package.json"), path.join(root, "fixtures", "linked.json"));
     await assert.rejects(scanRepository(root, { fixtureScope: true }));
   });
+
+  describe("per-run overrides (#354)", () => {
+    const override = (roots: string[]) => JSON.stringify({ schemaVersion: 1, fixtureRoots: roots });
+    before(async () => {
+      // Clean up entries earlier cases left behind.
+      await rm(path.join(root, "linked"), { force: true });
+      await rm(path.join(root, "fixtures", "linked.json"), { force: true });
+      await config(root, ["fixtures"]);
+    });
+
+    it("replaces the committed roots and records both digests", async () => {
+      const scan = await scanRepository(root, {
+        fixtureScope: true,
+        fixtureRootsOverride: override(["fixtures-old"]),
+      });
+      assert.equal(scan.scope?.source, "per-run-override");
+      assert.deepEqual(scan.scope?.roots, [
+        { root: "fixtures-old", matched: true, files: 1, manifests: 1 },
+      ]);
+      assert.ok(scan.files.some((f) => f.path === "fixtures/package.json"));
+      assert.ok(!scan.files.some((f) => f.path.startsWith("fixtures-old/")));
+      assert.ok(scan.scope?.configDigest);
+      assert.notEqual(scan.scope?.configDigest, scan.scope?.digest);
+      assert.equal(scan.scope?.overrideDigest, scan.scope?.digest);
+    });
+
+    it("an explicit empty list clears committed roots, visibly", async () => {
+      const scan = await scanRepository(root, { fixtureRootsOverride: override([]) });
+      assert.equal(scan.scope?.source, "per-run-override");
+      assert.deepEqual(scan.scope?.roots, []);
+      assert.equal(scan.scope?.excludedFiles, 0);
+      assert.ok(scan.files.some((f) => f.path === "fixtures/package.json"));
+      assert.notEqual(scan.scope?.configDigest, null);
+      assert.notEqual(scan.scope?.overrideDigest, null);
+    });
+
+    it("still fails on a malformed committed config when an override is present", async () => {
+      await writeFile(path.join(root, ".ghostdeps.json"), '{"schemaVersion":2,"fixtureRoots":[]}');
+      await assert.rejects(
+        scanRepository(root, {
+          fixtureScope: true,
+          fixtureRootsOverride: override(["fixtures-old"]),
+        }),
+        /\.ghostdeps\.json/,
+      );
+      await config(root, ["fixtures"]);
+    });
+
+    it("fails visibly on a malformed, oversized or unsafe override payload", async () => {
+      await assert.rejects(
+        scanRepository(root, { fixtureRootsOverride: "not json" }),
+        /--fixture-roots/,
+      );
+      await assert.rejects(
+        scanRepository(root, { fixtureRootsOverride: '{"schemaVersion":2,"fixtureRoots":[]}' }),
+        /--fixture-roots/,
+      );
+      await assert.rejects(
+        scanRepository(root, { fixtureRootsOverride: override(["../escape"]) }),
+        /fixture root in --fixture-roots/,
+      );
+      await assert.rejects(
+        scanRepository(root, { fixtureRootsOverride: override(["fixtures", "fixtures/nested"]) }),
+        /duplicate or overlapping fixture roots in --fixture-roots/,
+      );
+      await assert.rejects(
+        scanRepository(root, { fixtureRootsOverride: " ".repeat(16385) }),
+        /--fixture-roots exceeds 16 KiB/,
+      );
+      await assert.rejects(
+        scanRepository(root, {
+          fixtureRootsOverride: override(Array.from({ length: 33 }, (_, i) => `r${i}`)),
+        }),
+        /--fixture-roots exceeds 32 fixture roots/,
+      );
+    });
+
+    it("refuses a symlinked override root", async () => {
+      await symlink(path.join(root, "fixtures"), path.join(root, "linked"));
+      await assert.rejects(
+        scanRepository(root, { fixtureRootsOverride: override(["linked"]) }),
+        /not a real directory/,
+      );
+      await rm(path.join(root, "linked"), { force: true });
+    });
+
+    it("scopes an unconfigured repo and stamps the analysed SHA", async () => {
+      await rm(path.join(root, ".ghostdeps.json"), { force: true });
+      const scan = await scanRepository(root, {
+        fixtureRootsOverride: override(["fixtures"]),
+        analysedSha: "a".repeat(40),
+      });
+      assert.equal(scan.scope?.source, "per-run-override");
+      assert.equal(scan.scope?.configDigest, null);
+      assert.equal(scan.scope?.analysedSha, "a".repeat(40));
+      assert.ok(!scan.files.some((f) => f.path.startsWith("fixtures/")));
+      await assert.rejects(
+        scanRepository(root, {
+          fixtureRootsOverride: override(["fixtures"]),
+          analysedSha: "xyz",
+        }),
+        /analysed SHA/,
+      );
+      await config(root, ["fixtures"]);
+    });
+
+    it("re-walks with the override so listings match the scoped view", async () => {
+      const handle = await FsRepositoryHandle.open(root, {
+        fixtureScope: true,
+        fixtureRootsOverride: override(["fixtures-old"]),
+      });
+      const listing = await handle.listEntries();
+      assert.ok(listing.complete, `limitations: ${listing.limitations.join(", ")}`);
+      assert.ok(!listing.entries.some((e) => e.path.startsWith("fixtures-old/")));
+      assert.ok(listing.entries.some((e) => e.path === "fixtures/package.json"));
+    });
+  });
 });

@@ -39,6 +39,9 @@ describe("opt-in Scan scope rendering", () => {
     source: "repo-config" as const,
     schemaVersion: 1 as const,
     digest: "b".repeat(64),
+    configDigest: "b".repeat(64),
+    overrideDigest: null,
+    analysedSha: null,
     roots: [{ root: "missing", matched: false, files: 0, manifests: 0 }],
     matchedRoots: 0,
     excludedFiles: 0,
@@ -53,6 +56,27 @@ describe("opt-in Scan scope rendering", () => {
     assert.match(check.output.summary, /missing: unmatched/);
     assert.match(check.output.summary, /0 files/);
   });
+  it("shows override provenance and the analysed SHA for a per-run-override scope (#354)", () => {
+    const overridden = {
+      ...scope,
+      source: "per-run-override" as const,
+      digest: "c".repeat(64),
+      overrideDigest: "c".repeat(64),
+      analysedSha: "e".repeat(40),
+      roots: [{ root: "fixtures", matched: true, files: 2, manifests: 1 }],
+      matchedRoots: 1,
+      excludedFiles: 2,
+      excludedManifests: 1,
+    };
+    const check = renderCheck({ ...result([]), scanScope: overridden }, new Map());
+    const text = check.output.summary.replace(/\\/g, "");
+    assert.match(text, /source per-run-override/);
+    assert.match(text, new RegExp(`config digest ${"b".repeat(64)}`));
+    assert.match(text, new RegExp(`override digest ${"c".repeat(64)}`));
+    assert.match(text, new RegExp(`analysed SHA ${"e".repeat(40)}`));
+    assert.match(text, /fixtures: 2 files, 1 recognised manifests excluded/);
+  });
+
   it("keeps matched and unmatched roots visible ahead of a truncated verdict list", () => {
     const longFindings = Array.from({ length: 90 }, (_, i) =>
       finding({

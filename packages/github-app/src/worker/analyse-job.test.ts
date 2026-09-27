@@ -658,6 +658,7 @@ index 3333333..4444444 100644
     const text = (out.summary ?? "").replace(/\\/g, "");
     assert.match(text, /### Scan scope/);
     assert.match(text, /fixture scope omitted 1 file/);
+    assert.match(text, new RegExp(`analysed SHA ${SHA}`));
   });
 
   it("does not fetch a diff for push jobs or fork re-runs", async () => {
@@ -676,8 +677,9 @@ index 3333333..4444444 100644
       });
       await worker(job(trigger));
       assert.deepEqual(rec.compares, []);
-      // Genuine full scans (no PR base) opt in to committed fixture scope (#354).
-      assert.deepEqual(seen, { fixtureScope: true });
+      // Genuine full scans (no PR base) opt in to committed fixture scope and
+      // stamp the analysed head SHA onto the scope record (#354).
+      assert.deepEqual(seen, { fixtureScope: true, analysedSha: SHA });
     }
   });
 

@@ -77,7 +77,13 @@ export class FsRepositoryHandle implements RepositoryHandle {
     const fresh = await scanRepository(
       this.scan.root,
       this.scan.scope
-        ? { limits: this.scan.limits, fixtureScope: true }
+        ? {
+            limits: this.scan.limits,
+            fixtureScope: true,
+            // Re-walk with the exact scope inputs of the open: an override
+            // must narrow the fresh walk the same way (#354).
+            ...(this.scan.scopeInputs ?? {}),
+          }
         : {
             limits: this.scan.limits,
             excludedDirectories: new Set(this.scan.excludedDirectories),

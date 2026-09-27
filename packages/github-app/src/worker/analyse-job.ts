@@ -68,6 +68,8 @@ export interface AnalyseRunOptions {
    * head-only fallback would hide changed fixture paths from the PR contract.
    */
   readonly fixtureScope?: boolean;
+  /** Stamped onto the scope record: the analysed head commit (#354). */
+  readonly analysedSha?: string;
   /**
    * Removed and added source lines, set together with pullRequestChanges
    * (#101). Core bounds them and adapters report removed usages, so a PR
@@ -162,7 +164,13 @@ export async function analyseCheckout(
 ): Promise<AnalysisResult> {
   const handle = await FsRepositoryHandle.open(
     root,
-    fixtureScopeEnabled(run) ? { ...scan, fixtureScope: true } : scan,
+    fixtureScopeEnabled(run)
+      ? {
+          ...scan,
+          fixtureScope: true,
+          ...(run.analysedSha !== undefined ? { analysedSha: run.analysedSha } : {}),
+        }
+      : scan,
   );
   const scanCompleteness = scanCompletenessFindings(handle.scan);
   const result = await engine(handle, {
@@ -344,6 +352,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
         pullRequestChanges?: readonly DependencyChange[];
         pullRequestSourceChanges?: readonly SourceLineChanges[];
         fixtureScope?: boolean;
+        analysedSha?: string;
         recommend?: RecommendationPolicy;
         metadata?: PackageMetadataProvider;
       } = {
@@ -359,7 +368,10 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       // when their diff cannot be read and the fallback below analyses the
       // whole repository: a head-only scope would hide changed fixture paths
       // from the PR contract until the base/head diff slice lands.
-      if (baseSha === undefined) run.fixtureScope = true;
+      if (baseSha === undefined) {
+        run.fixtureScope = true;
+        run.analysedSha = job.headSha;
+      }
       if (baseSha !== undefined) {
         const pr = await pullRequestContext(client, {
           owner: target.owner,

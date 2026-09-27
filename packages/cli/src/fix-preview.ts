@@ -8,7 +8,11 @@ import { EXIT_ERROR, EXIT_OK } from "./errors.js";
 export async function runFixPreview(config: CliConfig, io: Io): Promise<number> {
   // Same filtered view as scan (#354): a declared fixture root stays out of
   // the preview, so a fixture-only package is refused, never half-seen.
-  const handle = await FsRepositoryHandle.open(config.path, { fixtureScope: true });
+  const handle = await FsRepositoryHandle.open(config.path, {
+    fixtureScope: true,
+    // A present --fixture-roots payload replaces the committed roots (#354).
+    ...(config.fixtureRoots !== undefined ? { fixtureRootsOverride: config.fixtureRoots } : {}),
+  });
   const preview = await previewNpmRemoval(handle, defaultAdapters(), config.packageName!);
   if (config.json) {
     io.stdout(JSON.stringify(preview, null, 2));

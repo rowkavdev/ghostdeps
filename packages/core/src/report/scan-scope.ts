@@ -10,5 +10,14 @@ export function scanScopeRows(scope: ScanScope): string[] {
 }
 
 export function scanScopeSummary(scope: ScanScope): string {
-  return `source ${scope.source}; ${scope.matchedRoots} matched roots; ${scope.excludedFiles} files, ${scope.excludedManifests} recognised manifests excluded; built-in policy ${scope.builtInPolicy}; digest ${scope.digest}`;
+  return [
+    `source ${scope.source}`,
+    ...(scope.configDigest !== null ? [`config digest ${scope.configDigest}`] : []),
+    ...(scope.overrideDigest !== null ? [`override digest ${scope.overrideDigest}`] : []),
+    `${scope.matchedRoots} matched roots`,
+    `${scope.excludedFiles} files, ${scope.excludedManifests} recognised manifests excluded`,
+    `built-in policy ${scope.builtInPolicy}`,
+    `digest ${scope.digest}`,
+    ...(scope.analysedSha !== null ? [`analysed SHA ${scope.analysedSha}`] : []),
+  ].join("; ");
 }

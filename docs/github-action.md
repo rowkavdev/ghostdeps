@@ -49,15 +49,16 @@ for production workflows.
 
 ## Inputs
 
-| Input          | Default        | Purpose                                                              |
-| -------------- | -------------- | -------------------------------------------------------------------- |
-| `path`         | `.`            | Directory to scan                                                    |
-| `fail-on`      | (empty)        | Fail the step when a finding reaches this severity; empty = advisory |
-| `disable-rule` | (empty)        | Comma-separated rule ids to turn off                                 |
-| `allowlist`    | (empty)        | Comma-separated `ecosystem:name` entries marked as expected tooling  |
-| `check-name`   | `ghostdeps`    | Name of the check run                                                |
-| `node-version` | `22`           | Node.js for the analysis (engine requires >= 22)                     |
-| `github-token` | `github.token` | Token used to create the check run                                   |
+| Input           | Default        | Purpose                                                                                                                                                                                                                                      |
+| --------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`          | `.`            | Directory to scan                                                                                                                                                                                                                            |
+| `fail-on`       | (empty)        | Fail the step when a finding reaches this severity; empty = advisory                                                                                                                                                                         |
+| `disable-rule`  | (empty)        | Comma-separated rule ids to turn off                                                                                                                                                                                                         |
+| `allowlist`     | (empty)        | Comma-separated `ecosystem:name` entries marked as expected tooling                                                                                                                                                                          |
+| `fixture-roots` | (empty)        | Per-run fixture-scope override (#354): bounded schema-versioned JSON with the `.ghostdeps.json` grammar; replaces the committed roots for the run, `'{"schemaVersion":1,"fixtureRoots":[]}'` clears them. Unset = the committed file governs |
+| `check-name`    | `ghostdeps`    | Name of the check run                                                                                                                                                                                                                        |
+| `node-version`  | `22`           | Node.js for the analysis (engine requires >= 22)                                                                                                                                                                                             |
+| `github-token`  | `github.token` | Token used to create the check run                                                                                                                                                                                                           |
 
 Outputs: `conclusion` (the posted check conclusion), `scan-exit` (the CLI's
 exit code).

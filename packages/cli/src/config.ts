@@ -19,4 +19,10 @@ export interface CliConfig {
   severity?: Severity | undefined;
   /** scan policy config: --disable-rule / --downgrade / --allowlist. */
   policy?: PolicyConfig | undefined;
+  /**
+   * scan/fix --fixture-roots: per-run fixture-scope override payload (#354),
+   * replacing the committed .ghostdeps.json roots for the run. Absent when the
+   * flag was not passed; validated by core at scan time.
+   */
+  fixtureRoots?: string | undefined;
 }
