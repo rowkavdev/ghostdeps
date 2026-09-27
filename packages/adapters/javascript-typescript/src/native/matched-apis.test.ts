@@ -737,3 +737,94 @@ test("computed interceptor uncertainty ignores arguments and comments for matchi
     assert.deepEqual(record!.uninspectable, []);
   }
 });
+
+/** Independently reconstruct the byte ranges cited by a lineage link. */
+function assertChainTokens(files: Record<string, string>, ref: MatchedApiReference): void {
+  const chain = ref.lineageChain;
+  assert.ok(chain, "lineage chain present");
+  assert.equal(chain.brokenAt, undefined, "no hidden gap in a complete chain");
+  assert.ok(chain.links.length >= 2);
+  for (const link of chain.links) {
+    const bytes = Buffer.from(files[link.span.file]!, "utf8");
+    const containing = bytes.subarray(link.span.start, link.span.end).toString("utf8");
+    for (const token of [link.fromSpan, link.toSpan, link.specifierSpan, link.memberSpan]) {
+      if (!token) continue;
+      assert.equal(token.file, link.span.file);
+      assert.ok(token.start >= link.span.start && token.end <= link.span.end);
+      assert.ok(token.end > token.start);
+      assert.ok(containing.includes(bytes.subarray(token.start, token.end).toString("utf8")));
+    }
+  }
+}
+
+test("lineage chain carries import, alias and call edges with exact UTF-8 tokens", async () => {
+  const files = {
+    "src/a.ts": '/* 🦊 */ import { get as g } from "axios";\nconst a = g;\na("/x");',
+  };
+  const ref = (await findMatchedApiReferences(memoryHandle(files), "axios")).references[0]!;
+  assertChainTokens(files, ref);
+  assert.deepEqual(
+    ref.lineageChain!.links.map((l) => l.kind),
+    ["import", "alias", "call"],
+  );
+  const [entry, alias] = ref.lineageChain!.links;
+  const text = (s: { file: string; start: number; end: number }) =>
+    Buffer.from(files[s.file as keyof typeof files])
+      .subarray(s.start, s.end)
+      .toString("utf8");
+  assert.equal(text(entry!.fromSpan), "get");
+  assert.equal(text(entry!.toSpan), "g");
+  assert.equal(text(entry!.specifierSpan!), '"axios"');
+  assert.equal(text(alias!.fromSpan), "g");
+  assert.equal(text(alias!.toSpan), "a");
+});
+
+test("require/destructure and multi-barrel chains cite package entry through use", async () => {
+  const files = {
+    "src/a.cjs": 'const { get: g } = require("axios"); g("/x");',
+    "src/one.ts": 'export { get as g } from "axios";',
+    "src/two.ts": 'export { g as h } from "./one";',
+    "src/use.ts": 'import { h as local } from "./two"; local("/x");',
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const req = scan.references.find((r) => r.span?.file === "src/a.cjs")!;
+  assertChainTokens(files, req);
+  assert.deepEqual(
+    req.lineageChain!.links.map((l) => l.kind),
+    ["require", "call"],
+  );
+  const barrel = scan.references.find((r) => r.span?.file === "src/use.ts")!;
+  assertChainTokens(files, barrel);
+  assert.deepEqual(
+    barrel.lineageChain!.links.map((l) => l.kind),
+    ["re-export", "re-export", "import", "call"],
+  );
+});
+
+test("dynamic import and uncited wrapper chain keep a location and explicit break", async () => {
+  const files = {
+    "src/a.ts":
+      'const x = import("axios");\nfunction outer() { return inner(); }\nfunction inner() { return x.get("/"); }',
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const dynamic = scan.references.find((r) => r.api === "<dynamic-import>")!;
+  assert.equal(dynamic.lineageChain?.brokenAt?.span.file, "src/a.ts");
+  assert.match(dynamic.lineageChain!.brokenAt!.reason, /dynamic import/);
+});
+
+test("single wrapper cites its internal call, declaration and external invocation", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      'function load() { return axios.get("/x"); }',
+      "load();",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  const ref = scan.references.find((r) => r.resolution === "wrapper")!;
+  assertChainTokens(files, ref);
+  assert.deepEqual(
+    ref.lineageChain!.links.map((l) => l.kind),
+    ["import", "call", "wrapper", "call"],
+  );
+});
