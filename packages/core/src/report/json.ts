@@ -142,7 +142,10 @@ export function normaliseAnalysisResult(result: AnalysisResult): AnalysisResult 
     ...(result.nativeEvaluations
       ? {
           nativeEvaluations: [...result.nativeEvaluations].sort(
-            by((n) => `${n.ruleId}\0${n.dependency}\0${n.status}`),
+            by(
+              (n) =>
+                `${n.ruleId}\0${n.dependency}\0${n.declaringManifest.ecosystem}\0${n.declaringManifest.path}\0${n.status}`,
+            ),
           ),
         }
       : {}),

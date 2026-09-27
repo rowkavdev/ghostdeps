@@ -156,23 +156,28 @@ export async function analyseCheckout(
   // Injected test engines may return a partial result; production engines always
   // supply dependencies. An absent surface cannot be promoted to a verdict.
   if (!Array.isArray(result.dependencies) || !run.recommend) return result;
-  const native = await evaluateNativeProduction(handle, result.dependencies);
   const changed = run.pullRequestChanges;
-  const eligible = native.findings.filter(
-    (finding) =>
-      !changed ||
-      changed.some(
-        (c) =>
-          c.change !== "removed" &&
-          c.name === finding.dependency &&
-          c.manifest === finding.declaringManifest?.path,
-      ),
-  );
+  const scopedDependencies =
+    changed === undefined
+      ? result.dependencies
+      : result.dependencies.filter((dependency) =>
+          changed.some(
+            (c) =>
+              c.change !== "removed" &&
+              c.name === dependency.name &&
+              c.ecosystem === dependency.project.ecosystem &&
+              c.manifest === dependency.declaredIn,
+          ),
+        );
+  // A source-only PR has no changed dependency to evaluate. Do not import
+  // unrelated repository-wide native gaps into the check conclusion.
+  if (scopedDependencies.length === 0) return result;
+  const native = await evaluateNativeProduction(handle, scopedDependencies);
   return normaliseAnalysisResult({
     ...result,
     findings: [
       ...result.findings,
-      ...eligible.map((finding) => ({ ...finding, severity: severityOf(finding) })),
+      ...native.findings.map((finding) => ({ ...finding, severity: severityOf(finding) })),
     ],
     ...(native.evaluations.length ? { nativeEvaluations: native.evaluations } : {}),
   });

@@ -39,7 +39,11 @@ export async function evaluateNativeProduction(
   if (!candidates.length) return { findings, evaluations };
   const snapshot = await mintNativeSnapshot(repository);
   for (const { dependency, rule } of candidates) {
-    const identity = { ruleId: rule.id, dependency: dependency.name };
+    const identity = {
+      ruleId: rule.id,
+      dependency: dependency.name,
+      declaringManifest: { ecosystem: dependency.project.ecosystem, path: dependency.declaredIn },
+    };
     if (snapshot.status !== "verified") {
       evaluations.push({
         ...identity,
