@@ -169,16 +169,14 @@ async function optionsCoverCall(
       return false;
     const gap = text.slice(cursor, span.start - call.start);
     if (!(i === 0 ? /^\s*$/u : /^\s*,\s*$/u).test(gap)) return false;
-    if (kind === "cancellation-propagation" && i > 0) {
+    if (kind === "cancellation-propagation") {
       const option = await read(span);
-      // Only a literal object without spreads/computed keys is inspectable
-      // without resolving an identifier or an opaque expression.
-      if (
-        !option ||
-        !/^\{[\s\S]*\}$/u.test(option.trim()) ||
-        /\.\.\.|\[|\]|=>|\bfunction\b/u.test(option)
-      )
-        return false;
+      if (!option) return false;
+      // Any argument can carry an opaque config, including the first.
+      const literal = /^(?:"[^"\\]*"|'[^'\\]*')$/u.test(option.trim());
+      const object =
+        /^\{[\s\S]*\}$/u.test(option.trim()) && !/\.\.\.|\[|\]|=>|\bfunction\b/u.test(option);
+      if (!literal && !object) return false;
     }
     cursor = span.end - call.start;
   }
