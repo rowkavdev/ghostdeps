@@ -70,6 +70,19 @@ function patternMatches(kind: PatternKind, patternId: string, node: ts.Node): bo
   const value = chain(node);
   return value === id || value.endsWith(`.${id}`);
 }
+function calleeHasToken(expression: ts.Expression, token: string): boolean {
+  if (ts.isIdentifier(expression)) return expression.text === token;
+  if (ts.isPropertyAccessExpression(expression))
+    return expression.name.text === token || calleeHasToken(expression.expression, token);
+  if (ts.isElementAccessExpression(expression))
+    return Boolean(
+      (expression.argumentExpression &&
+        ts.isStringLiteral(expression.argumentExpression) &&
+        expression.argumentExpression.text === token) ||
+      calleeHasToken(expression.expression, token),
+    );
+  return false;
+}
 function idFor(patternId: string): string {
   return patternId.replace(/\[\*\]/g, "").replace(/\(.*$/, "");
 }
@@ -114,11 +127,11 @@ function isUnresolved(kind: PatternKind, patternId: string, node: ts.Node): stri
     if (
       hadComputed &&
       (rendered.includes("interceptors") ||
-        node.getText().includes("interceptors") ||
+        calleeHasToken(node.expression, "interceptors") ||
         (wanted.startsWith("interceptors.") &&
           ts.isPropertyAccessExpression(node.expression) &&
           node.expression.name.text === "use" &&
-          node.getText().includes("request")))
+          calleeHasToken(node.expression, "request")))
     )
       return `computed member access may be incompatible pattern ${wanted}`;
   }
