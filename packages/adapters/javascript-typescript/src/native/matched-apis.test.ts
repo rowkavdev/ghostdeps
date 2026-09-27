@@ -354,7 +354,10 @@ test("function-local const alias binds in its scope (review repro 3)", async () 
   const ref = scan.references.find((r) => r.resolution === "alias");
   assert.ok(ref, "nested alias use must be cited, not dropped");
   assert.equal(ref!.callTarget, "axios.get");
-  assert.equal(ref!.lineage[0]!.kind, "alias");
+  assert.deepEqual(
+    ref!.lineage.map((h) => h.kind),
+    ["import", "alias"],
+  );
   assert.equal(scan.references.filter((r) => r.resolution === "wrapper").length, 1);
 });
 
@@ -777,6 +780,149 @@ test("lineage chain carries import, alias and call edges with exact UTF-8 tokens
   assert.equal(text(entry!.specifierSpan!), '"axios"');
   assert.equal(text(alias!.fromSpan), "g");
   assert.equal(text(alias!.toSpan), "a");
+});
+
+test("#473 local alias: full hop lineage and cited chain, namespace and member forms", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "const client = axios;",
+      "const post = axios.post;",
+      'client.get("/x");',
+      'post("/y", { a: 1 });',
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.limitations.length, 0);
+  assert.equal(scan.references.length, 2);
+  const [namespace, member] = scan.references;
+  for (const ref of [namespace!, member!]) {
+    assert.equal(ref.resolution, "alias");
+    assert.equal(ref.arguments, "inspected");
+    assert.equal(ref.options, "inspected");
+    assert.deepEqual(
+      ref.lineage.map((h) => h.kind),
+      ["import", "alias"],
+      "the alias use carries the package-entry hop, not a bare alias hop",
+    );
+    assert.deepEqual(
+      ref.lineageChain!.links.map((l) => l.kind),
+      ["import", "alias", "call"],
+    );
+    assertChainTokens(files, ref);
+  }
+  assert.equal(namespace!.callTarget, "axios.get");
+  assert.equal(member!.callTarget, "axios.post");
+  const aliasLink = member!.lineageChain!.links[1]!;
+  assert.ok(aliasLink.memberSpan, "member alias cites the member token");
+  const bytes = Buffer.from(files["src/a.ts"], "utf8");
+  assert.equal(
+    bytes.subarray(aliasLink.memberSpan!.start, aliasLink.memberSpan!.end).toString("utf8"),
+    "post",
+  );
+});
+
+test("#473 simple wrapper: call sites resolve with declaration and call-site links cited", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function client(url: string) {",
+      "  return axios.get(url);",
+      "}",
+      "const poster = (url: string, body = { a: 1 }) => axios.post(url, body);",
+      'const first = await client("/x");',
+      'const second = await poster("/y");',
+      "void first;",
+      "void second;",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.limitations.length, 0);
+  assert.ok(
+    !scan.references.some((r) => r.resolution === "direct"),
+    "the inner calls of simple wrappers are accounted for by their call-site records",
+  );
+  assert.equal(scan.references.length, 2, "one wrapper record per call site");
+  const [fn, arrow] = scan.references;
+  for (const ref of [fn!, arrow!]) {
+    assert.equal(ref.resolution, "wrapper");
+    assert.equal(ref.arguments, "inspected");
+    assert.equal(ref.options, "inspected");
+    assert.deepEqual(
+      ref.lineageChain!.links.map((l) => l.kind),
+      ["import", "call", "wrapper", "call"],
+      "wrapper declaration and call-site links both cited",
+    );
+    assertChainTokens(files, ref);
+  }
+  assert.equal(fn!.callTarget, "axios.get");
+  assert.equal(fn!.binding, "client");
+  assert.equal(arrow!.callTarget, "axios.post");
+  assert.equal(arrow!.binding, "poster");
+});
+
+test("#473 rest pass-through and uncalled simple wrappers", async () => {
+  const files = {
+    "src/a.ts": [
+      'import axios from "axios";',
+      "function client(...args: [string]) {",
+      "  return axios.get(...args);",
+      "}",
+      "function neverCalled(url: string) {",
+      "  return axios.post(url);",
+      "}",
+      'const res = await client("/x");',
+      "void res;",
+    ].join("\n"),
+  };
+  const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+  assert.equal(scan.references.length, 1, "an uncalled simple wrapper records no use");
+  const ref = scan.references[0]!;
+  assert.equal(ref.resolution, "wrapper");
+  assert.equal(ref.callTarget, "axios.get");
+  assertChainTokens(files, ref);
+});
+
+test("#473 non-exact wrappers stay fail-closed: opaque mapping, conditional body, escape", async () => {
+  const cases = [
+    // Parameter mapped through a computation: opaque.
+    'import axios from "axios"; function client(url: string) { return axios.get(`${url}/x`); } client("/a");',
+    // Conditional body: not the exact single-return form.
+    'import axios from "axios"; function client(url: string) { if (url) return axios.get(url); return axios.get("/d"); } client("/a");',
+    // The wrapper name escapes a direct call site.
+    'import axios from "axios"; function client(url: string) { return axios.get(url); } export { client }; client("/a");',
+  ];
+  for (const source of cases) {
+    const files = { "src/a.ts": source };
+    const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+    const inner = scan.references.filter(
+      (r) => r.resolution === "direct" || r.resolution === "indirect-unknown",
+    );
+    assert.ok(
+      inner.some((r) => r.arguments === "unknown" || r.resolution === "indirect-unknown"),
+      `inner call of a non-exact wrapper stays unresolved: ${source}`,
+    );
+    const sites = scan.references.filter((r) => r.resolution === "wrapper");
+    assert.ok(sites.length >= 1, `wrapper call site still cited: ${source}`);
+  }
+});
+
+test("#473 mutated alias stays fail-closed: member write, reassignment, import-name write", async () => {
+  const cases = [
+    'import axios from "axios"; const client = axios; client.get = (url: string) => url; client.get("/x");',
+    'import axios from "axios"; const client = axios; client = axios; client.get("/x");',
+    'import axios from "axios"; axios.defaults = {}; const client = axios; client.get("/x");',
+    'import axios from "axios"; const client = axios; delete client.get; client.get("/x");',
+  ];
+  for (const source of cases) {
+    const files = { "src/a.ts": source };
+    const scan = await findMatchedApiReferences(memoryHandle(files), "axios");
+    const ref = scan.references.find((r) => cited(files, r).includes('"/x"'));
+    assert.ok(ref, `the use must be cited, not dropped: ${source}`);
+    assert.equal(ref!.resolution, "indirect-unknown", source);
+    assert.ok(ref!.note?.includes("written"), source);
+    assert.ok(ref!.lineageChain?.brokenAt, source);
+  }
 });
 
 test("require/destructure and multi-barrel chains cite package entry through use", async () => {
