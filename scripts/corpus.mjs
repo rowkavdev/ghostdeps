@@ -18,9 +18,18 @@
  * validated in full, unknown keys included, before the first checkout.
  * Results also go to $GITHUB_STEP_SUMMARY as a table when it is set.
  *
+ * Golden hygiene (#172 audit): a missing, malformed or stale golden fails
+ * with an actionable message, never a stack trace; goldens and repos.json
+ * must correspond one-to-one; a golden pinned at a different SHA fails as a
+ * moved pin, not an opaque diff. --update is local-only (it refuses under
+ * CI): goldens change only through corpus-touching PRs, never a silent
+ * regen. An unparseable scan result at exit 0 fails the pin, it does not
+ * crash the run.
+ *
  * Usage:
- *   node scripts/corpus.mjs            check mode: diff against goldens
- *   node scripts/corpus.mjs --update   regenerate goldens (ride PR review)
+ *   node scripts/corpus.mjs                     check mode: diff against goldens
+ *   node scripts/corpus.mjs --only chalk,uuid   check a subset (after a fix)
+ *   node scripts/corpus.mjs --update            regenerate goldens (local only; ride PR review)
  *
  * Requires a build first (`pnpm build`): the runner spawns the built CLI and
  * imports core's severity ladder from dist, so severity is computed exactly
@@ -30,7 +39,14 @@
  * or executed, matching the scanner's static-analysis contract (ADR 0004).
  */
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,7 +54,54 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const cacheDir = join(root, ".corpus-cache");
 const config = JSON.parse(readFileSync(join(root, "corpus/repos.json"), "utf8"));
 validateConfig(config);
+// Correspondence, both directions (#172 audit): every golden names a repo in
+// repos.json. A golden no repo claims is a pin nobody checks - fail loudly.
+// (The other direction, a repo with no golden, is caught per-repo below.)
+{
+  const stray = readdirSync(join(root, "corpus/golden"))
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => f.slice(0, -".json".length))
+    .filter((name) => !config.repos.some((r) => r.name === name))
+    .sort();
+  if (stray.length > 0) {
+    for (const name of stray) {
+      console.error(
+        `error: corpus/golden/${name}.json has no repos.json entry - remove the file or add the repo`,
+      );
+    }
+    process.exit(2);
+  }
+}
 const update = process.argv.includes("--update");
+if (update && process.env.CI) {
+  console.error(
+    "error: --update is local-only: goldens change only through corpus-touching PRs (#172), never by a CI regen",
+  );
+  process.exit(2);
+}
+const onlyArg = process.argv.indexOf("--only");
+const only =
+  onlyArg === -1
+    ? undefined
+    : new Set(
+        String(process.argv[onlyArg + 1] ?? "")
+          .split(",")
+          .map((n) => n.trim())
+          .filter(Boolean),
+      );
+if (only !== undefined && only.size === 0) {
+  console.error('error: --only needs a comma-separated repo list, e.g. --only chalk,uuid');
+  process.exit(2);
+}
+if (only !== undefined) {
+  const unknown = [...only].filter((n) => !config.repos.some((r) => r.name === n));
+  if (unknown.length > 0) {
+    console.error(
+      `error: --only names no corpus repo: ${unknown.join(", ")} (have: ${config.repos.map((r) => r.name).join(", ")})`,
+    );
+    process.exit(2);
+  }
+}
 
 const cliPath = join(root, "packages/cli/dist/main.js");
 if (!existsSync(cliPath)) {
@@ -144,6 +207,65 @@ function validateConfig(cfg) {
   }
 }
 
+/**
+ * Load and validate one golden (#172 audit). Every failure mode - missing
+ * file, bad JSON, wrong shape, unknown keys, a pin that moved - comes back
+ * as an actionable message instead of a crash or an opaque diff.
+ */
+function loadGolden(repo, goldenPath) {
+  let raw;
+  try {
+    raw = readFileSync(goldenPath, "utf8");
+  } catch {
+    return {
+      error:
+        `golden corpus/golden/${repo.name}.json is missing - generate it locally with ` +
+        `\`node scripts/corpus.mjs --update --only ${repo.name}\` and ride a corpus PR`,
+    };
+  }
+  let golden;
+  try {
+    golden = JSON.parse(raw);
+  } catch (error) {
+    return {
+      error: `golden corpus/golden/${repo.name}.json is not valid JSON: ${error.message}`,
+    };
+  }
+  if (typeof golden !== "object" || golden === null || Array.isArray(golden)) {
+    return { error: `golden corpus/golden/${repo.name}.json must be an object` };
+  }
+  const errors = [];
+  const KEYS = new Set(["repo", "sha", "expectExit", "findings"]);
+  for (const k of Object.keys(golden)) {
+    if (!KEYS.has(k)) errors.push(`unknown key "${k}"`);
+  }
+  if (golden.repo !== repo.name) {
+    errors.push(`"repo" is ${JSON.stringify(golden.repo)}, expected "${repo.name}"`);
+  }
+  if (golden.sha !== repo.sha) {
+    errors.push(
+      `"sha" is ${golden.sha}, expected ${repo.sha} - the pin moved; regenerate the golden in the same PR`,
+    );
+  }
+  if (typeof golden.expectExit !== "number") errors.push('"expectExit" must be a number');
+  if (!Array.isArray(golden.findings)) {
+    errors.push('"findings" must be an array');
+  } else {
+    const bad = golden.findings.findIndex(
+      (f) =>
+        typeof f?.kind !== "string" ||
+        typeof f?.severity !== "string" ||
+        !(typeof f?.dependency === "string" || f?.dependency === null),
+    );
+    if (bad !== -1) {
+      errors.push(`findings[${bad}] must be { kind: string, severity: string, dependency: string|null }`);
+    }
+  }
+  return errors.length > 0
+    ? { error: `golden corpus/golden/${repo.name}.json: ${errors.join("; ")}` }
+    : { golden };
+}
+
 /** A validated repos.json name list (absent means empty). */
 const nameList = (repo, field) => repo[field] ?? [];
 
@@ -175,6 +297,7 @@ const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 
 let failures = 0;
 for (const repo of config.repos) {
+  if (only !== undefined && !only.has(repo.name)) continue;
   const dir = ensureCheckout(repo);
   let code = 0;
   let stdout;
@@ -189,7 +312,19 @@ for (const repo of config.repos) {
     stdout = error.stdout ?? "";
   }
   const goldenPath = join(root, "corpus/golden", `${repo.name}.json`);
-  const result = code === 0 ? JSON.parse(stdout) : undefined;
+  let result;
+  if (code === 0) {
+    try {
+      result = JSON.parse(stdout);
+    } catch {
+      failures += 1;
+      console.error(
+        `${repo.name}: scan exited 0 but its --json output was not parseable - the CLI contract broke; investigate before touching any golden`,
+      );
+      row("BAD-JSON");
+      continue;
+    }
+  }
   const actual = {
     repo: repo.name,
     sha: repo.sha,
@@ -232,7 +367,14 @@ for (const repo of config.repos) {
     row("updated");
     continue;
   }
-  const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
+  const loaded = loadGolden(repo, goldenPath);
+  if (loaded.error !== undefined) {
+    failures += 1;
+    console.error(`${repo.name}: ${loaded.error}`);
+    row("GOLDEN");
+    continue;
+  }
+  const golden = loaded.golden;
   const want = JSON.stringify({ ...golden, repo: repo.name, sha: repo.sha });
   const got = JSON.stringify(actual);
   if (want === got && violations.length === 0) {
@@ -256,7 +398,9 @@ for (const repo of config.repos) {
   for (const [k, f] of after) {
     if (!before.has(k)) console.error(`  new:     ${f.kind} ${f.severity} ${f.dependency}`);
   }
-  console.error("  If this drift is intended, regenerate: node scripts/corpus.mjs --update");
+  console.error(
+    `  If this drift is intended, regenerate locally: node scripts/corpus.mjs --update --only ${repo.name} (goldens change only through corpus-touching PRs)`,
+  );
 }
 if (process.env.GITHUB_STEP_SUMMARY) {
   const lines = [
