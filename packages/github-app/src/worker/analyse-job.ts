@@ -60,6 +60,15 @@ export interface AnalyseRunOptions {
   /** Present only for PR jobs whose dependency changes were read in full. */
   readonly pullRequestChanges?: readonly DependencyChange[];
   /**
+   * Honour a committed repo-root `.ghostdeps.json` (#354). Set by the worker
+   * only for genuine full scans (jobs with no PR base: pushes, fork/unlinked
+   * re-runs). Never derived from the absence of pullRequestChanges: a
+   * PR-triggered run whose diff could not be read falls back to a
+   * whole-repository analysis without pullRequestChanges, and scoping that
+   * head-only fallback would hide changed fixture paths from the PR contract.
+   */
+  readonly fixtureScope?: boolean;
+  /**
    * Removed and added source lines, set together with pullRequestChanges
    * (#101). Core bounds them and adapters report removed usages, so a PR
    * that removes a dependency's last import gets removed-last-usage.
@@ -128,13 +137,14 @@ export interface AnalysisWorkerOptions {
 export type CheckoutScanOptions = NonNullable<Parameters<typeof FsRepositoryHandle.open>[1]>;
 
 /**
- * Fixture scope (#354) applies to full scans only. A PR analysis compares the
- * head against its base, and the design requires one effective scope on both
- * sides with old/new config disclosure - the PR diff slice, not this one.
- * Scoping only the head checkout would silently reinterpret the comparison.
+ * Fixture scope (#354) applies to full scans only, and only when the worker
+ * says so. A PR analysis compares the head against its base, and the design
+ * requires one effective scope on both sides with old/new config disclosure -
+ * the PR diff slice, not this one. Scoping only the head checkout would
+ * silently reinterpret the comparison, so PR-triggered runs stay unscoped
+ * even when they fall back to a whole-repository analysis.
  */
-export const fixtureScopeEnabled = (run: AnalyseRunOptions): boolean =>
-  run.pullRequestChanges === undefined;
+export const fixtureScopeEnabled = (run: AnalyseRunOptions): boolean => run.fixtureScope === true;
 
 /**
  * Scan the checkout and run core's isolated engine. The scan-completeness
@@ -333,6 +343,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       const run: {
         pullRequestChanges?: readonly DependencyChange[];
         pullRequestSourceChanges?: readonly SourceLineChanges[];
+        fixtureScope?: boolean;
         recommend?: RecommendationPolicy;
         metadata?: PackageMetadataProvider;
       } = {
@@ -343,6 +354,12 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       // moved since, base...head still diffs from the merge base, so the
       // change list is still the PR's own.
       const baseSha = pullRequestBase(job);
+      // Full scans (no PR base: pushes, fork/unlinked re-runs) honour a
+      // committed .ghostdeps.json (#354). PR-triggered runs never do, even
+      // when their diff cannot be read and the fallback below analyses the
+      // whole repository: a head-only scope would hide changed fixture paths
+      // from the PR contract until the base/head diff slice lands.
+      if (baseSha === undefined) run.fixtureScope = true;
       if (baseSha !== undefined) {
         const pr = await pullRequestContext(client, {
           owner: target.owner,
