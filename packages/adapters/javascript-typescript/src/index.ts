@@ -35,9 +35,15 @@ export {
 } from "./native/pattern-inspections.js";
 export type { PatternInspection, PatternKind } from "./native/pattern-inspections.js";
 
-export { inspectSemanticFlows, MAX_SEMANTIC_NODES } from "./native/semantic-inspections.js";
+export {
+  inspectSemanticFlows,
+  MAX_FLOW_LINKS,
+  MAX_SEMANTIC_NODES,
+} from "./native/semantic-inspections.js";
 export type {
+  SemanticFlowBindingTie,
   SemanticFlowInspection,
   SemanticFlowKind,
+  SemanticFlowLink,
   SemanticFlowState,
 } from "./native/semantic-inspections.js";

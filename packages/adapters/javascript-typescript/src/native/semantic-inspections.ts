@@ -15,6 +15,59 @@ import { MAX_SOURCE_BYTES } from "../usage/find-usage.js";
 import { scriptKindFor } from "../usage/scan.js";
 
 export const MAX_SEMANTIC_NODES = 2_000;
+/** Maximum flow links per kind record; citations remain the complete evidence. */
+export const MAX_FLOW_LINKS = 8;
+
+/**
+ * How a flow link's named binding ties back to the matched call through the
+ * 8a lineage chain. Core (10d) reconstructs the tie from the cited spans:
+ *
+ * - "call-result": `declaration` is the variable declarator whose
+ *   initialiser contains the record's call span; `declarationBinding` is the
+ *   binding's name node inside it (e.g. `res` in `res = await axios.get()`).
+ * - "call-site": `declaration` is the record's call span itself and
+ *   `declarationBinding` is the package-local occurrence inside the callee
+ *   span the lineage chain's final call link cites (e.g. `axios` in
+ *   `axios.get()`).
+ * - "call-option": the link's `bindingSpan` sits inside the record's call
+ *   span (the option handoff, e.g. `controller` in
+ *   `signal: controller.signal`) and `declaration` cites the binding's
+ *   origin declaration elsewhere (e.g. the `new AbortController()`
+ *   declarator).
+ *
+ * An unresolved tie names a binding that could not be tied to the call; it
+ * is never a guessed association and never promotes the claim.
+ */
+export type SemanticFlowBindingTie =
+  | {
+      state: "resolved";
+      via: "call-result" | "call-site" | "call-option";
+      /** Declaration span tying the binding to the matched call. */
+      declaration: MatchedApiSpan;
+      /** Occurrence of the binding name inside `declaration`. */
+      declarationBinding: MatchedApiSpan;
+    }
+  | { state: "unresolved"; reason: string };
+
+/**
+ * One typed link between a semantic flow claim and the local binding it
+ * inspects. `span` cites BOTH the flow tokens (`tokenSpan`) and one
+ * occurrence of the named binding (`bindingSpan`); both sub-spans are inside
+ * `span`. Association is proven by this binding resolution, never by token
+ * shape alone.
+ */
+export interface SemanticFlowLink {
+  /** The local binding the claim inspects. */
+  binding: string;
+  /** Byte-exact span containing both `tokenSpan` and `bindingSpan`. */
+  span: MatchedApiSpan;
+  /** Occurrence of `binding` inside `span`; decodes to the binding name. */
+  bindingSpan: MatchedApiSpan;
+  /** Flow tokens inside `span` (e.g. `.status`, `.data`, `catch (error)`). */
+  tokenSpan: MatchedApiSpan;
+  tie: SemanticFlowBindingTie;
+}
+
 export type SemanticFlowKind =
   | "response-handling"
   | "status-check"
@@ -33,6 +86,14 @@ export interface SemanticFlowInspection {
   state: SemanticFlowState;
   /** Exact syntactic evidence supporting the state. */
   citations: readonly MatchedApiSpan[];
+  /**
+   * Binding-resolved flow links: each entry names a local binding the claim
+   * inspects and cites one byte-exact span containing BOTH the flow tokens
+   * and an occurrence of that binding. Links never promote state: an
+   * unresolved tie accompanies an unknown claim and is never association
+   * evidence.
+   */
+  links: readonly SemanticFlowLink[];
   /** What was actually visited, capped per call. Never a completeness claim. */
   explored: readonly MatchedApiSpan[];
   capped: boolean;
@@ -54,12 +115,26 @@ const DIFFERENCES = [
 function difference(kind: SemanticFlowKind): string {
   return DIFFERENCES[kind === "parsed-response" ? 1 : kind === "cancellation-propagation" ? 2 : 0]!;
 }
-function span(file: string, text: string, node: ts.Node): MatchedApiSpan {
+function spanRange(file: string, text: string, start: number, end: number): MatchedApiSpan {
   return {
     file,
-    start: Buffer.byteLength(text.slice(0, node.getStart()), "utf8"),
-    end: Buffer.byteLength(text.slice(0, node.getEnd()), "utf8"),
+    start: Buffer.byteLength(text.slice(0, start), "utf8"),
+    end: Buffer.byteLength(text.slice(0, end), "utf8"),
   };
+}
+function span(file: string, text: string, node: ts.Node): MatchedApiSpan {
+  return spanRange(file, text, node.getStart(), node.getEnd());
+}
+/** The invoked local identifier of a call (`axios` in `axios.get()`), if any. */
+function invokedLocal(node: ts.CallExpression): ts.Identifier | undefined {
+  let expression: ts.Expression = node.expression;
+  for (;;) {
+    if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression))
+      expression = expression.expression;
+    else if (ts.isParenthesizedExpression(expression)) expression = expression.expression;
+    else break;
+  }
+  return ts.isIdentifier(expression) ? expression : undefined;
 }
 function member(node: ts.Node, name: string, property: string): boolean {
   return (
@@ -279,6 +354,24 @@ export async function inspectSemanticFlows(
       };
       type Observation = { state: SemanticFlowState; citations: MatchedApiSpan[]; note?: string };
       const outcomes = new Map<SemanticFlowKind, Observation>();
+      const linksByKind = new Map<SemanticFlowKind, SemanticFlowLink[]>();
+      const addLink = (kind: SemanticFlowKind, flowLink: SemanticFlowLink): void => {
+        if (!text) return;
+        const list = linksByKind.get(kind) ?? [];
+        if (list.length >= MAX_FLOW_LINKS) return;
+        if (
+          list.some(
+            (prior) =>
+              prior.binding === flowLink.binding &&
+              prior.span.start === flowLink.span.start &&
+              prior.span.end === flowLink.span.end &&
+              prior.tie.state === flowLink.tie.state,
+          )
+        )
+          return;
+        list.push(flowLink);
+        linksByKind.set(kind, list);
+      };
       const set = (
         kind: SemanticFlowKind,
         state: SemanticFlowState,
@@ -310,8 +403,35 @@ export async function inspectSemanticFlows(
           value = value.parent;
           add(value);
         }
-        if (ts.isAwaitExpression(value)) set("response-handling", "inspected", value);
-        else if (ts.isReturnStatement(value.parent) || ts.isArrowFunction(value.parent))
+        /** Tie the package local to the call: the lineage chain's call link. */
+        const callSite = ():
+          | { tie: Extract<SemanticFlowBindingTie, { state: "resolved" }>; name: string }
+          | undefined => {
+          const local = invokedLocal(node);
+          return local
+            ? {
+                tie: {
+                  state: "resolved",
+                  via: "call-site",
+                  declaration: span(file, text!, node),
+                  declarationBinding: span(file, text!, local),
+                },
+                name: local.text,
+              }
+            : undefined;
+        };
+        if (ts.isAwaitExpression(value)) {
+          set("response-handling", "inspected", value);
+          const site = callSite();
+          if (site)
+            addLink("response-handling", {
+              binding: site.name,
+              span: span(file, text!, value),
+              bindingSpan: site.tie.declarationBinding,
+              tokenSpan: spanRange(file, text!, value.getStart(), value.expression.getStart()),
+              tie: site.tie,
+            });
+        } else if (ts.isReturnStatement(value.parent) || ts.isArrowFunction(value.parent))
           set("response-handling", "unknown", value, "returned flow escapes local inspection");
         else if (ts.isExpressionStatement(value.parent))
           set("response-handling", "unknown", value, "floating promise has no observed consumer");
@@ -332,6 +452,15 @@ export async function inspectSemanticFlows(
               ? undefined
               : "dynamic response handler not inspected",
           );
+          const site = callSite();
+          if (site)
+            addLink("response-handling", {
+              binding: site.name,
+              span: span(file, text!, thenCall),
+              bindingSpan: site.tie.declarationBinding,
+              tokenSpan: spanRange(file, text!, value.end, value.parent.end),
+              tie: site.tie,
+            });
         }
         let responseName: string | undefined;
         const responseDeclaration = ts.isVariableDeclaration(value.parent)
@@ -341,6 +470,23 @@ export async function inspectSemanticFlows(
           responseName = responseDeclaration.name.text;
           add(responseDeclaration);
         }
+        let responseReassigned = false;
+        /** Tie the response binding to the call: the declarator contains it. */
+        const callResultTie = ():
+          Extract<SemanticFlowBindingTie, { state: "resolved" }> | undefined =>
+          responseDeclaration && ts.isIdentifier(responseDeclaration.name)
+            ? {
+                state: "resolved",
+                via: "call-result",
+                declaration: span(file, text!, responseDeclaration),
+                declarationBinding: span(file, text!, responseDeclaration.name),
+              }
+            : undefined;
+        /** Value-sensitive response tie: reassignment severs call provenance. */
+        const responseTie = (): SemanticFlowBindingTie | undefined =>
+          responseReassigned
+            ? { state: "unresolved", reason: "response binding is reassigned" }
+            : callResultTie();
         // Inspect only the enclosing lexical block. The containing try is
         // separately linked to this call; an unrelated catch cannot supply an
         // error-flow citation. Never use a neighbouring function's flow.
@@ -369,6 +515,22 @@ export async function inspectSemanticFlows(
             if (responseDeclaration && locallyShadows(n, responseDeclaration, responseName)) {
               set("status-check", "unknown", n, "response name is shadowed in a nested scope");
               set("parsed-response", "unknown", n, "response name is shadowed in a nested scope");
+              if (
+                (ts.isPropertyAccessExpression(n.parent) ||
+                  ts.isElementAccessExpression(n.parent)) &&
+                n.parent.expression === n
+              )
+                for (const kind of ["status-check", "parsed-response"] as const)
+                  addLink(kind, {
+                    binding: responseName,
+                    span: span(file, text!, n.parent),
+                    bindingSpan: span(file, text!, n),
+                    tokenSpan: spanRange(file, text!, n.end, n.parent.end),
+                    tie: {
+                      state: "unresolved",
+                      reason: "response name is shadowed in a nested scope",
+                    },
+                  });
             } else if (
               ts.isBinaryExpression(n.parent) &&
               n.parent.left === n &&
@@ -376,6 +538,7 @@ export async function inspectSemanticFlows(
             ) {
               set("status-check", "unknown", n, "response binding is reassigned");
               set("parsed-response", "unknown", n, "response binding is reassigned");
+              responseReassigned = true;
             } else if (
               (ts.isPropertyAccessExpression(n.parent) || ts.isElementAccessExpression(n.parent)) &&
               n.parent.expression === n
@@ -391,23 +554,58 @@ export async function inspectSemanticFlows(
                   (ts.isIfStatement(test) || ts.isConditionalExpression(test)) &&
                   access.pos >= (ts.isIfStatement(test) ? test.expression : test.condition).pos &&
                   access.end <= (ts.isIfStatement(test) ? test.expression : test.condition).end
-                )
-                  set(
-                    "status-check",
-                    "inspected",
-                    ts.isIfStatement(test) ? test.expression : test.condition,
-                  );
-                else
+                ) {
+                  const condition = ts.isIfStatement(test) ? test.expression : test.condition;
+                  set("status-check", "inspected", condition);
+                  const tie = responseTie();
+                  if (tie)
+                    addLink("status-check", {
+                      binding: responseName,
+                      span: span(file, text!, condition),
+                      bindingSpan: span(file, text!, n),
+                      tokenSpan: spanRange(file, text!, access.expression.end, access.end),
+                      tie,
+                    });
+                } else {
                   set("status-check", "unknown", access, "status read is not a checked condition");
-              } else if (member(access, responseName, "data"))
+                  const tie = responseTie();
+                  if (tie)
+                    addLink("status-check", {
+                      binding: responseName,
+                      span: span(file, text!, access),
+                      bindingSpan: span(file, text!, n),
+                      tokenSpan: spanRange(file, text!, access.expression.end, access.end),
+                      tie,
+                    });
+                }
+              } else if (member(access, responseName, "data")) {
                 set(
                   "parsed-response",
                   "incompatible",
                   access,
                   "Axios response.data requires a parsing decision",
                 );
-              else
+                const tie = responseTie();
+                if (tie)
+                  addLink("parsed-response", {
+                    binding: responseName,
+                    span: span(file, text!, access),
+                    bindingSpan: span(file, text!, n),
+                    tokenSpan: spanRange(file, text!, access.expression.end, access.end),
+                    tie,
+                  });
+              } else {
                 set("parsed-response", "unknown", access, "other response member is unclassified");
+                const tie = responseTie();
+                if (tie)
+                  addLink("parsed-response", {
+                    binding: responseName,
+                    span: span(file, text!, access),
+                    bindingSpan: span(file, text!, n),
+                    tokenSpan: spanRange(file, text!, access.expression.end, access.end),
+                    tie,
+                  });
+              }
             } else if (!ts.isVariableDeclaration(n.parent)) {
               set("status-check", "unknown", n, "response value escapes local member inspection");
               set(
@@ -417,6 +615,32 @@ export async function inspectSemanticFlows(
                 "response value escapes local member inspection",
               );
             }
+          }
+          // Status-shaped checks on any other binding: present, but never
+          // associated with this call through the lineage chain.
+          if (
+            (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) &&
+            ts.isIdentifier(n.expression) &&
+            n.expression.text !== responseName &&
+            (member(n, n.expression.text, "status") || member(n, n.expression.text, "ok"))
+          ) {
+            const test = ancestor(n, (a) => ts.isIfStatement(a) || ts.isConditionalExpression(a));
+            if (
+              test &&
+              (ts.isIfStatement(test) || ts.isConditionalExpression(test)) &&
+              n.pos >= (ts.isIfStatement(test) ? test.expression : test.condition).pos &&
+              n.end <= (ts.isIfStatement(test) ? test.expression : test.condition).end
+            )
+              addLink("status-check", {
+                binding: n.expression.text,
+                span: span(file, text!, ts.isIfStatement(test) ? test.expression : test.condition),
+                bindingSpan: span(file, text!, n.expression),
+                tokenSpan: spanRange(file, text!, n.expression.end, n.end),
+                tie: {
+                  state: "unresolved",
+                  reason: `binding "${n.expression.text}" does not resolve to the matched call through the lineage chain`,
+                },
+              });
           }
           if (
             ts.isCatchClause(n) &&
@@ -430,9 +654,17 @@ export async function inspectSemanticFlows(
               if (
                 (member(child, errorName, "code") || member(child, errorName, "response")) &&
                 locallyShadows(child, n.variableDeclaration!, errorName)
-              )
+              ) {
                 set("error-handling", "unknown", child, "catch binding is shadowed");
-              else if (member(child, errorName, "code") || member(child, errorName, "response"))
+                if (ts.isPropertyAccessExpression(child) || ts.isElementAccessExpression(child))
+                  addLink("error-handling", {
+                    binding: errorName,
+                    span: span(file, text!, child),
+                    bindingSpan: span(file, text!, child.expression),
+                    tokenSpan: spanRange(file, text!, child.expression.end, child.end),
+                    tie: { state: "unresolved", reason: "catch binding is shadowed" },
+                  });
+              } else if (member(child, errorName, "code") || member(child, errorName, "response"))
                 set(
                   "error-handling",
                   "inspected",
@@ -443,6 +675,22 @@ export async function inspectSemanticFlows(
             };
             check(n.block);
             if (!outcomes.has("error-handling")) set("error-handling", "inspected", n);
+            // The try/catch region and the awaited binding inside it.
+            const result = responseName ? callResultTie() : undefined;
+            const site = result ? undefined : callSite();
+            const tie = result ?? site?.tie;
+            const binding = result && responseName ? responseName : site?.name;
+            if (tie && binding)
+              addLink("error-handling", {
+                binding,
+                span: span(file, text!, containingTry),
+                bindingSpan:
+                  result && responseDeclaration && ts.isIdentifier(responseDeclaration.name)
+                    ? span(file, text!, responseDeclaration.name)
+                    : tie.declarationBinding,
+                tokenSpan: spanRange(file, text!, n.getStart(), n.block.getStart()),
+                tie,
+              });
           }
           if (
             ts.isPropertyAssignment(n) &&
@@ -465,14 +713,47 @@ export async function inspectSemanticFlows(
                 set("cancellation-propagation", "inspected", n);
                 // The constructor citation is as essential as the option site.
                 outcomes.get("cancellation-propagation")!.citations.push(span(file, text, origin));
-              } else
+                addLink("cancellation-propagation", {
+                  binding: n.initializer.expression.text,
+                  span: span(file, text!, n),
+                  bindingSpan: span(file, text!, n.initializer.expression),
+                  tokenSpan: span(file, text!, n.name),
+                  tie: {
+                    state: "resolved",
+                    via: "call-option",
+                    declaration: span(file, text!, origin),
+                    declarationBinding: span(file, text!, origin.name),
+                  },
+                });
+              } else {
                 set(
                   "cancellation-propagation",
                   "unknown",
                   n,
                   "AbortController origin not established",
                 );
-            } else set("cancellation-propagation", "unknown", n, "signal origin not resolved");
+                addLink("cancellation-propagation", {
+                  binding: n.initializer.expression.text,
+                  span: span(file, text!, n),
+                  bindingSpan: span(file, text!, n.initializer.expression),
+                  tokenSpan: span(file, text!, n.name),
+                  tie: {
+                    state: "unresolved",
+                    reason: "AbortController origin not established",
+                  },
+                });
+              }
+            } else {
+              set("cancellation-propagation", "unknown", n, "signal origin not resolved");
+              if (ts.isIdentifier(n.initializer))
+                addLink("cancellation-propagation", {
+                  binding: n.initializer.text,
+                  span: span(file, text!, n),
+                  bindingSpan: span(file, text!, n.initializer),
+                  tokenSpan: span(file, text!, n.name),
+                  tie: { state: "unresolved", reason: "signal origin not resolved" },
+                });
+            }
           }
           if (n !== node && ts.isFunctionLike(n)) {
             // A closure may consume the response later. A parse-only walk
@@ -507,6 +788,7 @@ export async function inspectSemanticFlows(
           call,
           lineage,
           ...(ref.lineageChain ? { lineageChain: ref.lineageChain } : {}),
+          links: linksByKind.get(kind) ?? [],
           state: !node || capped ? "unknown" : (outcome?.state ?? "unknown"),
           citations: outcome?.citations ?? [call],
           explored,
