@@ -727,3 +727,13 @@ test("computed interceptor uncertainty requires the expected terminal method", a
   );
   assert.equal(ruledOut!.state, "not-observed");
 });
+
+test("computed interceptor uncertainty ignores arguments and comments for matching", async () => {
+  const { inspectIncompatiblePatterns } = await import("./pattern-inspections.js");
+  const pattern = [{ patternId: "interceptors.request.use", kind: "member-call" as const }];
+  for (const text of ['other[x].run("interceptors");', "other[x].run(/* interceptors */);"]) {
+    const [record] = await inspectIncompatiblePatterns(memoryHandle({ "src/a.ts": text }), pattern);
+    assert.equal(record!.state, "not-observed");
+    assert.deepEqual(record!.uninspectable, []);
+  }
+});
