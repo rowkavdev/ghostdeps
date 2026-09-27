@@ -60,7 +60,9 @@ function flow(
     kind,
     call,
     lineage: [span('import axios from "axios"')],
-    state: "inspected",
+    state: "inspected-observed",
+    links: [],
+    linksCapped: false,
     citations: [citation],
     explored: [call, citation],
     capped: false,
@@ -80,14 +82,14 @@ async function run(records: NativeFlowInspection[]) {
   );
 }
 describe("native semantic pillar (#450)", () => {
-  it("carries cited response/status inspection but blocks unknown error and incompatible parsed response", async () => {
+  it("carries cited response/status inspection but blocks unresolved flows", async () => {
     const records = allKinds.map((k) =>
       flow(
         k,
         k === "error-handling"
           ? { state: "unknown" }
           : k === "parsed-response"
-            ? { state: "incompatible" }
+            ? { state: "unknown", note: "response parsing unresolved" }
             : {},
       ),
     );
@@ -96,10 +98,9 @@ describe("native semantic pillar (#450)", () => {
     assert.equal(result.lineageVerification, "adapter-asserted");
     assert.equal(result.checks.length, 3);
     assert.equal(result.checks[0]?.state, "unknown");
-    assert.equal(result.checks[1]?.state, "incompatible");
-    assert.equal(
-      result.blocking.some((b) => b.reason === "incompatible"),
-      true,
+    assert.equal(result.checks[1]?.state, "unknown");
+    assert.ok(
+      result.blocking.some((b) => b.reason === "unknown" || b.reason === "association-unresolved"),
     );
   });
   it("missing or capped explored sets block despite inspected labels", async () => {
@@ -148,6 +149,241 @@ describe("native semantic pillar (#450)", () => {
         true,
       );
     }
+  });
+  it("validates a cited status tie against a package-entry chain and fails closed on falsification", async () => {
+    const imported = span('import axios from "axios"');
+    const local = span("axios");
+    const specifier = span('"axios"');
+    const callee = { ...call, end: call.start + Buffer.byteLength("axios.get") };
+    const chain = {
+      links: [
+        {
+          kind: "import" as const,
+          from: "axios",
+          to: "axios",
+          span: imported,
+          fromSpan: local,
+          toSpan: local,
+          specifierSpan: specifier,
+        },
+        {
+          kind: "call" as const,
+          from: "axios",
+          to: "get",
+          span: call,
+          fromSpan: callee,
+          toSpan: callee,
+        },
+      ],
+    };
+    const condition = span("response.status");
+    const binding = { ...condition, end: condition.start + Buffer.byteLength("response") };
+    const token = { ...condition, start: binding.end };
+    const declaration = span('response = await axios.get("/x")');
+    const declarationBinding = {
+      ...declaration,
+      end: declaration.start + Buffer.byteLength("response"),
+    };
+    const linked = flow("status-check", {
+      lineageChain: chain,
+      linksCapped: false,
+      links: [
+        {
+          binding: "response",
+          span: condition,
+          bindingSpan: binding,
+          tokenSpan: token,
+          tie: { state: "resolved", via: "call-result", declaration, declarationBinding },
+        },
+      ],
+    });
+    const rule = {
+      ...AXIOS_FETCH_RULE,
+      semanticDifferences: [AXIOS_FETCH_RULE.semanticDifferences[0]!],
+    };
+    const repository = repo();
+    const snapshot = await mintNativeSnapshot(repository);
+    assert.equal(snapshot.status, "verified");
+    const base = [
+      flow("response-handling", {
+        lineageChain: chain,
+        linksCapped: false,
+        links: [
+          {
+            binding: "axios",
+            span: span('await axios.get("/x")'),
+            bindingSpan: { ...call, end: call.start + 5 },
+            tokenSpan: { ...call, start: call.start - 6, end: call.start },
+            tie: {
+              state: "resolved",
+              via: "call-site",
+              declaration: call,
+              declarationBinding: { ...call, end: call.start + 5 },
+            },
+          },
+        ],
+      }),
+      linked,
+    ];
+    const check = (records: NativeFlowInspection[]) =>
+      collectNativeSemanticEvidence(repository, rule, snapshot.snapshotSha256, [call], records);
+    const noErrorKind = await check(base);
+    assert.equal(noErrorKind.status, "blocked"); // missing mapped error-handling record
+    assert.equal(noErrorKind.blocking[0]?.reason, "missing-flow");
+    assert.equal(
+      noErrorKind.blocking.some((b) => b.reason === "association-unresolved"),
+      false,
+    );
+    for (const bad of [
+      { ...linked, links: [{ ...linked.links![0]!, binding: "other" }] },
+      { ...linked, links: [{ ...linked.links![0]!, tokenSpan: span("response.data") }] },
+      { ...linked, linksCapped: true },
+      {
+        ...linked,
+        links: [
+          { ...linked.links![0]!, tie: { state: "unresolved" as const, reason: "shadowed" } },
+        ],
+      },
+    ]) {
+      const outcome = await check([
+        base[0]!,
+        bad,
+        flow("error-handling", { state: "unknown", note: "not inspected" }),
+      ]);
+      assert.equal(outcome.status, "blocked");
+      assert.equal(outcome.lineageVerification, "adapter-asserted");
+      assert.ok(
+        outcome.blocking.some((b) => b.reason !== "missing-flow"),
+        JSON.stringify(outcome.blocking),
+      );
+    }
+  });
+  it("upgrades fully linked observed flows and bounded absent kinds", async () => {
+    const importSite = span('import axios from "axios"');
+    const local = span("axios");
+    const callee = { ...call, end: call.start + Buffer.byteLength("axios.get") };
+    const chain = {
+      links: [
+        {
+          kind: "import" as const,
+          from: "axios",
+          to: "axios",
+          span: importSite,
+          fromSpan: local,
+          toSpan: local,
+          specifierSpan: span('"axios"'),
+        },
+        {
+          kind: "call" as const,
+          from: "axios",
+          to: "get",
+          span: call,
+          fromSpan: callee,
+          toSpan: callee,
+        },
+      ],
+    };
+    const declaration = span('response = await axios.get("/x")');
+    const declarationBinding = { ...declaration, end: declaration.start + 8 };
+    const responseLink = (kind: "status-check" | "parsed-response") => {
+      const site = span(kind === "status-check" ? "response.status" : "response.data");
+      const bindingSpan = { ...site, end: site.start + 8 };
+      return {
+        binding: "response",
+        span: site,
+        bindingSpan,
+        tokenSpan: { ...site, start: bindingSpan.end },
+        tie: {
+          state: "resolved" as const,
+          via: "call-result" as const,
+          declaration,
+          declarationBinding,
+        },
+      };
+    };
+    const awaited = span('await axios.get("/x")');
+    const callBinding = { ...call, end: call.start + 5 };
+    const scope = span(
+      '{ const response = await axios.get("/x"); if (response.status) throw Error(); return response.data; }',
+    );
+    const argument = span('"/x"');
+    const negative = { scope, options: [argument], inspected: [call, scope] };
+    const absent = (kind: "error-handling" | "cancellation-propagation"): NativeFlowInspection =>
+      flow(kind, {
+        state: "inspected-absent",
+        lineageChain: chain,
+        negativeProof: negative,
+        citations: [scope, argument],
+        explored: [call, scope],
+        links: [],
+        linksCapped: false,
+      });
+    const records = [
+      flow("response-handling", {
+        lineageChain: chain,
+        linksCapped: false,
+        links: [
+          {
+            binding: "axios",
+            span: awaited,
+            bindingSpan: callBinding,
+            tokenSpan: { ...awaited, end: call.start },
+            tie: {
+              state: "resolved",
+              via: "call-site",
+              declaration: call,
+              declarationBinding: callBinding,
+            },
+          },
+        ],
+      }),
+      flow("status-check", {
+        lineageChain: chain,
+        linksCapped: false,
+        links: [responseLink("status-check")],
+      }),
+      flow("parsed-response", {
+        lineageChain: chain,
+        linksCapped: false,
+        links: [responseLink("parsed-response")],
+      }),
+      absent("error-handling"),
+      absent("cancellation-propagation"),
+    ];
+    const result = await run(records);
+    assert.equal(result.status, "pass", JSON.stringify(result.blocking));
+    assert.equal(result.lineageVerification, "core-reconstructed");
+    assert.deepEqual(
+      result.checks.map((c) => c.state),
+      ["inspected", "inspected", "inspected"],
+    );
+    const truncatedScope = { ...scope, end: call.end + 1 };
+    const truncated = records.map((r) =>
+      r.kind === "cancellation-propagation"
+        ? {
+            ...r,
+            citations: [truncatedScope, argument],
+            explored: [call, truncatedScope],
+            negativeProof: {
+              scope: truncatedScope,
+              options: [argument],
+              inspected: [call, truncatedScope],
+            },
+          }
+        : r,
+    );
+    const truncatedResult = await run(truncated);
+    assert.equal(truncatedResult.status, "blocked");
+    assert.ok(truncatedResult.blocking.some((b) => b.reason === "absence-unreconstructed"));
+    const forged = records.map((r) =>
+      r.kind === "cancellation-propagation"
+        ? { ...r, negativeProof: { ...negative, options: [] } }
+        : r,
+    );
+    const refused = await run(forged);
+    assert.equal(refused.status, "blocked");
+    assert.equal(refused.lineageVerification, "adapter-asserted");
+    assert.ok(refused.blocking.some((b) => b.reason === "absence-unreconstructed"));
   });
   it("caller-asserted mismatch blocks, and the real scanner handle reads expected entries", async () => {
     const wrong = await collectNativeSemanticEvidence(
