@@ -23,8 +23,8 @@
  * must correspond one-to-one; a golden pinned at a different SHA fails as a
  * moved pin, not an opaque diff. --update is local-only (it refuses under
  * CI): goldens change only through corpus-touching PRs, never a silent
- * regen. An unparseable scan result at exit 0 fails the pin, it does not
- * crash the run.
+ * regen. A scan result that is unparseable or the wrong shape at exit 0
+ * fails the pin as a broken CLI contract; it never crashes the run.
  *
  * Usage:
  *   node scripts/corpus.mjs                     check mode: diff against goldens
@@ -48,6 +48,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { parseScanOutput } from "./corpus-scan-output.mjs";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -90,7 +91,7 @@ const only =
           .filter(Boolean),
       );
 if (only !== undefined && only.size === 0) {
-  console.error('error: --only needs a comma-separated repo list, e.g. --only chalk,uuid');
+  console.error("error: --only needs a comma-separated repo list, e.g. --only chalk,uuid");
   process.exit(2);
 }
 if (only !== undefined) {
@@ -258,7 +259,9 @@ function loadGolden(repo, goldenPath) {
         !(typeof f?.dependency === "string" || f?.dependency === null),
     );
     if (bad !== -1) {
-      errors.push(`findings[${bad}] must be { kind: string, severity: string, dependency: string|null }`);
+      errors.push(
+        `findings[${bad}] must be { kind: string, severity: string, dependency: string|null }`,
+      );
     }
   }
   return errors.length > 0
@@ -312,31 +315,22 @@ for (const repo of config.repos) {
     stdout = error.stdout ?? "";
   }
   const goldenPath = join(root, "corpus/golden", `${repo.name}.json`);
-  let result;
-  if (code === 0) {
-    try {
-      result = JSON.parse(stdout);
-    } catch {
-      failures += 1;
-      console.error(
-        `${repo.name}: scan exited 0 but its --json output was not parseable - the CLI contract broke; investigate before touching any golden`,
-      );
-      row("BAD-JSON");
-      continue;
-    }
-  }
+  const parsed = parseScanOutput(code, stdout);
+  const result = parsed.result;
   const actual = {
     repo: repo.name,
     sha: repo.sha,
     expectExit: code,
-    findings: result ? findingSet(result) : [],
+    findings: result === undefined ? [] : findingSet(result),
   };
   const declared = new Set(
     (Array.isArray(result?.dependencies) ? result.dependencies : [])
       .map((d) => d?.name)
       .filter((n) => typeof n === "string"),
   );
-  const violations = invariantViolations(repo, actual.findings, declared);
+  // A broken CLI contract is reported as such; invariants do not pile on.
+  const violations =
+    parsed.error === undefined ? invariantViolations(repo, actual.findings, declared) : [];
   const row = (status) =>
     summary.push({
       repo: repo.name,
@@ -352,6 +346,12 @@ for (const repo of config.repos) {
             ? "hold"
             : violations.join("; "),
     });
+  if (parsed.error !== undefined) {
+    failures += 1;
+    console.error(`${repo.name}: ${parsed.error}`);
+    row("BAD-JSON");
+    continue;
+  }
   for (const v of violations) console.error(`${repo.name}: INVARIANT at ${repo.sha}: ${v}`);
   if (update) {
     if (violations.length > 0) {
