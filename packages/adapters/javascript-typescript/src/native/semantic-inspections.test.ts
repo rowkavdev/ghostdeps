@@ -125,3 +125,15 @@ test("import and function parameter shadows cannot prove platform constructor", 
     assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "unknown");
   }
 });
+test("reflective mutation of controller signal blocks positive cancellation provenance", async () => {
+  const records = await scan(
+    'import axios from "axios"; const controller = new AbortController(); Object.defineProperty(controller,"signal",{value:"fake"}); axios.get("/x", {signal:controller.signal});',
+  );
+  assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "unknown");
+});
+test("alias of controller may mutate instance, so cancellation remains unknown", async () => {
+  const records = await scan(
+    'import axios from "axios"; const controller = new AbortController(); const alias = controller; alias.signal = "fake"; axios.get("/x", {signal:controller.signal});',
+  );
+  assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "unknown");
+});

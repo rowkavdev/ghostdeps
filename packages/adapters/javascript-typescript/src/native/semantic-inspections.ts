@@ -154,6 +154,32 @@ function platformConstructorCandidate(site: ts.Node): boolean {
   visit(file);
   return candidate;
 }
+/** Any other use may leak or mutate the instance, including aliases and
+ * reflective calls. We cannot establish object integrity from parse-only AST;
+ * conservatively reject the positive observation instead of trying to
+ * enumerate mutation syntax.
+ */
+function isolatedController(
+  declaration: ts.VariableDeclaration,
+  signalAccess: ts.PropertyAccessExpression,
+): boolean {
+  if (!ts.isIdentifier(declaration.name) || !ts.isIdentifier(signalAccess.expression)) return false;
+  const name = declaration.name.text;
+  let isolated = true;
+  const visit = (node: ts.Node): void => {
+    if (!isolated) return;
+    if (
+      ts.isIdentifier(node) &&
+      node.text === name &&
+      node !== declaration.name &&
+      node !== signalAccess.expression
+    )
+      isolated = false;
+    ts.forEachChild(node, visit);
+  };
+  visit(declaration.getSourceFile());
+  return isolated;
+}
 /** Only this narrowly traced constructor proves the provenance of a signal. */
 function controllerOrigin(use: ts.Node, name: string): ts.VariableDeclaration | undefined {
   for (let scope: ts.Node | undefined = use.parent; scope; scope = scope.parent) {
@@ -410,7 +436,7 @@ export async function inspectSemanticFlows(
               n.initializer.name.text === "signal"
             ) {
               const origin = controllerOrigin(n, n.initializer.expression.text);
-              if (origin) {
+              if (origin && isolatedController(origin, n.initializer)) {
                 add(origin);
                 set("cancellation-propagation", "inspected", n);
                 // The constructor citation is as essential as the option site.
