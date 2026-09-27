@@ -6,7 +6,9 @@ import { EXIT_ERROR, EXIT_OK } from "./errors.js";
 
 /** Explicit dry-run, offline and read-only. A refusal is never an empty success. */
 export async function runFixPreview(config: CliConfig, io: Io): Promise<number> {
-  const handle = await FsRepositoryHandle.open(config.path);
+  // Same filtered view as scan (#354): a declared fixture root stays out of
+  // the preview, so a fixture-only package is refused, never half-seen.
+  const handle = await FsRepositoryHandle.open(config.path, { fixtureScope: true });
   const preview = await previewNpmRemoval(handle, defaultAdapters(), config.packageName!);
   if (config.json) {
     io.stdout(JSON.stringify(preview, null, 2));

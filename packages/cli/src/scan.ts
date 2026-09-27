@@ -34,14 +34,21 @@ function engineRuleConfig(policy: PolicyConfig | undefined): { ruleConfig?: Engi
 }
 
 export async function analysePath(path: string, policy?: PolicyConfig): Promise<AnalysisResult> {
-  const handle = await FsRepositoryHandle.open(path);
+  // Repo-config fixture scope (#354): a committed .ghostdeps.json narrows the
+  // analysed view, and the result discloses it. Without a config file the scan
+  // matches the unscoped view and the legacy output stays byte-identical.
+  const handle = await FsRepositoryHandle.open(path, { fixtureScope: true });
   const result = await analyseRepository(handle, {
     ...engineRuleConfig(policy),
     adapters: defaultAdapters(),
     network: { mode: "offline" },
     recommend: createDefaultPolicy(policy ?? {}),
     scanCompleteness: scanCompletenessFindings(handle.scan),
-    ...(handle.scan.scope ? { scanScope: handle.scan.scope } : {}),
+    // Only a real configuration is disclosed: a source "none" record is the
+    // empty scope, so propagating it would change legacy default output.
+    ...(handle.scan.scope && handle.scan.scope.source !== "none"
+      ? { scanScope: handle.scan.scope }
+      : {}),
   });
   const native = await evaluateNativeProduction(handle, result.dependencies);
   const disabled = new Set(policy?.disabled ?? []);
