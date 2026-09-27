@@ -1,5 +1,6 @@
 /** Slice 5b: bounded per-pattern checks. This is a pillar, never a verdict. */
 import { createHash } from "node:crypto";
+import ts from "typescript";
 import type { RepositoryHandle, RepositoryTreeEntry } from "../types/index.js";
 import type { NativeRule } from "./index.js";
 import type {
@@ -24,6 +25,16 @@ export interface NativePatternInspection {
   readonly observations: readonly NativePatternSpan[];
   readonly uninspectable: readonly (NativePatternSpan & { readonly note: string })[];
   readonly state: "observed" | "not-observed" | "uninspectable";
+  readonly whereLooked?: {
+    readonly eligibility: "js-ts-pattern-files-v1";
+    readonly files: readonly {
+      readonly path: string;
+      readonly byteLength: number;
+      readonly sha256: string;
+    }[];
+    readonly calls: readonly NativePatternSpan[];
+    readonly unchecked: readonly { readonly file: string; readonly reason: string }[];
+  };
 }
 export interface NativeIncompatibleBlock {
   readonly patternId: string;
@@ -36,15 +47,15 @@ export interface NativeIncompatibleBlock {
     | "observed";
   readonly detail: string;
 }
-/** Byte/scope validation is core-owned. Pattern semantics and package lineage
- * remain adapter-asserted. A pass cannot seal a producer envelope.
+/** Core re-enumerates bounded syntax against the verified snapshot.
+ * Package binding and broader value semantics are separate pillar concerns.
  */
 export type NativeIncompatibleResult =
   | {
       readonly status: "blocked";
       readonly snapshotSha256: string;
       readonly binding: "caller-asserted" | "verified";
-      readonly lineageVerification: "adapter-asserted";
+      readonly lineageVerification: "adapter-asserted" | "core-reconstructed";
       readonly policy: string | null;
       readonly checks: readonly NativeIncompatibleCheck[];
       readonly blocking: readonly [NativeIncompatibleBlock, ...NativeIncompatibleBlock[]];
@@ -53,7 +64,7 @@ export type NativeIncompatibleResult =
       readonly status: "pass";
       readonly snapshotSha256: string;
       readonly binding: "caller-asserted" | "verified";
-      readonly lineageVerification: "adapter-asserted";
+      readonly lineageVerification: "adapter-asserted" | "core-reconstructed";
       readonly policy: string | null;
       readonly checks: readonly NativeIncompatibleCheck[];
       readonly blocking: readonly [];
@@ -82,6 +93,88 @@ const MAX_BYTES = 8_000_000;
 const MAX_SOURCE_BYTES = 1_000_000;
 const MAX_OBSERVATIONS = 1_000;
 const exact = (values: readonly string[]): boolean => new Set(values).size === values.length;
+
+/** Independently enumerate the bounded syntax class before accepting a negative.
+ * A where-looked list is a citation, not evidence of its own completeness. */
+function syntaxEvidence(
+  file: string,
+  bytes: Uint8Array,
+  kind: NativePatternInspection["kind"],
+  patternId: string,
+): { calls: NativePatternSpan[]; matches: NativePatternSpan[]; uncertain: boolean } | null {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  if (
+    ((sf as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? [])
+      .length
+  )
+    return null;
+  const id = patternId.replace(/\[\*\]/g, "").replace(/\(.*$/, "");
+  const span = (node: ts.Node): NativePatternSpan => ({
+    file,
+    start: Buffer.byteLength(text.slice(0, node.getStart(sf))),
+    end: Buffer.byteLength(text.slice(0, node.getEnd())),
+  });
+  const chain = (node: ts.Node): string => {
+    if (ts.isIdentifier(node)) return node.text;
+    if (ts.isPropertyAccessExpression(node)) return `${chain(node.expression)}.${node.name.text}`;
+    if (
+      ts.isElementAccessExpression(node) &&
+      node.argumentExpression &&
+      ts.isStringLiteral(node.argumentExpression)
+    )
+      return `${chain(node.expression)}.${node.argumentExpression.text}`;
+    return "";
+  };
+  const calls: NativePatternSpan[] = [],
+    matches: NativePatternSpan[] = [];
+  let uncertain = false;
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) calls.push(span(node));
+    if (kind === "member-call" && ts.isCallExpression(node)) {
+      const target = chain(node.expression);
+      if (target === id || target.endsWith(`.${id}`) || target.endsWith(`.${id}.use`))
+        matches.push(span(node));
+      if (ts.isElementAccessExpression(node.expression) && !target) uncertain = true;
+    } else if (kind === "option-key-value") {
+      if (
+        ts.isPropertyAssignment(node) &&
+        (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
+        node.name.text === id
+      )
+        matches.push(span(node));
+      if (
+        ts.isSpreadAssignment(node) ||
+        (ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name)) ||
+        (ts.isShorthandPropertyAssignment(node) && node.name.text === id) ||
+        ts.isGetAccessorDeclaration(node) ||
+        ts.isSetAccessorDeclaration(node)
+      )
+        uncertain = true;
+    } else if (kind === "property-chain") {
+      if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+        const target = chain(node);
+        if (target === id || target.endsWith(`.${id}`)) matches.push(span(node));
+        if (
+          ts.isElementAccessExpression(node) &&
+          (!node.argumentExpression || !ts.isStringLiteral(node.argumentExpression))
+        )
+          uncertain = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return { calls, matches, uncertain };
+}
+const sameSpans = (a: readonly NativePatternSpan[], b: readonly NativePatternSpan[]): boolean =>
+  a.length === b.length &&
+  a.every((s, i) => !!s && s.file === b[i]?.file && s.start === b[i]?.start && s.end === b[i]?.end);
 
 /** Matches the snapshot v1 length-prefix framing: sorted paths and raw bytes
  * are domain-separated. This digest covers eligibility and exact snapshot
@@ -137,6 +230,7 @@ export async function collectNativeIncompatibleEvidence(
   ): void => {
     blocking.push({ patternId, reason, detail });
   };
+  let reconstructed = true;
   const finish = (): NativeIncompatibleResult =>
     blocking.length
       ? {
@@ -152,7 +246,7 @@ export async function collectNativeIncompatibleEvidence(
           status: "pass",
           snapshotSha256,
           binding,
-          lineageVerification: "adapter-asserted",
+          lineageVerification: reconstructed ? "core-reconstructed" : "adapter-asserted",
           policy,
           checks,
           blocking: [],
@@ -311,6 +405,47 @@ export async function collectNativeIncompatibleEvidence(
     const same =
       record.inspectedFiles.length === expected.length &&
       (record.inspectedFiles as string[]).every((file, i) => file === expected[i]);
+    const looked = record.whereLooked;
+    const independentlyScanned = expected.map((file) => {
+      const value = bytes.get(file);
+      return value ? syntaxEvidence(file, value, record.kind, patternId) : null;
+    });
+    const independentlyFound = independentlyScanned.flatMap((scan) => scan?.matches ?? []);
+    const independentlyCalled = independentlyScanned.flatMap((scan) => scan?.calls ?? []);
+    const scopeBound =
+      !!looked &&
+      looked.eligibility === "js-ts-pattern-files-v1" &&
+      Array.isArray(looked.files) &&
+      looked.files.length === fileProof.length &&
+      looked.files.every(
+        (f: { path: string; byteLength: number; sha256: string }, i: number) =>
+          !!f &&
+          f.path === fileProof[i]?.path &&
+          f.byteLength === fileProof[i]?.byteLength &&
+          f.sha256 === fileProof[i]?.sha256,
+      ) &&
+      Array.isArray(looked.unchecked) &&
+      looked.unchecked.length === 0 &&
+      Array.isArray(looked.calls) &&
+      looked.calls.length <= MAX_OBSERVATIONS * MAX_FILES &&
+      independentlyScanned.every((scan) => scan && !scan.uncertain) &&
+      sameSpans(looked.calls, independentlyCalled) &&
+      sameSpans(record.observations, independentlyFound);
+    if (!scopeBound) {
+      reconstructed = false;
+      unchecked(
+        "incomplete-scope",
+        "Where-looked files, calls, or pattern occurrences differ from independent source enumeration",
+      );
+      continue;
+    }
+    const citedCalls = looked.calls.map(proofOf);
+    if (citedCalls.some((call: NativeSourceProof | null) => !call)) {
+      reconstructed = false;
+      unchecked("citation-inconsistent", "Call citation could not be proved from listed bytes");
+      continue;
+    }
+    const citedScope: NativeInspectedScope = { ...scope, calls: citedCalls as NativeSourceProof[] };
     const coverage =
       same &&
       scopeComplete &&
@@ -321,6 +456,7 @@ export async function collectNativeIncompatibleEvidence(
       record.state ===
       (cited.length ? "observed" : unknowns.length ? "uninspectable" : "not-observed");
     if (!stateConsistent || !coverage) {
+      reconstructed = false;
       unchecked(
         "incomplete-scope",
         "Inspection state, eligible files, byte count or cap does not match verified scope",
@@ -331,7 +467,7 @@ export async function collectNativeIncompatibleEvidence(
       checks.push({
         patternId,
         state: "observed",
-        scope,
+        scope: citedScope,
         locations: cited as [NativeSourceProof, ...NativeSourceProof[]],
       });
       block(patternId, "observed", "Incompatible use observed");
@@ -344,7 +480,10 @@ export async function collectNativeIncompatibleEvidence(
       );
       continue;
     }
-    const complete: NativeInspectedScope & { complete: true } = { ...scope, complete: true };
+    const complete: NativeInspectedScope & { complete: true } = {
+      ...citedScope,
+      complete: true,
+    };
     checks.push({
       patternId,
       state: "absent",

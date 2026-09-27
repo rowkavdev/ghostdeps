@@ -24,6 +24,12 @@ export const CLONEDEEP_STRUCTUREDCLONE_RULE: NativeRule = Object.freeze({
     "transfer options",
     "browser target",
   ],
+  // Only literal source names can be checked by the three bounded syntax classes.
+  // Value shapes, browser targets and prototype behavior remain unchecked.
+  incompatiblePatternKinds: {
+    cloneDeepWith: "member-call",
+    "RegExp.lastIndex": "property-chain",
+  } satisfies NonNullable<NativeRule["incompatiblePatternKinds"]>,
   semanticDifferences: [
     "structuredClone throws DataCloneError for functions and other non-cloneable values",
     "structuredClone does not preserve arbitrary prototypes, property descriptors or accessors",
