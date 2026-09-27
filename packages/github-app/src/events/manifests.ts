@@ -92,3 +92,18 @@ export function sourceFilesIn(paths: Iterable<string>): string[] {
   for (const p of paths) if (isAnalysableSource(p)) out.push(p);
   return out;
 }
+
+/** The repository scope config (#354): editing it re-interprets every scan. */
+export const SCOPE_CONFIG_NAME = ".ghostdeps.json";
+
+/** True only for the root-level scope config the scanner reads. */
+export function isScopeConfigFile(path: string): boolean {
+  return path === SCOPE_CONFIG_NAME;
+}
+
+/** The subset of changed paths that are the repository scope config. */
+export function scopeConfigIn(paths: Iterable<string>): string[] {
+  const out: string[] = [];
+  for (const p of paths) if (isScopeConfigFile(p)) out.push(p);
+  return out;
+}

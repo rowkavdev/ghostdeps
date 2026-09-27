@@ -250,15 +250,22 @@ const SCOPE_CONFIG = ".ghostdeps.json";
  * count and up to 10 sorted examples, so a fixture-only pull request still
  * gets a visible check instead of looking like nothing happened.
  */
-export function excludedChangesNote(excluded: {
-  count: number;
-  examples: readonly string[];
-}): string {
+export function excludedChangesNote(
+  excluded: {
+    count: number;
+    examples: readonly string[];
+  },
+  partial = false,
+): string {
   const shown = excluded.examples.join(", ");
   const extra = excluded.count - excluded.examples.length;
   return (
-    `This pull request changes ${excluded.count} file(s) under excluded fixture roots ` +
-    `(${shown}${extra > 0 ? `, +${extra} more` : ""}); they were not analysed.`
+    `This pull request changes ${partial ? "at least " : ""}${excluded.count} file(s) ` +
+    `under excluded fixture roots ` +
+    `(${shown}${extra > 0 ? `, +${extra} more` : ""}); they were not analysed.` +
+    (partial
+      ? " The diff was not read in full, so this count is a minimum, not the pull request's total."
+      : "")
   );
 }
 
@@ -500,7 +507,9 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
           run.pullRequestChanges = [];
           appNotes.push(SKIPPED_REMOVED_USAGE_NOTE);
           if (pr.excludedChanged.count > 0) {
-            appNotes.push(excludedChangesNote(pr.excludedChanged));
+            // The diff was capped or cut, so the parsed count can undercount:
+            // disclose it as a minimum (#354 review).
+            appNotes.push(excludedChangesNote(pr.excludedChanged, true));
           }
           const scopeNote = scopeComparisonNote(
             headScope,

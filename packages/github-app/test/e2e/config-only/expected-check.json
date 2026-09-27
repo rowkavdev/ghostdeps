@@ -1,0 +1,9 @@
+{
+  "status": "completed",
+  "conclusion": "neutral",
+  "output": {
+    "title": "Analysis incomplete - see notes",
+    "summary": "GhostDeps found no dependency findings, but the analysis was incomplete, so this is not a clean result. This check is advisory and never blocks merging.\n\n### Scan scope\n\nsource repo\\-config; config digest 59f624a9ff0e13a8f144ef5aa8d3240c8807f2c5e5183296187fe8f5f8077065; 0 matched roots; 0 files, 0 recognised manifests excluded; built\\-in policy default\\-v1; digest 59f624a9ff0e13a8f144ef5aa8d3240c8807f2c5e5183296187fe8f5f8077065; analysed SHA 6dcb09b5b57875f334f61aebed695e2e4193db5e\n- fixtures: unmatched \\(0 files, 0 recognised manifests excluded\\)\n\n### Notes\n\n- Fixture scope configuration changed in this pull request \\(config digest none \\-\\> 59f624a9ff0e13a8f144ef5aa8d3240c8807f2c5e5183296187fe8f5f8077065; roots added: fixtures; roots removed: none\\); the diff interpretation is incomplete\\.",
+    "annotations": []
+  }
+}
