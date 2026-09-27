@@ -1,0 +1,9 @@
+{
+  "status": "completed",
+  "conclusion": "success",
+  "output": {
+    "title": "No significant dependency issues found.",
+    "summary": "No significant dependency issues found.",
+    "annotations": []
+  }
+}
