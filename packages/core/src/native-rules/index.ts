@@ -90,3 +90,10 @@ export {
   type NativeFlowInspection,
   type NativeSemanticBlock,
 } from "./semantic.js";
+
+export {
+  assembleNativeEnvelope,
+  type NativeSealedEvidence,
+  type NativeEnvelopeResult,
+  type NativePillars,
+} from "./seal.js";
