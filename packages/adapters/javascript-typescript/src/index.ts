@@ -19,6 +19,8 @@ export {
 } from "./native/matched-apis.js";
 export type {
   MatchedApiHop,
+  MatchedApiLineageChain,
+  MatchedApiLineageLink,
   MatchedApiOptions,
   MatchedApiReference,
   MatchedApiResolution,
