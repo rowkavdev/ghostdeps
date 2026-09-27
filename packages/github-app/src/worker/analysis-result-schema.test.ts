@@ -28,6 +28,14 @@ function rejected(value: unknown): void {
   );
 }
 
+// The engine stamps severity; the child wire must omit it and the parent derives it later.
+function wireResult<T extends { findings: { severity?: string }[] }>(result: T): T {
+  return {
+    ...result,
+    findings: result.findings.map(({ severity: _severity, ...finding }) => finding),
+  } as T;
+}
+
 test("accepts complete empty result and optional graph/scope/native surfaces", () => {
   assert.deepEqual(validateAnalysisResult(empty), empty);
   const result = {
@@ -173,7 +181,9 @@ const adapter: EcosystemAdapter = {
 test("accepts a real current engine result, rejects mutation of nested surfaces", async () => {
   const real = await analyseDirectory(fixture, { adapters: [adapter] });
   assert.ok(real.dependencies.length > 0);
-  assert.deepEqual(validateAnalysisResult(JSON.parse(JSON.stringify(real))), real);
+  const wire = wireResult(clone(real));
+  assert.deepEqual(validateAnalysisResult(wire), wire);
+  if (real.findings.length > 0) rejected(clone(real));
   rejected({
     ...real,
     dependencies: real.dependencies.map((dependency) => ({
@@ -186,7 +196,9 @@ test("accepts a real current engine result, rejects mutation of nested surfaces"
 test("accepts full production JavaScript adapter output", async () => {
   const real = await analyseDirectory(fixture, { adapters: [createJavaScriptTypeScriptAdapter()] });
   assert.ok(real.dependencies.length > 0);
-  assert.deepEqual(validateAnalysisResult(JSON.parse(JSON.stringify(real))), real);
+  const wire = wireResult(clone(real));
+  assert.deepEqual(validateAnalysisResult(wire), wire);
+  if (real.findings.length > 0) rejected(clone(real));
 });
 
 test("rejects non-plain and non-data top-level values without crashing", () => {
@@ -347,4 +359,81 @@ test("rejects near-miss enum, boolean-literal and version values", () => {
     ...empty,
     usages: [{ dependency: "x", file: "a", line: 0, form: "static", symbols: [], typeOnly: 1 }],
   });
+});
+
+const FINDING_KINDS = [
+  "unused",
+  "potentially-unnecessary",
+  "duplicate-capability",
+  "maintenance-risk",
+  "footprint",
+  "should-be-dev",
+  "type-only",
+  "info",
+] as const;
+const baseFinding = {
+  kind: "unused",
+  summary: "s",
+  recommendation: "r",
+  evidence: [],
+  confidence: "high",
+  limitations: [],
+  affectedFiles: [],
+};
+const baseNative = {
+  ruleId: "r",
+  dependency: "x",
+  declaringManifest: { ecosystem: "js", path: "package.json" },
+};
+const withFindings = (findings: unknown[]) => ({ ...empty, findings });
+const withNative = (nativeEvaluations: unknown[]) => ({ ...empty, nativeEvaluations });
+
+test("enforces the full native-evaluation status x pillar x reason matrix", () => {
+  const statuses = ["produced", "blocked", "no-verdict"] as const;
+  for (const status of statuses)
+    for (const pillar of [undefined, "p"])
+      for (const reason of [undefined, "r"]) {
+        const entry = {
+          ...baseNative,
+          status,
+          ...(pillar ? { pillar } : {}),
+          ...(reason ? { reason } : {}),
+        };
+        const valid =
+          (status === "produced" && !pillar && !reason) ||
+          (status === "blocked" && pillar && reason) ||
+          (status === "no-verdict" && !pillar && reason);
+        if (valid) assert.ok(validateAnalysisResult(withNative([entry])));
+        else rejected(withNative([entry]));
+      }
+  rejected(withNative([{ ...baseNative, status: "blocked", pillar: 1, reason: "r" }]));
+  rejected(withNative([{ ...baseNative, status: "blocked", pillar: "p", reason: ["r"] }]));
+});
+
+test("enforces the finding-kind x flag matrix for awareness, adapterNote and healthFact", () => {
+  for (const flag of ["awareness", "adapterNote", "healthFact"] as const)
+    for (const kind of FINDING_KINDS) {
+      const finding = { ...baseFinding, kind, [flag]: true };
+      if (kind === "info") assert.ok(validateAnalysisResult(withFindings([finding])));
+      else rejected(withFindings([finding]));
+    }
+  rejected(withFindings([{ ...baseFinding, kind: "unused", awareness: false }]));
+  rejected(withFindings([{ ...baseFinding, kind: "unused", awareness: "true" }]));
+});
+
+test("rejects every child-supplied severity including info and a fake unused info stamp", () => {
+  for (const kind of FINDING_KINDS) {
+    assert.ok(validateAnalysisResult(withFindings([{ ...baseFinding, kind }])));
+    for (const severity of ["critical", "high", "medium", "low", "info"])
+      rejected(withFindings([{ ...baseFinding, kind, severity }]));
+  }
+});
+
+test("rejects the whole result when one entry among many breaks an invariant", () => {
+  const goodNative = { ...baseNative, status: "no-verdict", reason: "r" };
+  const badNative = { ...baseNative, status: "produced", pillar: "p" };
+  rejected(withNative([goodNative, badNative, goodNative]));
+  const goodFinding = { ...baseFinding, kind: "info", awareness: true };
+  const badFinding = { ...baseFinding, kind: "unused", healthFact: true };
+  rejected(withFindings([goodFinding, badFinding]));
 });
