@@ -84,6 +84,7 @@ function components(snapshotSha256: string): NativePillars {
       policy,
       matchedApis: [matched],
       accounted: [],
+      lineageAccounting: [{ referenceIndex: 0, status: "core-reconstructed" }],
       blocking: [],
     },
     incompatible: {
