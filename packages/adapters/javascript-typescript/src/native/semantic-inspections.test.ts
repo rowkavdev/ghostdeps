@@ -70,3 +70,43 @@ test("signal citation in call options; swallowed wrapper result remains unknown"
     "unknown",
   );
 });
+
+test("nested response shadow cannot provide Axios status or data citations", async () => {
+  const records = await scan(
+    'import axios from "axios"; async function f() { const response = await axios.get("/x"); { const response = { status: 500, data: 1 }; if (response.status) console.log(response.data); } }',
+  );
+  assert.equal(records.find((r) => r.kind === "status-check")?.state, "unknown");
+  assert.equal(records.find((r) => r.kind === "parsed-response")?.state, "unknown");
+  const body =
+    'import axios from "axios"; async function f() { const response = await axios.get("/x"); { const response = { status: 500, data: 1 }; if (response.status) console.log(response.data); } }';
+  for (const kind of ["status-check", "parsed-response"]) {
+    const record = records.find((r) => r.kind === kind)!;
+    assert.ok(
+      !record.citations.some(
+        (s) =>
+          Buffer.from(body).subarray(s.start, s.end).toString() === "response.status" ||
+          Buffer.from(body).subarray(s.start, s.end).toString() === "response.data",
+      ),
+    );
+  }
+});
+test("shadowed catch error is not the Axios catch binding", async () => {
+  const records = await scan(
+    'import axios from "axios"; async function f() { try { await axios.get("/x"); } catch (error) { { const error = {code:"FAKE"}; console.log(error.code); } } }',
+  );
+  assert.equal(records.find((r) => r.kind === "error-handling")?.state, "unknown");
+});
+test("fake signal origin does not ground cancellation propagation", async () => {
+  const records = await scan(
+    'import axios from "axios"; const fake = { signal: "bogus" }; axios.get("/x", {signal: fake.signal});',
+  );
+  assert.equal(records.find((r) => r.kind === "cancellation-propagation")?.state, "unknown");
+});
+test("AbortController origin cites both constructor and call option", async () => {
+  const records = await scan(
+    'import axios from "axios"; const controller = new AbortController(); axios.get("/x", {signal: controller.signal});',
+  );
+  const record = records.find((r) => r.kind === "cancellation-propagation")!;
+  assert.equal(record.state, "inspected");
+  assert.equal(record.citations.length, 2);
+});

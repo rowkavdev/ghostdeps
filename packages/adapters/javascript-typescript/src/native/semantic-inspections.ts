@@ -76,6 +76,82 @@ function ancestor(node: ts.Node, predicate: (n: ts.Node) => boolean): ts.Node | 
   }
   return undefined;
 }
+
+/** Conservative lexical shadow check; unsupported destructuring also shadows. */
+function declares(name: ts.BindingName, wanted: string): boolean {
+  if (ts.isIdentifier(name)) return name.text === wanted;
+  return name.elements.some(
+    (element) => !ts.isOmittedExpression(element) && declares(element.name, wanted),
+  );
+}
+function locallyShadows(use: ts.Node, declaration: ts.Node, name: string): boolean {
+  for (
+    let scope: ts.Node | undefined = use.parent;
+    scope && scope !== declaration.parent;
+    scope = scope.parent
+  ) {
+    if (
+      ts.isCatchClause(scope) &&
+      scope.variableDeclaration &&
+      declares(scope.variableDeclaration.name, name)
+    )
+      return true;
+    if (ts.isFunctionLike(scope) && scope.parameters.some((p) => declares(p.name, name)))
+      return true;
+    if (ts.isBlock(scope) || ts.isSourceFile(scope)) {
+      for (const statement of scope.statements) {
+        if (
+          ts.isVariableStatement(statement) &&
+          statement.declarationList.declarations.some(
+            (d) => declares(d.name, name) && d !== declaration,
+          )
+        )
+          return true;
+        if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return true;
+        if (ts.isClassDeclaration(statement) && statement.name?.text === name) return true;
+      }
+    }
+  }
+  return false;
+}
+/** Only this narrowly traced constructor proves the provenance of a signal. */
+function controllerOrigin(use: ts.Node, name: string): ts.VariableDeclaration | undefined {
+  for (let scope: ts.Node | undefined = use.parent; scope; scope = scope.parent) {
+    if (ts.isBlock(scope) || ts.isSourceFile(scope)) {
+      for (const statement of scope.statements) {
+        if (!ts.isVariableStatement(statement)) continue;
+        const declarations = statement.declarationList.declarations.filter((d) =>
+          declares(d.name, name),
+        );
+        if (!declarations.length) continue;
+        if (
+          declarations.length !== 1 ||
+          !(statement.declarationList.flags & ts.NodeFlags.Const) ||
+          statement.pos > use.pos
+        )
+          return undefined;
+        const declaration = declarations[0]!;
+        if (
+          ts.isIdentifier(declaration.name) &&
+          declaration.initializer &&
+          ts.isNewExpression(declaration.initializer) &&
+          ts.isIdentifier(declaration.initializer.expression) &&
+          declaration.initializer.expression.text === "AbortController"
+        )
+          return declaration;
+        return undefined;
+      }
+      // A closer function parameter shadows an outer controller.
+      if (
+        ts.isBlock(scope) &&
+        ts.isFunctionLike(scope.parent) &&
+        scope.parent.parameters.some((p) => declares(p.name, name))
+      )
+        return undefined;
+    }
+  }
+  return undefined;
+}
 /** Trace only local syntax. A flow escaping this boundary remains unknown. */
 export async function inspectSemanticFlows(
   repository: RepositoryHandle,
@@ -173,9 +249,12 @@ export async function inspectSemanticFlows(
         )
           set("response-handling", "inspected", value.parent.parent);
         let responseName: string | undefined;
-        if (ts.isVariableDeclaration(value.parent) && ts.isIdentifier(value.parent.name)) {
-          responseName = value.parent.name.text;
-          add(value.parent);
+        const responseDeclaration = ts.isVariableDeclaration(value.parent)
+          ? value.parent
+          : undefined;
+        if (responseDeclaration && ts.isIdentifier(responseDeclaration.name)) {
+          responseName = responseDeclaration.name.text;
+          add(responseDeclaration);
         }
         // A single lexical block is the bounded exploration unit. Identifiers
         // outside it, reassignments, and unresolvable branches are not followed.
@@ -200,7 +279,10 @@ export async function inspectSemanticFlows(
                 ? value.parent.name
                 : undefined)
           ) {
-            if (
+            if (responseDeclaration && locallyShadows(n, responseDeclaration, responseName)) {
+              set("status-check", "unknown", n, "response name is shadowed in a nested scope");
+              set("parsed-response", "unknown", n, "response name is shadowed in a nested scope");
+            } else if (
               ts.isBinaryExpression(n.parent) &&
               n.parent.left === n &&
               n.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken
@@ -254,7 +336,12 @@ export async function inspectSemanticFlows(
             const errorName = n.variableDeclaration.name.text;
             const check = (child: ts.Node): void => {
               add(child);
-              if (member(child, errorName, "code") || member(child, errorName, "response"))
+              if (
+                (member(child, errorName, "code") || member(child, errorName, "response")) &&
+                locallyShadows(child, n.variableDeclaration!, errorName)
+              )
+                set("error-handling", "unknown", child, "catch binding is shadowed");
+              else if (member(child, errorName, "code") || member(child, errorName, "response"))
                 set(
                   "error-handling",
                   "inspected",
@@ -278,11 +365,23 @@ export async function inspectSemanticFlows(
           ) {
             if (
               ts.isPropertyAccessExpression(n.initializer) &&
+              ts.isIdentifier(n.initializer.expression) &&
               n.initializer.name.text === "signal"
-            )
-              set("cancellation-propagation", "inspected", n);
-            else if (ts.isIdentifier(n.initializer))
-              set("cancellation-propagation", "unknown", n, "signal origin not resolved");
+            ) {
+              const origin = controllerOrigin(n, n.initializer.expression.text);
+              if (origin) {
+                add(origin);
+                set("cancellation-propagation", "inspected", n);
+                // The constructor citation is as essential as the option site.
+                outcomes.get("cancellation-propagation")!.citations.push(span(file, text, origin));
+              } else
+                set(
+                  "cancellation-propagation",
+                  "unknown",
+                  n,
+                  "AbortController origin not established",
+                );
+            } else set("cancellation-propagation", "unknown", n, "signal origin not resolved");
           }
           if (n !== node && ts.isFunctionLike(n)) return; // never infer nested closure flow
           ts.forEachChild(n, visit);
