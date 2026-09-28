@@ -51,6 +51,9 @@ const collect = (dir) => {
 function rewrite(abs) {
   const source = readFileSync(abs, "utf8");
   const parsed = ts.createSourceFile(abs, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const isWorker =
+    path.relative(out, abs).split(path.sep).join("/") ===
+    "dist/internal/core/engine/adapter-worker.js";
   const edits = [];
   const rewriteSpecifier = (literal) => {
     const specifier = literal.text;
@@ -111,7 +114,7 @@ function rewrite(abs) {
         const arg = node.arguments[0];
         if (ts.isStringLiteral(arg)) rewriteSpecifier(arg);
         else if (!(
-          abs.endsWith("/internal/core/engine/adapter-worker.js") &&
+          isWorker &&
           source.slice(node.getStart(parsed), node.getEnd()) === "import(data.specifier)"
         ))
           throw new Error(`nonliteral dynamic module import in ${abs}`);
@@ -120,7 +123,7 @@ function rewrite(abs) {
     ts.forEachChild(node, visit);
   };
   visit(parsed);
-  if (abs.endsWith("/internal/core/engine/adapter-worker.js")) {
+  if (isWorker) {
     const call = "import(data.specifier)";
     if (!source.includes(call) || source.split(call).length !== 2)
       throw new Error("worker import shape changed");
@@ -163,7 +166,7 @@ function rewrite(abs) {
       !ts.isStringLiteral(literal)
     ) {
       const allowedWorker =
-        abs.endsWith("/internal/core/engine/adapter-worker.js") &&
+        isWorker &&
         ts.isCallExpression(literal) &&
         ts.isIdentifier(literal.expression) &&
         literal.expression.text === "resolveTrustedAdapter" &&
