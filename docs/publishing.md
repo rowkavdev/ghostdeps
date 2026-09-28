@@ -5,35 +5,33 @@ is the release process and the reasoning behind the layout.
 
 ## Layout
 
-`scripts/stage-npm.mjs` assembles `.npm-staging/` from a built workspace:
+The release workflow stages one CLI-only tarball with
+`scripts/stage-dist-prototype.mjs` from the built workspace. It copies emitted
+JavaScript into `dist/`, rewrites internal workspace imports to resolved relative
+files, and omits type declarations and unpublished `@ghostdeps/*` dependencies.
+The worker remains a real file and uses fixed adapter-entry wrappers. Rust's
+`tree-sitter-rust` grammar and `web-tree-sitter` runtime/WASM remain vendored to
+avoid the native tree-sitter peer install. `typescript`, `yaml`, and `smol-toml`
+remain published registry dependencies.
 
-- the CLI's compiled `dist/` becomes the package root (`bin.ghostdeps`);
-- the built `@ghostdeps/*` workspace packages are vendored under
-  `node_modules/@ghostdeps/*` (listed in `bundledDependencies`), keeping
-  their names and `exports` so bare-specifier imports resolve exactly as in
-  the workspace;
-- `tree-sitter-rust` and `web-tree-sitter` are vendored too. `tree-sitter-rust`
-  declares a peer on the native `tree-sitter` package, which npm would
-  auto-install and node-gyp-build on every user machine (#50, #63) - only its
-  `.wasm` grammar is needed, so the wasm ships vendored instead;
-- `typescript`, `yaml` and `smol-toml` stay normal registry dependencies,
-  pinned to the versions the adapters declare.
-
-Vendoring instead of esbuild/tsup bundling: the engine spawns workers via
-`new Worker(new URL("./adapter-worker.js", import.meta.url))` and loads
-adapters with dynamic `import(specifier)`, and the Rust adapter resolves its
-grammar with `require.resolve("tree-sitter-rust/tree-sitter-rust.wasm")`.
-All three need real on-disk modules, so single-file bundling is out.
+The tag release packs this stage **once**. It passes that tarball (not a rebuilt
+copy) to clean npm and Bun consumer tests on Ubuntu and Windows, Node 22/24.
+Each consumer checks the tarball hash, scans four ecosystem fixtures, runs the
+isolated worker and Rust parser, and repeats after prune and reinstall. The
+publish job checks the same hash and publishes the tested tarball with npm
+trusted publishing and provenance. A failed consumer test blocks publishing.
 
 ## Cutting a release
 
-1. Land everything on main, green CI.
-2. Tag the next unclaimed version: `git tag v0.1.1 && git push origin v0.1.1`.
-3. The Release workflow builds, tests, stages, prints the tarball contents
-   (`npm pack --dry-run`) and publishes with `--provenance`.
+1. Land everything on main, green CI and green staged-consumer checks.
+2. Tag the next unclaimed version: `git tag v0.1.N && git push origin v0.1.N`.
+3. The Release workflow builds, tests, packs one staged tarball, runs the
+   consumer matrix and publishes the exact tarball with `--provenance`.
 
-`workflow_dispatch` runs the same pipeline but always publishes with
-`--dry-run`, for rehearsing a release without shipping it.
+`workflow_dispatch` uses the same gates but always publishes with `--dry-run`.
+The current PR for this release switch must not merge until Rowan explicitly
+approves changing the published artifact. Do not describe Bun as supported
+before the release gate itself succeeds on the artifact that users install.
 
 ## Trusted publishing (OIDC), and the first-publish exception
 
