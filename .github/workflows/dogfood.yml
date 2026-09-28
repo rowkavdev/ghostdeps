@@ -32,7 +32,7 @@ jobs:
         # Non-blocking by design (see header): the check run reports the
         # findings; the workflow outcome stays green while we validate it.
         continue-on-error: true
-        uses: ./packages/action
+        uses: $/packages/action
         with:
           path: "."
       - name: Report outcome
