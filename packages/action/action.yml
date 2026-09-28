@@ -67,10 +67,10 @@ runs:
     # repo's package.json from a consumer run - pin the version explicitly.
     # Keep in sync with the root package.json packageManager field;
     # packages/action/src/pnpm-version.test.ts fails the build if they drift.
-    - uses: pnpm/action-setup@v4
+    - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
         version: 12.6.0
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: ${{ inputs.node-version }}
     # Build cache (#347). Correctness guards (lead):
@@ -91,11 +91,12 @@ runs:
       shell: bash
       env:
         ACTION_ROOT: ${{ github.action_path }}/../..
+        CACHE_KEY_SCRIPT: ${{ github.action_path }}/scripts/cache-key.sh
         INPUT_NODE_VERSION: ${{ inputs.node-version }}
       run: |
         echo "root=$(realpath "$ACTION_ROOT")" >> "$GITHUB_OUTPUT"
-        if hash=$(bash "${{ github.action_path }}/scripts/cache-key.sh" "$ACTION_ROOT"); then
-          echo "key=ghostdeps-action-${{ runner.os }}-node${INPUT_NODE_VERSION}-${hash}" >> "$GITHUB_OUTPUT"
+        if hash=$(bash "$CACHE_KEY_SCRIPT" "$ACTION_ROOT"); then
+          echo "key=ghostdeps-action-${RUNNER_OS}-node${INPUT_NODE_VERSION}-${hash}" >> "$GITHUB_OUTPUT"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
         else
           echo "::warning::ghostdeps: no source identity - running without the build cache"
@@ -105,7 +106,7 @@ runs:
       if: steps.cache-key.outputs.enabled == 'true'
       id: cache
       continue-on-error: true
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         key: ${{ steps.cache-key.outputs.key }}
         path: |
@@ -136,7 +137,7 @@ runs:
     - name: Save ghostdeps build cache
       if: steps.cache-key.outputs.enabled == 'true' && steps.cache.outputs.cache-hit != 'true'
       continue-on-error: true
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         key: ${{ steps.cache-key.outputs.key }}
         path: |
@@ -178,7 +179,9 @@ runs:
       env:
         GHOSTDEPS_GITHUB_TOKEN: ${{ inputs.github-token }}
         GHOSTDEPS_CHECK_NAME: ${{ inputs.check-name }}
-      run: node "${{ github.action_path }}/dist/post-check.js" "${{ runner.temp }}/ghostdeps-result.json"
+        POST_CHECK: ${{ github.action_path }}/dist/post-check.js
+        RESULT: ${{ runner.temp }}/ghostdeps-result.json
+      run: node "$POST_CHECK" "$RESULT"
     - name: Enforce --fail-on
       if: always()
       shell: bash
