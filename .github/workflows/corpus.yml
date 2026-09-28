@@ -30,6 +30,7 @@ jobs:
   # the dependency surface the detectors see. The path list lives in
   # scripts/corpus-gate.mjs, pinned by scripts/corpus-gate.test.mjs.
   changes:
+    name: changes
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
@@ -40,13 +41,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           # Checked BEFORE writing GITHUB_OUTPUT: under the runner's
           # bash -eo pipefail, a failed diff fails this step (fail closed),
           # never a swallowed substitution writing corpus=false (#172).
-          relevant=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD" | node scripts/corpus-gate.mjs)
+          relevant=$(git diff --name-only "${BASE_SHA}...HEAD" | node scripts/corpus-gate.mjs)
           echo "corpus=${relevant}" >> "$GITHUB_OUTPUT"
   corpus:
+    name: corpus
     needs: changes
     # Scan on schedule/dispatch, on relevant PRs, and - fail closed - on any
     # PR whose gating did not succeed. Otherwise skip, which reports Success.
@@ -74,6 +78,7 @@ jobs:
   # Stateless: recomputed from scheduled-run history every night, so its own
   # failure can never corrupt the streak it reports.
   streak:
+    name: streak
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:

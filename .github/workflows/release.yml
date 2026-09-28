@@ -17,6 +17,7 @@ permissions: {}
 
 jobs:
   release:
+    name: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -40,8 +41,9 @@ jobs:
         id: mode
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             version="$INPUT_VERSION"
           else
             version="${GITHUB_REF_NAME#v}"
@@ -63,13 +65,15 @@ jobs:
 
       - name: Publish to npm
         working-directory: .npm-staging
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         # No token: trusted publishing authenticates via the workflow's OIDC
         # token. The first publish must be manual - npm only lets you
         # configure a trusted publisher for a package that already exists.
         # See docs/publishing.md.
         run: |
           dry=""
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             dry="--dry-run"
           fi
           npm publish --provenance --access public $dry
