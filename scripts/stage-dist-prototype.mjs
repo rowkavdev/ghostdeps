@@ -55,9 +55,43 @@ function rewrite(abs) {
     path.relative(out, abs).split(path.sep).join("/") ===
     "dist/internal/core/engine/adapter-worker.js";
   const edits = [];
+  const rewrittenLiterals = new Set();
+  const isCreateRequire = (expr) =>
+    (ts.isIdentifier(expr) && expr.text === "createRequire") ||
+    (ts.isPropertyAccessExpression(expr) &&
+      expr.name.text === "createRequire" &&
+      ts.isIdentifier(expr.expression) &&
+      expr.expression.text === "module");
+  const isImportMeta = (expr) =>
+    ts.isMetaProperty(expr) &&
+    expr.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    expr.name.text === "meta";
+  const resolutionKind = (expr) => {
+    if (expr.kind === ts.SyntaxKind.ImportKeyword) return "import";
+    if (ts.isIdentifier(expr) && expr.text === "require") return "require";
+    if (ts.isCallExpression(expr) && isCreateRequire(expr.expression)) return "createRequire";
+    if (ts.isPropertyAccessExpression(expr)) {
+      if (
+        expr.name.text === "resolve" &&
+        ts.isIdentifier(expr.expression) &&
+        expr.expression.text === "require"
+      )
+        return "require.resolve";
+      if (expr.name.text === "resolve" && isImportMeta(expr.expression))
+        return "import.meta.resolve";
+      if (
+        expr.name.text === "require" &&
+        ts.isIdentifier(expr.expression) &&
+        expr.expression.text === "module"
+      )
+        return "module.require";
+    }
+    return null;
+  };
   const rewriteSpecifier = (literal) => {
     const specifier = literal.text;
     if (!specifier.startsWith("@ghostdeps/")) return;
+    rewrittenLiterals.add(literal.getStart(parsed));
     const [scope, name, ...subpath] = specifier.split("/");
     const packageName = `${scope}/${name}`;
     const workspace = internal.get(packageName);
@@ -106,20 +140,35 @@ function rewrite(abs) {
       if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier))
         rewriteSpecifier(node.moduleSpecifier);
     } else if (ts.isCallExpression(node)) {
-      if (
-        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-          (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
-        node.arguments.length === 1
-      ) {
+      const kind = resolutionKind(node.expression);
+      if (kind) {
         const arg = node.arguments[0];
-        if (ts.isStringLiteral(arg)) rewriteSpecifier(arg);
-        else if (!(
-          isWorker &&
-          source.slice(node.getStart(parsed), node.getEnd()) === "import(data.specifier)"
-        ))
-          throw new Error(`nonliteral dynamic module import in ${abs}`);
+        if (node.arguments.length !== 1 || !arg || !ts.isStringLiteral(arg)) {
+          if (!(
+            isWorker &&
+            kind === "import" &&
+            node.arguments.length === 1 &&
+            source.slice(node.getStart(parsed), node.getEnd()) === "import(data.specifier)"
+          ))
+            throw new Error(`nonliteral ${kind} module resolution in ${abs}`);
+        } else if (kind === "import" || kind === "require") {
+          rewriteSpecifier(arg);
+        } else if (arg.text.startsWith("@ghostdeps/")) {
+          // resolve() returns a path/URL, not a loaded module. A relative
+          // import rewrite would change its semantics, so reject it instead.
+          throw new Error(`unsupported ${kind} internal specifier in ${abs}: ${arg.text}`);
+        }
       }
     }
+    // Exact internal package literals outside successfully resolved load forms
+    // must not survive, including aliases and computed member calls. This
+    // permits ordinary prose mentioning a package without treating it as code.
+    if (
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      node.text.startsWith("@ghostdeps/") &&
+      !rewrittenLiterals.has(node.getStart(parsed))
+    )
+      throw new Error(`unsupported internal specifier form in ${abs}: ${node.text}`);
     ts.forEachChild(node, visit);
   };
   visit(parsed);
@@ -146,7 +195,8 @@ function rewrite(abs) {
   let result = source;
   for (const edit of edits.sort((a, b) => b.start - a.start))
     result = result.slice(0, edit.start) + edit.replacement + result.slice(edit.end);
-  // Reparse output so no import/export/require literal names an unpublished package.
+  // Reparse output so no exact unpublished package literal survives, except
+  // the worker's explicitly generated trusted-name mapping.
   const output = ts.createSourceFile(abs, result, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const verify = (node) => {
     const literal =
@@ -157,8 +207,22 @@ function rewrite(abs) {
               (ts.isIdentifier(node.expression) && node.expression.text === "require"))
           ? node.arguments[0]
           : null;
-    if (literal && ts.isStringLiteral(literal) && literal.text.startsWith("@ghostdeps/"))
-      throw new Error(`unresolved internal specifier in ${abs}`);
+    if (
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      node.text.startsWith("@ghostdeps/") &&
+      !(
+        isWorker &&
+        ts.isPropertyAssignment(node.parent) &&
+        node.parent.name === node &&
+        node.parent.parent &&
+        ts.isObjectLiteralExpression(node.parent.parent) &&
+        node.parent.parent.parent &&
+        ts.isVariableDeclaration(node.parent.parent.parent) &&
+        ts.isIdentifier(node.parent.parent.parent.name) &&
+        node.parent.parent.parent.name.text === "trustedAdapterEntries"
+      )
+    )
+      throw new Error(`unresolved internal specifier in ${abs}: ${node.text}`);
     if (
       ts.isCallExpression(node) &&
       node.expression.kind === ts.SyntaxKind.ImportKeyword &&
