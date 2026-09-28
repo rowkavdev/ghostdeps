@@ -21,3 +21,7 @@ site/
 fixtures/hostile/repo-symlink-tree/src/broken.js
 fixtures/hostile/repo-symlink-tree/src/alias.js
 fixtures/hostile/repo-symlink-tree/src/loop
+
+# Experimental stage-dist packaging prototype (#522)
+.npm-dist-prototype/
+.npm-dist-test-*/
