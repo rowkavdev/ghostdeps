@@ -88,7 +88,7 @@ describe("npm removal preview (#389)", () => {
           ["package.json", "package-lock.json"].map((p) => readFile(join(root, p), "utf8")),
         );
         const result = await previewNpmRemoval(handle, [adapter], "left-pad");
-        assert.equal(result.status, "statically-checked", result.reason);
+        assert.equal(result.status, "statically-checked", result.reason ?? "no reason");
         assert.equal(result.verification.sandbox, "not-run");
         assert.match(result.diff!, /--- a\/package-lock.json/);
         assert.match(result.diff!, /node_modules\/left-pad/);

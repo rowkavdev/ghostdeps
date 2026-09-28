@@ -123,7 +123,7 @@ describe("declaration line on findings (#198)", () => {
     assert.ok(anchored.length > 0);
     for (const f of anchored) {
       const decl = f.evidence.find((e) => e.file === "package.json");
-      assert.equal(decl?.line, 4, f.rule);
+      assert.equal(decl?.line, 4, f.rule ?? "declared");
     }
     assert.equal(declarationLineNote(result.findings), undefined);
     assert.ok(!result.findings.some((f) => f.rule === "declaration-line-unavailable"));
