@@ -11,8 +11,13 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   self-scan:
+    name: self-scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
