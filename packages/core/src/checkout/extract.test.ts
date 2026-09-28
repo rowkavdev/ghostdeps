@@ -58,8 +58,11 @@ describe("extractTarball", () => {
     assert.equal(await readFile(join(dir, "repo/package.json"), "utf8"), '{"name":"x"}');
     assert.equal(await readFile(join(dir, "repo/src/index.ts"), "utf8"), "export {}\n");
     // Archive modes are ignored: 0777 in, 0644 out, never executable.
-    const mode = (await stat(join(dir, "repo/package.json"))).mode & 0o777;
-    assert.equal(mode, 0o644);
+    // Windows has no POSIX mode bits, so only assert modes elsewhere.
+    if (process.platform !== "win32") {
+      const mode = (await stat(join(dir, "repo/package.json"))).mode & 0o777;
+      assert.equal(mode, 0o644);
+    }
   });
 
   it("accepts dot segments and deep nesting within limits", async () => {
