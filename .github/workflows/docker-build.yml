@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Build production image (no push)
         run: docker build --tag ghostdeps:ci .
       - name: Assert flagged fixture manifests are absent from runtime image
