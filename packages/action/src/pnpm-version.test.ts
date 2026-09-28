@@ -14,7 +14,9 @@ const ROOT_PKG = new URL("../../../package.json", import.meta.url).pathname;
 describe("action pnpm version pin", () => {
   it("matches the root packageManager field", () => {
     const yml = readFileSync(ACTION_YML, "utf8");
-    const setupBlock = yml.match(/- uses: pnpm\/action-setup@v4\s+with:\s+version: (\S+)/);
+    const setupBlock = yml.match(
+      /- uses: pnpm\/action-setup@[0-9a-f]{40} # v4\s+with:\s+version: (\S+)/,
+    );
     assert.ok(setupBlock, "action.yml must pin pnpm/action-setup with version:");
     const pkg = JSON.parse(readFileSync(ROOT_PKG, "utf8")) as {
       packageManager?: string;
