@@ -1,7 +1,7 @@
 /** Explicit clean-consumer smoke for the experimental artifact, not a release action. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +9,14 @@ import test from "node:test";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 function invoke(command, args, cwd, timeout = 120_000) {
+  // Windows npm is a .cmd shim; spawnSync cannot launch it without a shell.
+  // Run the npm CLI with this job's Node instead of shelling out through cmd.
+  if (command === "npm" && process.platform === "win32") {
+    const npmCli = path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
+    assert.ok(existsSync(npmCli), `npm CLI missing alongside Node: ${npmCli}`);
+    args = [npmCli, ...args];
+    command = process.execPath;
+  }
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
