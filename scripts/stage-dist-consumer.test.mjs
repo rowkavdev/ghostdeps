@@ -71,22 +71,30 @@ if (names !== "source_file" || liveTreeCount() !== 0) process.exitCode = 4;`,
 
 // Run explicitly: STAGE_DIST_CONSUMER=1 node --test scripts/stage-dist-consumer.test.mjs
 // STAGE_DIST_MANAGERS=npm limits a local run; the full gate requires npm,bun.
+// STAGE_DIST_TARBALL tests the supplied bytes without building another package.
 test(
   "prototype tarball works in clean npm and Bun consumers after prune/reinstall",
   { skip: process.env.STAGE_DIST_CONSUMER !== "1" },
   () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ghostdeps-consumer-"));
     const stage = path.join(root, `.npm-dist-test-${process.pid}`);
+    const supplied = process.env.STAGE_DIST_TARBALL;
     try {
-      invoke(
-        process.execPath,
-        ["scripts/stage-dist-prototype.mjs", "--version", "0.1.999", "--out", stage],
-        root,
-      );
-      const packed = JSON.parse(
-        invoke("npm", ["pack", "--json", "--pack-destination", dir], stage),
-      );
-      const tarball = path.join(dir, packed[0].filename);
+      let tarball;
+      if (supplied) {
+        tarball = path.resolve(supplied);
+        assert.ok(existsSync(tarball), `missing supplied tarball: ${tarball}`);
+      } else {
+        invoke(
+          process.execPath,
+          ["scripts/stage-dist-prototype.mjs", "--version", "0.1.999", "--out", stage],
+          root,
+        );
+        const packed = JSON.parse(
+          invoke("npm", ["pack", "--json", "--pack-destination", dir], stage),
+        );
+        tarball = path.join(dir, packed[0].filename);
+      }
       for (const manager of (process.env.STAGE_DIST_MANAGERS ?? "npm,bun").split(",")) {
         assert.ok(["npm", "bun"].includes(manager), `unknown manager: ${manager}`);
         const consumer = path.join(dir, manager);

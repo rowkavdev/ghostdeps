@@ -16,12 +16,15 @@ concurrency:
 permissions: {}
 
 jobs:
-  release:
-    name: release
+  pack:
+    name: pack
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm trusted publishing (OIDC) + --provenance
+    outputs:
+      version: ${{ steps.mode.outputs.version }}
+      filename: ${{ steps.pack.outputs.filename }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -30,13 +33,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
-          cache: pnpm
-      # Trusted publishing needs npm >= 11.5.1; setup-node ships an older one.
-      - run: npm install --global npm@latest
+          package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
-
       - name: Resolve publish mode
         id: mode
         env:
@@ -53,27 +53,99 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Stage the package
+      - name: Stage and pack the CLI-only artifact
+        id: pack
         env:
           STAGE_VERSION: ${{ steps.mode.outputs.version }}
-        run: node scripts/stage-npm.mjs --version "$STAGE_VERSION"
-
-      - name: Verify tarball contents
-        working-directory: .npm-staging
-        run: npm pack --dry-run
-
-      - name: Publish to npm
-        working-directory: .npm-staging
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        # No token: trusted publishing authenticates via the workflow's OIDC
-        # token. The first publish must be manual - npm only lets you
-        # configure a trusted publisher for a package that already exists.
-        # See docs/publishing.md.
         run: |
-          dry=""
+          node scripts/stage-dist-prototype.mjs --version "$STAGE_VERSION" --out .npm-dist-prototype
+          mkdir -p release-tarball
+          npm pack --pack-destination release-tarball .npm-dist-prototype
+          filename="ghost-deps-${STAGE_VERSION}.tgz"
+          test -f "release-tarball/$filename"
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "release-tarball/$filename" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-tarball
+          path: release-tarball/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  consumer:
+    needs: pack
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: 1.2.23
+          no-cache: true
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-tarball
+          path: release-tarball
+      - name: Verify packed bytes before consumer tests
+        env:
+          TARBALL: release-tarball/${{ needs.pack.outputs.filename }}
+          EXPECTED_SHA256: ${{ needs.pack.outputs.sha256 }}
+        run: node -e "const fs = require('node:fs'); const crypto = require('node:crypto'); const actual = crypto.createHash('sha256').update(fs.readFileSync(process.env.TARBALL)).digest('hex'); if (actual !== process.env.EXPECTED_SHA256) process.exit(1);"
+      - name: Install exact tarball with npm and Bun, prune and reinstall
+        env:
+          STAGE_DIST_CONSUMER: "1"
+          STAGE_DIST_TARBALL: release-tarball/${{ needs.pack.outputs.filename }}
+        run: node --test scripts/stage-dist-consumer.test.mjs
+
+  publish:
+    needs: [pack, consumer]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-tarball
+          path: release-tarball
+      - name: Verify exact tested bytes
+        env:
+          TARBALL: release-tarball/${{ needs.pack.outputs.filename }}
+          EXPECTED_SHA256: ${{ needs.pack.outputs.sha256 }}
+          EXPECTED_VERSION: ${{ needs.pack.outputs.version }}
+        run: |
+          echo "$EXPECTED_SHA256  $TARBALL" | sha256sum -c -
+          test "$(tar -xOzf "$TARBALL" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).version')" = "$EXPECTED_VERSION"
+      # Trusted publishing requires npm >= 11.5.1.
+      - run: npm install --global npm@latest
+      - name: Publish the tested tarball
+        env:
+          TARBALL: release-tarball/${{ needs.pack.outputs.filename }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            dry="--dry-run"
+            npm publish "./$TARBALL" --provenance --access public --dry-run
+          else
+            npm publish "./$TARBALL" --provenance --access public
           fi
-          npm publish --provenance --access public $dry
