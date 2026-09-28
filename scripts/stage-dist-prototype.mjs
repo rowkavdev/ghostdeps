@@ -127,7 +127,7 @@ function rewrite(abs) {
     const mapped = Object.fromEntries(
       [...internal.keys()]
         .filter((key) => key !== "@ghostdeps/core")
-        .map((key) => [key, `../../${key.slice("@ghostdeps/".length)}/index.js`]),
+        .map((key) => [key, `../../${key.slice("@ghostdeps/".length)}/worker-entry.js`]),
     );
     // Worker input remains subject to core's analyzed-root guard. Only exact
     // bundled adapter names can be mapped; arbitrary worker imports fail.
@@ -190,6 +190,18 @@ cpSync(path.join(root, "packages/cli/dist"), path.join(out, "dist"), {
 });
 collect(path.join(out, "dist"));
 for (const file of files) rewrite(file);
+// The isolated worker expects an adapter object, while the package indexes
+// export factories. These fixed entries are the only names its mapping accepts.
+const workerFactories = new Map([
+  ["go", "createGoAdapter"],
+  ["javascript-typescript", "createJavaScriptTypeScriptAdapter"],
+  ["python", "createPythonAdapter"],
+  ["rust", "createRustAdapter"],
+]);
+for (const [name, factory] of workerFactories) {
+  const entry = path.join(out, "dist/internal", name, "worker-entry.js");
+  writeFileSync(entry, `import { ${factory} } from "./index.js";\nexport default ${factory}();\n`);
+}
 // Keep the current peer-free WASM vendoring boundary. These are published
 // registry packages, unlike the unpublished internal workspace modules.
 const rustModules = path.join(root, "packages/adapters/rust/node_modules");

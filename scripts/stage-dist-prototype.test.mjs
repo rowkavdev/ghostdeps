@@ -26,6 +26,8 @@ test("experimental dist staging packs without unpublished workspace names or dec
     assert.ok(paths.has("dist/internal/core/engine/adapter-worker.js"));
     for (const name of ["core", "go", "javascript-typescript", "python", "rust"])
       assert.ok(paths.has(`dist/internal/${name}/index.js`));
+    for (const name of ["go", "javascript-typescript", "python", "rust"])
+      assert.ok(paths.has(`dist/internal/${name}/worker-entry.js`));
     assert.ok(
       [...paths].every(
         (p) =>
