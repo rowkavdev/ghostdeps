@@ -89,32 +89,49 @@ export async function analysePath(
  * scan always exits 0: GhostDeps advises, it does not gate.
  */
 /**
- * Where the effective comments-off state came from, for the disclosure line.
- * Flag beats per-run override beats committed config; the scans above have
- * already validated both payloads, so these reads cannot fail silently.
+ * The effective PR-comment state recorded for this run. A per-run
+ * --fixture-roots payload REPLACES the committed .ghostdeps.json choice for
+ * the run record when its commentsOff is present (true or false); when the
+ * payload omits it, the committed file governs. Enforcement is narrower than
+ * the record: the App's comment delivery reads only the committed
+ * .ghostdeps.json, and the disclosure says so whenever the per-run payload is
+ * the source or disagrees with it. The scans above have already validated
+ * both payloads, so these reads cannot fail silently.
  */
-async function commentsOffSource(config: CliConfig): Promise<string | undefined> {
-  if (config.commentsOff === true) return "--comments-off";
+async function commentsDisclosure(config: CliConfig): Promise<{ line: string } | undefined> {
+  let payload: boolean | undefined;
   if (config.fixtureRoots !== undefined) {
     try {
-      if (
-        parseScopeConfigText(config.fixtureRoots, DEFAULT_SCAN_LIMITS, "--fixture-roots")
-          .commentsOff
-      ) {
-        return "--fixture-roots";
-      }
+      payload = parseScopeConfigText(
+        config.fixtureRoots,
+        DEFAULT_SCAN_LIMITS,
+        "--fixture-roots",
+      ).commentsOff;
     } catch {
       // The scan's own parse is authoritative; a display re-parse never invents state.
     }
   }
+  let committed = false;
   try {
-    if ((await readFixtureRoots(config.path, DEFAULT_SCAN_LIMITS)).commentsOff) {
-      return ".ghostdeps.json";
-    }
+    committed = (await readFixtureRoots(config.path, DEFAULT_SCAN_LIMITS)).commentsOff;
   } catch {
     // Same: the scan already read this file; disclosure stays silent rather than guessing.
   }
-  return undefined;
+  if (payload === false && committed) {
+    return {
+      line: "Comments: off (.ghostdeps.json) - GhostDeps will not maintain a PR comment for this repository. The --fixture-roots payload records commentsOff: false for this run; the committed file governs the App.",
+    };
+  }
+  const off = payload ?? committed;
+  if (!off) return undefined;
+  if (payload === undefined || payload === committed) {
+    return {
+      line: "Comments: off (.ghostdeps.json) - GhostDeps will not maintain a PR comment for this repository.",
+    };
+  }
+  return {
+    line: "Comments: off (--fixture-roots) - recorded for this run; the App's comment delivery follows the committed .ghostdeps.json.",
+  };
 }
 
 export async function runScan(
@@ -138,11 +155,9 @@ export async function runScan(
         ? result
         : { ...result, findings: result.findings.filter((f) => atOrAboveSeverity(f, min)) };
     io.stdout(renderRepositorySummary(shown));
-    const commentsOff = await commentsOffSource(config);
-    if (commentsOff !== undefined) {
-      io.stdout(
-        `Comments: off (${commentsOff}) - GhostDeps will not maintain a PR comment for this repository.`,
-      );
+    const commentsDisclosed = await commentsDisclosure(config);
+    if (commentsDisclosed !== undefined) {
+      io.stdout(commentsDisclosed.line);
     }
     // Non-capping awareness and source-backed facts do not count as hidden
     // findings (#385 renders facts in their own section).

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { run, type Io } from "./cli.js";
 
 function capture(): { io: Io; out: string[]; err: string[] } {
@@ -50,27 +53,6 @@ describe("ghostdeps cli", () => {
     const code = await run(["--bogus"], io);
     assert.equal(code, 2);
     assert.ok(err.join(" ").includes("unknown option: --bogus"));
-  });
-
-  it("scan --comments-off discloses the off state in human output", async () => {
-    const { io, out, err } = capture();
-    const code = await run(["scan", ".", "--comments-off"], io);
-    assert.equal(code, 0, err.join("\n"));
-    assert.ok(out.join("\n").includes("Comments: off (--comments-off)"));
-  });
-
-  it("--comments-off only applies to scan", async () => {
-    const { io, err } = capture();
-    const code = await run(["explain", "left-pad", "--comments-off"], io);
-    assert.equal(code, 2);
-    assert.ok(err.join(" ").includes("--comments-off only applies to ghostdeps scan"));
-  });
-
-  it("--comments-off=... is not accepted as a valued flag", async () => {
-    const { io, err } = capture();
-    const code = await run(["scan", ".", "--comments-off=true"], io);
-    assert.equal(code, 2);
-    assert.ok(err.join(" ").includes("unknown option"));
   });
 
   it("routes a bare path to scan (ghostdeps .)", async () => {
@@ -161,5 +143,72 @@ describe("ghostdeps cli", () => {
   it("help with an unknown command is a usage error", async () => {
     const { io } = capture();
     assert.equal(await run(["help", "bogus"], io), 2);
+  });
+});
+
+describe("PR-comment disclosure", () => {
+  async function repoWithConfig(config?: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "ghostdeps-comments-"));
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "example", dependencies: {} }),
+    );
+    if (config !== undefined) await writeFile(join(dir, ".ghostdeps.json"), config);
+    return dir;
+  }
+
+  it("discloses the committed .ghostdeps.json opt-out", async () => {
+    const dir = await repoWithConfig(
+      JSON.stringify({ schemaVersion: 1, fixtureRoots: [], commentsOff: true }),
+    );
+    const { io, out, err } = capture();
+    const code = await run(["scan", dir], io);
+    assert.equal(code, 0, err.join("\n"));
+    assert.ok(
+      out.join("\n").includes("Comments: off (.ghostdeps.json)"),
+      "committed opt-out is disclosed",
+    );
+  });
+
+  it("a per-run payload saying true records the run as off, App follows the committed file", async () => {
+    const dir = await repoWithConfig();
+    const { io, out, err } = capture();
+    const code = await run(
+      ["scan", dir, "--fixture-roots", '{"schemaVersion":1,"fixtureRoots":[],"commentsOff":true}'],
+      io,
+    );
+    assert.equal(code, 0, err.join("\n"));
+    const text = out.join("\n");
+    assert.ok(text.includes("Comments: off (--fixture-roots)"), "payload off-state disclosed");
+    assert.ok(
+      text.includes("App's comment delivery follows the committed .ghostdeps.json"),
+      "enforcement boundary named",
+    );
+  });
+
+  it("a per-run payload saying false cannot undo the committed opt-out for the App", async () => {
+    const dir = await repoWithConfig(
+      JSON.stringify({ schemaVersion: 1, fixtureRoots: [], commentsOff: true }),
+    );
+    const { io, out, err } = capture();
+    const code = await run(
+      ["scan", dir, "--fixture-roots", '{"schemaVersion":1,"fixtureRoots":[],"commentsOff":false}'],
+      io,
+    );
+    assert.equal(code, 0, err.join("\n"));
+    const text = out.join("\n");
+    assert.ok(text.includes("Comments: off (.ghostdeps.json)"), "committed file still governs");
+    assert.ok(text.includes("commentsOff: false for this run"), "disagreement is loud");
+  });
+
+  it("stays silent when neither the payload nor the committed file opts out", async () => {
+    const dir = await repoWithConfig();
+    const { io, out, err } = capture();
+    const code = await run(
+      ["scan", dir, "--fixture-roots", '{"schemaVersion":1,"fixtureRoots":[],"commentsOff":false}'],
+      io,
+    );
+    assert.equal(code, 0, err.join("\n"));
+    assert.ok(!out.join("\n").includes("Comments: off"), "no off-state to disclose");
   });
 });
