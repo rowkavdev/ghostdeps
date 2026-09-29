@@ -131,9 +131,25 @@ The only repository config file declares fixture-only roots to leave out of depe
 
 Roots are exact, repository-relative directory paths - no globs, negation or `..`. Exclusion is always disclosed in the output's `Scan scope` record, never silent, and a run that excluded files caps absence-based verdicts. A malformed config fails the scan with a named error. Beyond scan scope there is no general config file yet: configuration resolves from defaults plus flags, and flags always win. Full grammar and limits: [Configuration](docs/configuration.md).
 
+## False positives and limits
+
+GhostDeps is a static analyzer. It parses source, manifests and lockfiles but never installs dependencies, runs build scripts, executes your code or runs your tests. That is a deliberate safety posture, and it sets the honest limits:
+
+- **It cannot see runtime behavior.** Dynamic imports, plugin systems, convention-based loading (frameworks, test runners, bundler config) and packages consumed by external tools can make a genuinely used package look unreferenced.
+- **It does not certify removal.** Even a high-confidence finding means the stated evidence and coverage conditions were met - not that deletion preserves behavior. A package with no finding has not been certified necessary either.
+- **Incomplete analysis stays visible.** Skipped files, unsupported capabilities, timeouts and missing lockfiles are reported as notes, lower confidence or a withheld verdict, not filled in with a guess. Transitive counts without a usable lockfile are `unknown`, not zero.
+
+Before removing a flagged package, validate manually:
+
+1. Search the repo for dynamic or runtime references: `import(`, `require(` with a computed name, plugin registries, and script, bin and config references in `package.json`, CI and tooling config.
+2. Remove the package in a scratch branch and update the lockfile with your package manager.
+3. Run your full build and test suite - only your own tests can prove removal is safe, and GhostDeps does not run them.
+
+How verdicts, confidence, notes and package facts work: [Interpreting results](docs/interpreting-results.md).
+
 ## Status
 
-Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` confidence and severity stay capped at medium pending 14 consecutive green nightly corpus runs. GhostDeps says what it could not verify instead of guessing - see [Interpreting results](docs/interpreting-results.md) before acting on a finding.
+Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` confidence and severity stay capped at medium pending 14 consecutive green nightly corpus runs. GhostDeps says what it could not verify instead of guessing.
 
 ## What the check looks like
 
