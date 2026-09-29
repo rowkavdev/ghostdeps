@@ -104,6 +104,7 @@ The action runs the analysis inside your job; there is no external service to in
 | `--downgrade <rule>=<confidence>` | None             | Cap a rule's confidence at `high`, `medium` or `low`; repeatable, never raises it.                                             |
 | `--allowlist <ecosystem>:<name>`  | None             | Mark expected tooling; a trailing `*` matches a name prefix; repeatable.                                                       |
 | `--fixture-roots <json>`          | Unset            | Per-run fixture-scope override with the `.ghostdeps.json` grammar; replaces committed roots for the run.                       |
+| `--comments-off`                    | Off              | Opt this repository out of PR-comment maintenance (`scan` only); the human summary always discloses when comments are off. |
 
 An unknown rule id or ecosystem is a usage error that names the known values, never a silent no-op. Full semantics: [CLI](docs/cli.md).
 
@@ -127,11 +128,12 @@ The only repository config file declares fixture-only roots to leave out of depe
 ```json
 {
   "schemaVersion": 1,
-  "fixtureRoots": ["fixtures"]
+  "fixtureRoots": ["fixtures"],
+  "commentsOff": true
 }
 ```
 
-Roots are exact, repository-relative directory paths - no globs, negation or `..`. Exclusion is always disclosed in the output's `Scan scope` record, never silent, and a run that excluded files caps absence-based verdicts. A malformed config fails the scan with a named error. Beyond scan scope there is no general config file yet: configuration resolves from defaults plus flags, and flags always win. Full grammar and limits: [Configuration](docs/configuration.md).
+`commentsOff` is optional (default `false`): set it when GhostDeps must never maintain a PR comment for this repository. The GitHub App honours it, the CLI and Action accept `--comments-off` for one run, and the human summary always discloses the off state and its source - never silent. Roots are exact, repository-relative directory paths - no globs, negation or `..`. Exclusion is always disclosed in the output's `Scan scope` record, never silent, and a run that excluded files caps absence-based verdicts. A malformed config fails the scan with a named error. Beyond scan scope there is no general config file yet: configuration resolves from defaults plus flags, and flags always win. Full grammar and limits: [Configuration](docs/configuration.md).
 
 ## False positives and limits
 
