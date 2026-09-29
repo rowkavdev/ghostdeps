@@ -86,6 +86,51 @@ jobs:
 
 The action runs the analysis inside your job; there is no external service to install. It reports through GitHub: a `ghostdeps` check run on your own branches, or workflow annotations and the job summary on fork pull requests, where `GITHUB_TOKEN` is read-only. `@main` follows the latest main - pin a full commit SHA (`rowkavdev/ghostdeps/packages/action@<sha>`) for production workflows. Full input list and the known trade-offs versus the App: [GitHub Action](docs/github-action.md).
 
+## Options and configuration
+
+`scan` is the working command today. The CLI router also lists `inspect`, `graph`, `languages`, `packages` and `explain`, but those are planned routes and currently answer "not implemented yet" (exit 3); `fix` is a later milestone. Everything below applies to `scan`.
+
+### Scan flags
+
+| Flag                              | Default           | Effect                                                                          |
+| --------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `scan [path]`                     | `.`               | Directory to analyse.                                                           |
+| `--json`                          | Off               | Print the complete schema-versioned result; never filtered.                     |
+| `--fail-on <severity>`            | Unset (advisory)  | Exit 1 when any verdict finding reaches the threshold. Evaluates all verdict findings, even ones hidden by the display filter. |
+| `--severity <severity>`           | Unset (show all)  | Filter the human display only; cannot be combined with `--json`.                |
+| `--disable-rule <id>`             | None              | Turn one recommendation rule off for the run; repeatable.                       |
+| `--downgrade <rule>=<confidence>` | None              | Cap a rule's confidence at `high`, `medium` or `low`; repeatable, never raises it. |
+| `--allowlist <ecosystem>:<name>`  | None              | Mark expected tooling; a trailing `*` matches a name prefix; repeatable.        |
+| `--fixture-roots <json>`          | Unset             | Per-run fixture-scope override with the `.ghostdeps.json` grammar; replaces committed roots for the run. |
+
+An unknown rule id or ecosystem is a usage error that names the known values, never a silent no-op. Full semantics: [CLI](docs/cli.md).
+
+### Gating with `--fail-on`
+
+GhostDeps is advisory by default: findings never fail a successful scan unless you set `--fail-on`. One caveat matters for adopters today: `unused` confidence and severity are capped at **medium** pending 14 consecutive green nightly corpus runs, so `--fail-on high` cannot catch a current `unused` finding, while `--fail-on medium` can. Verified against ghost-deps 0.1.6: scanning the `js/basic-unused` fixture exits 0 with `--fail-on high` and 1 with `--fail-on medium`. Info notes (scan-completeness, no-recommendations) are always severity `info` and cannot trip any threshold above `info`.
+
+### Exit codes
+
+| Code | Meaning                                                          |
+| ---- | ---------------------------------------------------------------- |
+| 0    | Success; with `--fail-on`, no finding reached the threshold      |
+| 1    | `--fail-on` threshold met or exceeded                            |
+| 2    | Usage error, or the scan itself failed (no usable result)        |
+| 3    | Command not implemented yet                                      |
+
+### Repository config: `.ghostdeps.json`
+
+The only repository config file declares fixture-only roots to leave out of dependency analysis. Commit it at the repository root:
+
+```json
+{
+  "schemaVersion": 1,
+  "fixtureRoots": ["fixtures"]
+}
+```
+
+Roots are exact, repository-relative directory paths - no globs, negation or `..`. Exclusion is always disclosed in the output's `Scan scope` record, never silent, and a run that excluded files caps absence-based verdicts. A malformed config fails the scan with a named error. Beyond scan scope there is no general config file yet: configuration resolves from defaults plus flags, and flags always win. Full grammar and limits: [Configuration](docs/configuration.md).
+
 ## Status
 
 Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` confidence and severity stay capped at medium pending 14 consecutive green nightly corpus runs. GhostDeps says what it could not verify instead of guessing - see [Interpreting results](docs/interpreting-results.md) before acting on a finding.
@@ -100,7 +145,7 @@ Findings land on a `ghostdeps` check run with an advisory conclusion: `success` 
 
 - [GitHub App](docs/github-app.md) and [self-hosting it](docs/deployment.md)
 - [GitHub Action](docs/github-action.md)
-- [CLI](docs/cli.md) and [output formats](docs/output-formats.md)
+- [CLI](docs/cli.md), [configuration](docs/configuration.md) and [output formats](docs/output-formats.md)
 - [Interpreting results](docs/interpreting-results.md)
 
 **How it works**
