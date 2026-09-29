@@ -11,10 +11,12 @@
  * #145), found by the package.json `name` fields in the listing. A base
  * naming a workspace package that doesn't contain it becomes a limitation.
  * A base naming a node_modules package ("@tsconfig/node20") is resolved
- * statically when the installed files are in the listing (#276): the
- * package's `tsconfig` field, `exports` subpaths, the `.json` suffix and
- * the directory `tsconfig.json`, walking up from the referencing config
- * the way TypeScript does. Nothing is evaluated (ADR 0004). Bases that
+ * statically when the installed files are in the listing (#276): `exports`
+ * (a root string, exact and single-star subpaths, and conditional objects
+ * over TypeScript's accepted conditions; array fallbacks are not resolved),
+ * the package's `tsconfig` field, the `.json` suffix and the directory
+ * `tsconfig.json`, walking up from the referencing config the way
+ * TypeScript does. Nothing is evaluated (ADR 0004). Bases that
  * are not installed - the usual CI checkout - are not read and are
  * reported once per run.
  *
@@ -106,6 +108,16 @@ interface ParsedConfigFile {
 
 /** "<name>" or "<name>/<subpath>" for a package-style extends value. */
 const PACKAGE_EXTENDS = /^((?:@[^/]+\/)?[^/@.][^/]*)(?:\/(.+))?$/;
+
+/**
+ * `exports` conditions TypeScript accepts when resolving a tsconfig extends
+ * (verified against 5.9.3): the first key in this set, in object order,
+ * wins - "types" and "node" beat "default" when listed first, "require"
+ * beats "import", and unknown conditions ("browser") are skipped.
+ */
+const EXPORTS_CONDITIONS: ReadonlySet<string> = new Set(["types", "node", "require", "default"]);
+/** Deepest conditional-`exports` nesting followed. */
+const MAX_CONDITION_DEPTH = 4;
 
 function packageName(entry: string): string | undefined {
   return PACKAGE_EXTENDS.exec(entry)?.[1];
@@ -438,10 +450,10 @@ export class AliasResolver {
     const key = `${fromDir}\n${entry}`;
     let pending = this.nmBases.get(key);
     if (!pending) {
-      pending =
-        this.nmBases.size < MAX_PACKAGE_BASES
-          ? this.resolveNodeModulesBase(entry, fromDir)
-          : Promise.resolve(undefined);
+      // Past the cap, neither resolve nor memoize new keys: bounded work and
+      // bounded memory per run, and the base is noted as unread instead.
+      if (this.nmBases.size >= MAX_PACKAGE_BASES) return Promise.resolve(undefined);
+      pending = this.resolveNodeModulesBase(entry, fromDir);
       this.nmBases.set(key, pending);
     }
     return pending;
@@ -470,7 +482,7 @@ export class AliasResolver {
         // The nearest installed copy wins; failing to resolve through it
         // does not fall through to a copy higher up (TypeScript semantics).
         const exportsField = manifest !== undefined ? own(manifest, "exports") : undefined;
-        if (isRecord(exportsField)) {
+        if (typeof exportsField === "string" || isRecord(exportsField)) {
           return this.exportsTarget(exportsField, sub === undefined ? "." : `./${sub}`, pkgDir);
         }
         if (sub === undefined) {
@@ -493,10 +505,17 @@ export class AliasResolver {
     }
   }
 
-  /** One package.json read from node_modules, memoised and size-bounded. */
+  /**
+   * One package.json read from node_modules, memoised and size-bounded.
+   * A resolution reads at most one manifest, so the shared cap can never be
+   * reached before the nmBases cap stops new resolutions; the check is
+   * defence in depth. Past it, the manifest counts as unreadable and
+   * resolution falls back to the file-based candidates.
+   */
   private readNodeModulesManifest(path: string): Promise<Record<string, unknown> | undefined> {
     let pending = this.nmManifests.get(path);
     if (!pending) {
+      if (this.nmManifests.size >= MAX_PACKAGE_BASES) return Promise.resolve(undefined);
       pending = (async () => {
         let text: string;
         try {
@@ -517,41 +536,67 @@ export class AliasResolver {
     return pending;
   }
 
-  /** `exports` lookup for "." or a "./sub" key; only string targets inside the package are honoured. */
+  /**
+   * `exports` lookup for "." or a "./sub" key. A root string export covers
+   * only "."; object values may be strings or conditional objects, resolved
+   * in object order over TypeScript's accepted conditions. Array fallbacks
+   * are not resolved. Only "./" targets inside the package are honoured.
+   */
   private exportsTarget(
-    exportsField: Record<string, unknown>,
+    exportsField: string | Record<string, unknown>,
     key: string,
     pkgDir: string,
   ): string | undefined {
-    const keys = Object.keys(exportsField).slice(0, MAX_PATH_ENTRIES);
-    let target: unknown;
-    if (keys.includes(key)) {
-      target = own(exportsField, key);
+    let target: string | undefined;
+    if (typeof exportsField === "string") {
+      if (key === ".") target = exportsField;
     } else {
-      for (const k of keys) {
-        const star = k.indexOf("*");
-        if (star < 0 || k.indexOf("*", star + 1) >= 0) continue;
-        const prefix = k.slice(0, star);
-        const suffix = k.slice(star + 1);
-        if (
-          key.length < prefix.length + suffix.length ||
-          !key.startsWith(prefix) ||
-          !key.endsWith(suffix)
-        ) {
-          continue;
+      const keys = Object.keys(exportsField).slice(0, MAX_PATH_ENTRIES);
+      if (keys.includes(key)) {
+        target = this.conditionTarget(own(exportsField, key));
+      } else {
+        for (const k of keys) {
+          const star = k.indexOf("*");
+          if (star < 0 || k.indexOf("*", star + 1) >= 0) continue;
+          const prefix = k.slice(0, star);
+          const suffix = k.slice(star + 1);
+          if (
+            key.length < prefix.length + suffix.length ||
+            !key.startsWith(prefix) ||
+            !key.endsWith(suffix)
+          ) {
+            continue;
+          }
+          const v = this.conditionTarget(own(exportsField, k));
+          target =
+            v !== undefined && (v.match(/\*/g)?.length ?? 0) === 1
+              ? v.replace("*", key.slice(prefix.length, key.length - suffix.length))
+              : undefined;
+          break;
         }
-        const v = own(exportsField, k);
-        target =
-          typeof v === "string" && (v.match(/\*/g)?.length ?? 0) === 1
-            ? v.replace("*", key.slice(prefix.length, key.length - suffix.length))
-            : undefined;
-        break;
       }
     }
-    if (typeof target !== "string" || !target.startsWith("./")) return undefined;
+    if (target === undefined || !target.startsWith("./")) return undefined;
     const t = joinPath(pkgDir, target);
     if (t === undefined || (t !== pkgDir && !t.startsWith(`${pkgDir}/`))) return undefined;
     return this.files.has(t) ? t : undefined;
+  }
+
+  /**
+   * The first matching condition in object order over TypeScript's accepted
+   * set, recursing into nested condition objects. Strings must be "./"
+   * paths; anything else (arrays, non-string leaves, deep nesting) is not
+   * resolved.
+   */
+  private conditionTarget(value: unknown, depth = 0): string | undefined {
+    if (typeof value === "string") return value.startsWith("./") ? value : undefined;
+    if (!isRecord(value) || depth >= MAX_CONDITION_DEPTH) return undefined;
+    for (const k of Object.keys(value).slice(0, MAX_PATH_ENTRIES)) {
+      if (!EXPORTS_CONDITIONS.has(k)) continue;
+      const t = this.conditionTarget(own(value, k), depth + 1);
+      if (t !== undefined) return t;
+    }
+    return undefined;
   }
 
   private notePackageBase(pkg: string): void {

@@ -334,3 +334,91 @@ describe("AliasResolver node_modules extends (#276)", () => {
     assert.equal(await internal(files, ".", "@i/b"), false);
   });
 });
+
+describe("AliasResolver node_modules exports forms (#553 review)", () => {
+  it("a root string export covers the bare name, and no subpath", async () => {
+    const files = {
+      "node_modules/pkgroot/package.json": `{"name":"pkgroot","exports":"./base.json"}`,
+      "node_modules/pkgroot/base.json": `{"compilerOptions":{"paths":{"@rs/*":["../../src/rs/*"]}}}`,
+      "node_modules/pkgroot/other.json": `{"compilerOptions":{"paths":{"@ro/*":["../../src/ro/*"]}}}`,
+      "src/rs/a.ts": "",
+      "src/ro/b.ts": "",
+      "apps/a/tsconfig.json": `{"extends":"pkgroot"}`,
+      "apps/b/tsconfig.json": `{"extends":"pkgroot/other"}`,
+    };
+    assert.equal(await internal(files, "apps/a", "@rs/a"), true);
+    // A root string export exports nothing but ".": the subpath base is unread.
+    assert.equal(await internal(files, "apps/b", "@ro/b"), false);
+    const r = resolver(files);
+    await r.configFor("apps/a/tsconfig.json");
+    await r.configFor("apps/b/tsconfig.json");
+    assert.deepEqual([...r.packageBases], ["pkgroot"]);
+  });
+
+  it("conditional exports resolve in object order over TypeScript's conditions", async () => {
+    const files = {
+      "node_modules/pkgcond/package.json": `{"name":"pkgcond","exports":{
+        ".": {"types":"./t.json","default":"./d.json"},
+        "./ord": {"default":"./od.json","types":"./ot.json"},
+        "./mod": {"import":"./i.json","require":"./r.json"},
+        "./web": {"browser":"./b.json","default":"./wd.json"},
+        "./sub": {"node":"./n.json","default":"./sd.json"}
+      }}`,
+      "node_modules/pkgcond/t.json": `{"compilerOptions":{"paths":{"@t/*":["../../src/t/*"]}}}`,
+      "node_modules/pkgcond/d.json": `{"compilerOptions":{"paths":{"@d/*":["../../src/d/*"]}}}`,
+      "node_modules/pkgcond/od.json": `{"compilerOptions":{"paths":{"@od/*":["../../src/od/*"]}}}`,
+      "node_modules/pkgcond/ot.json": `{"compilerOptions":{"paths":{"@ot/*":["../../src/ot/*"]}}}`,
+      "node_modules/pkgcond/i.json": `{"compilerOptions":{"paths":{"@i/*":["../../src/i/*"]}}}`,
+      "node_modules/pkgcond/r.json": `{"compilerOptions":{"paths":{"@r/*":["../../src/r/*"]}}}`,
+      "node_modules/pkgcond/b.json": `{"compilerOptions":{"paths":{"@b/*":["../../src/b/*"]}}}`,
+      "node_modules/pkgcond/wd.json": `{"compilerOptions":{"paths":{"@wd/*":["../../src/wd/*"]}}}`,
+      "node_modules/pkgcond/n.json": `{"compilerOptions":{"paths":{"@n/*":["../../src/n/*"]}}}`,
+      "node_modules/pkgcond/sd.json": `{"compilerOptions":{"paths":{"@sd/*":["../../src/sd/*"]}}}`,
+      "src/t/a.ts": "",
+      "src/od/a.ts": "",
+      "src/r/a.ts": "",
+      "src/wd/a.ts": "",
+      "src/n/a.ts": "",
+      "apps/t/tsconfig.json": `{"extends":"pkgcond"}`,
+      "apps/ord/tsconfig.json": `{"extends":"pkgcond/ord"}`,
+      "apps/mod/tsconfig.json": `{"extends":"pkgcond/mod"}`,
+      "apps/web/tsconfig.json": `{"extends":"pkgcond/web"}`,
+      "apps/sub/tsconfig.json": `{"extends":"pkgcond/sub"}`,
+    };
+    // All shapes match TypeScript 5.9.3 on the same synthetic packages.
+    assert.equal(await internal(files, "apps/t", "@t/a"), true, "types first wins over default");
+    assert.equal(await internal(files, "apps/ord", "@od/a"), true, "default listed first wins");
+    assert.equal(await internal(files, "apps/mod", "@r/a"), true, "require beats import");
+    assert.equal(await internal(files, "apps/web", "@wd/a"), true, "browser is skipped");
+    assert.equal(await internal(files, "apps/sub", "@n/a"), true, "node first wins over default");
+    const r = resolver(files);
+    for (const c of ["t", "ord", "mod", "web", "sub"]) await r.configFor(`apps/${c}/tsconfig.json`);
+    assert.deepEqual([...r.packageBases], []);
+  });
+
+  it("a conditional wildcard target substitutes the capture", async () => {
+    const files = {
+      "node_modules/w/package.json": `{"name":"w","exports":{"./c/*":{"default":"./w/*.json"}}}`,
+      "node_modules/w/w/deep.json": `{"compilerOptions":{"paths":{"@cw/*":["../../../src/cw/*"]}}}`,
+      "src/cw/a.ts": "",
+      "tsconfig.json": `{"extends":"w/c/deep"}`,
+    };
+    assert.equal(await internal(files, ".", "@cw/a"), true);
+  });
+
+  it("resolution memoisation stops at the cap: the 1,001st base is not read", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 1001; i++) {
+      files[`node_modules/pkg${i}/tsconfig.json`] =
+        `{"compilerOptions":{"paths":{"@p${i}/*":["../../src/p${i}/*"]}}}`;
+      files[`src/p${i}/a.ts`] = "";
+      files[`cfg${i}/tsconfig.json`] = `{"extends":"pkg${i}"}`;
+    }
+    const r = resolver(files);
+    const configs: Awaited<ReturnType<typeof r.configFor>>[] = [];
+    for (let i = 0; i < 1001; i++) configs.push(await r.configFor(`cfg${i}/tsconfig.json`));
+    assert.equal(r.isInternal("@p0/a", configs[0]!), true);
+    assert.equal(r.isInternal("@p1000/a", configs[1000]!), false);
+    assert.deepEqual([...r.packageBases], ["pkg1000"]);
+  });
+});
