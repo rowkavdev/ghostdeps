@@ -212,3 +212,125 @@ describe("AliasResolver", () => {
     assert.equal(r.nearestConfig("pkg/src", "pkg"), undefined);
   });
 });
+
+describe("AliasResolver node_modules extends (#276)", () => {
+  it("reads an installed base package: tsconfig field, paths merging, no run note", async () => {
+    const files = {
+      "node_modules/@tsconfig/node20/package.json": `{"name":"@tsconfig/node20","tsconfig":"tsconfig.json"}`,
+      "node_modules/@tsconfig/node20/tsconfig.json": `{"compilerOptions":{"baseUrl":".","paths":{"@base/*":["../../../src/base/*"]}}}`,
+      "src/base/util.ts": "",
+      "tsconfig.json": `{"extends":"@tsconfig/node20","compilerOptions":{}}`,
+    };
+    assert.equal(await internal(files, ".", "@base/util"), true);
+    const r = resolver(files);
+    await r.configFor("tsconfig.json");
+    assert.deepEqual([...r.packageBases], []);
+    assert.deepEqual(r.limitations, []);
+  });
+
+  it("resolves exports subpaths, exact and single-star", async () => {
+    const files = {
+      "node_modules/expo/package.json": `{"name":"expo","exports":{"./tsconfig.base":"./tsconfig.base.json","./bases/*":"./configs/*.json"}}`,
+      "node_modules/expo/tsconfig.base.json": `{"compilerOptions":{"paths":{"@expo/*":["../../src/e/*"]}}}`,
+      "node_modules/expo/configs/strict.json": `{"compilerOptions":{"paths":{"@strict/*":["../../../src/s/*"]}}}`,
+      "src/e/a.ts": "",
+      "src/s/b.ts": "",
+      "apps/a/tsconfig.json": `{"extends":"expo/tsconfig.base"}`,
+      "apps/b/tsconfig.json": `{"extends":"expo/bases/strict"}`,
+    };
+    assert.equal(await internal(files, "apps/a", "@expo/a"), true);
+    assert.equal(await internal(files, "apps/b", "@strict/b"), true);
+    const r = resolver(files);
+    await r.configFor("apps/a/tsconfig.json");
+    await r.configFor("apps/b/tsconfig.json");
+    assert.deepEqual([...r.packageBases], []);
+  });
+
+  it("exports encapsulation is final: an unexported base is not read", async () => {
+    const files = {
+      "node_modules/expo/package.json": `{"name":"expo","exports":{"./public":"./public.json"}}`,
+      "node_modules/expo/public.json": `{"compilerOptions":{"paths":{"@pub/*":["../../src/p/*"]}}}`,
+      "node_modules/expo/internal.json": `{"compilerOptions":{"paths":{"@hidden/*":["../../src/h/*"]}}}`,
+      "src/h/secret.ts": "",
+      "tsconfig.json": `{"extends":"expo/internal"}`,
+    };
+    // TypeScript would error on this extends; the base must not be read, so
+    // its alias cannot mark the import internal.
+    assert.equal(await internal(files, ".", "@hidden/secret"), false);
+    const r = resolver(files);
+    await r.configFor("tsconfig.json");
+    assert.deepEqual([...r.packageBases], ["expo"]);
+  });
+
+  it("a bare name resolves <name>.json before the directory tsconfig.json", async () => {
+    const files = {
+      "node_modules/pkg.json": `{"compilerOptions":{"paths":{"@file/*":["../src/f/*"]}}}`,
+      "node_modules/pkg/package.json": `{"name":"pkg"}`,
+      "node_modules/pkg/tsconfig.json": `{"compilerOptions":{"paths":{"@dir/*":["../src/d/*"]}}}`,
+      "src/f/a.ts": "",
+      "src/d/b.ts": "",
+      "tsconfig.json": `{"extends":"pkg"}`,
+    };
+    assert.equal(await internal(files, ".", "@file/a"), true);
+    assert.equal(await internal(files, ".", "@dir/b"), false);
+  });
+
+  it("a config in a nested app resolves a base installed at the root", async () => {
+    const files = {
+      "node_modules/fastify-tsconfig/tsconfig.json": `{"compilerOptions":{"paths":{"@root/*":["../../src/*"]}}}`,
+      "src/lib/x.ts": "",
+      "apps/web/tsconfig.json": `{"extends":"fastify-tsconfig"}`,
+    };
+    assert.equal(await internal(files, "apps/web", "@root/lib/x"), true);
+    const r = resolver(files);
+    await r.configFor("apps/web/tsconfig.json");
+    assert.deepEqual([...r.packageBases], []);
+  });
+
+  it("a relative extends into node_modules is read when the file is listed", async () => {
+    const files = {
+      "node_modules/@tsconfig/strictest/tsconfig.json": `{"compilerOptions":{"paths":{"@st/*":["../../../src/st/*"]}}}`,
+      "src/st/y.ts": "",
+      "apps/c/tsconfig.json": `{"extends":"../../node_modules/@tsconfig/strictest/tsconfig.json"}`,
+    };
+    assert.equal(await internal(files, "apps/c", "@st/y"), true);
+    const r = resolver(files);
+    await r.configFor("apps/c/tsconfig.json");
+    assert.deepEqual([...r.packageBases], []);
+  });
+
+  it("an installed base's alias targets inside node_modules still never mark packages internal", async () => {
+    const files = {
+      "node_modules/base/tsconfig.json": `{"compilerOptions":{"baseUrl":"..","paths":{"*":["node_modules/*"]}}}`,
+      "node_modules/base/package.json": `{"name":"base"}`,
+      "node_modules/react/index.js": "",
+      "tsconfig.json": `{"extends":"base"}`,
+    };
+    assert.equal(await internal(files, ".", "react"), false);
+  });
+
+  it("a base package absent from node_modules keeps the run note", async () => {
+    const files = {
+      "node_modules/other/package.json": `{"name":"other"}`,
+      "node_modules/other/tsconfig.json": "{}",
+      "tsconfig.json": `{"extends":"@tsconfig/node20/tsconfig.json"}`,
+    };
+    const r = resolver(files);
+    await r.configFor("tsconfig.json");
+    assert.deepEqual([...r.packageBases], ["@tsconfig/node20"]);
+  });
+
+  it("a chained base inside node_modules can itself extend", async () => {
+    const files = {
+      "node_modules/outer/package.json": `{"name":"outer"}`,
+      "node_modules/outer/tsconfig.json": `{"extends":"../inner/base.json","compilerOptions":{"paths":{"@o/*":["../../src/o/*"]}}}`,
+      "node_modules/inner/base.json": `{"compilerOptions":{"paths":{"@i/*":["../../src/i/*"]}}}`,
+      "src/o/a.ts": "",
+      "src/i/b.ts": "",
+      "tsconfig.json": `{"extends":"outer"}`,
+    };
+    assert.equal(await internal(files, ".", "@o/a"), true);
+    // paths are inherited but never merged: the nearer config's paths win.
+    assert.equal(await internal(files, ".", "@i/b"), false);
+  });
+});

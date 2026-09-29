@@ -5,6 +5,7 @@ import type { AdapterContext, Dependency, ProjectRef, SourceLineChanges } from "
 import { fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
 import { MAX_SCRIPT_BLOCKS_PER_FILE } from "./embedded.js";
 import {
+  tsconfigBaseNotes,
   MAX_SOURCE_BYTES,
   MAX_OUTSIDE_PROJECT_RECORDS,
   MAX_UNRESOLVED_PER_FILE,
@@ -452,6 +453,34 @@ describe("findUsage", () => {
       (await findUsage(context, dep("lodash"))).map((u) => u.line),
       [2],
     );
+  });
+
+  it("an installed node_modules extends base is read and drops the run note (#276)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "tsconfig.json": `{"extends":"@tsconfig/strictest","compilerOptions":{}}`,
+      "node_modules/@tsconfig/strictest/package.json": `{"name":"@tsconfig/strictest"}`,
+      "node_modules/@tsconfig/strictest/tsconfig.json": `{"compilerOptions":{"paths":{"utils/*":["../../../src/utils/*"]}}}`,
+      "src/utils/log.ts": "",
+      "a.ts": `import "utils/log";\nimport "utils/missing";`,
+    });
+    // The base's paths make "utils/log" internal; "utils/missing" stays usage.
+    assert.deepEqual(
+      (await findUsage(context, dep("utils"))).map((u) => u.line),
+      [2],
+    );
+    assert.deepEqual(await tsconfigBaseNotes(context), []);
+  });
+
+  it("an uninstalled extends base keeps the run note (#276)", async () => {
+    const context = ctx({
+      "package.json": "{}",
+      "tsconfig.json": `{"extends":"@tsconfig/node20","compilerOptions":{}}`,
+      "a.ts": `import "utils/log";`,
+    });
+    const notes = await tsconfigBaseNotes(context);
+    assert.equal(notes.length, 1);
+    assert.match(notes[0]!.statement, /@tsconfig\/node20/);
   });
 
   it("a malformed tsconfig is a limitation for its project and aliases are simply not applied", async () => {

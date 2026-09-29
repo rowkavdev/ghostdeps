@@ -186,9 +186,16 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     else if (f.endsWith("/package.json")) roots.add(dirname(f));
   }
 
+  // The resolver also sees node_modules JSON (package.json and config
+  // bases), so tsconfig `extends` naming an installed package resolves when
+  // the files are in the listing (#276). Usage scanning below still never
+  // touches node_modules, and core scanner listings usually exclude it, in
+  // which case the bases are noted as unread (#275).
   const aliases = new AliasResolver(
     repository,
-    all.filter((f) => !isSkipped(f)),
+    all.filter(
+      (f) => !isSkipped(f) || (f.endsWith(".json") && f.split("/").includes("node_modules")),
+    ),
   );
   const scan: RepositoryScan = {
     files: new Map(),
@@ -640,8 +647,9 @@ const MAX_NOTE_CHARS = 300;
 
 /**
  * One run-level note (#205, lead ruling on #275) when tsconfig/jsconfig
- * `extends` names node_modules bases that were not read (ADR 0004; reading
- * them is #276). Never a limitation: an unknown alias can only make an
+ * `extends` names node_modules bases that were not read - not installed in
+ * the listing, or not resolvable (#276). Never a limitation: an unknown
+ * alias can only make an
  * internal import look like package usage, so it adds usage evidence and
  * never removes it. Names as many packages as fit.
  */
