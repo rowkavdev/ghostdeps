@@ -40,15 +40,6 @@ inputs:
       input is set.
     required: false
     default: ""
-  comments-off:
-    description: >-
-      Set to "true" to pass --comments-off to the scan: GhostDeps will not
-      maintain a PR comment for this repository. The Action itself posts
-      check runs and annotations, never comments - this input keeps the
-      switch in one place with the CLI flag and .ghostdeps.json, and the
-      human summary discloses when comments are off.
-    required: false
-    default: ""
   check-name:
     description: Name of the check run to create.
     required: false
@@ -169,7 +160,6 @@ runs:
         INPUT_DISABLE_RULE: ${{ inputs.disable-rule }}
         INPUT_ALLOWLIST: ${{ inputs.allowlist }}
         INPUT_FIXTURE_ROOTS: ${{ inputs.fixture-roots }}
-        INPUT_COMMENTS_OFF: ${{ inputs.comments-off }}
       run: |
         args=(scan --json "$INPUT_PATH")
         if [ -n "$INPUT_FAIL_ON" ]; then args+=(--fail-on "$INPUT_FAIL_ON"); fi
@@ -178,7 +168,6 @@ runs:
         IFS=',' read -ra allow <<< "$INPUT_ALLOWLIST"
         for a in "${allow[@]}"; do [ -n "$a" ] && args+=(--allowlist "$a"); done
         if [ -n "$INPUT_FIXTURE_ROOTS" ]; then args+=(--fixture-roots "$INPUT_FIXTURE_ROOTS"); fi
-        if [ "$INPUT_COMMENTS_OFF" = "true" ]; then args+=(--comments-off); fi
         set +e
         node "$ACTION_ROOT/packages/cli/dist/main.js" "${args[@]}" > "$RESULT"
         echo "exit=$?" >> "$GITHUB_OUTPUT"
