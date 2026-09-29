@@ -128,7 +128,11 @@ export async function readFixtureRoots(
     await file.close();
   }
   const config = parsePayload(decode(bytes, CONFIG), limits, CONFIG);
-  return { source: "repo-config" as const, roots: config.roots, commentsOff: config.commentsOff };
+  return {
+    source: "repo-config" as const,
+    roots: config.roots,
+    commentsOff: config.commentsOff === true,
+  };
 }
 
 function decode(bytes: Buffer, origin: string): string {
@@ -146,8 +150,13 @@ function decode(bytes: Buffer, origin: string): string {
  */
 export interface ScopeConfig {
   roots: string[];
-  /** Opt-out of PR comments: the App never maintains its comment when true. */
-  commentsOff: boolean;
+  /**
+   * PR-comment opt-out, tri-state: present (true or false) when the payload
+   * says it, undefined when it does not. A per-run payload REPLACES the
+   * committed choice only when present; the App never maintains its comment
+   * when the effective value is true.
+   */
+  commentsOff?: boolean;
 }
 
 function parsePayload(text: string, limits: ScanLimits, origin: string): ScopeConfig {
@@ -183,7 +192,7 @@ function parsePayload(text: string, limits: ScanLimits, origin: string): ScopeCo
       throw new Error(`duplicate or overlapping fixture roots in ${origin}`);
     }
   }
-  return { roots, commentsOff: commentsOff === true };
+  return commentsOff === undefined ? { roots } : { roots, commentsOff };
 }
 
 /**
