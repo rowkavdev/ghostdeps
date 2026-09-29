@@ -10,8 +10,13 @@
  * a workspace package in this repository ("@repo/typescript-config/base.json",
  * #145), found by the package.json `name` fields in the listing. A base
  * naming a workspace package that doesn't contain it becomes a limitation.
- * Other package bases ("@tsconfig/node20") live in node_modules and are not
- * resolved (ADR 0004: no resolution).
+ * A base naming a node_modules package ("@tsconfig/node20") is resolved
+ * statically when the installed files are in the listing (#276): the
+ * package's `tsconfig` field, `exports` subpaths, the `.json` suffix and
+ * the directory `tsconfig.json`, walking up from the referencing config
+ * the way TypeScript does. Nothing is evaluated (ADR 0004). Bases that
+ * are not installed - the usual CI checkout - are not read and are
+ * reported once per run.
  *
  * Conservative rule: a specifier counts as internal only when an alias
  * target resolves to a file that is actually in the repository listing.
@@ -129,11 +134,16 @@ export class AliasResolver {
   private readonly effective = new Map<string, Promise<AliasConfig | undefined>>();
   private readonly memo = new Map<string, Map<string, boolean>>();
   private workspace: Promise<Map<string, WorkspacePackage>> | undefined;
+  /** Memoised node_modules extends resolutions, keyed by referencing directory + entry (#276). */
+  private readonly nmBases = new Map<string, Promise<string | undefined>>();
+  /** Memoised node_modules package.json reads (#276). */
+  private readonly nmManifests = new Map<string, Promise<Record<string, unknown> | undefined>>();
   readonly limitations: Evidence[] = [];
   /**
-   * `extends` bases from node_modules packages that were not read (ADR
-   * 0004, #276), by package name. Reported once per run as a non-capping
-   * adapter note, never a limitation: an unknown alias can only add usage.
+   * `extends` bases from node_modules packages that were not read (#276),
+   * by package name - not installed, or not resolvable the way TypeScript
+   * resolves them. Reported once per run as a non-capping adapter note,
+   * never a limitation: an unknown alias can only add usage.
    */
   readonly packageBases = new Set<string>();
 
@@ -353,8 +363,9 @@ export class AliasResolver {
 
   /**
    * The nearest `extends` base that is a listed repository file: a relative
-   * path, or a path inside a workspace package of this repository (#145).
-   * Bases from node_modules packages are skipped (ADR 0004).
+   * path, a path inside a workspace package of this repository (#145), or a
+   * file inside an installed node_modules package (#276). node_modules bases
+   * that are not installed are skipped and recorded for the run note.
    */
   private async localExtends(
     value: unknown,
@@ -371,31 +382,176 @@ export class AliasResolver {
       if (entry.startsWith("./") || entry.startsWith("../")) {
         const target = joinPath(dir, entry);
         if (target === undefined) continue;
-        const nm = target.split("/").indexOf("node_modules");
-        if (nm >= 0) {
-          const pkg = packageName(
-            target
-              .split("/")
-              .slice(nm + 1)
-              .join("/"),
-          );
-          if (pkg !== undefined) this.notePackageBase(pkg);
+        const hit = this.files.has(target)
+          ? target
+          : this.files.has(`${target}.json`)
+            ? `${target}.json`
+            : undefined;
+        if (target.split("/").includes("node_modules")) {
+          // A relative path into node_modules: read it when the listing has
+          // the file (installed); otherwise record the base for the run note.
+          if (hit !== undefined) {
+            if (found === undefined) found = hit;
+          } else {
+            const nm = target.split("/").indexOf("node_modules");
+            const pkg = packageName(
+              target
+                .split("/")
+                .slice(nm + 1)
+                .join("/"),
+            );
+            if (pkg !== undefined) this.notePackageBase(pkg);
+          }
           continue;
         }
         if (found !== undefined) continue;
-        if (this.files.has(target)) found = target;
-        else if (this.files.has(`${target}.json`)) found = `${target}.json`;
+        if (hit !== undefined) found = hit;
         continue;
       }
       const pkg = packageName(entry);
       if (pkg === undefined) continue;
-      if (!(await this.workspacePackages()).has(pkg)) {
-        this.notePackageBase(pkg);
+      if ((await this.workspacePackages()).has(pkg)) {
+        if (found === undefined) found = await this.workspaceExtends(entry, file);
         continue;
       }
-      if (found === undefined) found = await this.workspaceExtends(entry, file);
+      const resolved = await this.nodeModulesExtends(entry, dir);
+      if (resolved !== undefined) {
+        if (found === undefined) found = resolved;
+      } else {
+        this.notePackageBase(pkg);
+      }
     }
     return found;
+  }
+
+  /**
+   * `extends` naming a node_modules package ("@tsconfig/node20",
+   * "expo/tsconfig.base"), resolved statically from the listing the way
+   * TypeScript resolves it (#276): walk up from the referencing config's
+   * directory; at the nearest level where the package is present, consult
+   * `exports` (exact key or single-star pattern; a miss is final, so a
+   * base the package does not export is never read), then the `tsconfig`
+   * field for a bare name, then the file, the file with a `.json` suffix,
+   * and the directory `tsconfig.json`. Bounded reads, nothing evaluated.
+   */
+  private nodeModulesExtends(entry: string, fromDir: string): Promise<string | undefined> {
+    const key = `${fromDir}\n${entry}`;
+    let pending = this.nmBases.get(key);
+    if (!pending) {
+      pending =
+        this.nmBases.size < MAX_PACKAGE_BASES
+          ? this.resolveNodeModulesBase(entry, fromDir)
+          : Promise.resolve(undefined);
+      this.nmBases.set(key, pending);
+    }
+    return pending;
+  }
+
+  private async resolveNodeModulesBase(
+    entry: string,
+    fromDir: string,
+  ): Promise<string | undefined> {
+    const m = PACKAGE_EXTENDS.exec(entry);
+    if (!m) return undefined;
+    const name = m[1]!;
+    const sub = m[2];
+    for (let d = fromDir; ; d = dirname(d)) {
+      const nm = d === "." ? "node_modules" : `${d}/node_modules`;
+      const pkgDir = `${nm}/${name}`;
+      const manifestPath = `${pkgDir}/package.json`;
+      const manifest = this.files.has(manifestPath)
+        ? await this.readNodeModulesManifest(manifestPath)
+        : undefined;
+      const present =
+        manifest !== undefined ||
+        this.dirs.has(pkgDir) ||
+        (sub === undefined && this.files.has(`${nm}/${name}.json`));
+      if (present) {
+        // The nearest installed copy wins; failing to resolve through it
+        // does not fall through to a copy higher up (TypeScript semantics).
+        const exportsField = manifest !== undefined ? own(manifest, "exports") : undefined;
+        if (isRecord(exportsField)) {
+          return this.exportsTarget(exportsField, sub === undefined ? "." : `./${sub}`, pkgDir);
+        }
+        if (sub === undefined) {
+          const field = manifest !== undefined ? own(manifest, "tsconfig") : undefined;
+          if (typeof field === "string") {
+            const t = joinPath(pkgDir, field);
+            if (t !== undefined && (t === pkgDir || t.startsWith(`${pkgDir}/`))) {
+              if (this.files.has(t)) return t;
+            }
+          }
+        }
+        const rest = sub === undefined ? `${nm}/${name}` : `${pkgDir}/${sub}`;
+        if (this.files.has(rest)) return rest;
+        if (this.files.has(`${rest}.json`)) return `${rest}.json`;
+        const dirBase = `${rest}/tsconfig.json`;
+        if (this.files.has(dirBase)) return dirBase;
+        return undefined;
+      }
+      if (d === ".") return undefined;
+    }
+  }
+
+  /** One package.json read from node_modules, memoised and size-bounded. */
+  private readNodeModulesManifest(path: string): Promise<Record<string, unknown> | undefined> {
+    let pending = this.nmManifests.get(path);
+    if (!pending) {
+      pending = (async () => {
+        let text: string;
+        try {
+          text = await this.repository.readFile(path);
+        } catch {
+          return undefined;
+        }
+        if (Buffer.byteLength(text, "utf8") > MAX_CONFIG_BYTES) return undefined;
+        try {
+          const doc: unknown = JSON.parse(text);
+          return isRecord(doc) ? doc : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+      this.nmManifests.set(path, pending);
+    }
+    return pending;
+  }
+
+  /** `exports` lookup for "." or a "./sub" key; only string targets inside the package are honoured. */
+  private exportsTarget(
+    exportsField: Record<string, unknown>,
+    key: string,
+    pkgDir: string,
+  ): string | undefined {
+    const keys = Object.keys(exportsField).slice(0, MAX_PATH_ENTRIES);
+    let target: unknown;
+    if (keys.includes(key)) {
+      target = own(exportsField, key);
+    } else {
+      for (const k of keys) {
+        const star = k.indexOf("*");
+        if (star < 0 || k.indexOf("*", star + 1) >= 0) continue;
+        const prefix = k.slice(0, star);
+        const suffix = k.slice(star + 1);
+        if (
+          key.length < prefix.length + suffix.length ||
+          !key.startsWith(prefix) ||
+          !key.endsWith(suffix)
+        ) {
+          continue;
+        }
+        const v = own(exportsField, k);
+        target =
+          typeof v === "string" && (v.match(/\*/g)?.length ?? 0) === 1
+            ? v.replace("*", key.slice(prefix.length, key.length - suffix.length))
+            : undefined;
+        break;
+      }
+    }
+    if (typeof target !== "string" || !target.startsWith("./")) return undefined;
+    const t = joinPath(pkgDir, target);
+    if (t === undefined || (t !== pkgDir && !t.startsWith(`${pkgDir}/`))) return undefined;
+    return this.files.has(t) ? t : undefined;
   }
 
   private notePackageBase(pkg: string): void {
@@ -438,8 +594,14 @@ export class AliasResolver {
   private workspacePackages(): Promise<Map<string, WorkspacePackage>> {
     this.workspace ??= (async () => {
       const out = new Map<string, WorkspacePackage>();
+      // Workspace packages are repository packages; installed copies under
+      // node_modules are resolved as node_modules bases (#276), not here.
       const manifests = [...this.files]
-        .filter((f) => f === "package.json" || f.endsWith("/package.json"))
+        .filter(
+          (f) =>
+            (f === "package.json" || f.endsWith("/package.json")) &&
+            !f.split("/").includes("node_modules"),
+        )
         .sort();
       if (manifests.length > MAX_WORKSPACE_MANIFESTS) {
         this.limit(
