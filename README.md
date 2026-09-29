@@ -9,9 +9,55 @@
 
 GhostDeps reads your manifests, lockfiles and source code and tells you which declared dependencies your code does not actually need, with the evidence and confidence behind every claim. It runs as a check on your pull requests (GitHub App or Action) and as a local CLI, and it never executes your code.
 
-## Status
+## Quickstart
 
-Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` confidence and severity stay capped at medium pending 14 consecutive green nightly corpus runs. GhostDeps says what it could not verify instead of guessing - see [Interpreting results](docs/interpreting-results.md) before acting on a finding.
+The CLI is on npm as `ghost-deps` and needs Node 22 or newer:
+
+```bash
+npx ghost-deps scan .
+```
+
+Scanning this repository's own `fixtures/js/basic-unused` fixture prints (ghost-deps 0.1.6):
+
+```text
+GhostDeps
+
+Languages:
+  JavaScript/TypeScript
+
+Package managers:
+  none detected
+
+Direct dependencies:
+  1
+
+Transitive dependencies:
+  unknown
+
+Findings:
+  1 unused
+  1 info
+
+Verdicts:
+  unused:
+    left-pad - left-pad is declared but never used (medium confidence, rule: unused)
+      - no import, require or dynamic import of left-pad found
+      - no script, bin or config reference to left-pad found
+      - left-pad is not on the dev-tooling allowlist
+
+Notes:
+    (repository-wide) - unused confidence capped pending corpus validation (high confidence, rule: unused-confidence-capped)
+      - 1 unused finding(s) capped at medium confidence
+```
+
+Every verdict names the package, the rule, the evidence and a confidence level. Read the evidence before touching a dependency - a finding is not a command to remove a package.
+
+Two things the output never means:
+
+- **No findings is not an all-clear.** It means nothing was reported in the analysed scope. An incomplete scan says what it could not verify instead of guessing.
+- **A `neutral` check is not `success`.** On GitHub, `neutral` can mean there are verdicts worth reviewing or that analysis was incomplete. The App never concludes `failure`; read the check title and notes.
+
+To install instead of running through npx: `npm install --global ghost-deps`, then `ghostdeps scan .`.
 
 ## Use it as a GitHub Action
 
@@ -40,25 +86,9 @@ jobs:
 
 The action runs the analysis inside your job; there is no external service to install. It reports through GitHub: a `ghostdeps` check run on your own branches, or workflow annotations and the job summary on fork pull requests, where `GITHUB_TOKEN` is read-only. `@main` follows the latest main - pin a full commit SHA (`rowkavdev/ghostdeps/packages/action@<sha>`) for production workflows. Full input list and the known trade-offs versus the App: [GitHub Action](docs/github-action.md).
 
-## Use the CLI
+## Status
 
-The CLI is on npm as `ghost-deps` (Node 22+):
-
-```bash
-npx ghost-deps scan .
-# or install it: npm install --global ghost-deps && ghostdeps scan .
-```
-
-Or build from source (pnpm via corepack):
-
-```bash
-git clone https://github.com/rowkavdev/ghostdeps.git
-cd ghostdeps
-corepack enable && pnpm install && pnpm build
-node packages/cli/dist/main.js scan .
-```
-
-`scan` prints findings with evidence and confidence. `--json` emits the schema-versioned result; `--fail-on high` opts into a non-zero exit for CI gating. Commands, flags and exit codes: [CLI](docs/cli.md).
+Early development. JavaScript/TypeScript, Python, Rust and Go are wired end to end; findings are advisory, and `unused` confidence and severity stay capped at medium pending 14 consecutive green nightly corpus runs. GhostDeps says what it could not verify instead of guessing - see [Interpreting results](docs/interpreting-results.md) before acting on a finding.
 
 ## What the check looks like
 
