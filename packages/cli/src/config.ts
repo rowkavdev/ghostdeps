@@ -25,4 +25,11 @@ export interface CliConfig {
    * flag was not passed; validated by core at scan time.
    */
   fixtureRoots?: string | undefined;
+  /**
+   * scan --comments-off: this run must not lead to a maintained PR comment.
+   * The CLI never comments itself; the flag is the per-run half of the
+   * comments-off switch (the committed half is .ghostdeps.json commentsOff)
+   * and is disclosed in the human summary so it is never silently ignored.
+   */
+  commentsOff?: boolean | undefined;
 }
