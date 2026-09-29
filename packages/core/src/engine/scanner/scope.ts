@@ -162,8 +162,8 @@ function parsePayload(text: string, limits: ScanLimits, origin: string): ScopeCo
     parsed === null ||
     typeof parsed !== "object" ||
     Array.isArray(parsed) ||
-    keys.join(",") !== "fixtureRoots,schemaVersion" &&
-      keys.join(",") !== "commentsOff,fixtureRoots,schemaVersion" ||
+    (keys.join(",") !== "fixtureRoots,schemaVersion" &&
+      keys.join(",") !== "commentsOff,fixtureRoots,schemaVersion") ||
     (parsed as { schemaVersion?: unknown }).schemaVersion !== 1 ||
     !Array.isArray((parsed as { fixtureRoots?: unknown }).fixtureRoots)
   ) {
