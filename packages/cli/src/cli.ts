@@ -44,8 +44,6 @@ interface ParsedArgs {
    * payload explicitly clears committed roots. Validated by core at scan time.
    */
   fixtureRoots?: string | undefined;
-  /** scan --comments-off: never maintain a PR comment for this run's repository. */
-  commentsOff: boolean;
   /** Repeatable policy flags; validated in buildConfig. */
   disableRules: string[];
   downgrades: string[];
@@ -67,7 +65,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const downgrades: string[] = [];
   const allowlist: string[] = [];
   let fixtureRoots: string | undefined;
-  let commentsOff = false;
   let positionalOnly = false;
   let sawDoubleDash = false;
   for (let i = 0; i < argv.length; i++) {
@@ -80,8 +77,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
       sawDoubleDash = true;
     } else if (arg === "--json") {
       json = true;
-    } else if (arg === "--comments-off") {
-      commentsOff = true;
     } else if (arg === "--help" || arg === "-h") {
       help = true;
     } else if (arg === "--version" || arg === "-V") {
@@ -130,7 +125,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
     failOn,
     severity,
     fixtureRoots,
-    commentsOff,
     disableRules,
     downgrades,
     allowlist,
@@ -252,7 +246,6 @@ function buildConfig(
     failOn?: string | undefined;
     severity?: string | undefined;
     fixtureRoots?: string | undefined;
-    commentsOff?: boolean | undefined;
     disableRules: string[];
     downgrades: string[];
     allowlist: string[];
@@ -261,9 +254,6 @@ function buildConfig(
   // The per-run scope override applies where fixture scope is active (#354).
   if (flags.fixtureRoots !== undefined && command !== "scan" && command !== "fix") {
     throw new UsageError("--fixture-roots only applies to ghostdeps scan and fix");
-  }
-  if (flags.commentsOff === true && command !== "scan") {
-    throw new UsageError("--comments-off only applies to ghostdeps scan");
   }
   const fixtureRoots = flags.fixtureRoots;
   const failOn = severityFlag("--fail-on", flags.failOn);
@@ -301,7 +291,6 @@ function buildConfig(
       severity,
       policy,
       fixtureRoots,
-      commentsOff: flags.commentsOff === true,
     };
   }
   if (packageCommands.has(command)) {

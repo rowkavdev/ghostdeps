@@ -9,7 +9,6 @@ const optionLines = [
   "  --downgrade <r>=<c> scan: cap a rule's confidence (repeatable)",
   "  --allowlist <e>:<p> scan: allowlist a tooling package, * suffix = prefix",
   "  --fixture-roots <j> scan/fix: per-run fixture-scope override; schema-versioned",
-  "  --comments-off      scan: never maintain a PR comment for this repository",
   "                      JSON like .ghostdeps.json; replaces committed roots",
   "  -h, --help          Show help",
   "  -V, --version       Show the version",
