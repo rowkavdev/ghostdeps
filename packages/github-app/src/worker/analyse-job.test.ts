@@ -326,6 +326,45 @@ index 3333333..4444444 100644
     assert.equal(rec.updated[0]?.conclusion, "success");
   });
 
+  it("suppresses the PR comment when .ghostdeps.json turns comments off", async () => {
+    const { client } = fakeClient({ diff: DIFF, files });
+    const repoWithConfig: TarEntry[] = [
+      ...prRepo,
+      {
+        name: `${ROOT}.ghostdeps.json`,
+        body: JSON.stringify({ schemaVersion: 1, fixtureRoots: [], commentsOff: true }),
+      },
+    ];
+    const logs: string[] = [];
+    let commentClientCalls = 0;
+    const worker = createAnalysisWorker({
+      appId: APP_ID,
+      clientFor: async () => client,
+      workRoot: await workRoot(),
+      fetch: fetchServing(tarGz(repoWithConfig)),
+      analyse: async () => emptyResult,
+      comments: { botLogin: "ghostdeps[bot]", log: { info: () => {}, warn: () => {} } },
+      commentClientFor: async () => {
+        commentClientCalls++;
+        throw new Error("comment client must not be minted when comments are off");
+      },
+      log: {
+        info: (_obj, msg) => {
+          logs.push(`info:${msg}`);
+        },
+        warn: (obj, msg) => {
+          logs.push(`warn:${msg}:${String((obj as { err?: unknown }).err)}`);
+        },
+      },
+    });
+    await worker(prJob);
+    assert.equal(commentClientCalls, 0, "no comment client when commentsOff");
+    assert.ok(
+      logs.some((msg) => msg.includes("PR comment suppressed by .ghostdeps.json commentsOff")),
+      `suppression is logged; got: ${JSON.stringify(logs)}`,
+    );
+  });
+
   it("scopes a source-only PR with an empty change list, not a full analysis (#101)", async () => {
     const sourceOnly = DIFF.slice(DIFF.indexOf("diff --git a/src/index.js"));
     const { client, rec } = fakeClient({ diff: sourceOnly, files });

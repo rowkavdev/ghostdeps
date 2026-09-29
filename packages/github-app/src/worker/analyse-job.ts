@@ -15,12 +15,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   analyseRepositoryIsolated,
+  DEFAULT_SCAN_LIMITS,
   extractTarball,
   ExtractionError,
   fixtureRootsDigest,
   fixtureScope,
   FsRepositoryHandle,
   parseFixtureRootsText,
+  readFixtureRoots,
   resolveLimits,
   scanCompletenessFindings,
   type AnalysisResult,
@@ -539,22 +541,31 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
       // the delivered output (decline-preserves-scans, ADR 0006 #3).
       if (options.comments && options.commentClientFor && job.trigger.kind === "pull_request") {
         try {
-          const issues = await options.commentClientFor(job);
-          const outcome = await deliverComment(
-            issues,
-            options.comments,
-            {
-              owner: target.owner,
-              repo: target.repo,
-              repositoryId: job.repository.id,
-              pullNumber: job.trigger.number,
-              headSha: job.headSha,
-            },
-            await checkoutRoot(destDir),
-            defaultCommentAdapters(),
-            result,
-          );
-          options.log?.info({ job: job.key, comment: outcome.action }, "PR comment maintained");
+          const commentRoot = await checkoutRoot(destDir);
+          const scopeConfig = await readFixtureRoots(commentRoot, DEFAULT_SCAN_LIMITS);
+          if (scopeConfig.commentsOff) {
+            options.log?.info(
+              { job: job.key },
+              "PR comment suppressed by .ghostdeps.json commentsOff",
+            );
+          } else {
+            const issues = await options.commentClientFor(job);
+            const outcome = await deliverComment(
+              issues,
+              options.comments,
+              {
+                owner: target.owner,
+                repo: target.repo,
+                repositoryId: job.repository.id,
+                pullNumber: job.trigger.number,
+                headSha: job.headSha,
+              },
+              commentRoot,
+              defaultCommentAdapters(),
+              result,
+            );
+            options.log?.info({ job: job.key, comment: outcome.action }, "PR comment maintained");
+          }
         } catch (error) {
           options.log?.warn(
             { job: job.key, err: error },
