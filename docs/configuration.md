@@ -14,7 +14,6 @@ Choose the channel first. The CLI and Action run locally without a registry meta
 | `--downgrade <rule>=<confidence>` | None             | Caps a rule's confidence at `high`, `medium`, or `low`; repeatable and never raises it.                                                                               | When a rule needs a more cautious verdict.                          |
 | `--allowlist <ecosystem>:<name>`  | None             | Marks expected tooling; a trailing `*` matches a name prefix. Repeatable.                                                                                             | When a known tool is expected despite weak source references.       |
 | `--fixture-roots <json>`          | Unset            | Per-run fixture-scope override (#354), `scan` and `fix`: bounded schema-versioned JSON with the `.ghostdeps.json` grammar; replaces committed roots for the run.      | When one run needs different fixture roots than the committed file. |
-| `--comments-off`                  | Off              | Opts the repository out of PR-comment maintenance (`scan` only); the human summary discloses the off state.                                                           | When the repository should never get a GhostDeps PR comment.        |
 
 `--fail-on` and the policy flags apply only to `scan`; `--fixture-roots` applies to `scan` and `fix`. Unknown rule IDs or ecosystems are usage errors, not silently ignored. Awareness notes and factual health observations never trigger `--fail-on`, even at `info`. A successful scan exits 0 unless its `--fail-on` threshold is reached (exit 1); usage and scan errors exit 2, and unimplemented commands exit 3. No `--fail-on` means findings do not fail a successful scan. The CLI is offline and does not fetch registry metadata. See [CLI flags and exit codes](cli.md#flags).
 
@@ -32,10 +31,12 @@ A repository can declare fixture-only directory roots that GhostDeps leaves out 
 
 `commentsOff` is an optional boolean (default `false`). When set, GhostDeps
 never maintains a PR comment for the repository: the App's comment delivery
-skips the repository and logs the suppression, and the CLI (`--comments-off`)
-and Action (`comments-off` input) express the same choice per run. Precedence
-is flag/input, then a per-run `--fixture-roots` payload, then the committed
-file. Every run discloses the off state and its source in the human summary;
+skips the repository and logs the suppression, and the check result stands
+either way. The committed file is the switch - the App is the layer that
+comments, and the committed file is what it reads. A per-run
+`--fixture-roots` payload may restate `commentsOff` for that run's record
+(true or false, disclosed with its source), but it never reaches the App.
+Every run discloses the off state and its source in the human summary;
 JSON output is unchanged.
 
 Roots are exact, repository-relative directory paths: no globs, negation, file-level entries or dependency-name matching, and no built-in `fixtures/` convention - a directory is excluded only because the owner declared it. The CLI (`scan` and `fix`), the GitHub Action (which runs the CLI) and the GitHub App's full scans honour the file, and so do its pull-request analyses: the head's effective scope applies to both snapshots, changed files under excluded roots are dropped from the analysis and disclosed by count in the check notes, and a scope-config edit inside the PR is disclosed with old and new digests (#354). Only an unreadable PR diff falls back to an unscoped full scan, with a prominent note.
@@ -55,7 +56,6 @@ Set these under `with:` for `rowkavdev/ghostdeps/packages/action@v1`. The Action
 | `disable-rule`  | Empty                          | Comma-separated rule IDs disabled for the run.                                                                                                                                     | When specific recommendation rules do not apply.                    |
 | `allowlist`     | Empty                          | Comma-separated `ecosystem:name` tooling entries.                                                                                                                                  | For expected tooling not referenced in code.                        |
 | `fixture-roots` | Empty (committed file governs) | Per-run fixture-scope override (#354): bounded schema-versioned JSON with the `.ghostdeps.json` grammar; replaces committed roots for the run, an explicit empty list clears them. | When one run needs different fixture roots than the committed file. |
-| `comments-off`  | Empty                          | `"true"` passes `--comments-off` to the scan, opting the repository out of PR-comment maintenance. The Action itself posts check runs, never comments.                             | When the repository should never get a GhostDeps PR comment.        |
 | `check-name`    | `ghostdeps`                    | Name of the check run.                                                                                                                                                             | To distinguish this check from another check.                       |
 | `node-version`  | `22`                           | Node version used for analysis; requires Node 22 or newer.                                                                                                                         | When your runner needs a newer supported Node.                      |
 | `github-token`  | `${{ github.token }}`          | Token for creating the check run; workflow needs `checks: write` (and `contents: read` for checkout, `pull-requests: read` for PR annotations).                                    | When a different authorized token is needed.                        |
