@@ -97,7 +97,10 @@ async function commentsOffSource(config: CliConfig): Promise<string | undefined>
   if (config.commentsOff === true) return "--comments-off";
   if (config.fixtureRoots !== undefined) {
     try {
-      if (parseScopeConfigText(config.fixtureRoots, DEFAULT_SCAN_LIMITS, "--fixture-roots").commentsOff) {
+      if (
+        parseScopeConfigText(config.fixtureRoots, DEFAULT_SCAN_LIMITS, "--fixture-roots")
+          .commentsOff
+      ) {
         return "--fixture-roots";
       }
     } catch {
@@ -137,7 +140,9 @@ export async function runScan(
     io.stdout(renderRepositorySummary(shown));
     const commentsOff = await commentsOffSource(config);
     if (commentsOff !== undefined) {
-      io.stdout(`Comments: off (${commentsOff}) - GhostDeps will not maintain a PR comment for this repository.`);
+      io.stdout(
+        `Comments: off (${commentsOff}) - GhostDeps will not maintain a PR comment for this repository.`,
+      );
     }
     // Non-capping awareness and source-backed facts do not count as hidden
     // findings (#385 renders facts in their own section).

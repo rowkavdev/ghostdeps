@@ -82,7 +82,7 @@ up) flows only through the core metadata service, never from the CLI.
 | `--downgrade <rule>=<confidence>` | Cap a rule's confidence at high, medium or low - never raises it   |
 | `--allowlist <ecosystem>:<name>`  | Mark expected tooling; a trailing `*` makes the name a prefix      |
 | `--fixture-roots <json>`          | Per-run fixture-scope override (`scan` and `fix`); see below       |
-| `--comments-off`                    | Opt this repository out of PR-comment maintenance (`scan` only) |
+| `--comments-off`                  | Opt this repository out of PR-comment maintenance (`scan` only)    |
 
 The policy flags are validated loudly: an unknown rule id or ecosystem is a
 usage error (exit 2) that names the known values, so a typo can never read as

@@ -104,7 +104,7 @@ The action runs the analysis inside your job; there is no external service to in
 | `--downgrade <rule>=<confidence>` | None             | Cap a rule's confidence at `high`, `medium` or `low`; repeatable, never raises it.                                             |
 | `--allowlist <ecosystem>:<name>`  | None             | Mark expected tooling; a trailing `*` matches a name prefix; repeatable.                                                       |
 | `--fixture-roots <json>`          | Unset            | Per-run fixture-scope override with the `.ghostdeps.json` grammar; replaces committed roots for the run.                       |
-| `--comments-off`                    | Off              | Opt this repository out of PR-comment maintenance (`scan` only); the human summary always discloses when comments are off. |
+| `--comments-off`                  | Off              | Opt this repository out of PR-comment maintenance (`scan` only); the human summary always discloses when comments are off.     |
 
 An unknown rule id or ecosystem is a usage error that names the known values, never a silent no-op. Full semantics: [CLI](docs/cli.md).
 
