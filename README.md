@@ -84,7 +84,9 @@ jobs:
           # fail-on: high   # opt in to gating; advisory by default
 ```
 
-The action runs the analysis inside your job; there is no external service to install. It reports through GitHub: a `ghostdeps` check run on your own branches, or workflow annotations and the job summary on fork pull requests, where `GITHUB_TOKEN` is read-only. `@main` follows the latest main - pin a full commit SHA (`rowkavdev/ghostdeps/packages/action@<sha>`) for production workflows. Full input list and the known trade-offs versus the App: [GitHub Action](docs/github-action.md).
+The action runs the analysis inside your job; there is no external service to install. It reports through GitHub: a `ghostdeps` check run on your own branches, or workflow annotations and the job summary on fork pull requests, where `GITHUB_TOKEN` is read-only.
+
+**Pin the action for production.** `@main` follows the latest main, so an unpinned workflow can change behavior without a commit from you. Pin a full commit SHA instead: `rowkavdev/ghostdeps/packages/action@<sha>` (the SHA of the GhostDeps commit you reviewed). Full input list and the known trade-offs versus the App: [GitHub Action](docs/github-action.md).
 
 ## Options and configuration
 
