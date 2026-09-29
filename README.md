@@ -94,16 +94,16 @@ The action runs the analysis inside your job; there is no external service to in
 
 ### Scan flags
 
-| Flag                              | Default           | Effect                                                                          |
-| --------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
-| `scan [path]`                     | `.`               | Directory to analyse.                                                           |
-| `--json`                          | Off               | Print the complete schema-versioned result; never filtered.                     |
-| `--fail-on <severity>`            | Unset (advisory)  | Exit 1 when any verdict finding reaches the threshold. Evaluates all verdict findings, even ones hidden by the display filter. |
-| `--severity <severity>`           | Unset (show all)  | Filter the human display only; cannot be combined with `--json`.                |
-| `--disable-rule <id>`             | None              | Turn one recommendation rule off for the run; repeatable.                       |
-| `--downgrade <rule>=<confidence>` | None              | Cap a rule's confidence at `high`, `medium` or `low`; repeatable, never raises it. |
-| `--allowlist <ecosystem>:<name>`  | None              | Mark expected tooling; a trailing `*` matches a name prefix; repeatable.        |
-| `--fixture-roots <json>`          | Unset             | Per-run fixture-scope override with the `.ghostdeps.json` grammar; replaces committed roots for the run. |
+| Flag                              | Default          | Effect                                                                                                                         |
+| --------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `scan [path]`                     | `.`              | Directory to analyse.                                                                                                          |
+| `--json`                          | Off              | Print the complete schema-versioned result; never filtered.                                                                    |
+| `--fail-on <severity>`            | Unset (advisory) | Exit 1 when any verdict finding reaches the threshold. Evaluates all verdict findings, even ones hidden by the display filter. |
+| `--severity <severity>`           | Unset (show all) | Filter the human display only; cannot be combined with `--json`.                                                               |
+| `--disable-rule <id>`             | None             | Turn one recommendation rule off for the run; repeatable.                                                                      |
+| `--downgrade <rule>=<confidence>` | None             | Cap a rule's confidence at `high`, `medium` or `low`; repeatable, never raises it.                                             |
+| `--allowlist <ecosystem>:<name>`  | None             | Mark expected tooling; a trailing `*` matches a name prefix; repeatable.                                                       |
+| `--fixture-roots <json>`          | Unset            | Per-run fixture-scope override with the `.ghostdeps.json` grammar; replaces committed roots for the run.                       |
 
 An unknown rule id or ecosystem is a usage error that names the known values, never a silent no-op. Full semantics: [CLI](docs/cli.md).
 
@@ -113,12 +113,12 @@ GhostDeps is advisory by default: findings never fail a successful scan unless y
 
 ### Exit codes
 
-| Code | Meaning                                                          |
-| ---- | ---------------------------------------------------------------- |
-| 0    | Success; with `--fail-on`, no finding reached the threshold      |
-| 1    | `--fail-on` threshold met or exceeded                            |
-| 2    | Usage error, or the scan itself failed (no usable result)        |
-| 3    | Command not implemented yet                                      |
+| Code | Meaning                                                     |
+| ---- | ----------------------------------------------------------- |
+| 0    | Success; with `--fail-on`, no finding reached the threshold |
+| 1    | `--fail-on` threshold met or exceeded                       |
+| 2    | Usage error, or the scan itself failed (no usable result)   |
+| 3    | Command not implemented yet                                 |
 
 ### Repository config: `.ghostdeps.json`
 
