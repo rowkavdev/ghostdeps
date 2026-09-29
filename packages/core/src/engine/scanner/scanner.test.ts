@@ -526,6 +526,30 @@ describe("opt-in fixture scope accounting (#354)", () => {
         commentsOff: true,
       },
     );
+    // Tri-state at the payload boundary: present false is a statement,
+    // absent is silence - the CLI replaces the committed choice for the run
+    // record only when the payload says something.
+    assert.deepEqual(
+      parseScopeConfigText(
+        '{"schemaVersion":1,"fixtureRoots":[],"commentsOff":false}',
+        DEFAULT_SCAN_LIMITS,
+        "--fixture-roots",
+      ),
+      {
+        roots: [],
+        commentsOff: false,
+      },
+    );
+    assert.deepEqual(
+      parseScopeConfigText(
+        '{"schemaVersion":1,"fixtureRoots":[]}',
+        DEFAULT_SCAN_LIMITS,
+        "--fixture-roots",
+      ),
+      { roots: [] },
+    );
+    // readFixtureRoots maps the committed file's silence to false.
+    assert.equal(absent.commentsOff, false);
   });
 
   it("refuses symlinked config, symlinked roots and uncertain counts", async () => {
