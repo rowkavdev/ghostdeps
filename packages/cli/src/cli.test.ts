@@ -52,6 +52,27 @@ describe("ghostdeps cli", () => {
     assert.ok(err.join(" ").includes("unknown option: --bogus"));
   });
 
+  it("scan --comments-off discloses the off state in human output", async () => {
+    const { io, out, err } = capture();
+    const code = await run(["scan", ".", "--comments-off"], io);
+    assert.equal(code, 0, err.join("\n"));
+    assert.ok(out.join("\n").includes("Comments: off (--comments-off)"));
+  });
+
+  it("--comments-off only applies to scan", async () => {
+    const { io, err } = capture();
+    const code = await run(["explain", "left-pad", "--comments-off"], io);
+    assert.equal(code, 2);
+    assert.ok(err.join(" ").includes("--comments-off only applies to ghostdeps scan"));
+  });
+
+  it("--comments-off=... is not accepted as a valued flag", async () => {
+    const { io, err } = capture();
+    const code = await run(["scan", ".", "--comments-off=true"], io);
+    assert.equal(code, 2);
+    assert.ok(err.join(" ").includes("unknown option"));
+  });
+
   it("routes a bare path to scan (ghostdeps .)", async () => {
     const { io, out, err } = capture();
     const code = await run(["."], io);

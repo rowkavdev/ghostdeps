@@ -11,6 +11,7 @@ import {
   type PolicyConfig,
 } from "@ghostdeps/core";
 import { stat } from "node:fs/promises";
+import { DEFAULT_SCAN_LIMITS, readFixtureRoots, parseScopeConfigText } from "@ghostdeps/core";
 import { defaultAdapters } from "./adapters.js";
 import { evaluateNativeProduction } from "@ghostdeps/javascript-typescript";
 import type { CliConfig } from "./config.js";
@@ -87,6 +88,32 @@ export async function analysePath(
  * reaches the threshold, so CI can gate on it. Without --fail-on a successful
  * scan always exits 0: GhostDeps advises, it does not gate.
  */
+/**
+ * Where the effective comments-off state came from, for the disclosure line.
+ * Flag beats per-run override beats committed config; the scans above have
+ * already validated both payloads, so these reads cannot fail silently.
+ */
+async function commentsOffSource(config: CliConfig): Promise<string | undefined> {
+  if (config.commentsOff === true) return "--comments-off";
+  if (config.fixtureRoots !== undefined) {
+    try {
+      if (parseScopeConfigText(config.fixtureRoots, DEFAULT_SCAN_LIMITS, "--fixture-roots").commentsOff) {
+        return "--fixture-roots";
+      }
+    } catch {
+      // The scan's own parse is authoritative; a display re-parse never invents state.
+    }
+  }
+  try {
+    if ((await readFixtureRoots(config.path, DEFAULT_SCAN_LIMITS)).commentsOff) {
+      return ".ghostdeps.json";
+    }
+  } catch {
+    // Same: the scan already read this file; disclosure stays silent rather than guessing.
+  }
+  return undefined;
+}
+
 export async function runScan(
   config: CliConfig,
   io: Io,
@@ -108,6 +135,10 @@ export async function runScan(
         ? result
         : { ...result, findings: result.findings.filter((f) => atOrAboveSeverity(f, min)) };
     io.stdout(renderRepositorySummary(shown));
+    const commentsOff = await commentsOffSource(config);
+    if (commentsOff !== undefined) {
+      io.stdout(`Comments: off (${commentsOff}) - GhostDeps will not maintain a PR comment for this repository.`);
+    }
     // Non-capping awareness and source-backed facts do not count as hidden
     // findings (#385 renders facts in their own section).
     const hidden =
