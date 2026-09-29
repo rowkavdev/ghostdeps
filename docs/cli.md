@@ -82,7 +82,6 @@ up) flows only through the core metadata service, never from the CLI.
 | `--downgrade <rule>=<confidence>` | Cap a rule's confidence at high, medium or low - never raises it   |
 | `--allowlist <ecosystem>:<name>`  | Mark expected tooling; a trailing `*` makes the name a prefix      |
 | `--fixture-roots <json>`          | Per-run fixture-scope override (`scan` and `fix`); see below       |
-| `--comments-off`                  | Opt this repository out of PR-comment maintenance (`scan` only)    |
 
 The policy flags are validated loudly: an unknown rule id or ecosystem is a
 usage error (exit 2) that names the known values, so a typo can never read as
@@ -99,11 +98,12 @@ usage error (exit 2) that names the known values, so a typo can never read as
 
 ## Turning PR comments off
 
-`--comments-off` is a bare flag for `ghostdeps scan`: it marks the repository
-as opted out of PR-comment maintenance for the run. The CLI never comments
-itself; the flag matters wherever a run feeds the layer that does (the App's
-comment delivery). Precedence is flag, then a `--fixture-roots` payload's
-`commentsOff`, then the committed `.ghostdeps.json`. The human summary always
+The committed `.ghostdeps.json` is the switch: `"commentsOff": true` opts the
+repository out, and the App's comment delivery honours it - the App is the
+layer that comments, and the committed file is what it reads. A per-run
+`--fixture-roots` payload may carry `commentsOff` too: when present it
+replaces the committed choice for that run's record (true or false), and the
+human summary says so, but it never reaches the App. The human summary always
 prints the off state with its source, e.g. `Comments: off (.ghostdeps.json)`;
 JSON output is unchanged.
 
