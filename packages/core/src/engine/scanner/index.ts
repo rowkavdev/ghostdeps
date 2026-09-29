@@ -20,6 +20,7 @@ export {
   fixtureScope,
   fixtureRootsDigest,
   parseFixtureRootsText,
+  parseScopeConfigText,
   readFixtureRoots,
   type ScanScope,
   type FixtureRootCount,

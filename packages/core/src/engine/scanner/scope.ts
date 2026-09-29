@@ -90,13 +90,15 @@ export async function readFixtureRoots(
 ): Promise<{
   source: ScanScope["source"];
   roots: string[];
+  commentsOff: boolean;
 }> {
   const configPath = path.join(root, CONFIG);
   let st;
   try {
     st = await lstat(configPath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { source: "none", roots: [] };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return { source: "none", roots: [], commentsOff: false };
     throw error;
   }
   if (!st.isFile() || st.size > MAX_CONFIG_BYTES)
@@ -125,10 +127,8 @@ export async function readFixtureRoots(
   } finally {
     await file.close();
   }
-  return {
-    source: "repo-config" as const,
-    roots: parsePayload(decode(bytes, CONFIG), limits, CONFIG),
-  };
+  const config = parsePayload(decode(bytes, CONFIG), limits, CONFIG);
+  return { source: "repo-config" as const, roots: config.roots, commentsOff: config.commentsOff };
 }
 
 function decode(bytes: Buffer, origin: string): string {
@@ -144,22 +144,36 @@ function decode(bytes: Buffer, origin: string): string {
  * a bounded, schema-versioned list of literal roots. `origin` names the source
  * in errors (`.ghostdeps.json` or `--fixture-roots`).
  */
-function parsePayload(text: string, limits: ScanLimits, origin: string): string[] {
+export interface ScopeConfig {
+  roots: string[];
+  /** Opt-out of PR comments: the App never maintains its comment when true. */
+  commentsOff: boolean;
+}
+
+function parsePayload(text: string, limits: ScanLimits, origin: string): ScopeConfig {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     throw new Error(`invalid ${origin}: expected UTF-8 JSON`);
   }
+  const keys = Object.keys(parsed === null || typeof parsed !== "object" ? {} : parsed).sort();
   if (
     parsed === null ||
     typeof parsed !== "object" ||
     Array.isArray(parsed) ||
-    Object.keys(parsed).sort().join(",") !== "fixtureRoots,schemaVersion" ||
+    keys.join(",") !== "fixtureRoots,schemaVersion" &&
+      keys.join(",") !== "commentsOff,fixtureRoots,schemaVersion" ||
     (parsed as { schemaVersion?: unknown }).schemaVersion !== 1 ||
     !Array.isArray((parsed as { fixtureRoots?: unknown }).fixtureRoots)
   ) {
-    throw new Error(`invalid ${origin}: expected schemaVersion 1 and fixtureRoots only`);
+    throw new Error(
+      `invalid ${origin}: expected schemaVersion 1, fixtureRoots, and optional commentsOff only`,
+    );
+  }
+  const commentsOff = (parsed as { commentsOff?: unknown }).commentsOff;
+  if (commentsOff !== undefined && typeof commentsOff !== "boolean") {
+    throw new Error(`invalid ${origin}: commentsOff must be a boolean`);
   }
   const values = (parsed as { fixtureRoots: unknown[] }).fixtureRoots;
   if (values.length > MAX_ROOTS) throw new Error(`${origin} exceeds 32 fixture roots`);
@@ -169,7 +183,7 @@ function parsePayload(text: string, limits: ScanLimits, origin: string): string[
       throw new Error(`duplicate or overlapping fixture roots in ${origin}`);
     }
   }
-  return roots;
+  return { roots, commentsOff: commentsOff === true };
 }
 
 /**
@@ -177,11 +191,19 @@ function parsePayload(text: string, limits: ScanLimits, origin: string): string[
  * the per-run override (origin `--fixture-roots`) and a base-side committed
  * config read over the API (origin `.ghostdeps.json`).
  */
-export function parseFixtureRootsText(text: string, limits: ScanLimits, origin: string): string[] {
+export function parseScopeConfigText(
+  text: string,
+  limits: ScanLimits,
+  origin: string,
+): ScopeConfig {
   if (new TextEncoder().encode(text).length > MAX_CONFIG_BYTES) {
     throw new Error(`${origin} exceeds 16 KiB`);
   }
   return parsePayload(text, limits, origin);
+}
+
+export function parseFixtureRootsText(text: string, limits: ScanLimits, origin: string): string[] {
+  return parseScopeConfigText(text, limits, origin).roots;
 }
 
 /** The per-run override payload is bounded exactly like the committed file. */

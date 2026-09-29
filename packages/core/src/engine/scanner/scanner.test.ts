@@ -8,7 +8,7 @@ import { MAX_HEAD_READ_BYTES } from "../../limits.js";
 import { readRepositoryFileHead } from "../../repository-head.js";
 import type { RepositoryHandle } from "../../types/index.js";
 import { FsRepositoryHandle, RepositoryReadError } from "./handle.js";
-import { fixtureRootsDigest, parseFixtureRootsText } from "./scope.js";
+import { fixtureRootsDigest, parseFixtureRootsText, parseScopeConfigText, readFixtureRoots } from "./scope.js";
 import { DEFAULT_SCAN_LIMITS, resolveLimits } from "./limits.js";
 import { scanRepository } from "./scanner.js";
 
@@ -486,6 +486,37 @@ describe("opt-in fixture scope accounting (#354)", () => {
     await assert.rejects(scanRepository(root, { fixtureScope: true }));
     await writeFile(path.join(root, ".ghostdeps.json"), "x".repeat(16385));
     await assert.rejects(scanRepository(root, { fixtureScope: true }));
+  });
+
+  it("accepts an optional boolean commentsOff and rejects anything else", async () => {
+    await writeFile(
+      path.join(root, ".ghostdeps.json"),
+      '{"schemaVersion":1,"fixtureRoots":[],"commentsOff":true}',
+    );
+    const on = await readFixtureRoots(root, DEFAULT_SCAN_LIMITS);
+    assert.equal(on.commentsOff, true);
+    assert.deepEqual(on.roots, []);
+    await writeFile(
+      path.join(root, ".ghostdeps.json"),
+      '{"schemaVersion":1,"fixtureRoots":[],"commentsOff":false}',
+    );
+    const off = await readFixtureRoots(root, DEFAULT_SCAN_LIMITS);
+    assert.equal(off.commentsOff, false);
+    await writeFile(
+      path.join(root, ".ghostdeps.json"),
+      '{"schemaVersion":1,"fixtureRoots":[],"commentsOff":"yes"}',
+    );
+    await assert.rejects(scanRepository(root, { fixtureScope: true }));
+    await writeFile(
+      path.join(root, ".ghostdeps.json"),
+      '{"schemaVersion":1,"fixtureRoots":[]}',
+    );
+    const absent = await readFixtureRoots(root, DEFAULT_SCAN_LIMITS);
+    assert.equal(absent.commentsOff, false);
+    assert.deepEqual(parseScopeConfigText('{"schemaVersion":1,"fixtureRoots":[],"commentsOff":true}', DEFAULT_SCAN_LIMITS, ".ghostdeps.json"), {
+      roots: [],
+      commentsOff: true,
+    });
   });
 
   it("refuses symlinked config, symlinked roots and uncertain counts", async () => {
