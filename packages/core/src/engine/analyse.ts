@@ -414,7 +414,12 @@ export async function assembleAnalysisResult(
       confidence: outcome.detected.confidence,
       evidence: outcome.detected.evidence,
     });
-    const transitive = new Set(outcome.graphs.flatMap((g) => g.nodes.map((n) => n.name)));
+    const directNames = new Set(outcome.dependencies.map((d) => d.name));
+    const transitive = new Set(
+      outcome.graphs
+        .flatMap((g) => g.nodes.map((n) => n.name))
+        .filter((name) => !directNames.has(name)),
+    );
     surface.push({
       ecosystem: outcome.ecosystem,
       direct: new Set(outcome.dependencies.map((d) => d.name)).size,

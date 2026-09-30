@@ -301,13 +301,13 @@
       "direct": 1,
       "ecosystem": "javascript-typescript",
       "graphs": "complete",
-      "transitive": 2
+      "transitive": 1
     },
     {
       "direct": 1,
       "ecosystem": "python",
       "graphs": "complete",
-      "transitive": 5
+      "transitive": 4
     }
   ],
   "usages": [
