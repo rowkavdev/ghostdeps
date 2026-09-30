@@ -34,6 +34,11 @@
       "dependency": "dayjs"
     },
     {
+      "kind": "info",
+      "severity": "info",
+      "dependency": null
+    },
+    {
       "kind": "should-be-dev",
       "severity": "low",
       "dependency": "axios"
