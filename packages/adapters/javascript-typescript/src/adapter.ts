@@ -131,7 +131,10 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
             (u) => !u.removedInPr && !(u.via === "config" && strings.has(`${u.file}:${u.line}`)),
           ),
       );
-      return [...(await lockfileNotes(context, projects)), ...bases, ...strings];
+      // Preserve existing capability notes before high-volume run disclosures:
+      // core applies a shared per-run note cap, so stale workspace notes
+      // must not crowd out dependency-specific usage provenance.
+      return [...bases, ...strings, ...(await lockfileNotes(context, projects))];
     },
   };
   return adapter;

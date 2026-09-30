@@ -373,3 +373,40 @@ describe("stale lockfile graph disclosures (#557)", () => {
     });
   }
 });
+
+describe("stale lockfile notes preserve capability notes under the run cap", () => {
+  it("keeps a config-credit finding when stale workspace notes exceed 100", async () => {
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ name: "fixture", dependencies: { "string-only": "1" } }),
+      "package-lock.json": JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": { dependencies: { "string-only": "1" } },
+          "node_modules/string-only": { version: "1.0.0" },
+        },
+      }),
+      "vite.config.ts": 'export default { include: ["string-only"] };',
+      "src/index.ts": "export const fixture = true;",
+    };
+    for (let i = 0; i < 110; i++) {
+      files[`packages/p${i}/package.json`] = JSON.stringify({
+        name: `fixture-${i}`,
+        dependencies: { missing: "1" },
+      });
+      files[`packages/p${i}/index.js`] = "export const fixture = true;";
+      files[`packages/p${i}/package-lock.json`] = JSON.stringify({
+        lockfileVersion: 3,
+        packages: { "": {}, "node_modules/extra": { version: "1.0.0" } },
+      });
+    }
+    const result = await analyseRepository(memoryHandle(files), {
+      adapters: [createJavaScriptTypeScriptAdapter()],
+    });
+    assert.ok(
+      result.findings.some(
+        (f) => f.rule === "adapter-capability" && f.dependency === "string-only",
+      ),
+    );
+    assert.ok(result.findings.some((f) => f.rule === "adapter-note" && /stale/.test(f.summary)));
+  });
+});
