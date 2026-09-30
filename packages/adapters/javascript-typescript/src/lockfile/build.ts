@@ -318,7 +318,8 @@ export async function buildLockfileGraph(
   evidence.push(...assembled.evidence);
   const graph = assembled.graph;
   const unsupported = parsed.evidence.some((e) => e.kind === "lockfile-unsupported");
-  if (unsupported) graph.incomplete = true;
+  if (unsupported || parsed.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"))
+    graph.incomplete = true;
   return { graph, evidence, lockfile: lock.path };
 }
 
@@ -330,4 +331,17 @@ export async function buildDependencyGraph(
   const out: DependencyGraph[] = [];
   for (const p of projects) out.push((await buildLockfileGraph(context, p)).graph);
   return out;
+}
+
+/** Reuse parsed lockfiles and disclose graph evidence through adapter run notes. */
+export async function lockfileNotes(context: AdapterContext, projects: ProjectRef[]) {
+  const notes: { statement: string }[] = [];
+  for (const project of projects) {
+    const result = await buildLockfileGraph(context, project);
+    for (const evidence of result.evidence) {
+      if (evidence.kind.startsWith("lockfile-manifest-mismatch"))
+        notes.push({ statement: evidence.statement });
+    }
+  }
+  return notes;
 }

@@ -15,6 +15,7 @@ import type {
 } from "@ghostdeps/core";
 import { JS_ECOSYSTEM, detectJavaScriptTypeScript } from "./detect.js";
 import { buildDependencyGraph } from "./lockfile/index.js";
+import { lockfileNotes } from "./lockfile/build.js";
 import { parseManifest } from "./manifest.js";
 import { configStringNotes, findConfigUsages, unreadConfigs } from "./references/config.js";
 import { findScriptUsages, scriptGaps } from "./references/scripts.js";
@@ -130,7 +131,7 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
             (u) => !u.removedInPr && !(u.via === "config" && strings.has(`${u.file}:${u.line}`)),
           ),
       );
-      return [...bases, ...strings];
+      return [...(await lockfileNotes(context, projects)), ...bases, ...strings];
     },
   };
   return adapter;

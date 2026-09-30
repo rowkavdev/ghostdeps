@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { normaliseUsageResult, runAdapterContractTests } from "@ghostdeps/core";
+import { analyseRepository, normaliseUsageResult, runAdapterContractTests } from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { createJavaScriptTypeScriptAdapter } from "./adapter.js";
 import { fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
@@ -305,4 +305,71 @@ describe("tsconfig node_modules base run note (#275)", () => {
     });
     assert.deepEqual(notes, []);
   });
+});
+
+describe("stale lockfile graph disclosures (#557)", () => {
+  for (const [file, lock] of [
+    [
+      "package-lock.json",
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": { dependencies: { present: "1" } },
+          "node_modules/present": { version: "1.0.0" },
+        },
+      }),
+    ],
+    [
+      "pnpm-lock.yaml",
+      'lockfileVersion: "9.0"\nimporters:\n  .:\n    dependencies:\n      present:\n        specifier: "1"\n        version: 1.0.0\npackages:\n  present@1.0.0: {}\nsnapshots:\n  present@1.0.0: {}\n',
+    ],
+    ["yarn.lock", '# yarn lockfile v1\npresent@1:\n  version "1.0.0"\n'],
+    [
+      "bun.lock",
+      JSON.stringify({
+        lockfileVersion: 1,
+        workspaces: { "": { name: "fixture", dependencies: { present: "1" } } },
+        packages: { present: ["present@1.0.0", "", {}] },
+      }),
+    ],
+  ] as const) {
+    it(`${file}: missing direct dependency is unknown impact and visible stale note`, async () => {
+      const context: AdapterContext = {
+        repository: memoryHandle({
+          "package.json": JSON.stringify({
+            name: "fixture",
+            dependencies: { present: "1", missing: "1" },
+          }),
+          [file]: lock,
+          "index.js": 'import present from "present";',
+        }),
+        network: { mode: "offline" },
+      };
+      const adapter = createJavaScriptTypeScriptAdapter();
+      const graphs = await adapter.buildDependencyGraph!(context, [root]);
+      assert.equal(graphs[0]!.incomplete, true);
+      assert.equal(
+        Object.hasOwn(graphs[0]!.transitiveClosure, "missing"),
+        false,
+        "unresolved is unknown, not known zero",
+      );
+      const notes = await adapter.notes!(context, [root]);
+      assert.ok(
+        notes.some((n) => /stale|missing|not in/i.test(n.statement)),
+        JSON.stringify(notes),
+      );
+      const result = await analyseRepository(context.repository, { adapters: [adapter] });
+      assert.equal(result.surface[0]!.graphs, "partial");
+      const impact = result.impact?.find((i) => i.name === "missing");
+      assert.ok(impact);
+      assert.equal(impact.graph, "partial");
+      assert.equal(impact.transitive, null);
+      assert.equal(impact.exclusive, null);
+      assert.ok(
+        result.findings.some(
+          (f) => f.rule === "adapter-note" && /stale|missing|not in/i.test(f.summary),
+        ),
+      );
+    });
+  }
 });
