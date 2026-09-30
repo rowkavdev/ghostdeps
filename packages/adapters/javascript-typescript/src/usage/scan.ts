@@ -277,6 +277,7 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
           add(node, spec, spec === undefined ? "unknown" : "require", ["import.meta.resolve"]);
         } else if (
           ts.isIdentifier(target) &&
+          Object.hasOwn(MOCK_SPECIFIER_CALLS, target.text) &&
           MOCK_SPECIFIER_CALLS[target.text]?.has(callee.name.text)
         ) {
           // `jest.mock("x")` / `vi.mock("x")` and counterparts: the first
