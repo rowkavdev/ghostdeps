@@ -75,6 +75,17 @@ const MAX_STRING_CHARS = 100_000;
 const SUBPATH_LITERAL =
   /^(?:@[a-z0-9-~][a-z0-9-._~]*\/[a-z0-9-~][a-z0-9-._~]*(?:\/[^\s'"`]*)?|[a-z0-9-~][a-z0-9-._~]*\/[^\s'"`]*)$/i;
 
+/**
+ * Test-framework module factories whose first argument names a dependency:
+ * jest.mock/unmock/requireActual/createMockFromModule and
+ * vi.mock/doMock/unmock/doUnmock. Scoping is not tracked; a user object named
+ * `jest` or `vi` can only add a usage reference, never remove one.
+ */
+const MOCK_SPECIFIER_CALLS: Record<string, ReadonlySet<string>> = {
+  jest: new Set(["mock", "unmock", "requireActual", "createMockFromModule"]),
+  vi: new Set(["mock", "doMock", "unmock", "doUnmock"]),
+};
+
 /** `import "x"`, `from "x"` and `require("x")` inside string or template text. */
 const CODE_SPECIFIER =
   /\b(?:import|from)\s*["']([^"'\s]{1,300})["']|\brequire\(\s*["']([^"'\s]{1,300})["']\s*\)/g;
@@ -251,14 +262,28 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
         const spec = stringValue(arg);
         const ref = add(node, spec, spec === undefined ? "unknown" : "require", []);
         bindDeclaration(node, ref, "default");
-      } else if (
-        ts.isPropertyAccessExpression(callee) &&
-        isRequireFunction(callee.expression) &&
-        callee.name.text === "resolve" &&
-        node.arguments.length >= 1
-      ) {
+      } else if (ts.isPropertyAccessExpression(callee) && node.arguments.length >= 1) {
+        const target = callee.expression;
         const spec = stringValue(arg);
-        add(node, spec, spec === undefined ? "unknown" : "require", ["require.resolve"]);
+        if (isRequireFunction(target) && callee.name.text === "resolve") {
+          add(node, spec, spec === undefined ? "unknown" : "require", ["require.resolve"]);
+        } else if (
+          ts.isMetaProperty(target) &&
+          target.keywordToken === ts.SyntaxKind.ImportKeyword &&
+          target.name.text === "meta" &&
+          callee.name.text === "resolve"
+        ) {
+          // `import.meta.resolve("x")`: ESM resolution reference.
+          add(node, spec, spec === undefined ? "unknown" : "require", [
+            "import.meta.resolve",
+          ]);
+        } else if (ts.isIdentifier(target) && MOCK_SPECIFIER_CALLS[target.text]?.has(callee.name.text)) {
+          // `jest.mock("x")` / `vi.mock("x")` and counterparts: the first
+          // argument names a dependency resolved at runtime.
+          add(node, spec, spec === undefined ? "unknown" : "require", [
+            `${target.text}.${callee.name.text}`,
+          ]);
+        }
       }
     }
     ts.forEachChild(node, visit);
