@@ -86,11 +86,6 @@
     {
       "kind": "info",
       "severity": "info",
-      "dependency": "colors"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
       "dependency": "graphql"
     },
     {
