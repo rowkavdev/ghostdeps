@@ -36,6 +36,7 @@ export function helpText(): string {
     "Usage:",
     "  ghostdeps <command> [options]",
     "  ghostdeps [path]    shorthand for: ghostdeps scan [path]",
+    "  ghostdeps [scan flags]  shorthand for: ghostdeps scan [scan flags]",
     "",
     "Commands:",
     ...commands.map((command) => `  ${command.usage.padEnd(width)}  ${command.summary}`),

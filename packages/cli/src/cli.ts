@@ -139,6 +139,19 @@ function wantsJson(argv: string[]): boolean {
   return (end === -1 ? argv : argv.slice(0, end)).includes("--json");
 }
 
+/** Scan-only flags (buildConfig rejects them for other commands). A flag-only
+ * invocation carrying them means scan, exactly like the --json shorthand:
+ * printing help and exiting 0 would silently pass a miswritten CI gate. */
+function hasScanOnlyFlags(parsed: ParsedArgs): boolean {
+  return (
+    parsed.failOn !== undefined ||
+    parsed.severity !== undefined ||
+    parsed.disableRules.length > 0 ||
+    parsed.downgrades.length > 0 ||
+    parsed.allowlist.length > 0
+  );
+}
+
 /** Commands that analyse a repository path: scan, languages, packages. */
 const repoCommands = new Set(["scan", "languages", "packages"]);
 /** Commands scoped to one dependency: inspect, graph, explain. */
@@ -342,6 +355,16 @@ export async function run(argv: string[], io: Io): Promise<number> {
       // `ghostdeps --json` is shorthand for `ghostdeps scan --json`
       command = "scan";
       args = [];
+    } else if (hasScanOnlyFlags(parsed)) {
+      // `ghostdeps --fail-on high` is shorthand for `ghostdeps scan --fail-on
+      // high`, like the --json form. Silent help + exit 0 here would pass a
+      // miswritten CI gate forever.
+      command = "scan";
+      args = [];
+    } else if (parsed.fixtureRoots !== undefined) {
+      // --fixture-roots applies to both scan and fix, so a flag-only
+      // invocation is ambiguous; name the command instead of guessing.
+      throw new UsageError("--fixture-roots needs a command: ghostdeps scan or ghostdeps fix");
     } else {
       io.stdout(helpText());
       return EXIT_OK;
