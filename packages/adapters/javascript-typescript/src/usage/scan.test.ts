@@ -182,6 +182,25 @@ describe("scanSource", () => {
     assert.deepEqual([all[0]?.packageName, all[0]?.form, all[0]?.line], [undefined, "unknown", 1]);
   });
 
+  it("ignores inherited Object property names as mock-framework receivers", () => {
+    const result = scanSource(
+      "a.js",
+      [
+        'constructor.call("axios");',
+        'toString.call("axios");',
+        'hasOwnProperty.call("axios");',
+        'valueOf.call("axios");',
+        '__proto__.call("axios");',
+        'jest.mock("axios");',
+        'vi.mock("lodash");',
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      result.references.map((r) => r.packageName),
+      ["axios", "lodash"],
+    );
+  });
+
   it("records package references in string text as string references (vite plugin-legacy)", () => {
     const text = [
       `legacyPolyfills.add("regenerator-runtime/runtime.js");`,
