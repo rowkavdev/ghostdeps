@@ -75,6 +75,7 @@ export function assembleGraph(
   maxVisits = MAX_CLOSURE_VISITS,
 ): { graph: DependencyGraph; evidence: Evidence[] } {
   let visits = 0;
+  let incomplete = false;
   // Closure per resolved start id, memoised so repeated direct deps cost nothing.
   const memo = new Map<string, Set<string>>();
   const closure = (start: string): Set<string> => {
@@ -103,7 +104,7 @@ export function assembleGraph(
   try {
     for (const d of parsed.direct) {
       if (!d.id || !parsed.packages.has(d.id)) {
-        setOwn(transitiveClosure, d.name, []);
+        incomplete = true;
         continue;
       }
       const pkg = parsed.packages.get(d.id)!;
@@ -158,7 +159,7 @@ export function assembleGraph(
       transitiveClosure,
       directPeers,
       unresolvedDirectPeers,
-      incomplete: false,
+      incomplete,
     },
     evidence: [],
   };

@@ -138,7 +138,7 @@ describe("buildLockfileGraph", () => {
       project(),
     );
     assert.ok(res.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"));
-    assert.deepEqual(res.graph.transitiveClosure, { a: [] });
+    assert.deepEqual(res.graph.transitiveClosure, {});
   });
 
   it("fixture js/lockfile-bun: trailing commas and nested copies under scoped packages", async () => {
@@ -200,7 +200,7 @@ describe("buildLockfileGraph", () => {
     assert.equal(statements.length, 2);
     assert.ok(statements.some((s) => s.includes("added")));
     assert.ok(statements.some((s) => s.includes("removed")));
-    assert.deepEqual(res.graph.transitiveClosure, { a: [], added: [] });
+    assert.deepEqual(res.graph.transitiveClosure, { a: [] });
   });
 
   it("npm workspaces: member deps resolve through the root lockfile and links", async () => {
@@ -285,7 +285,7 @@ describe("buildLockfileGraph", () => {
       ),
       project("packages/web", ["pnpm"]),
     );
-    assert.deepEqual(res.graph.transitiveClosure, { shared: [], lodash: [] });
+    assert.deepEqual(res.graph.transitiveClosure, { lodash: [] });
     assert.deepEqual(
       res.graph.nodes.map((n) => [n.name, n.version]),
       [["lodash", "4.17.21"]],
@@ -417,7 +417,7 @@ describe("buildLockfileGraph", () => {
       ),
       project("__proto__"),
     );
-    assert.deepEqual(res.graph.transitiveClosure, { x: [] });
+    assert.deepEqual(res.graph.transitiveClosure, {});
   });
 
   it("huge lockfile (30,000 packages) parses within the 5 s budget", async () => {
