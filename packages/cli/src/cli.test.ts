@@ -86,6 +86,32 @@ describe("ghostdeps cli", () => {
     assert.equal(jsonOut(out)["schemaVersion"], 1);
   });
 
+  it("treats a flag-only --severity invocation as scan, never silent help + exit 0", async () => {
+    const { io, out, err } = capture();
+    const code = await run(["--severity", "high"], io);
+    assert.equal(code, 0, err.join("\n"));
+    const text = out.join("\n");
+    assert.ok(!text.includes("Usage:"), "must not print general help");
+    assert.ok(text.startsWith("GhostDeps\n"), text);
+  });
+
+  it("flag-only --fail-on behaves exactly like ghostdeps scan --fail-on", async () => {
+    const explicit = capture();
+    const explicitCode = await run(["scan", "--fail-on", "critical"], explicit.io);
+    const flagOnly = capture();
+    const flagCode = await run(["--fail-on", "critical"], flagOnly.io);
+    assert.equal(flagCode, explicitCode);
+    assert.deepEqual(flagOnly.out, explicit.out);
+  });
+
+  it("flag-only --fixture-roots is a usage error naming scan and fix", async () => {
+    const { io, out, err } = capture();
+    const code = await run(["--fixture-roots", '{"version":1,"roots":[]}'], io);
+    assert.equal(code, 2);
+    assert.ok(!out.join("\n").includes("Usage:"), "must not print general help");
+    assert.ok(err.join(" ").includes("--fixture-roots needs a command"), err.join(" "));
+  });
+
   it("stub commands exit non-zero with a clear message", async () => {
     const { io, err } = capture();
     const code = await run(["packages"], io);
