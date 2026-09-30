@@ -526,7 +526,7 @@ export type GraphCompleteness = "none" | "partial" | "complete";
 export interface SurfaceEntry {
   ecosystem: string;
   direct: number;
-  /** Unique node names across the ecosystem's graphs; read with `graphs`. */
+  /** Unique graph node names excluding declared direct packages across the ecosystem; read with `graphs`. */
   transitive: number;
   /**
    * How complete the graphs behind `transitive` are (#114). The engine

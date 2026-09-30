@@ -307,14 +307,14 @@ describe("analyseRepository", () => {
 
     it("reads a graph marked incomplete as partial", async () => {
       assert.deepEqual(await surfaceFor((p) => [graph(p, ["a", "b"], true)]), [
-        { ecosystem: "js", direct: 1, transitive: 2, graphs: "partial" },
+        { ecosystem: "js", direct: 1, transitive: 1, graphs: "partial" },
       ]);
     });
 
     it("reads a usable graph next to a project with no lockfile as partial", async () => {
       const other: ProjectRef = { path: "packages/lib", ecosystem: "js", packageManagers: [] };
       assert.deepEqual(await surfaceFor((p) => [graph(p, ["a"], false), graph(other, [], true)]), [
-        { ecosystem: "js", direct: 1, transitive: 1, graphs: "partial" },
+        { ecosystem: "js", direct: 1, transitive: 0, graphs: "partial" },
       ]);
     });
 
@@ -334,7 +334,7 @@ describe("analyseRepository", () => {
 
     it("reads a complete graph for every project as complete", async () => {
       assert.deepEqual(await surfaceFor((p) => [graph(p, ["a"], false)]), [
-        { ecosystem: "js", direct: 1, transitive: 1, graphs: "complete" },
+        { ecosystem: "js", direct: 1, transitive: 0, graphs: "complete" },
       ]);
     });
 
@@ -367,7 +367,7 @@ describe("analyseRepository", () => {
       },
     ]);
     assert.deepEqual(result.surface, [
-      { ecosystem: "javascript-typescript", direct: 2, transitive: 2, graphs: "complete" },
+      { ecosystem: "javascript-typescript", direct: 2, transitive: 1, graphs: "complete" },
     ]);
     assert.deepEqual(result.findings, []);
   });

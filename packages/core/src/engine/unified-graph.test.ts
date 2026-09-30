@@ -150,3 +150,15 @@ describe("unified graph in the result (#55)", () => {
     ]);
   });
 });
+
+it('surface transitive count excludes declared direct package names (#556)', async () => {
+  const p = project('js', '.');
+  const result = await assembleAnalysisResult([{
+    ecosystem: 'js', dependencies: [dep(p, 'direct')], usages: [], usageAnalysed: true, findings: [],
+    detected: { confidence: 'high', projects: [p], evidence: [] },
+    graphs: [graph(p, [node('direct', '1', ['indirect']), node('indirect', '1')])],
+  }]);
+  assert.equal(result.surface[0]!.direct, 1);
+  assert.equal(result.surface[0]!.transitive, 1);
+  assert.equal(result.graph?.nodes.length, 2, 'resolved graph still includes direct nodes');
+});
