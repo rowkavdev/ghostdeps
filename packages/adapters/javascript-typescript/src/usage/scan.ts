@@ -274,10 +274,11 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
           callee.name.text === "resolve"
         ) {
           // `import.meta.resolve("x")`: ESM resolution reference.
-          add(node, spec, spec === undefined ? "unknown" : "require", [
-            "import.meta.resolve",
-          ]);
-        } else if (ts.isIdentifier(target) && MOCK_SPECIFIER_CALLS[target.text]?.has(callee.name.text)) {
+          add(node, spec, spec === undefined ? "unknown" : "require", ["import.meta.resolve"]);
+        } else if (
+          ts.isIdentifier(target) &&
+          MOCK_SPECIFIER_CALLS[target.text]?.has(callee.name.text)
+        ) {
           // `jest.mock("x")` / `vi.mock("x")` and counterparts: the first
           // argument names a dependency resolved at runtime.
           add(node, spec, spec === undefined ? "unknown" : "require", [

@@ -177,16 +177,9 @@ describe("scanSource", () => {
       ],
     );
     // Non-literal specifiers still register as unknown-form references.
-    const all = scanSource(
-      "a.test.ts",
-      `const dyn = which(); jest.mock(dyn);`,
-    ).references;
+    const all = scanSource("a.test.ts", `const dyn = which(); jest.mock(dyn);`).references;
     assert.equal(all.length, 1);
-    assert.deepEqual([all[0]?.packageName, all[0]?.form, all[0]?.line], [
-      undefined,
-      "unknown",
-      1,
-    ]);
+    assert.deepEqual([all[0]?.packageName, all[0]?.form, all[0]?.line], [undefined, "unknown", 1]);
   });
 
   it("records package references in string text as string references (vite plugin-legacy)", () => {
