@@ -145,6 +145,50 @@ describe("scanSource", () => {
     assert.deepEqual(refs[0]?.symbols, ["version"]);
   });
 
+  it("covers import.meta.resolve and jest/vi module mock specifiers", () => {
+    const refs = byPkg(
+      "a.test.ts",
+      [
+        `const p = import.meta.resolve("webpack/package.json");`,
+        `jest.mock("axios");`,
+        `jest.unmock("lodash");`,
+        `const actual = jest.requireActual("node-fetch");`,
+        `jest.createMockFromModule("semver");`,
+        `vi.mock("lodash-es");`,
+        `vi.doMock("debug");`,
+        `vi.unmock("chalk");`,
+        `vi.doUnmock("ora");`,
+        `const dyn = which(); jest.mock(dyn);`,
+        `obj.mock("not-a-dep");`,
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      refs.map((r) => [r.packageName, r.form, r.line]),
+      [
+        ["webpack", "require", 1],
+        ["axios", "require", 2],
+        ["lodash", "require", 3],
+        ["node-fetch", "require", 4],
+        ["semver", "require", 5],
+        ["lodash-es", "require", 6],
+        ["debug", "require", 7],
+        ["chalk", "require", 8],
+        ["ora", "require", 9],
+      ],
+    );
+    // Non-literal specifiers still register as unknown-form references.
+    const all = scanSource(
+      "a.test.ts",
+      `const dyn = which(); jest.mock(dyn);`,
+    ).references;
+    assert.equal(all.length, 1);
+    assert.deepEqual([all[0]?.packageName, all[0]?.form, all[0]?.line], [
+      undefined,
+      "unknown",
+      1,
+    ]);
+  });
+
   it("records package references in string text as string references (vite plugin-legacy)", () => {
     const text = [
       `legacyPolyfills.add("regenerator-runtime/runtime.js");`,
