@@ -174,14 +174,25 @@ async function setOutput(name: string, value: string): Promise<void> {
   if (path) await appendFile(path, `${name}=${value}\n`);
 }
 
+// Match GitHub Actions' workflow-command escaping. Properties also escape
+// delimiters so a file name cannot introduce another annotation property.
+function escapeCommandData(value: string): string {
+  return value.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+}
+
+function escapeCommandProperty(value: string): string {
+  return escapeCommandData(value).replaceAll(":", "%3A").replaceAll(",", "%2C");
+}
+
 /** Fork-PR fallback: workflow-command notices, which need no token and show on the diff. */
 function emitWorkflowCommands(annotations: readonly CheckAnnotation[]): number {
   let n = 0;
   for (const a of annotations) {
     if (n >= maxForkAnnotations) break;
-    const title = a.title.replaceAll("\n", " ");
-    const message = a.message.replaceAll("\r", "").replaceAll("\n", "%0A");
-    console.log(`::notice file=${a.path},line=${a.start_line},title=${title}::${message}`);
+    const path = escapeCommandProperty(a.path);
+    const title = escapeCommandProperty(a.title);
+    const message = escapeCommandData(a.message);
+    console.log(`::notice file=${path},line=${a.start_line},title=${title}::${message}`);
     n++;
   }
   return n;
