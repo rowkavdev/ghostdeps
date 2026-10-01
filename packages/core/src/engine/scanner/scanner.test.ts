@@ -472,6 +472,9 @@ describe("opt-in fixture scope accounting (#354)", () => {
     for (const roots of [
       ["fixtures", "fixtures/nested"],
       ["fixtures", "fixtures"],
+      // "-" and "." sort before "/", so the nested root is not adjacent to its parent.
+      ["fixtures", "fixtures-a", "fixtures/nested"],
+      ["fixtures", "fixtures.b", "fixtures/nested"],
       ["../escape"],
       ["/absolute"],
       ["fixtures/*"],
