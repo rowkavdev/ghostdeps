@@ -179,9 +179,16 @@ function jestConfig(doc: Record<string, unknown>, add: Collector, depth = 0): vo
   }
 }
 
-function prettierConfig(doc: unknown, add: Collector): void {
+function prettierConfig(doc: unknown, add: Collector, depth = 0): void {
   if (typeof doc === "string") add("prettier shared config", [doc], pkgOnly);
-  else if (isRecord(doc)) add("prettier plugins", names(own(doc, "plugins")), pkgOnly);
+  else if (isRecord(doc)) {
+    add("prettier plugins", names(own(doc, "plugins")), pkgOnly);
+    const overrides = own(doc, "overrides");
+    if (depth < 4 && Array.isArray(overrides)) {
+      for (const value of overrides.slice(0, 200))
+        if (isRecord(value)) prettierConfig(own(value, "options"), add, depth + 1);
+    }
+  }
 }
 
 function tsconfigConfig(doc: Record<string, unknown>, add: Collector): void {
