@@ -145,6 +145,13 @@ function babelConfig(doc: Record<string, unknown>, add: Collector, depth = 0): v
   }
 }
 
+const JEST_MODULE_KEYS = [
+  "resolver",
+  "globalSetup",
+  "globalTeardown",
+  "dependencyExtractor",
+] as const;
+
 const JEST_LIST_KEYS = [
   "setupFiles",
   "setupFilesAfterEnv",
@@ -155,6 +162,7 @@ const JEST_LIST_KEYS = [
 
 function jestConfig(doc: Record<string, unknown>, add: Collector, depth = 0): void {
   add("jest preset", names(own(doc, "preset")), pkgOnly);
+  for (const key of JEST_MODULE_KEYS) add(`jest ${key}`, names(own(doc, key)), pkgOnly);
   add(
     "jest testEnvironment",
     names(own(doc, "testEnvironment")).filter((n) => n !== "node"),

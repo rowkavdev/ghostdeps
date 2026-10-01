@@ -683,3 +683,19 @@ it("credits tooling in Jest inline project configs", async () => {
   assert.deepEqual(await via(context, "@swc/jest"), [["config", "package.json", 1]]);
   assert.deepEqual(await unread(context), []);
 });
+
+it("credits Jest custom resolver and lifecycle modules", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({
+      jest: {
+        resolver: "jest-pnp-resolver",
+        globalSetup: "@acme/jest-hooks/setup",
+        globalTeardown: "@acme/jest-hooks/teardown",
+        dependencyExtractor: "jest-dependency-extractor",
+      },
+    }),
+  });
+  for (const name of ["jest-pnp-resolver", "@acme/jest-hooks", "jest-dependency-extractor"])
+    assert.ok((await via(context, name)).length > 0, name);
+  assert.deepEqual(await via(context, "unrelated"), []);
+});
