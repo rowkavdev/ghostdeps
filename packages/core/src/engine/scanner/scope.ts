@@ -187,9 +187,12 @@ function parsePayload(text: string, limits: ScanLimits, origin: string): ScopeCo
   const values = (parsed as { fixtureRoots: unknown[] }).fixtureRoots;
   if (values.length > MAX_ROOTS) throw new Error(`${origin} exceeds 32 fixture roots`);
   const roots = values.map((r) => validateRoot(r, limits, origin)).sort();
-  for (let i = 1; i < roots.length; i++) {
-    if (roots[i] === roots[i - 1] || roots[i]!.startsWith(`${roots[i - 1]}/`)) {
-      throw new Error(`duplicate or overlapping fixture roots in ${origin}`);
+  // Not just neighbours: "a-b" and "a.b" sort between "a" and "a/c".
+  for (let i = 0; i < roots.length; i++) {
+    for (let j = i + 1; j < roots.length; j++) {
+      if (roots[j] === roots[i] || roots[j]!.startsWith(`${roots[i]}/`)) {
+        throw new Error(`duplicate or overlapping fixture roots in ${origin}`);
+      }
     }
   }
   return commentsOff === undefined ? { roots } : { roots, commentsOff };
