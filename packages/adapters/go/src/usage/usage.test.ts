@@ -101,6 +101,18 @@ describe("extractGoImports", () => {
     );
   });
 
+  it("records a selector after a variadic ellipsis but not after a field access", () => {
+    const r = extractGoImports(
+      [
+        "package x",
+        'import "a.example/pkg"',
+        "func f(args ...pkg.Item) {}",
+        "func g(v value) { _ = v.pkg.Hidden }",
+      ].join("\n"),
+    );
+    assert.deepEqual([...(r.selectors.get("pkg") ?? [])], ["Item"]);
+  });
+
   it("returns nothing for a file without a package clause", () => {
     assert.deepEqual(extractGoImports('import "a.example/x"').imports, []);
   });
