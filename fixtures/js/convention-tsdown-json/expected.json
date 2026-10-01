@@ -1,0 +1,10 @@
+{
+  "description": "A JSON tsdown config credits tsdown even without a tool import or build script.",
+  "findings": [],
+  "mustNotFind": [
+    {
+      "kind": "unused",
+      "dependency": "tsdown"
+    }
+  ]
+}
