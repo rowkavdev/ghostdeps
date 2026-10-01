@@ -245,3 +245,16 @@ describe("detection integration (issues #24 + #25)", () => {
     assert.ok(!result.evidence.some((entry) => entry.kind === "package-manager-inherited"));
   });
 });
+
+it("reports the effective npm shrinkwrap when package-lock is also present", async () => {
+  const result = await detectPackageManagers(
+    memoryHandle({
+      "package.json": "{}",
+      "package-lock.json": "{}",
+      "npm-shrinkwrap.json": "{}",
+    }),
+    ".",
+  );
+  assert.equal(result.managers[0]?.lockfile, "npm-shrinkwrap.json");
+  assert.equal(result.conflict, false);
+});

@@ -21,8 +21,8 @@ interface LockfileSignal {
 
 /** Checked in order; the first hit per manager becomes its lockfile evidence. */
 const LOCKFILE_SIGNALS: readonly LockfileSignal[] = [
-  { file: "package-lock.json", manager: "npm" },
   { file: "npm-shrinkwrap.json", manager: "npm" },
+  { file: "package-lock.json", manager: "npm" },
   { file: "pnpm-lock.yaml", manager: "pnpm" },
   { file: "yarn.lock", manager: "yarn" },
   { file: "bun.lock", manager: "bun" },
