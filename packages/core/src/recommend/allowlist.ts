@@ -107,6 +107,8 @@ export const DEFAULT_TOOLING_ALLOWLIST: Readonly<Record<string, ToolingAllowlist
   },
 };
 
+const pep503 = (text: string): string => text.toLowerCase().replace(/[-_.]+/g, "-");
+
 export function isAllowlisted(
   name: string,
   ecosystem: string,
@@ -114,7 +116,14 @@ export function isAllowlisted(
 ): boolean {
   const list = allowlists[ecosystem];
   if (!list) return false;
-  return list.exact.includes(name) || list.prefixes.some((prefix) => name.startsWith(prefix));
+  // Python adapters emit PEP 503 names (lowercase, runs of - _ . as one dash),
+  // so entries are compared in that form. Other ecosystems stay exact.
+  const norm = ecosystem === "python" ? pep503 : (text: string): string => text;
+  const wanted = norm(name);
+  return (
+    list.exact.some((entry) => norm(entry) === wanted) ||
+    list.prefixes.some((prefix) => wanted.startsWith(norm(prefix)))
+  );
 }
 
 /** Merge caller additions onto the defaults, per ecosystem. */
