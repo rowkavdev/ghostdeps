@@ -1,3 +1,5 @@
+import { decodeGoEscape } from "../string-literal.js";
+
 /**
  * Minimal Go lexer for import extraction (#53). Hand-written on purpose:
  * the arch lead chose it over web-tree-sitter on 2026-09-24. Decision
@@ -61,8 +63,9 @@ export function lexGo(src: string): GoToken[] {
       let value = "";
       while (j < n && src[j] !== '"' && src[j] !== "\n") {
         if (src[j] === "\\" && j + 1 < n) {
-          value += src[j + 1];
-          j += 2;
+          const decoded = decodeGoEscape(src, j);
+          value += decoded.value;
+          j = decoded.end;
           continue;
         }
         value += src[j];

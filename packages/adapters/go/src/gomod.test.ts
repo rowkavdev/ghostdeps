@@ -206,3 +206,16 @@ describe("parseGoMod", () => {
     assert.deepEqual(mod.errors, []);
   });
 });
+
+it("decodes escaped module paths without claiming verbatim source (#568)", () => {
+  for (const escape of ["\\x70", "\\160", "\\u0070", "\\U00000070"]) {
+    const mod = parseGoMod(`module app\nrequire "example.com/${escape}kg" v1.0.0\n`);
+    assert.equal(mod.require[0]!.path, "example.com/pkg");
+    assert.equal(mod.require[0]!.verbatim, false);
+  }
+});
+
+it("decodes escaped UTF-8 bytes as a Go string, not Latin-1 characters (#568)", () => {
+  const mod = parseGoMod('module app\nrequire "example.com/\\xc3\\xa9" v1.0.0\n');
+  assert.equal(mod.require[0]?.path, "example.com/é");
+});

@@ -21,3 +21,7 @@
 
 Breaking the adapter contract requires an ADR and a major bump of
 `adapterApiVersion`; drive-by PRs must not change it.
+
+Go interpreted import and go.mod strings decode hex, octal and Unicode
+escapes before module matching. Escaped go.mod paths do not supply a
+verbatim declaration line; raw strings keep their literal text.

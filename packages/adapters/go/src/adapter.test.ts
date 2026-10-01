@@ -217,7 +217,7 @@ describe("Go declaration lines (#198)", () => {
   it("gives no line when an escaped path does not appear as written", async () => {
     const context: AdapterContext = {
       repository: memoryHandle({
-        "go.mod": 'module example.com/m\n\nrequire "example.com/\\esc" v1.0.0\n',
+        "go.mod": 'module example.com/m\n\nrequire "example.com/\\x65sc" v1.0.0\n',
       }),
       network: { mode: "offline" },
     };

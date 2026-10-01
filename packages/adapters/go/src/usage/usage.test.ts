@@ -219,3 +219,21 @@ describe("scan limits", () => {
     );
   });
 });
+
+it("escaped Go imports retain module usage (#568)", async () => {
+  for (const escape of ["\\x70", "\\160", "\\u0070", "\\U00000070"]) {
+    const adapter = createGoAdapter();
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "go.mod": "module app\nrequire example.com/pkg v1.0.0\n",
+        "main.go": `package main\nimport "example.com/${escape}kg"\nfunc main(){pkg.Do()}`,
+      }),
+      network: { mode: "offline" },
+    };
+    const detection = await adapter.detect(context);
+    const deps = await adapter.listDirectDependencies(context, detection.projects);
+    const { usages } = normaliseUsageResult(await adapter.findUsage!(context, deps[0]!));
+    assert.equal(usages.length, 1, escape);
+    assert.equal(usages[0]!.dependency, "example.com/pkg");
+  }
+});
