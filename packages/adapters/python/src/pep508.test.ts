@@ -48,3 +48,12 @@ describe("parseRequirement (PEP 508)", () => {
     }
   });
 });
+
+it("keeps semicolons inside direct-reference URLs separate from markers", () => {
+  const url = "https://example.com/pkg;rev=1.whl";
+  assert.equal(parseRequirement(`demo @ ${url}`)?.url, url);
+  assert.equal(parseRequirement(`demo @ ${url}`)?.marker, undefined);
+  const req = parseRequirement(`demo @ ${url} ; python_version < "3.12"`);
+  assert.equal(req?.url, url);
+  assert.equal(req?.marker, 'python_version < "3.12"');
+});
