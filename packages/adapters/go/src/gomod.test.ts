@@ -114,6 +114,30 @@ describe("parseGoMod", () => {
     assert.deepEqual(mod.errors, []);
   });
 
+  it("reads retract intervals written without spaces or with extra spaces", () => {
+    const mod = parseGoMod(
+      [
+        "module m",
+        "retract [v1.0.0,v1.9.9]",
+        "retract [ v2.0.0 , v2.1.0 ]",
+        "retract (",
+        "\t[v3.0.0,v3.0.5] // bad",
+        "\tv3.1.0",
+        ")",
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      mod.retract.map((r) => [r.low, r.high]),
+      [
+        ["v1.0.0", "v1.9.9"],
+        ["v2.0.0", "v2.1.0"],
+        ["v3.0.0", "v3.0.5"],
+        ["v3.1.0", "v3.1.0"],
+      ],
+    );
+    assert.deepEqual(mod.errors, []);
+  });
+
   it("accepts raw strings and CRLF line endings", () => {
     const mod = parseGoMod("module `example.com/raw`\r\nrequire `a.example/x` v1.0.0\r\n");
     assert.equal(mod.module?.path, "example.com/raw");

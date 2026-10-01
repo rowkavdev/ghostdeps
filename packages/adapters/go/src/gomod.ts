@@ -327,12 +327,14 @@ export function parseGoMod(text: string): GoModFile {
         return;
       }
       case "retract": {
-        if (words.length === 1 && words[0]) {
+        // Interval form: retract [v1.0.0, v1.9.9]. The brackets and comma are
+        // their own tokens in go.mod, so [v1.0.0,v1.9.9] (no spaces) is also
+        // an interval, not one version string.
+        const joined = words.join(" ");
+        if (words.length === 1 && words[0] && !words[0].startsWith("[")) {
           out.retract.push({ low: words[0], high: words[0], line: l.line });
           return;
         }
-        // Interval form: retract [v1.0.0, v1.9.9]
-        const joined = words.join(" ");
         const m = /^\[\s*([^,\s]+)\s*,\s*([^\]\s]+)\s*\]$/.exec(joined);
         if (!m) return error(l.line, "retract takes a version or [low, high]");
         out.retract.push({ low: m[1]!, high: m[2]!, line: l.line });
