@@ -27,7 +27,7 @@ const isIdentPart = (c: string) => /[\p{L}\p{Nd}_]/u.test(c);
 
 export function lexGo(src: string): GoToken[] {
   const out: GoToken[] = [];
-  let i = 0;
+  let i = src.charCodeAt(0) === 0xfeff ? 1 : 0;
   let line = 1;
   const n = src.length;
   while (i < n) {
