@@ -75,6 +75,19 @@ describe("findConfigUsages", () => {
     assert.deepEqual(await via(context, "html"), []);
   });
 
+  it("reads PostCSS YAML config and credits the tool convention", async () => {
+    for (const file of [".postcssrc.yml", ".postcssrc.yaml"]) {
+      const context = ctx({
+        "package.json": "{}",
+        [file]: "plugins:\n  autoprefixer: {}\n  postcss-preset-env: {}\n",
+      });
+      assert.deepEqual(await via(context, "autoprefixer"), [["config", file, 2]]);
+      assert.deepEqual(await via(context, "postcss-preset-env"), [["config", file, 3]]);
+      assert.deepEqual(await via(context, "postcss"), [["convention", file, 1]]);
+      assert.deepEqual(await unread(context), []);
+    }
+  });
+
   it("config-only dependencies get via=config usage with the referencing line", async () => {
     const context = ctx({
       "package.json": JSON.stringify({ name: "app" }),

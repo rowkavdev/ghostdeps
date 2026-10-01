@@ -253,6 +253,8 @@ const FILE_HANDLERS: ReadonlyMap<string, Handler> = new Map([
   [".commitlintrc.json", COMMITLINT],
   [".postcssrc", POSTCSS],
   [".postcssrc.json", POSTCSS],
+  [".postcssrc.yml", POSTCSS],
+  [".postcssrc.yaml", POSTCSS],
 ]);
 
 /** package.json keys that embed a tool config. */
@@ -326,7 +328,7 @@ export const CONVENTIONS: readonly Convention[] = [
   { package: "tailwindcss", files: rc("tailwind.config", [...JS_EXTS, ".ts"]) },
   {
     package: "postcss",
-    files: [...rc(".postcssrc", ["", ".json"]), ...rc("postcss.config", JS_EXTS)],
+    files: [...rc(".postcssrc", ["", ".json", ".yml", ".yaml"]), ...rc("postcss.config", JS_EXTS)],
     packageJsonKey: "postcss",
   },
   {
