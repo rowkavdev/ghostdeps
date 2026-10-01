@@ -55,7 +55,9 @@ function clean(text: string): string {
     if ("\\`*_{}[]<>()#+.!|~".includes(ch)) out += "\\";
     out += ch;
   }
-  return out.length > MAX_LINE ? `${out.slice(0, MAX_LINE - 1)}…` : out;
+  const capped = out.length > MAX_LINE ? `${out.slice(0, MAX_LINE - 1)}…` : out;
+  // Encode after truncating so a boundary cannot split a mention-neutralising entity.
+  return capped.replace(/@/g, "&#64;");
 }
 
 /**
