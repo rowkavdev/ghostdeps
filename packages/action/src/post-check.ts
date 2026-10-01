@@ -272,7 +272,7 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   main(resultPath).then(
     (code) => process.exit(code),
     (err: unknown) => {
-      console.error(err instanceof Error ? err.message : String(err));
+      console.error(escapeCommandData(err instanceof Error ? err.message : String(err)));
       process.exit(1);
     },
   );
