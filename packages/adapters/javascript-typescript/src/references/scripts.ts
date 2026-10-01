@@ -411,7 +411,16 @@ function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): vo
       }
       // Yarn dispatches the following command inside the named workspace.
       // The workspace name is not a bin, and builtins still stay builtins.
-      if (bare === "yarn" && words[j] === "workspace") j += 2;
+      if (bare === "yarn" && words[j] === "workspace") {
+        j += 2;
+        while (j < words.length && words[j]!.startsWith("-")) {
+          if (words[j] === "--") {
+            j++;
+            break;
+          }
+          j += PM_VALUE_FLAGS.has(words[j]!) ? 2 : 1;
+        }
+      }
       const sub = words[j];
       if (sub !== undefined && PM_EXEC.has(sub)) {
         i = j + 1;

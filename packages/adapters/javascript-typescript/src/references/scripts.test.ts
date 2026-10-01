@@ -316,3 +316,9 @@ it("credits a workspace-dispatched TypeScript bin in the root script", async () 
   );
   assert.deepEqual(await scriptGaps(context, dep("typescript")), []);
 });
+
+it("skips Yarn flags after the workspace selector before the dispatched bin", () => {
+  assert.deepEqual(commandWords("yarn workspace web --silent tsc -b"), ["tsc"]);
+  assert.deepEqual(commandWords("yarn workspace web --cwd ./web exec tsc -b"), ["tsc"]);
+  assert.deepEqual(commandWords("yarn workspace web --silent run build"), []);
+});
