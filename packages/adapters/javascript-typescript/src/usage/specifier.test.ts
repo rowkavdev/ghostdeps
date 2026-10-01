@@ -27,6 +27,19 @@ describe("parseSpecifier", () => {
     }
   });
 
+  it("treats a trailing slash or deeper subpath on a built-in name as the npm package", () => {
+    assert.deepEqual(parseSpecifier("events/"), { kind: "package", packageName: "events" });
+    assert.deepEqual(parseSpecifier("punycode/"), { kind: "package", packageName: "punycode" });
+    assert.deepEqual(parseSpecifier("process/browser"), {
+      kind: "package",
+      packageName: "process",
+      subpath: "browser",
+    });
+    assert.equal(parseSpecifier("events").kind, "builtin");
+    assert.equal(parseSpecifier("node:events").kind, "builtin");
+    assert.equal(parseSpecifier("fs/promises").kind, "builtin");
+  });
+
   it("does not mistake paths, subpath imports or URLs for packages", () => {
     assert.equal(parseSpecifier("./util").kind, "relative");
     assert.equal(parseSpecifier("../x").kind, "relative");

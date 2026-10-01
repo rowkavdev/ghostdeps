@@ -46,11 +46,6 @@
     {
       "kind": "info",
       "severity": "info",
-      "dependency": "events"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
       "dependency": "html-loader"
     },
     {
