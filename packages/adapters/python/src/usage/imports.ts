@@ -37,7 +37,9 @@ const DOTTED = /^[A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)*$/;
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Clause headers that can carry a one-line body: `try: import x`. */
 const HEADER =
-  /^(?:try|else|finally|except\b[^:]*|if\b[^:]*|elif\b[^:]*|with\b[^:]*|def\b[^:]*|class\b[^:]*)\s*:\s*/;
+  /^(?:try|else|finally|except\b[^:]*|if\b[^:]*|elif\b[^:]*|with\b[^:]*|def\b[^:]*|class\b[^:]*|async\s+(?:def|with|for)\b[^:]*|for\b[^:]*|while\b[^:]*)\s*:\s*/;
+/** The same guard written with its body on one line: `if TYPE_CHECKING: import x`. */
+const TYPE_CHECKING_HEADER = /^if\s+(?:typing\s*\.\s*)?TYPE_CHECKING\s*:\s*/;
 const TYPE_CHECKING_IF = /^if\s+(?:typing\s*\.\s*)?TYPE_CHECKING\s*:\s*$/;
 const DYNAMIC = /(?:\bimportlib\s*\.\s*)?\b(?:import_module|__import__)\s*\(\s*__S(\d+)__/g;
 
@@ -57,11 +59,12 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       typeCheckingIndent = stmt.indent;
       continue;
     }
-    const typeOnly = typeCheckingIndent !== undefined;
+    let typeOnly = typeCheckingIndent !== undefined;
     let text = stmt.text;
     let conditional = stmt.indent > 0;
     const header = HEADER.exec(text);
     if (header && header[0].length < text.length) {
+      if (TYPE_CHECKING_HEADER.test(header[0])) typeOnly = true;
       text = text.slice(header[0].length);
       conditional = true;
     }
