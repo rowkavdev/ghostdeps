@@ -22,7 +22,7 @@ import {
   type Usage,
 } from "@ghostdeps/core";
 import { isTable, readManifest } from "./cargo-toml.js";
-import { discoverCrates, isManifestPath } from "./discover.js";
+import { discoverCrates, isManifestPath, type Discovery } from "./discover.js";
 import { withRustTree, type SyntaxNode } from "./parser.js";
 import { dirOf } from "./paths.js";
 import { findRemovedUsages } from "./removed.js";
@@ -157,6 +157,19 @@ export function collectReferences(root: SyntaxNode): CrateReference[] {
   return refs;
 }
 
+// The same AdapterContext spans one scan. Cache the promise so concurrent
+// inherited-dependency lookups share discovery; nothing survives the run.
+const workspaceDiscoveries = new WeakMap<AdapterContext, Promise<Discovery>>();
+
+function workspaceDiscovery(context: AdapterContext): Promise<Discovery> {
+  let discovery = workspaceDiscoveries.get(context);
+  if (discovery === undefined) {
+    discovery = discoverCrates(context);
+    workspaceDiscoveries.set(context, discovery);
+  }
+  return discovery;
+}
+
 async function inheritedDependencyTable(
   context: AdapterContext,
   manifestPath: string,
@@ -171,7 +184,7 @@ async function inheritedDependencyTable(
   );
   let inherited: Record<string, unknown> | undefined;
   if (needsWorkspace) {
-    const { crates } = await discoverCrates(context);
+    const { crates } = await workspaceDiscovery(context);
     const workspace = crates.find((item) => item.manifest.path === manifestPath)?.workspaceRoot
       ?.document?.workspace;
     if (isTable(workspace) && isTable(workspace.dependencies)) inherited = workspace.dependencies;

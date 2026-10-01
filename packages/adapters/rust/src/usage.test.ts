@@ -207,3 +207,30 @@ it("finds inherited workspace package aliases in member source", async () => {
   const byDep = await usagesByDep(context);
   assert.deepEqual(byDep.get("serde_json"), ["member/src/lib.rs:1"]);
 });
+
+it("reuses workspace discovery across inherited dependencies in one scan", async () => {
+  const base = memoryHandle({
+    "Cargo.toml":
+      '[workspace]\nmembers=["member"]\n[workspace.dependencies]\njson={package="serde_json",version="1"}\nlogging={package="log",version="0.4"}\n',
+    "member/Cargo.toml":
+      '[package]\nname="member"\nversion="0.1.0"\n[dependencies]\njson.workspace=true\nlogging.workspace=true\n',
+    "member/src/lib.rs": 'fn f() { json::to_string(&1); logging::info!("x"); }\n',
+  });
+  let rootReads = 0;
+  const context: AdapterContext = {
+    repository: {
+      ...base,
+      readFile: async (file) => {
+        if (file === "Cargo.toml") rootReads++;
+        return base.readFile(file);
+      },
+    },
+    network: { mode: "offline" },
+  };
+  const adapter = createRustAdapter();
+  const { projects } = await detectRust(context);
+  const deps = await adapter.listDirectDependencies(context, projects);
+  rootReads = 0;
+  await Promise.all(deps.map((dep) => findUsage(context, dep)));
+  assert.equal(rootReads, 1);
+});
