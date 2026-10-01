@@ -250,3 +250,8 @@ it("reuses workspace discovery across inherited dependencies in one scan", async
   await Promise.all(deps.map((dep) => findUsage(context, dep)));
   assert.equal(rootReads, 1);
 });
+
+it("does not count a $crate-qualified inner macro path as an external crate", async () => {
+  const found = await refs("macro_rules! m { () => { $crate::serde::run(); }; }\n");
+  assert.ok(!found.some((ref) => ref.startsWith("serde:")), JSON.stringify(found));
+});
