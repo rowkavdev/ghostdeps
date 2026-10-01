@@ -93,8 +93,9 @@ function useTreeRoots(node: SyntaxNode, out: SyntaxNode[]): void {
 export function collectReferences(root: SyntaxNode): CrateReference[] {
   const refs: CrateReference[] = [];
   const push = (node: SyntaxNode, symbol?: string, statement?: SyntaxNode) => {
-    if (PATH_ROOT_EXCLUDED.has(node.text)) return;
-    const ref: CrateReference = { crate: node.text, line: node.startPosition.row + 1 };
+    const name = node.text.replace(/^r#/, "");
+    if (PATH_ROOT_EXCLUDED.has(name)) return;
+    const ref: CrateReference = { crate: name, line: node.startPosition.row + 1 };
     if (symbol) ref.symbol = symbol;
     if (statement !== undefined && statement.endPosition.row > statement.startPosition.row) {
       ref.statement = {

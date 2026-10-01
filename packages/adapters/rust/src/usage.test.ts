@@ -164,3 +164,25 @@ it("finds renamed crates in legacy underscore dependency tables", async () => {
     assert.deepEqual(byDep.get("serde_json"), ["src/lib.rs:1"], table);
   }
 });
+
+it("normalizes raw identifiers before matching dependency crate names", async () => {
+  const context: AdapterContext = {
+    repository: memoryHandle({
+      "Cargo.toml": '[package]\nname = "a"\nversion = "0.1.0"\n[dependencies]\ntry = "1"\n',
+      "src/lib.rs": "use r#try::Thing;\nfn f() { r#try::run(); }\n",
+    }),
+    network: { mode: "offline" },
+  };
+  const dep: Dependency = {
+    name: "try",
+    constraint: "1",
+    kind: "runtime",
+    project: { path: ".", ecosystem: "rust", packageManagers: [] },
+    declaredIn: "Cargo.toml",
+  };
+  const usages = await findUsage(context, dep);
+  assert.deepEqual(
+    usages.map((u) => u.line).sort((a, b) => a - b),
+    [1, 2],
+  );
+});
