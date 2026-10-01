@@ -158,11 +158,23 @@ export async function crateNames(
   const doc = manifest.document;
   const tables: unknown[] = [];
   if (doc !== undefined) {
-    tables.push(doc.dependencies, doc["dev-dependencies"], doc["build-dependencies"]);
+    tables.push(
+      doc.dependencies,
+      doc["dev-dependencies"],
+      doc.dev_dependencies,
+      doc["build-dependencies"],
+      doc.build_dependencies,
+    );
     if (isTable(doc.target)) {
       for (const spec of Object.values(doc.target)) {
         if (isTable(spec)) {
-          tables.push(spec.dependencies, spec["dev-dependencies"], spec["build-dependencies"]);
+          tables.push(
+            spec.dependencies,
+            spec["dev-dependencies"],
+            spec.dev_dependencies,
+            spec["build-dependencies"],
+            spec.build_dependencies,
+          );
         }
       }
     }
