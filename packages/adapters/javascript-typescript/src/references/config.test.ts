@@ -54,6 +54,18 @@ describe("name helpers", () => {
 });
 
 describe("findConfigUsages", () => {
+  it("reads named Stylelint YAML configs and tool convention", async () => {
+    for (const file of [".stylelintrc.yml", ".stylelintrc.yaml"]) {
+      const context = ctx({
+        "package.json": "{}",
+        [file]: "extends:\n  - standard\nplugins:\n  - stylelint-order\n",
+      });
+      assert.deepEqual(await via(context, "stylelint-config-standard"), [["config", file, 2]]);
+      assert.deepEqual(await via(context, "stylelint-order"), [["config", file, 4]]);
+      assert.deepEqual(await via(context, "stylelint"), [["convention", file, 1]]);
+    }
+  });
+
   it("credits Stylelint overrides and custom syntax packages", async () => {
     const context = ctx({
       "package.json": JSON.stringify({

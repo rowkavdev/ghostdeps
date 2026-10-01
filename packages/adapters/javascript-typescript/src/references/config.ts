@@ -254,6 +254,8 @@ const FILE_HANDLERS: ReadonlyMap<string, Handler> = new Map([
   ["jsconfig.json", TSCONFIG],
   [".stylelintrc", STYLELINT],
   [".stylelintrc.json", STYLELINT],
+  [".stylelintrc.yml", STYLELINT],
+  [".stylelintrc.yaml", STYLELINT],
   [".commitlintrc", COMMITLINT],
   [".commitlintrc.json", COMMITLINT],
   [".postcssrc", POSTCSS],
@@ -338,7 +340,10 @@ export const CONVENTIONS: readonly Convention[] = [
   },
   {
     package: "stylelint",
-    files: [...rc(".stylelintrc", ["", ".json"]), ...rc("stylelint.config", JS_EXTS)],
+    files: [
+      ...rc(".stylelintrc", ["", ".json", ".yml", ".yaml"]),
+      ...rc("stylelint.config", JS_EXTS),
+    ],
     packageJsonKey: "stylelint",
   },
   { package: "typescript", files: ["tsconfig.json"] },
