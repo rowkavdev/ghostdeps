@@ -284,6 +284,25 @@ export async function buildProjectGraph(
     });
     return { graph: { project, nodes, transitiveClosure: {}, incomplete: true }, evidence };
   }
+  // This graph is name-keyed. Multiple resolutions cannot be represented
+  // faithfully until version/source/marker-aware traversal exists. Preserve
+  // the current traversal but never present its lost edges as complete.
+  const resolutions = new Map<string, string[]>();
+  for (const pkg of parsed.packages) {
+    const versions = resolutions.get(pkg.name) ?? [];
+    versions.push(pkg.version);
+    resolutions.set(pkg.name, versions);
+  }
+  let resolutionFork = false;
+  for (const [name, versions] of resolutions) {
+    if (versions.length < 2) continue;
+    resolutionFork = true;
+    evidence.push({
+      kind: "lockfile-resolution-fork",
+      statement: `${name} has ${versions.length} locked resolutions (${[...new Set(versions)].sort().join(", ")}) in ${lockPath}; name-only traversal uses the last entry, so versions, edges and reachability are incomplete`,
+      ...(lockPath === undefined ? {} : { file: lockPath }),
+    });
+  }
   const byName = new Map(parsed.packages.map((p) => [p.name, p]));
   const members = new Set(parsed.members ?? []);
   if (parsed.root !== undefined) members.add(parsed.root.name);
@@ -325,7 +344,10 @@ export async function buildProjectGraph(
       file: lockPath,
     });
   }
-  return { graph: { project, nodes, transitiveClosure, incomplete: missing > 0 }, evidence };
+  return {
+    graph: { project, nodes, transitiveClosure, incomplete: missing > 0 || resolutionFork },
+    evidence,
+  };
 }
 
 export interface PythonLockAnalysis {
