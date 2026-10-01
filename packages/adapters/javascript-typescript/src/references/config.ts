@@ -153,7 +153,7 @@ const JEST_LIST_KEYS = [
   "watchPlugins",
 ] as const;
 
-function jestConfig(doc: Record<string, unknown>, add: Collector): void {
+function jestConfig(doc: Record<string, unknown>, add: Collector, depth = 0): void {
   add("jest preset", names(own(doc, "preset")), pkgOnly);
   add(
     "jest testEnvironment",
@@ -171,6 +171,11 @@ function jestConfig(doc: Record<string, unknown>, add: Collector): void {
       names(own(doc, key)).filter((n) => n !== "default"),
       pkgOnly,
     );
+  }
+  const projects = own(doc, "projects");
+  if (depth < 4 && Array.isArray(projects)) {
+    for (const value of projects.slice(0, 200))
+      if (isRecord(value)) jestConfig(value, add, depth + 1);
   }
 }
 
