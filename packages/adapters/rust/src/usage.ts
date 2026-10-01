@@ -97,6 +97,28 @@ function useTreeRoots(node: SyntaxNode, out: SyntaxNode[]): void {
   }
 }
 
+function tokenTreeRoots(node: SyntaxNode): { root: SyntaxNode; symbol?: string }[] {
+  const roots: { root: SyntaxNode; symbol?: string }[] = [];
+  const children = node.children.filter((c): c is SyntaxNode => c !== null);
+  for (let i = 0; i < children.length - 1; i++) {
+    const c = children[i]!;
+    const prev = children[i - 1];
+    const beforeColon = children[i - 2];
+    const absoluteRoot =
+      prev?.type === "::" &&
+      !["identifier", "crate", "self", "super", ">"].includes(beforeColon?.type ?? "");
+    if (
+      c.type === "identifier" &&
+      children[i + 1]!.type === "::" &&
+      (prev?.type !== "::" || absoluteRoot)
+    ) {
+      const after = children[i + 2];
+      roots.push({ root: c, ...(after?.type === "identifier" ? { symbol: after.text } : {}) });
+    }
+  }
+  return roots;
+}
+
 /** Collect crate-root references from a parsed file. */
 export function collectReferences(root: SyntaxNode): CrateReference[] {
   const refs: CrateReference[] = [];
@@ -138,15 +160,7 @@ export function collectReferences(root: SyntaxNode): CrateReference[] {
       case "token_tree": {
         // Macro arguments and attribute bodies are unparsed tokens:
         // `ident :: ...` where the ident is not itself after `::`.
-        const children = node.children.filter((c): c is SyntaxNode => c !== null);
-        for (let i = 0; i < children.length - 1; i++) {
-          const c = children[i]!;
-          const prev = i > 0 ? children[i - 1] : undefined;
-          if (c.type === "identifier" && children[i + 1]!.type === "::" && prev?.type !== "::") {
-            const after = children[i + 2];
-            push(c, after?.type === "identifier" ? after.text : undefined);
-          }
-        }
+        for (const { root, symbol } of tokenTreeRoots(node)) push(root, symbol);
         break;
       }
       default:

@@ -92,6 +92,22 @@ describe("rust usage scanning (#50)", () => {
     }
   });
 
+  it("finds absolute crate paths in macro arguments and attributes without counting inner segments", async () => {
+    const found = await refs(
+      [
+        'fn f() { println!("{}", ::serde::run()); }',
+        "#[derive(::serde::Serialize)] struct X;",
+        "fn g() { println!(other::serde::run()); }",
+        "fn h() { println!(crate::serde::run(), self::serde::run(), super::serde::run(), <T as Tr>::serde::run()); }",
+        "#[derive(crate::serde::Serialize, self::serde::Serialize, super::serde::Serialize)] struct Y;",
+      ].join("\n"),
+    );
+    assert.ok(found.includes("serde:1:run"));
+    assert.ok(found.includes("serde:2:Serialize"));
+    assert.ok(found.includes("other:3:serde"));
+    assert.ok(!found.some((ref) => /^serde:[345]:/.test(ref)), JSON.stringify(found));
+  });
+
   it("tolerates broken source without throwing", async () => {
     const found = await refs('use serde::Serialize;\nfn broken( {\n  regex::Regex::new("x")\n');
     assert.ok(found.includes("serde:1"));
