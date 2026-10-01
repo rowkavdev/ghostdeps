@@ -186,3 +186,9 @@ it("normalizes raw identifiers before matching dependency crate names", async ()
     [1, 2],
   );
 });
+
+it("keeps external crate roots in leading-:: expression and type paths", async () => {
+  const found = await refs("fn f() { ::serde::run(); let _: ::serde::Type; }");
+  assert.ok(found.includes("serde:1:run"), JSON.stringify(found));
+  assert.ok(found.includes("serde:1:Type"), JSON.stringify(found));
+});
