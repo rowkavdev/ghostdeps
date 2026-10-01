@@ -237,7 +237,7 @@ export async function parseRequirementsFiles(
         continue;
       }
       if (constraintsOnly) continue; // constraint files pin, they never declare.
-      const editable = /^(?:-e|--editable)(?:\s+|=)(.+)$/.exec(entry);
+      const editable = /^(?:-e(?:\s+|=)?|--editable(?:\s+|=))(.+)$/.exec(entry);
       if (editable || /^[a-z][\w+.-]*:\/\//i.test(entry) || entry.startsWith("git+")) {
         const url = (editable?.[1] ?? entry).trim().split(/\s+/)[0]!;
         const name = eggName(url);

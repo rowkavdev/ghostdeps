@@ -264,3 +264,13 @@ describe("include spellings and modes (#576, #577)", () => {
     );
   });
 });
+
+it("reads attached editable short-option values like pip", async () => {
+  for (const option of ["-e", "-e ", "--editable="]) {
+    const result = await parse({
+      "requirements.txt": `${option}git+https://example.com/pkg.git#egg=demo\n`,
+    });
+    assert.equal(result.requirements[0]?.dependency.name, "demo", option);
+    assert.equal(result.requirements[0]?.dependency.specifier?.type, "git", option);
+  }
+});
