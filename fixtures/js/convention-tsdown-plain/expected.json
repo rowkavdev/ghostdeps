@@ -1,0 +1,5 @@
+{
+  "description": "tsdown.config.ts with a plain default export (no tsdown import) and no build script: the config file's existence still means tsdown is used (convention), so it must not be reported unused.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "tsdown" }]
+}

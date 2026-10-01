@@ -134,6 +134,14 @@ describe("reference analysis completeness (#132)", () => {
     );
   });
 
+  it("a plain tsdown.config.ts with no tsdown import still credits tsdown by convention", async () => {
+    const r = await report("convention-tsdown-plain", "tsdown");
+    assert.ok(
+      r.usages.some((u) => u.via === "convention" && u.file === "tsdown.config.ts"),
+      JSON.stringify(r.usages),
+    );
+  });
+
   it("pnpm: a script bin whose name differs from its package is a gap, never complete", async () => {
     const r = await report("refs-pnpm-bin-mismatch", "npm-check-updates");
     assert.equal(r.referenceAnalysisComplete, false);

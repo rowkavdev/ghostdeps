@@ -1,0 +1,9 @@
+{
+  "name": "fixture-convention-tsdown-plain",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "devDependencies": {
+    "tsdown": "^0.23.0"
+  }
+}
