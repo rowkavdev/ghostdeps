@@ -82,7 +82,7 @@ export function lexGo(src: string): GoToken[] {
         if (src[j] === "\n") line++;
         j++;
       }
-      out.push({ kind: "string", text: src.slice(i + 1, j), line: start });
+      out.push({ kind: "string", text: src.slice(i + 1, j).replace(/\r/g, ""), line: start });
       i = j + 1;
       continue;
     }

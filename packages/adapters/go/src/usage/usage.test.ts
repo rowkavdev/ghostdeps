@@ -260,3 +260,21 @@ it("a leading UTF-8 BOM does not hide Go imports (#572)", async () => {
   const { usages } = normaliseUsageResult(await adapter.findUsage!(context, deps[0]!));
   assert.equal(usages.length, 1);
 });
+
+it("raw Go import strings discard carriage returns (#573)", async () => {
+  const source = "package app\nimport `example.com/p\rkg`\nfunc main(){pkg.Do()}";
+  assert.equal(extractGoImports(source).imports[0]!.path, "example.com/pkg");
+  assert.equal(extractGoImports(source).imports[0]!.line, 2);
+  const adapter = createGoAdapter();
+  const context: AdapterContext = {
+    repository: memoryHandle({
+      "go.mod": "module app\nrequire example.com/pkg v1.0.0\n",
+      "main.go": source,
+    }),
+    network: { mode: "offline" },
+  };
+  const detection = await adapter.detect(context);
+  const deps = await adapter.listDirectDependencies(context, detection.projects);
+  const { usages } = normaliseUsageResult(await adapter.findUsage!(context, deps[0]!));
+  assert.equal(usages.length, 1);
+});
