@@ -46,11 +46,21 @@ const HEADER =
 function clauseHeader(text: string): string | undefined {
   if (!HEADER.test(text)) return undefined;
   let depth = 0;
+  let lambdas = 0;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (ch === ":" && text[i + 1] !== "=" && depth === 0) return text.slice(0, i + 1);
+    else if (ch === ":" && text[i + 1] !== "=" && depth === 0) {
+      if (lambdas > 0) lambdas--;
+      else return text.slice(0, i + 1);
+    } else if (
+      depth === 0 &&
+      text.startsWith("lambda", i) &&
+      !/[\p{XID_Continue}]/u.test(text[i - 1] ?? "") &&
+      !/[\p{XID_Continue}]/u.test(text[i + 6] ?? "")
+    )
+      lambdas++;
   }
   return undefined;
 }
