@@ -566,3 +566,16 @@ describe("config-string capability notes (#205, #201 follow-up)", () => {
     assert.equal(notes.length, MAX_CONFIG_STRING_NOTES);
   });
 });
+
+for (const extension of [".js", ".mjs", ".cjs"]) {
+  it(`credits a plain tsdown ${extension} config without imports`, async () => {
+    const file = `tsdown.config${extension}`;
+    const context = ctx({
+      "package.json": JSON.stringify({ devDependencies: { tsdown: "*", unrun: "*" } }),
+      [file]:
+        extension === ".cjs" ? "module.exports = { entry: [] };" : "export default { entry: [] };",
+    });
+    assert.deepEqual(await via(context, "tsdown"), [["convention", file, 1]]);
+    assert.deepEqual(await via(context, "unrun"), []);
+  });
+}

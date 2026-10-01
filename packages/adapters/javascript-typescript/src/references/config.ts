@@ -390,7 +390,7 @@ export const CONVENTIONS: readonly Convention[] = [
   { package: "tsd", files: [], packageJsonKey: "tsd" },
   // A tsdown config file exists: tsdown is used. A plain-export config
   // imports nothing from tsdown, so the import scan alone can miss it.
-  { package: "tsdown", files: rc("tsdown.config", [".ts", ".mts", ".cts"]) },
+  { package: "tsdown", files: rc("tsdown.config", [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"]) },
   // tsdown loads a TypeScript config with unrun (optional peer) when the
   // runtime cannot import TypeScript natively, or with --config-loader unrun.
   { package: "unrun", files: rc("tsdown.config", [".ts", ".mts", ".cts"]) },
