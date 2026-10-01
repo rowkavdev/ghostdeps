@@ -841,3 +841,19 @@ describe("registryOrigin from lockfile evidence (#174 step 3)", () => {
     assert.equal(res.graph.nodes.find((n) => n.name === "@acme/ui")?.registryOrigin, undefined);
   });
 });
+
+describe("buildLockfileGraph: non-object package.json (#566)", () => {
+  const lock = JSON.stringify({ lockfileVersion: 3, packages: { "": {} } });
+  for (const text of ["null", "[]", "42", "{"]) {
+    it(`reports manifest-unreadable for package.json = ${text}`, async () => {
+      const res = await buildLockfileGraph(
+        ctx(memoryHandle({ "package.json": text, "package-lock.json": lock })),
+        project(".", ["npm"]),
+      );
+      assert.deepEqual(
+        res.evidence.filter((e) => e.kind === "manifest-unreadable").map((e) => e.file),
+        ["package.json"],
+      );
+    });
+  }
+});
