@@ -31,3 +31,14 @@ describe("yarn classic reader", () => {
     assert.equal(parsed.direct[0]?.id, "__metadata@^1.0.0");
   });
 });
+
+it("does not split commas inside quoted Yarn classic patterns", () => {
+  const range = "https://example.com/pkg?x=a,b";
+  const text = `"demo@${range}", demo@^1:\n  version "1.0.0"\n`;
+  const parsed = parseYarnLockfile(text, "yarn.lock", ".", [
+    { name: "demo", dev: false, constraint: range },
+  ]);
+  assert.equal(parsed.direct[0]?.id, `demo@${range}`);
+  assert.equal(parsed.evidence.length, 0);
+  assert.equal([...parsed.packages.values()][0]?.name, "demo");
+});
