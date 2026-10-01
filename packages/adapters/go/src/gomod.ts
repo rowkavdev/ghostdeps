@@ -1,3 +1,5 @@
+import { decodeGoEscape } from "./string-literal.js";
+
 /**
  * Static go.mod parser (#52). go.mod is attacker data: it is tokenised as
  * text and never handed to the go command.
@@ -122,9 +124,10 @@ function lexLine(text: string, line: number): Line {
       while (j < text.length) {
         const d = text[j]!;
         if (d === "\\" && j + 1 < text.length) {
-          value += text[j + 1];
+          const decoded = decodeGoEscape(text, j);
+          value += decoded.value;
           escaped = true;
-          j += 2;
+          j = decoded.end;
           continue;
         }
         if (d === '"') {
