@@ -25,6 +25,8 @@ export interface LockedPackage {
 
 export interface ParsedPythonLockfile {
   packages: LockedPackage[];
+  /** Non-registry Pipfile entries do not supply a registry version. */
+  nonRegistry?: readonly string[];
   /** uv only: the project's own entry, whose edges are the direct dependencies. */
   root?: LockedPackage;
   /**
@@ -99,8 +101,18 @@ export function parsePipfileLock(text: string): ParsedPythonLockfile {
     throw new Error("invalid Pipfile.lock structure");
   }
   const packages: LockedPackage[] = [];
+  const nonRegistry = new Set<string>();
   for (const section of ["default", "develop"] as const) {
     for (const [name, entry] of Object.entries(doc[section] ?? {})) {
+      if (
+        isTable(entry) &&
+        ["path", "file", "git", "hg", "svn", "bzr"].some(
+          (key) => typeof entry[key] === "string" && entry[key].length > 0,
+        )
+      ) {
+        nonRegistry.add(normaliseName(name));
+        continue;
+      }
       if (
         !isTable(entry) ||
         typeof entry.version !== "string" ||
@@ -115,7 +127,7 @@ export function parsePipfileLock(text: string): ParsedPythonLockfile {
       });
     }
   }
-  return { packages };
+  return { packages, nonRegistry: [...nonRegistry].sort() };
 }
 
 export function parsePoetryLock(text: string): ParsedPythonLockfile {
@@ -253,6 +265,13 @@ export async function buildProjectGraph(
   // direct dependencies reach: a workspace lockfile covers every member.
   if (lockPath?.endsWith("Pipfile.lock")) {
     const doc = parsed.packages;
+    if (parsed.nonRegistry !== undefined && parsed.nonRegistry.length > 0) {
+      evidence.push({
+        kind: "lockfile-nonregistry",
+        statement: `${parsed.nonRegistry.length} non-registry entries in ${lockPath} have no registry resolution and are not represented: ${parsed.nonRegistry.join(", ")}`,
+        file: lockPath,
+      });
+    }
     const byName = new Map(doc.map((p) => [p.name, p]));
     const missing = direct.filter((dep) => !byName.has(dep.name) && dep.kind !== "build");
     if (missing.length > 0)

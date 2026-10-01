@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AdapterContext, ProjectRef } from "@ghostdeps/core";
 import { detectPython } from "./detect.js";
-import { buildProjectGraph, parsePoetryLock, parseUvLock } from "./lockfile.js";
+import { buildProjectGraph, parsePipfileLock, parsePoetryLock, parseUvLock } from "./lockfile.js";
 import { memoryHandle } from "./testing/fs-handle.js";
 
 const project: ProjectRef = { path: ".", ecosystem: "python", packageManagers: [] };
@@ -370,5 +370,56 @@ source = { registry = "https://pypi.org/simple" }
     );
     assert.equal(graph.incomplete, false);
     assert.ok(!evidence.some((e) => e.kind === "lockfile-resolution-fork"));
+  });
+});
+
+describe("Pipfile.lock non-registry entries (#545)", () => {
+  for (const entry of [
+    { editable: true, path: "./local-utils" },
+    { file: "https://example.com/pkg.whl" },
+    { git: "https://example.com/repo.git", ref: "main" },
+    { hg: "https://example.com/hg" },
+    { svn: "https://example.com/svn" },
+    { bzr: "https://example.com/bzr" },
+  ]) {
+    it(`preserves registry pins alongside ${Object.keys(entry).join(", ")}`, async () => {
+      const lock = JSON.stringify({
+        default: {
+          requests: { version: "==2.31.0" },
+          "local-utils": entry,
+        },
+        develop: { pytest: { version: "==8.0" }, "dev-local": entry },
+      });
+      assert.deepEqual(
+        parsePipfileLock(lock).packages.map((p) => p.name),
+        ["requests", "pytest"],
+      );
+      const files = {
+        Pipfile: '[packages]\nrequests = "*"\n[dev-packages]\npytest = "*"\n',
+        "Pipfile.lock": lock,
+        "app.py": "",
+      };
+      const { graph, evidence } = await buildProjectGraph(ctx(files), project);
+      assert.equal(graph.incomplete, true);
+      assert.deepEqual(
+        graph.nodes.map((n) => [n.name, n.version]),
+        [
+          ["requests", "2.31.0"],
+          ["pytest", "8.0"],
+        ],
+      );
+      assert.ok(!evidence.some((e) => e.kind === "lockfile-malformed"));
+      const skipped = evidence.find((e) => e.kind === "lockfile-nonregistry");
+      assert.equal(skipped?.file, "Pipfile.lock");
+      assert.match(skipped?.statement ?? "", /dev-local.*local-utils/);
+      assert.ok(
+        (await detectPython(ctx(files))).evidence.some((e) => e.kind === "lockfile-nonregistry"),
+      );
+    });
+  }
+  it("still rejects broken registry pins and mistyped locations", () => {
+    for (const entry of [{ version: ">=1" }, { path: 42 }, { editable: true }, null]) {
+      assert.throws(() => parsePipfileLock(JSON.stringify({ default: { broken: entry } })));
+    }
   });
 });
