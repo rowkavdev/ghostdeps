@@ -326,3 +326,22 @@ it("does not mistake walrus assignment for a compound clause separator", () => {
     ["yaml", "tomli"],
   );
 });
+
+describe("match statement case bodies", () => {
+  it("finds imports in one-line case bodies, including guarded and structured patterns", () => {
+    const found = modules(
+      [
+        "match command:",
+        '  case "json": import json',
+        "  case [1, *rest] if verbose: import sys",
+        '  case {"level": level}: import logging',
+        "  case _:",
+        "    import os",
+        "",
+      ].join("\n"),
+    );
+    for (const want of ["json", "sys", "logging", "os"]) {
+      assert.ok(found.includes(want), `missing ${want} in ${JSON.stringify(found)}`);
+    }
+  });
+});
