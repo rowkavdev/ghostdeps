@@ -106,7 +106,9 @@ function tokenTreeRoots(node: SyntaxNode): { root: SyntaxNode; symbol?: string }
     const beforeColon = children[i - 2];
     const absoluteRoot =
       prev?.type === "::" &&
-      !["identifier", "crate", "self", "super", ">"].includes(beforeColon?.type ?? "");
+      !["identifier", "crate", "self", "super", ">", "metavariable"].includes(
+        beforeColon?.type ?? "",
+      );
     if (
       c.type === "identifier" &&
       children[i + 1]!.type === "::" &&
