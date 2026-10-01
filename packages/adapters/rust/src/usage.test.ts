@@ -145,3 +145,22 @@ describe("rust usage scanning (#50)", () => {
     assert.equal(liveTreeCount(), 0);
   });
 });
+
+it("finds renamed crates in legacy underscore dependency tables", async () => {
+  for (const table of [
+    "dev_dependencies",
+    "build_dependencies",
+    "target.'cfg(unix)'.dev_dependencies",
+    "target.'cfg(unix)'.build_dependencies",
+  ]) {
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "Cargo.toml": `[package]\nname = "demo"\nversion = "0.1.0"\nedition = "2021"\n[${table}]\njson = { package = "serde_json", version = "1" }\n`,
+        "src/lib.rs": "fn f() { json::to_string(&1); }\n",
+      }),
+      network: { mode: "offline" },
+    };
+    const byDep = await usagesByDep(context);
+    assert.deepEqual(byDep.get("serde_json"), ["src/lib.rs:1"], table);
+  }
+});
