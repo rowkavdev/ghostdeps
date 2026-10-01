@@ -278,3 +278,9 @@ it("raw Go import strings discard carriage returns (#573)", async () => {
   const { usages } = normaliseUsageResult(await adapter.findUsage!(context, deps[0]!));
   assert.equal(usages.length, 1);
 });
+
+it("keeps non-BMP Unicode letters in import aliases and selectors", () => {
+  const result = extractGoImports('package p\nimport 𐐀 "fmt"\nfunc f() { 𐐀.Println() }\n');
+  assert.equal(result.imports[0]?.alias, "𐐀");
+  assert.deepEqual([...(result.selectors.get("𐐀") ?? [])], ["Println"]);
+});

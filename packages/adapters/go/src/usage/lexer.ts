@@ -31,7 +31,7 @@ export function lexGo(src: string): GoToken[] {
   let line = 1;
   const n = src.length;
   while (i < n) {
-    const c = src[i]!;
+    const c = String.fromCodePoint(src.codePointAt(i)!);
     if (c === "\n") {
       // Automatic semicolons matter for import blocks only as separators;
       // emit one so `import "a"\nfunc` splits cleanly.
@@ -94,8 +94,12 @@ export function lexGo(src: string): GoToken[] {
       continue;
     }
     if (isIdentStart(c)) {
-      let j = i + 1;
-      while (j < n && isIdentPart(src[j]!)) j++;
+      let j = i + c.length;
+      while (j < n) {
+        const next = String.fromCodePoint(src.codePointAt(j)!);
+        if (!isIdentPart(next)) break;
+        j += next.length;
+      }
       out.push({ kind: "ident", text: src.slice(i, j), line });
       i = j;
       continue;
