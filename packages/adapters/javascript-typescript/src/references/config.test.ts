@@ -88,6 +88,21 @@ describe("findConfigUsages", () => {
     }
   });
 
+  it("credits PostCSS parser, syntax and stringifier module options", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        postcss: {
+          parser: "postcss-scss",
+          syntax: "postcss-html",
+          stringifier: "@acme/css/stringifier",
+          plugins: {},
+        },
+      }),
+    });
+    for (const name of ["postcss-scss", "postcss-html", "@acme/css"])
+      assert.deepEqual(await via(context, name), [["config", "package.json", 1]]);
+  });
+
   it("config-only dependencies get via=config usage with the referencing line", async () => {
     const context = ctx({
       "package.json": JSON.stringify({ name: "app" }),
