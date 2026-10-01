@@ -171,6 +171,13 @@ function jestConfig(doc: Record<string, unknown>, add: Collector, depth = 0): vo
   add("jest runner", [...names(own(doc, "runner")), ...names(own(doc, "testRunner"))], (n) =>
     expandShorthand(n, "jest-runner"),
   );
+  const mapper = own(doc, "moduleNameMapper");
+  if (isRecord(mapper)) {
+    const targets = Object.values(mapper)
+      .slice(0, MAX_NAMES)
+      .flatMap((value) => names(value));
+    add("jest moduleNameMapper", targets, pkgOnly);
+  }
   const transform = own(doc, "transform");
   if (isRecord(transform)) add("jest transform", names(Object.values(transform)), pkgOnly);
   for (const key of JEST_LIST_KEYS) {
