@@ -322,3 +322,29 @@ it("skips Yarn flags after the workspace selector before the dispatched bin", ()
   assert.deepEqual(commandWords("yarn workspace web --cwd ./web exec tsc -b"), ["tsc"]);
   assert.deepEqual(commandWords("yarn workspace web --silent run build"), []);
 });
+
+it("finds npm exec command words after package and call options", () => {
+  assert.deepEqual(commandWords("npm exec --package typescript -- tsc -b"), ["tsc"]);
+  assert.deepEqual(commandWords("npm exec --package=typescript -- tsc -b"), ["tsc"]);
+  assert.deepEqual(commandWords('npm exec --package typescript -c "tsc -b"'), ["tsc"]);
+  assert.deepEqual(commandWords("npm exec --yes -- tsc -b"), ["tsc"]);
+});
+
+it("credits npm exec's actual command rather than its package option", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({
+      scripts: { build: "npm exec --package typescript -- tsc -b" },
+      devDependencies: { typescript: "5" },
+    }),
+  });
+  assert.deepEqual(
+    (await findScriptUsages(context, dep("typescript"))).map((u) => u.symbols),
+    [["tsc", "typescript"]],
+  );
+  assert.deepEqual(await scriptGaps(context, dep("typescript")), []);
+});
+
+it("handles npm exec's short package alias without crediting the option value as a bin", () => {
+  assert.deepEqual(commandWords("npm exec -p typescript -- tsc -b"), ["tsc"]);
+  assert.deepEqual(commandWords("npm exec -p=typescript -- tsc -b"), ["tsc"]);
+});

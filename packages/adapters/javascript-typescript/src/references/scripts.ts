@@ -424,6 +424,29 @@ function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): vo
       const sub = words[j];
       if (sub !== undefined && PM_EXEC.has(sub)) {
         i = j + 1;
+        if (bare === "npm") {
+          while (i < words.length && words[i]!.startsWith("-")) {
+            const raw = words[i]!;
+            if (raw === "--") {
+              i++;
+              break;
+            }
+            const eq = raw.indexOf("=");
+            const flag = eq > 0 ? raw.slice(0, eq) : raw;
+            const inline = eq > 0 ? raw.slice(eq + 1) : undefined;
+            if (flag === "-c" || flag === "--call") {
+              analyseNested(inline ?? words[i + 1], depth, out);
+              return;
+            }
+            if (["--package", "-p", "-w", "--workspace"].includes(flag))
+              i += inline === undefined ? 2 : 1;
+            else {
+              if (!["-y", "--yes", "--no", "--quiet"].includes(flag))
+                out.gaps.push(`npm exec: unrecognised flag ${flag}`);
+              i++;
+            }
+          }
+        }
         continue;
       }
       // `yarn tsc` / `pnpm vitest` run a bin directly; `npm` never does.
