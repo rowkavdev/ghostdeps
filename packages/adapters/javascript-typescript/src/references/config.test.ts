@@ -751,3 +751,9 @@ it("credits ESLint import resolvers from settings", async () => {
   ]);
   assert.deepEqual(await via(context, "tsconfig"), []);
 });
+
+it("credits tsdown's embedded package config without crediting a TypeScript loader", async () => {
+  const context = ctx({ "package.json": JSON.stringify({ tsdown: { entry: [] } }) });
+  assert.deepEqual(await via(context, "tsdown"), [["convention", "package.json", 1]]);
+  assert.deepEqual(await via(context, "unrun"), []);
+});
