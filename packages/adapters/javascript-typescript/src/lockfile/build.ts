@@ -90,8 +90,8 @@ async function readDeclared(context: AdapterContext, project: string, evidence: 
     }
     const rec = doc as Record<string, unknown>;
     for (const [field, dev] of [
-      ["dependencies", false],
       ["optionalDependencies", false],
+      ["dependencies", false],
       ["devDependencies", true],
     ] as const) {
       const map = rec[field];

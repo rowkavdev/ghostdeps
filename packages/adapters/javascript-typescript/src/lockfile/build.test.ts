@@ -857,3 +857,21 @@ describe("buildLockfileGraph: non-object package.json (#566)", () => {
     });
   }
 });
+
+it("Yarn classic graph uses the effective optional override constraint", async () => {
+  const res = await buildLockfileGraph(
+    ctx(
+      memoryHandle({
+        "package.json": JSON.stringify({
+          dependencies: { shared: "1" },
+          optionalDependencies: { shared: "2" },
+        }),
+        "yarn.lock":
+          'shared@2:\n  version "2.0.0"\n  dependencies:\n    leaf "1"\nleaf@1:\n  version "1.0.0"\n',
+      }),
+    ),
+    project(".", ["yarn"]),
+  );
+  assert.equal(res.graph.incomplete, false);
+  assert.deepEqual(res.graph.transitiveClosure.shared, ["leaf"]);
+});
