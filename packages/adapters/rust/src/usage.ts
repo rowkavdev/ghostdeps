@@ -22,7 +22,7 @@ import {
   type Usage,
 } from "@ghostdeps/core";
 import { isTable, readManifest } from "./cargo-toml.js";
-import { isManifestPath } from "./discover.js";
+import { discoverCrates, isManifestPath } from "./discover.js";
 import { withRustTree, type SyntaxNode } from "./parser.js";
 import { dirOf } from "./paths.js";
 import { findRemovedUsages } from "./removed.js";
@@ -157,6 +157,28 @@ export function collectReferences(root: SyntaxNode): CrateReference[] {
   return refs;
 }
 
+async function inheritedDependencyTable(
+  context: AdapterContext,
+  manifestPath: string,
+  tables: unknown[],
+): Promise<Record<string, unknown> | undefined> {
+  // Workspace aliases live in the root, not in the member's inherited entry.
+  // Only discover the workspace when one of this member's entries inherits.
+  const needsWorkspace = tables.some(
+    (table) =>
+      isTable(table) &&
+      Object.values(table).some((entry) => isTable(entry) && entry.workspace === true),
+  );
+  let inherited: Record<string, unknown> | undefined;
+  if (needsWorkspace) {
+    const { crates } = await discoverCrates(context);
+    const workspace = crates.find((item) => item.manifest.path === manifestPath)?.workspaceRoot
+      ?.document?.workspace;
+    if (isTable(workspace) && isTable(workspace.dependencies)) inherited = workspace.dependencies;
+  }
+  return inherited;
+}
+
 /** The manifest key(s) a dependency is declared under, normalised to the Rust crate name. */
 export async function crateNames(
   context: AdapterContext,
@@ -188,10 +210,13 @@ export async function crateNames(
       }
     }
   }
+  const inherited = await inheritedDependencyTable(context, dependency.declaredIn, tables);
   for (const table of tables) {
     if (!isTable(table)) continue;
     for (const [key, value] of Object.entries(table)) {
-      const pkg = isTable(value) && typeof value.package === "string" ? value.package : key;
+      const resolved = isTable(value) && value.workspace === true ? inherited?.[key] : value;
+      const pkg =
+        isTable(resolved) && typeof resolved.package === "string" ? resolved.package : key;
       if (pkg === dependency.name) names.add(key.replace(/-/g, "_"));
     }
   }
