@@ -80,7 +80,14 @@ async function readDeclared(context: AdapterContext, project: string, evidence: 
   const seen = new Set<string>();
   try {
     const doc: unknown = JSON.parse(await context.repository.readFile(manifest));
-    if (typeof doc !== "object" || doc === null) return out;
+    if (typeof doc !== "object" || doc === null || Array.isArray(doc)) {
+      evidence.push({
+        kind: "manifest-unreadable",
+        statement: `${manifest} is not a JSON object; the graph has no direct dependencies`,
+        file: manifest,
+      });
+      return out;
+    }
     const rec = doc as Record<string, unknown>;
     for (const [field, dev] of [
       ["dependencies", false],
