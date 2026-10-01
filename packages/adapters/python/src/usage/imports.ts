@@ -36,8 +36,11 @@ export type PythonImportExtractor = (source: string) => PythonFileImports;
 const DOTTED = /^[A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)*$/;
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Clause headers that can carry a one-line body: `try: import x`. */
+// `case` is a soft keyword, but a statement starting with `case` and a
+// top-level colon is a match case (or a harmless annotated variable, whose
+// remainder is still scanned). `match` itself cannot have a one-line body.
 const HEADER =
-  /^(?:try|else|finally|except|if|elif|with|def|class|for|while|async\s+(?:def|with|for))\b/;
+  /^(?:try|else|finally|except|if|elif|with|def|class|for|while|async\s+(?:def|with|for)|case)\b/;
 
 /** The clause colon is outside parentheses/brackets/braces, unlike slices and annotations. */
 function clauseHeader(text: string): string | undefined {
