@@ -206,7 +206,7 @@ export async function pullRequestContext(
       manifestPath,
     );
     // A malformed manifest means its changes are unknown, not "no dependencies".
-    if (result.errors.some((e) => e.kind === "manifest-malformed")) return undefined;
+    if (result.errors.length > 0) return undefined;
     return result.dependencies satisfies Dependency[];
   };
 

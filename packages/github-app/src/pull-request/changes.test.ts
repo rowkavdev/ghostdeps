@@ -388,3 +388,20 @@ index 3333333..4444444 100644
     });
   });
 });
+
+describe("partial manifest parsing", () => {
+  for (const invalid of ['{"dependencies":{"axios":42}}', '{"dependencies":[]}']) {
+    it(`does not claim complete PR context after skipped manifest entries: ${invalid}`, async () => {
+      const client = fakeClient({
+        files: {
+          [`${BASE}:package.json`]: invalid,
+          [`${HEAD}:package.json`]: manifest({ axios: "^1.7.0" }),
+        },
+      });
+      const ctx = await pullRequestContext(client, PR);
+      assert.equal(ctx.complete, false);
+      assert.deepEqual(ctx.dependencyChanges.changes, []);
+      assert.match(ctx.dependencyChanges.limitations.join("\n"), /package\.json \(base\)/);
+    });
+  }
+});
