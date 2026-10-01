@@ -50,7 +50,15 @@ function leftmost(node: SyntaxNode): { root?: SyntaxNode; next?: string } {
     const path = current.childForFieldName("path");
     const name = current.childForFieldName("name");
     if (path === null) {
-      return current.type === "identifier" ? { root: current, ...(next ? { next } : {}) } : {};
+      // A leading :: path has a scoped node with no path field and its
+      // actual root identifier in name; keep the following segment.
+      const root =
+        current.type === "identifier"
+          ? current
+          : current.type === "scoped_identifier" && name?.type === "identifier"
+            ? name
+            : undefined;
+      return root ? { root, ...(next ? { next } : {}) } : {};
     }
     if (name !== null) next = name.text;
     current = path;
