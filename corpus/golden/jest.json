@@ -721,6 +721,21 @@
     {
       "kind": "should-be-dev",
       "severity": "low",
+      "dependency": "@docusaurus/plugin-client-redirects"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@docusaurus/plugin-pwa"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
+      "dependency": "@docusaurus/preset-classic"
+    },
+    {
+      "kind": "should-be-dev",
+      "severity": "low",
       "dependency": "@docusaurus/remark-plugin-npm2yarn"
     },
     {
