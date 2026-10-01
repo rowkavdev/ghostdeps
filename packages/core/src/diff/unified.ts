@@ -82,7 +82,11 @@ function unquote(raw: string): string {
   for (let i = 0; i < body.length; i++) {
     const ch = body[i]!;
     if (ch !== "\\") {
-      encoded += encodeURIComponent(ch);
+      // Encode whole code points, not individual UTF-16 surrogate halves.
+      const codePoint = body.codePointAt(i)!;
+      if (codePoint >= 0xd800 && codePoint <= 0xdfff) return raw;
+      encoded += encodeURIComponent(String.fromCodePoint(codePoint));
+      if (codePoint > 0xffff) i++;
       continue;
     }
     const octal = /^[0-3][0-7]{2}/.exec(body.slice(i + 1));
