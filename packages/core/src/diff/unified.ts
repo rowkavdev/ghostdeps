@@ -111,7 +111,7 @@ function unquote(raw: string): string {
 /** Strip the a/ or b/ prefix; "/dev/null" means no file. */
 function cleanPath(raw: string | undefined): string | undefined {
   if (raw === undefined) return undefined;
-  const path = unquote(raw.replace(/\t.*$/, "").trim());
+  const path = unquote(raw.replace(/\t.*$/, ""));
   if (path === "/dev/null") return undefined;
   return path.replace(/^[ab]\//, "");
 }
