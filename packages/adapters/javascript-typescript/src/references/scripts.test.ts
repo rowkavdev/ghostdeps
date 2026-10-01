@@ -295,3 +295,24 @@ it("respects backslash parity before LF inside double quotes", () => {
     assert.deepEqual(commandWords(script), [expected]);
   }
 });
+
+it("finds bins dispatched through yarn workspace", () => {
+  assert.deepEqual(commandWords("yarn workspace web tsc -b"), ["tsc"]);
+  assert.deepEqual(commandWords("yarn --cwd . workspace web exec tsc -b"), ["tsc"]);
+  assert.deepEqual(commandWords("yarn workspace web run build"), []);
+  assert.deepEqual(commandWords("yarn workspace web add react"), []);
+});
+
+it("credits a workspace-dispatched TypeScript bin in the root script", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({
+      scripts: { build: "yarn workspace web tsc -b" },
+      devDependencies: { typescript: "5" },
+    }),
+  });
+  assert.deepEqual(
+    (await findScriptUsages(context, dep("typescript"))).map((u) => u.symbols),
+    [["tsc"]],
+  );
+  assert.deepEqual(await scriptGaps(context, dep("typescript")), []);
+});
