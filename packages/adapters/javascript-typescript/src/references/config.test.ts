@@ -711,3 +711,21 @@ it("credits Jest custom resolver and lifecycle modules", async () => {
     assert.ok((await via(context, name)).length > 0, name);
   assert.deepEqual(await via(context, "unrelated"), []);
 });
+
+it("credits Jest moduleNameMapper package replacements", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({
+      jest: {
+        moduleNameMapper: {
+          "\\.(css|less)$": "identity-obj-proxy",
+          "^lodash$": ["lodash-es", "<rootDir>/fallback.js"],
+          "^fixture$": "<rootDir>/fixture.js",
+        },
+      },
+    }),
+  });
+  assert.deepEqual(await via(context, "identity-obj-proxy"), [["config", "package.json", 1]]);
+  assert.deepEqual(await via(context, "lodash-es"), [["config", "package.json", 1]]);
+  assert.deepEqual(await via(context, "lodash"), []);
+  assert.deepEqual(await via(context, "fixture"), []);
+});
