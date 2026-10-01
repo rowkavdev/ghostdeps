@@ -36,6 +36,14 @@ describe("commandWords", () => {
     assert.deepEqual(commandWords("./node_modules/.bin/rollup -c | tee log"), ["rollup", "tee"]);
   });
 
+  it("removes shell line continuations before finding command words", () => {
+    assert.deepEqual(commandWords("npx \\\n tsc -b"), ["tsc"]);
+    assert.deepEqual(commandWords("cross-env \\\n FOO=1 tsc -b"), ["cross-env", "tsc"]);
+    assert.deepEqual(commandWords("ts\\\nc -b"), ["tsc"]);
+    assert.deepEqual(commandWords('sh -c "ts\\\nc -b"'), ["tsc"]);
+    assert.deepEqual(commandWords("'ts\\\nc' -b"), ["ts\\\nc"]);
+  });
+
   it("does not treat package-manager builtins or npm run targets as bins", () => {
     assert.deepEqual(commandWords("npm run build && yarn install && pnpm run lint"), []);
   });
@@ -217,6 +225,20 @@ describe("findScriptUsages", () => {
     );
     assert.equal((await findScriptUsages(context, dep("vitest"))).length, 1);
     assert.deepEqual(await findScriptUsages(context, dep("react")), []);
+  });
+
+  it("credits a bin after a shell line continuation without an unmatched gap", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        scripts: { build: "npx \\\n tsc -b" },
+        devDependencies: { typescript: "5" },
+      }),
+    });
+    assert.deepEqual(
+      (await findScriptUsages(context, dep("typescript"))).map((u) => u.symbols),
+      [["tsc"]],
+    );
+    assert.deepEqual(await scriptGaps(context, dep("typescript")), []);
   });
 
   it("uses bin names from the npm lockfile when recorded", async () => {
