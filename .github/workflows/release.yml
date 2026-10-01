@@ -19,6 +19,7 @@ jobs:
   pack:
     name: pack
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     outputs:
@@ -75,6 +76,7 @@ jobs:
   consumer:
     needs: pack
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
@@ -114,6 +116,7 @@ jobs:
   publish:
     needs: [pack, consumer]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write # npm trusted publishing and provenance

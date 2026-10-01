@@ -33,6 +33,7 @@ jobs:
     name: changes
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       corpus: ${{ steps.filter.outputs.corpus }}
     steps:
@@ -81,6 +82,7 @@ jobs:
     name: streak
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       actions: read # Read scheduled corpus runs to compute the streak.
       issues: write # Update the streak comment on #172.
