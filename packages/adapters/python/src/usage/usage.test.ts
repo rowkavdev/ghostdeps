@@ -266,3 +266,16 @@ describe("usage capability semantics (#261)", () => {
     assert.ok(Array.isArray(result));
   });
 });
+
+it("keeps ASCII module imports with legal Unicode local aliases", () => {
+  const result = extractPythonImports('import yaml as café\ncafé.safe_load("x")\n');
+  assert.equal(result.imports[0]?.module, "yaml");
+  assert.equal(result.imports[0]?.local, "café");
+  assert.ok(result.attributes.get("café")?.has("safe_load"));
+});
+
+it("matches NFKC-equivalent Python alias spellings", () => {
+  const result = extractPythonImports('import yaml as K\nK.safe_load("x")\n');
+  assert.equal(result.imports[0]?.local, "K");
+  assert.ok(result.attributes.get("K")?.has("safe_load"));
+});

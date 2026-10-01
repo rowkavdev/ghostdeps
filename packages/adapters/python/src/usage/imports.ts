@@ -70,11 +70,11 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     const plain = /^import\s+(.+)$/s.exec(text);
     if (plain) {
       for (const part of plain[1]!.split(",")) {
-        const m = /^\s*(.+?)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*$/s.exec(part);
+        const m = /^\s*(.+?)(?:\s+as\s+([\p{XID_Start}_][\p{XID_Continue}]*))?\s*$/su.exec(part);
         if (!m || !DOTTED.test(m[1]!.trim())) continue;
         const module = clean(m[1]!);
         // `import a.b` binds `a`; `import a.b as c` binds `c`.
-        const local = m[2] ?? module.split(".")[0]!;
+        const local = (m[2] ?? module.split(".")[0]!).normalize("NFKC");
         imports.push({ module, form: "static", names: [], local, ...base });
       }
       continue;
@@ -110,12 +110,13 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
   if (locals.size > 0) {
     const body = code.join("\n");
     for (const m of body.matchAll(
-      /(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)/g,
+      /(?<![\p{XID_Continue}.])([\p{XID_Start}_][\p{XID_Continue}]*)\s*\.\s*([\p{XID_Start}_][\p{XID_Continue}]*)/gu,
     )) {
-      if (!locals.has(m[1]!)) continue;
-      let set = attributes.get(m[1]!);
-      if (!set) attributes.set(m[1]!, (set = new Set()));
-      set.add(m[2]!);
+      const local = m[1]!.normalize("NFKC");
+      if (!locals.has(local)) continue;
+      let set = attributes.get(local);
+      if (!set) attributes.set(local, (set = new Set()));
+      set.add(m[2]!.normalize("NFKC"));
     }
   }
   return { imports, attributes };
