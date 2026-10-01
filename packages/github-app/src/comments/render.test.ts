@@ -96,6 +96,41 @@ describe("renderPrComment", () => {
     assert.ok(body.length < 60_000);
   });
 
+  it("neutralises mentions in prose while keeping scoped names literal in code spans", () => {
+    const body = render({
+      result: result(
+        [
+          finding({
+            dependency: "@babel/highlight",
+            summary: "@babel/highlight is unused; ask @maintainer",
+            recommendation: "Remove @babel/highlight.",
+          }),
+          finding({
+            dependency: undefined as unknown as string,
+            rule: undefined as unknown as string,
+            summary: "Contact @team",
+          }),
+        ],
+        [{ ...ROOT_DEP, name: "@babel/highlight" }],
+      ),
+      eligibility: new Map([
+        [
+          eligibilityId("unused", ".", "@babel/highlight"),
+          {
+            status: "ineligible",
+            reason: "Ask @maintainer before removal",
+          },
+        ],
+      ]),
+    });
+    assert.ok(body.includes("`@babel/highlight`"));
+    assert.ok(body.includes("&#64;babel/highlight is unused; ask &#64;maintainer"));
+    assert.ok(body.includes("Remove &#64;babel/highlight"));
+    assert.ok(body.includes("Contact &#64;team"));
+    assert.ok(body.includes("Ask &#64;maintainer before removal"));
+    assert.doesNotMatch(body.replace(/`[^`]*`/g, ""), /@/);
+  });
+
   it("round-trips the marker at the 25-tickbox boundary (reviewer-1 #425)", () => {
     const n = 25;
     const deps = Array.from({ length: n }, (_, i) => ({
