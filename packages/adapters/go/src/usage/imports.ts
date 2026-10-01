@@ -75,7 +75,9 @@ export const extractGoImports: GoImportExtractor = (source) => {
     if (a.kind !== "ident" || tokens[k + 1]!.text !== "." || tokens[k + 2]!.kind !== "ident") {
       continue;
     }
-    if (tokens[k - 1]?.text === ".") continue;
+    // A variadic `...pkg.Type` ends in three dots; only a single dot makes
+    // this a field access.
+    if (tokens[k - 1]?.text === "." && tokens[k - 2]?.text !== ".") continue;
     let set = selectors.get(a.text);
     if (!set) selectors.set(a.text, (set = new Set()));
     set.add(tokens[k + 2]!.text);
