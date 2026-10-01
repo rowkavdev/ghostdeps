@@ -207,6 +207,8 @@ function sharedConfig(tool: string): (doc: Record<string, unknown>, add: Collect
 }
 
 function postcssConfig(doc: Record<string, unknown>, add: Collector): void {
+  for (const key of ["parser", "syntax", "stringifier"])
+    add(`postcss ${key}`, names(own(doc, key)), pkgOnly);
   const plugins = own(doc, "plugins");
   add("postcss plugins", isRecord(plugins) ? Object.keys(plugins) : names(plugins), pkgOnly);
 }
