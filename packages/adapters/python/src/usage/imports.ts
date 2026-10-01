@@ -47,7 +47,7 @@ function clauseHeader(text: string): string | undefined {
     const ch = text[i];
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (ch === ":" && depth === 0) return text.slice(0, i + 1);
+    else if (ch === ":" && text[i + 1] !== "=" && depth === 0) return text.slice(0, i + 1);
   }
   return undefined;
 }
