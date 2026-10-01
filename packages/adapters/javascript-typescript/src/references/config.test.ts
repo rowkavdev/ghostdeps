@@ -729,3 +729,25 @@ it("credits Jest moduleNameMapper package replacements", async () => {
   assert.deepEqual(await via(context, "lodash"), []);
   assert.deepEqual(await via(context, "fixture"), []);
 });
+
+it("credits ESLint import resolvers from settings", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({
+      eslintConfig: {
+        settings: {
+          "import/resolver": {
+            typescript: { project: "tsconfig.json" },
+            "eslint-import-resolver-webpack": {},
+          },
+        },
+      },
+    }),
+  });
+  assert.deepEqual(await via(context, "eslint-import-resolver-typescript"), [
+    ["config", "package.json", 1],
+  ]);
+  assert.deepEqual(await via(context, "eslint-import-resolver-webpack"), [
+    ["config", "package.json", 1],
+  ]);
+  assert.deepEqual(await via(context, "tsconfig"), []);
+});

@@ -124,6 +124,13 @@ function eslintConfig(doc: Record<string, unknown>, add: Collector, depth = 0): 
   );
   add("eslint plugins", names(own(doc, "plugins")), (n) => expandShorthand(n, "eslint-plugin"));
   add("eslint parser", names(own(doc, "parser")), pkgOnly);
+  const settings = own(doc, "settings");
+  const resolver = isRecord(settings) ? own(settings, "import/resolver") : undefined;
+  add(
+    "eslint import resolver",
+    isRecord(resolver) ? Object.keys(resolver).slice(0, MAX_NAMES) : names(resolver),
+    (name) => expandShorthand(name, "eslint-import-resolver"),
+  );
   const overrides = own(doc, "overrides");
   if (depth < 4 && Array.isArray(overrides)) {
     for (const o of overrides.slice(0, 200)) if (isRecord(o)) eslintConfig(o, add, depth + 1);
