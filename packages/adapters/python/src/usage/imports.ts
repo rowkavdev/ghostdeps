@@ -37,7 +37,20 @@ const DOTTED = /^[A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)*$/;
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Clause headers that can carry a one-line body: `try: import x`. */
 const HEADER =
-  /^(?:try|else|finally|except\b[^:]*|if\b[^:]*|elif\b[^:]*|with\b[^:]*|def\b[^:]*|class\b[^:]*|async\s+(?:def|with|for)\b[^:]*|for\b[^:]*|while\b[^:]*)\s*:\s*/;
+  /^(?:try|else|finally|except|if|elif|with|def|class|for|while|async\s+(?:def|with|for))\b/;
+
+/** The clause colon is outside parentheses/brackets/braces, unlike slices and annotations. */
+function clauseHeader(text: string): string | undefined {
+  if (!HEADER.test(text)) return undefined;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === ":" && depth === 0) return text.slice(0, i + 1);
+  }
+  return undefined;
+}
 /** The same guard written with its body on one line: `if TYPE_CHECKING: import x`. */
 const TYPE_CHECKING_HEADER = /^if\s+(?:typing\s*\.\s*)?TYPE_CHECKING\s*:\s*/;
 const TYPE_CHECKING_IF = /^if\s+(?:typing\s*\.\s*)?TYPE_CHECKING\s*:\s*$/;
@@ -62,10 +75,10 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     let typeOnly = typeCheckingIndent !== undefined;
     let text = stmt.text;
     let conditional = stmt.indent > 0;
-    const header = HEADER.exec(text);
-    if (header && header[0].length < text.length) {
-      if (TYPE_CHECKING_HEADER.test(header[0])) typeOnly = true;
-      text = text.slice(header[0].length);
+    const header = clauseHeader(text);
+    if (header && header.length < text.length) {
+      if (TYPE_CHECKING_HEADER.test(header)) typeOnly = true;
+      text = text.slice(header.length).trimStart();
       conditional = true;
     }
     const base = { line: stmt.line, endLine: stmt.endLine, conditional, typeOnly };
