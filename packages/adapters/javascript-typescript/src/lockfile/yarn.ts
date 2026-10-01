@@ -22,6 +22,23 @@ function patternName(pattern: string): string {
   return at < 0 ? pattern : pattern.slice(0, at);
 }
 
+/** Header separators are commas outside quoted JSON strings only. */
+function classicPatterns(header: string): string[] {
+  const patterns: string[] = [];
+  let start = 0;
+  let quoted = false;
+  for (let i = 0; i < header.length; i++) {
+    if (quoted && header[i] === "\\") i++;
+    else if (header[i] === '"') quoted = !quoted;
+    else if (!quoted && header[i] === ",") {
+      patterns.push(unquote(header.slice(start, i)));
+      start = i + 1;
+    }
+  }
+  patterns.push(unquote(header.slice(start)));
+  return patterns;
+}
+
 /**
  * Minimal reader for the Yarn classic format: top-level entries keyed by
  * comma-separated patterns, indented `key value` fields and one level of
@@ -42,7 +59,7 @@ export function readClassicLockfile(text: string): Map<string, Rec> {
       if (!line.endsWith(":")) throw new Error(`line ${i + 1}: expected an entry header`);
       current = Object.create(null) as Rec;
       nested = undefined;
-      for (const p of line.slice(0, -1).split(",")) entries.set(unquote(p), current);
+      for (const p of classicPatterns(line.slice(0, -1))) entries.set(p, current);
     } else if (!current) {
       throw new Error(`line ${i + 1}: field outside an entry`);
     } else if (indent === 2) {
