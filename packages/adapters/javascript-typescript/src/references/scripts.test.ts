@@ -287,3 +287,11 @@ describe("findScriptUsages", () => {
     assert.equal(({} as Record<string, unknown>).x, undefined);
   });
 });
+
+it("respects backslash parity before LF inside double quotes", () => {
+  for (const count of [1, 2, 3, 4]) {
+    const script = '"ts' + "\\".repeat(count) + '\nc" -b';
+    const expected = "ts" + "\\".repeat(Math.floor(count / 2)) + (count % 2 ? "" : "\n") + "c";
+    assert.deepEqual(commandWords(script), [expected]);
+  }
+});
