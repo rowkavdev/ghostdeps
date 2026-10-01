@@ -60,6 +60,13 @@ export function classifySpecifier(raw: string): Specifier | undefined {
   return undefined; // plain semver range, "*", exact version, or dist-tag
 }
 
+function optionalDependencyNames(record: Record<string, unknown>): Set<string> {
+  const optional = record.optionalDependencies;
+  return typeof optional === "object" && optional !== null && !Array.isArray(optional)
+    ? new Set(Object.keys(optional))
+    : new Set<string>();
+}
+
 export function parseManifestText(
   manifestText: string,
   project: ProjectRef,
@@ -89,6 +96,7 @@ export function parseManifestText(
   }
 
   const record = manifest as Record<string, unknown>;
+  const optionalNames = optionalDependencyNames(record);
   const lines = scanDeclaredLines(manifestText, new Set(Object.keys(KIND_BY_FIELD)));
   for (const [field, kind] of Object.entries(KIND_BY_FIELD)) {
     const section = record[field];
@@ -102,6 +110,9 @@ export function parseManifestText(
       continue;
     }
     for (const [name, constraint] of Object.entries(section as Record<string, unknown>)) {
+      // npm gives optionalDependencies precedence over dependencies, including
+      // the effective constraint and kind. Never emit an overridden runtime row.
+      if (field === "dependencies" && optionalNames.has(name)) continue;
       if (typeof constraint !== "string" || constraint.length === 0) {
         errors.push({
           kind: "manifest-entry-skipped",
