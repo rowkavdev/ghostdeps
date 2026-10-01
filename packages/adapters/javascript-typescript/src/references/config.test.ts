@@ -634,3 +634,25 @@ it("credits Babel overrides' presets and plugins in declarative configs", async 
   assert.deepEqual(await via(context, "babel-plugin-istanbul"), [["config", ".babelrc.json", 1]]);
   assert.deepEqual(await unread(context), []);
 });
+
+it("credits tooling in Jest inline project configs", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({
+      jest: {
+        projects: [
+          {
+            displayName: "unit",
+            preset: "ts-jest",
+            testEnvironment: "jsdom",
+            transform: { "^.+\\.tsx?$": ["@swc/jest", {}] },
+          },
+          "<rootDir>/other",
+        ],
+      },
+    }),
+  });
+  assert.deepEqual(await via(context, "ts-jest"), [["config", "package.json", 1]]);
+  assert.deepEqual(await via(context, "jest-environment-jsdom"), [["config", "package.json", 1]]);
+  assert.deepEqual(await via(context, "@swc/jest"), [["config", "package.json", 1]]);
+  assert.deepEqual(await unread(context), []);
+});
