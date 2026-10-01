@@ -192,3 +192,18 @@ it("keeps external crate roots in leading-:: expression and type paths", async (
   assert.ok(found.includes("serde:1:run"), JSON.stringify(found));
   assert.ok(found.includes("serde:1:Type"), JSON.stringify(found));
 });
+
+it("finds inherited workspace package aliases in member source", async () => {
+  const context: AdapterContext = {
+    repository: memoryHandle({
+      "Cargo.toml":
+        '[workspace]\nmembers = ["member"]\n[workspace.dependencies]\njson = { package = "serde_json", version = "1" }\n',
+      "member/Cargo.toml":
+        '[package]\nname = "member"\nversion = "0.1.0"\n[dependencies]\njson.workspace = true\n',
+      "member/src/lib.rs": "fn f() { json::to_string(&1); }\n",
+    }),
+    network: { mode: "offline" },
+  };
+  const byDep = await usagesByDep(context);
+  assert.deepEqual(byDep.get("serde_json"), ["member/src/lib.rs:1"]);
+});
