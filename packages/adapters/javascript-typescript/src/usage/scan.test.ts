@@ -232,3 +232,37 @@ describe("scanSource", () => {
     assert.equal(res.references[0]?.packageName, "left-pad");
   });
 });
+
+describe("scanSource JSDoc type imports in JavaScript", () => {
+  const refs = (file: string, text: string) =>
+    scanSource(file, text).references.filter((r) => r.packageName);
+
+  it("records import() types and @import tags in .js files as type-only references", () => {
+    const found = refs(
+      "a.js",
+      [
+        `/** @type {import("lodash").Foo} */`,
+        `let x;`,
+        `/** @typedef {import("rxjs").Observable<number>} Obs */`,
+        `/** @import { Thing } from "zod" */`,
+        `/** @param {Array<import("dayjs")>} a */`,
+        `function f(a) {}`,
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      found.map((r) => [r.packageName, r.line, r.typeOnly, r.stringReference ?? false]),
+      [
+        ["lodash", 1, true, false],
+        ["rxjs", 3, true, false],
+        ["zod", 4, true, false],
+        ["dayjs", 5, true, false],
+      ],
+    );
+    assert.deepEqual(found[2]!.symbols, ["Thing"]);
+  });
+
+  it("does not read JSDoc in TypeScript files, comments or strings", () => {
+    assert.deepEqual(refs("a.ts", `/** @type {import("lodash").Foo} */\nlet x: number;`), []);
+    assert.deepEqual(refs("a.js", `// {import("lodash").Foo}\nconst s = 1;`), []);
+  });
+});

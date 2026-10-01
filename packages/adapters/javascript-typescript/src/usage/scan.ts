@@ -288,7 +288,37 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
         }
       }
     }
+    // JSDoc is not part of forEachChild. In JavaScript files it carries real
+    // type dependencies: `@type {import("x").Foo}`, `@typedef`, `@import`.
+    if (isJavaScriptKind) {
+      const docs = (node as ts.Node & { jsDoc?: ts.Node[] }).jsDoc;
+      if (docs) for (const doc of docs) visitDoc(doc);
+    }
     ts.forEachChild(node, visit);
+  };
+  const isJavaScriptKind = kind === ts.ScriptKind.JS || kind === ts.ScriptKind.JSX;
+  const visitDoc = (node: ts.Node): void => {
+    if (ts.isImportTypeNode(node)) {
+      visit(node);
+      return;
+    }
+    // TypeScript 5.5+ `@import {X} from "x"` tag.
+    const tag = node as ts.Node & {
+      moduleSpecifier?: ts.Expression;
+      importClause?: ts.ImportClause;
+    };
+    if (node.kind === ts.SyntaxKind.JSDocImportTag && tag.moduleSpecifier) {
+      const symbols: string[] = [];
+      const clause = tag.importClause;
+      if (clause?.name) symbols.push("default");
+      const nb = clause?.namedBindings;
+      if (nb && ts.isNamespaceImport(nb)) symbols.push("*");
+      else if (nb && ts.isNamedImports(nb))
+        for (const el of nb.elements) symbols.push((el.propertyName ?? el.name).text);
+      add(node, stringValue(tag.moduleSpecifier), "static", symbols, { typeOnly: true });
+      return;
+    }
+    ts.forEachChild(node, visitDoc);
   };
   visit(sf);
 
