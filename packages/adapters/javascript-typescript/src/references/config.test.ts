@@ -600,3 +600,24 @@ for (const extension of [".js", ".mjs", ".cjs"]) {
     assert.deepEqual(await via(context, "unrun"), []);
   });
 }
+
+it("credits Babel overrides' presets and plugins in declarative configs", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({
+      babel: {
+        overrides: [
+          { test: "*.ts", presets: ["@babel/typescript"], plugins: ["transform-remove-console"] },
+        ],
+      },
+    }),
+    ".babelrc.json": JSON.stringify({
+      overrides: [{ env: { test: { plugins: ["istanbul"] } } }],
+    }),
+  });
+  assert.deepEqual(await via(context, "@babel/preset-typescript"), [["config", "package.json", 1]]);
+  assert.deepEqual(await via(context, "babel-plugin-transform-remove-console"), [
+    ["config", "package.json", 1],
+  ]);
+  assert.deepEqual(await via(context, "babel-plugin-istanbul"), [["config", ".babelrc.json", 1]]);
+  assert.deepEqual(await unread(context), []);
+});

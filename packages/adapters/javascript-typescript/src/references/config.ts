@@ -138,6 +138,11 @@ function babelConfig(doc: Record<string, unknown>, add: Collector, depth = 0): v
     for (const v of Object.values(env).slice(0, 50))
       if (isRecord(v)) babelConfig(v, add, depth + 1);
   }
+  const overrides = own(doc, "overrides");
+  if (depth < 4 && Array.isArray(overrides)) {
+    for (const value of overrides.slice(0, 200))
+      if (isRecord(value)) babelConfig(value, add, depth + 1);
+  }
 }
 
 const JEST_LIST_KEYS = [
