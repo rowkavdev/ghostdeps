@@ -316,3 +316,13 @@ it("finds compound header separators after nested slice colons", () => {
     ["yaml", "tomli", "loguru"],
   );
 });
+
+it("does not mistake walrus assignment for a compound clause separator", () => {
+  const { imports } = extractPythonImports(
+    "if value := get_value(): import yaml\nwhile value := next_value(): import tomli\n",
+  );
+  assert.deepEqual(
+    imports.map((imp) => imp.module),
+    ["yaml", "tomli"],
+  );
+});
