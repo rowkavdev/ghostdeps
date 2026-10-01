@@ -306,3 +306,13 @@ describe("one-line clause bodies", () => {
     assert.equal(byModule.get("last")?.typeOnly, false);
   });
 });
+
+it("finds compound header separators after nested slice colons", () => {
+  const { imports } = extractPythonImports(
+    "if values[1:]: import yaml\nfor value in values[::2]: import tomli\nasync def f(a: int): import loguru\n",
+  );
+  assert.deepEqual(
+    imports.map((imp) => imp.module),
+    ["yaml", "tomli", "loguru"],
+  );
+});
