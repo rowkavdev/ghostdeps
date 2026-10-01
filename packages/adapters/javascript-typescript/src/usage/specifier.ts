@@ -65,7 +65,10 @@ export function parseSpecifier(specifier: string): ParsedSpecifier {
     name = parts[0]!;
     rest = parts.slice(1);
     if (!NAME_PART.test(name)) return { kind: "invalid" };
-    if (BUILTINS.has(name) || BUILTINS.has(spec)) return { kind: "builtin" };
+    // Only the exact specifier is a built-in. A trailing slash ("events/",
+    // "punycode/") or a deeper subpath ("process/browser") names the npm
+    // package of the same name, which is how code opts out of the built-in.
+    if (BUILTINS.has(spec)) return { kind: "builtin" };
   }
   if (name.length > MAX_NAME_LENGTH) return { kind: "invalid" };
   const subpath = rest.join("/");

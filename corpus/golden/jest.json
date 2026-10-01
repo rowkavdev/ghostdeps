@@ -591,6 +591,11 @@
     {
       "kind": "info",
       "severity": "info",
+      "dependency": null
+    },
+    {
+      "kind": "info",
+      "severity": "info",
       "dependency": "jest-junit"
     },
     {
@@ -647,11 +652,6 @@
       "kind": "info",
       "severity": "info",
       "dependency": "test-renderer"
-    },
-    {
-      "kind": "info",
-      "severity": "info",
-      "dependency": "url"
     },
     {
       "kind": "info",
