@@ -217,7 +217,17 @@ const ESLINT = asRecord((d, a) => eslintConfig(d, a));
 const BABEL = asRecord((d, a) => babelConfig(d, a));
 const JEST = asRecord(jestConfig);
 const TSCONFIG = asRecord(tsconfigConfig);
-const STYLELINT = asRecord(sharedConfig("stylelint"));
+function stylelintConfig(doc: Record<string, unknown>, add: Collector, depth = 0): void {
+  sharedConfig("stylelint")(doc, add);
+  add("stylelint customSyntax", names(own(doc, "customSyntax")), pkgOnly);
+  const overrides = own(doc, "overrides");
+  if (depth < 4 && Array.isArray(overrides)) {
+    for (const value of overrides.slice(0, 200))
+      if (isRecord(value)) stylelintConfig(value, add, depth + 1);
+  }
+}
+
+const STYLELINT = asRecord(stylelintConfig);
 const COMMITLINT = asRecord(sharedConfig("commitlint"));
 const POSTCSS = asRecord(postcssConfig);
 

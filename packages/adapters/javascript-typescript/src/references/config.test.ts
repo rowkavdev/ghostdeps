@@ -54,6 +54,27 @@ describe("name helpers", () => {
 });
 
 describe("findConfigUsages", () => {
+  it("credits Stylelint overrides and custom syntax packages", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        stylelint: {
+          customSyntax: "postcss-scss",
+          overrides: [
+            {
+              files: ["*.html"],
+              extends: ["stylelint-config-html"],
+              plugins: ["stylelint-order"],
+              customSyntax: "postcss-html",
+            },
+          ],
+        },
+      }),
+    });
+    for (const name of ["postcss-scss", "postcss-html", "stylelint-config-html", "stylelint-order"])
+      assert.ok((await via(context, name)).length > 0, name);
+    assert.deepEqual(await via(context, "html"), []);
+  });
+
   it("config-only dependencies get via=config usage with the referencing line", async () => {
     const context = ctx({
       "package.json": JSON.stringify({ name: "app" }),
