@@ -345,3 +345,26 @@ describe("match statement case bodies", () => {
     }
   });
 });
+
+describe("bare lambda clause tests", () => {
+  it("splits the clause header after a bare lambda colon", () => {
+    const found = modules(
+      [
+        "if lambda x: x: import os",
+        "while lambda: False: import sys",
+        "def f(x=lambda: 1): import json",
+        "if lambda x: lambda y: x: import re",
+      ].join("\n"),
+    );
+    for (const want of ["os", "sys", "json", "re"]) {
+      assert.ok(found.includes(want), `missing ${want} in ${JSON.stringify(found)}`);
+    }
+  });
+});
+
+it("does not treat a lambda suffix inside an identifier as a lambda keyword", () => {
+  assert.deepEqual(modules("if notlambda: import yaml\nif lambda_value: import tomli\n"), [
+    "yaml",
+    "tomli",
+  ]);
+});
