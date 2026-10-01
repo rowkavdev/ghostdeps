@@ -875,3 +875,21 @@ it("Yarn classic graph uses the effective optional override constraint", async (
   assert.equal(res.graph.incomplete, false);
   assert.deepEqual(res.graph.transitiveClosure.shared, ["leaf"]);
 });
+
+it("npm missing workspace importer stays incomplete despite hoisted packages", async () => {
+  const res = await buildLockfileGraph(
+    ctx(
+      memoryHandle({
+        "package.json": '{"workspaces":["packages/*"]}',
+        "packages/app/package.json": '{"dependencies":{"shared":"1"}}',
+        "package-lock.json": JSON.stringify({
+          lockfileVersion: 3,
+          packages: { "": {}, "node_modules/shared": { version: "1.0.0" } },
+        }),
+      }),
+    ),
+    project("packages/app", ["npm"]),
+  );
+  assert.equal(res.graph.incomplete, true);
+  assert.ok(res.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"));
+});

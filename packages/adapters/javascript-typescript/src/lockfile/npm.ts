@@ -131,6 +131,12 @@ export function parseNpmLockfile(
     }));
     const root = entry(projectDir);
     if (root) mismatches(root, declared, lockfile, evidence);
+    else
+      evidence.push({
+        kind: "lockfile-manifest-mismatch",
+        statement: `${lockfile} has no importer entry for ${projectDir || "."}; the lockfile is stale`,
+        file: lockfile,
+      });
     // Listed as a direct dependency but never resolved to a package entry:
     // the lockfile is incomplete for it, same as the v1 path reports.
     const listed = root ? rootListed(root) : new Set<string>();
