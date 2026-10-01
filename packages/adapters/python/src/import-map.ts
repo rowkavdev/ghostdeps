@@ -151,7 +151,7 @@ export class ImportResolver {
     let knownKey = module;
     for (let k = segments.length; k >= 1; k--) {
       const key = segments.slice(0, k).join(".");
-      const hit = KNOWN_IMPORT_NAMES[key];
+      const hit = Object.hasOwn(KNOWN_IMPORT_NAMES, key) ? KNOWN_IMPORT_NAMES[key] : undefined;
       if (hit !== undefined) {
         known = hit;
         knownKey = key;
