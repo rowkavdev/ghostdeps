@@ -230,3 +230,37 @@ describe("requirements helpers", () => {
     assert.equal(evidence[0]?.kind, "requirements-compiled");
   });
 });
+
+describe("include spellings and modes (#576, #577)", () => {
+  it("follows -r and -c with the value attached (#576)", async () => {
+    const result = await parse({
+      "requirements.txt": "-rbase.txt\n-cpins.txt\nflask\n",
+      "base.txt": "django\n",
+      "pins.txt": "werkzeug==3.0\n",
+    });
+    assert.deepEqual(result.requirements.map((r) => r.dependency.name).sort(), ["django", "flask"]);
+    assert.deepEqual(result.evidence, []);
+  });
+
+  it("declares a file included with -c and then -r (#577)", async () => {
+    const result = await parse({
+      "requirements.txt": "-c base.txt\n-r base.txt\n",
+      "base.txt": "django\n",
+    });
+    assert.deepEqual(
+      result.requirements.map((r) => r.dependency.name),
+      ["django"],
+    );
+  });
+
+  it("still ignores a file that is only ever a constraints file", async () => {
+    const result = await parse({
+      "requirements.txt": "-c base.txt\n-c base.txt\nflask\n",
+      "base.txt": "django\n",
+    });
+    assert.deepEqual(
+      result.requirements.map((r) => r.dependency.name),
+      ["flask"],
+    );
+  });
+});

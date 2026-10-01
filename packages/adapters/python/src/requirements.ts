@@ -117,6 +117,9 @@ export async function parseRequirementsFiles(
   const requirements: PythonRequirement[] = [];
   const evidence: Evidence[] = [];
   const read = new Set<string>();
+  // Files read as declarations; a file first read as constraints-only still
+  // gets one declaring read when a later -r includes it (#577).
+  const declared = new Set<string>();
 
   // One Dependency per name and kind across all requirements files (the
   // rule every adapter follows): the first file that declares it is
@@ -175,8 +178,8 @@ export async function parseRequirementsFiles(
     kind: DependencyKind,
     constraintsOnly: boolean,
   ): Promise<void> {
-    if (read.has(file)) return;
-    if (read.size >= MAX_REQUIREMENTS_FILES) {
+    if (constraintsOnly ? read.has(file) : declared.has(file)) return;
+    if (!read.has(file) && read.size >= MAX_REQUIREMENTS_FILES) {
       note(
         "requirements-limit",
         `stopped before ${file}: more than ${MAX_REQUIREMENTS_FILES} requirements files`,
@@ -185,6 +188,7 @@ export async function parseRequirementsFiles(
       return;
     }
     read.add(file);
+    if (!constraintsOnly) declared.add(file);
     let text: string;
     try {
       text = await repository.readFile(file);
@@ -202,7 +206,7 @@ export async function parseRequirementsFiles(
     }
     const physical = text.split(/\r?\n/);
     for (const { line, text: entry } of logicalLines(text)) {
-      const option = /^(-r|--requirement|-c|--constraint)(?:\s+|=)(.+)$/.exec(entry);
+      const option = /^(-r|--requirement|-c|--constraint)(?:\s+|=)?(.+)$/.exec(entry);
       if (option) {
         const constraint = option[1] === "-c" || option[1] === "--constraint";
         const target = resolveInclude(file, option[2]!.trim());
