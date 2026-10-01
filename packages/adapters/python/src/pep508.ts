@@ -30,7 +30,10 @@ export function parseRequirement(input: string): Requirement | undefined {
   if (text.length === 0 || text.length > 4096) return undefined;
 
   let marker: string | undefined;
-  const semicolon = text.indexOf(";");
+  // Direct-reference URLs may contain semicolons. PEP 508 ends the URL
+  // at whitespace, so only a semicolon following whitespace starts its marker.
+  const directReference = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\s*\[[^\]]*\])?\s*@/.test(text);
+  const semicolon = directReference ? text.search(/(?<=\s);/) : text.indexOf(";");
   if (semicolon !== -1) {
     marker = text.slice(semicolon + 1).trim() || undefined;
     text = text.slice(0, semicolon).trim();
