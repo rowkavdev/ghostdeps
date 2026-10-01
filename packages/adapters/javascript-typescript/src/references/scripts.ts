@@ -265,7 +265,12 @@ function tokenise(text: string, gaps: string[]): string[][] {
         break;
       }
       const inner = text.slice(i + 1, close);
-      word += c === '"' ? inner.replace(/\\\n/g, "").replace(/\\(["\\$`])/g, "$1") : inner;
+      word +=
+        c === '"'
+          ? inner.replace(/\\([\n"\\$`])/g, (_, escaped: string) =>
+              escaped === "\n" ? "" : escaped,
+            )
+          : inner;
       inWord = true;
       if (c === '"' && /\$\(|`/.test(inner)) gaps.push("command substitution");
       i = close;
