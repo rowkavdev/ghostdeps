@@ -200,3 +200,26 @@ ruff = "*"
     ]);
   });
 });
+
+describe("Poetry multiple constraints optionality (#544)", () => {
+  for (const optional of [true, false]) {
+    it(`requires every alternative to be optional (first optional=${optional})`, () => {
+      const text = `[tool.poetry]
+name = "demo"
+[tool.poetry.dependencies]
+python = "^3.10"
+mixed = [{ version = "^1.0", optional = ${optional} }, { version = "^2.0", optional = ${!optional} }]
+implicit = [{ version = "^1.0", optional = true }, { version = "^2.0" }]
+all-optional = [{ version = "^3.0", optional = true }, { version = "^4.0", optional = true }]
+[tool.poetry.group.dev.dependencies]
+dev-mixed = [{ version = "^1", optional = true }, { version = "^2" }]
+`;
+      assert.deepEqual(summary(text), [
+        { name: "mixed", kind: "runtime", constraint: "^1.0 || ^2.0" },
+        { name: "implicit", kind: "runtime", constraint: "^1.0 || ^2.0" },
+        { name: "all-optional", kind: "optional", constraint: "^3.0 || ^4.0" },
+        { name: "dev-mixed", kind: "dev", constraint: "^1 || ^2", groups: ["dev"] },
+      ]);
+    });
+  }
+});

@@ -253,7 +253,8 @@ function parsePoetryEntry(
     specifier = { type: "registry", detail: first.url };
     constraint ||= first.url;
   }
-  const optional = entries.some((entry) => entry.optional === true);
+  // One required alternative makes the dependency required.
+  const optional = entries.every((entry) => entry.optional === true);
   const extras = [...new Set(entries.flatMap((entry) => strings(entry.extras)))].map(normaliseName);
   const markers = entries
     .map((entry) => (typeof entry.markers === "string" ? entry.markers : undefined))
