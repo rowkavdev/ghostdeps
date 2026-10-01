@@ -66,6 +66,18 @@ describe("findConfigUsages", () => {
     }
   });
 
+  it("credits Prettier plugins in override options", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        prettier: {
+          overrides: [{ files: "*.php", options: { plugins: ["@prettier/plugin-php"] } }],
+        },
+      }),
+    });
+    assert.deepEqual(await via(context, "@prettier/plugin-php"), [["config", "package.json", 1]]);
+    assert.deepEqual(await via(context, "php"), []);
+  });
+
   it("credits Stylelint overrides and custom syntax packages", async () => {
     const context = ctx({
       "package.json": JSON.stringify({
