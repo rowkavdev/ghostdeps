@@ -226,3 +226,17 @@ describe("metadata helpers", () => {
     assert.deepEqual([...meta.keys()], ["good"]);
   });
 });
+
+it("treats Object-prototype import names as ordinary names, not table entries", () => {
+  for (const module of ["constructor", "toString", "__proto__"]) {
+    const empty = new ImportResolver({ declared: [] });
+    assert.deepEqual(empty.resolve(module), { kind: "unresolved", module, candidates: [] });
+    const declared = new ImportResolver({ declared: [normaliseName(module)] });
+    assert.deepEqual(declared.resolve(module), {
+      kind: "dependency",
+      module,
+      distributions: [normaliseName(module)],
+      via: "name",
+    });
+  }
+});
