@@ -279,3 +279,30 @@ it("matches NFKC-equivalent Python alias spellings", () => {
   assert.equal(result.imports[0]?.local, "K");
   assert.ok(result.attributes.get("K")?.has("safe_load"));
 });
+
+describe("one-line clause bodies", () => {
+  it("keeps imports in async def/with/for and loop one-liners and marks one-line TYPE_CHECKING imports type-only", () => {
+    const { imports } = extractPythonImports(
+      [
+        "from typing import TYPE_CHECKING",
+        "async def f(): import aa",
+        "for x in y: import bb",
+        "while z: import cc",
+        "if TYPE_CHECKING: import yaml",
+        "if typing.TYPE_CHECKING: import tomli",
+        "if other: import plain",
+        "import last",
+      ].join("\n"),
+    );
+    const byModule = new Map(imports.map((i) => [i.module, i]));
+    for (const name of ["aa", "bb", "cc", "plain"]) {
+      assert.equal(byModule.get(name)?.conditional, true, name);
+      assert.equal(byModule.get(name)?.typeOnly, false, name);
+    }
+    for (const name of ["yaml", "tomli"]) {
+      assert.equal(byModule.get(name)?.conditional, true, name);
+      assert.equal(byModule.get(name)?.typeOnly, true, name);
+    }
+    assert.equal(byModule.get("last")?.typeOnly, false);
+  });
+});
