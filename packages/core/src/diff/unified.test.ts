@@ -130,6 +130,23 @@ describe("parseUnifiedDiff on malformed and hostile input", () => {
     );
   });
 
+  it("preserves leading and trailing spaces in unquoted git paths", () => {
+    const parsed = parseUnifiedDiff(
+      "diff --git a/ trailing  b/ trailing \n--- a/ trailing \t\n+++ b/ trailing \t\n@@ -1 +1 @@\n-before\n+after\n",
+    );
+    assert.equal(parsed.files[0]?.oldPath, " trailing ");
+    assert.equal(parsed.files[0]?.newPath, " trailing ");
+    assert.deepEqual(parsed.problems, []);
+  });
+
+  it("preserves trailing spaces in header-only changes", () => {
+    const parsed = parseUnifiedDiff(
+      "diff --git a/trailing  b/trailing \nold mode 100644\nnew mode 100755\n",
+    );
+    assert.equal(parsed.files[0]?.oldPath, "trailing ");
+    assert.equal(parsed.files[0]?.newPath, "trailing ");
+  });
+
   it("keeps quoted paths with invalid escapes as raw text", () => {
     const parsed = parseUnifiedDiff('diff --git "a/\\377" "b/\\377"\nnew file mode 100644\n');
     assert.equal(parsed.files[0]?.newPath, '"b/\\377"');
