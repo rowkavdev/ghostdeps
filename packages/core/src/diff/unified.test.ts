@@ -114,6 +114,22 @@ describe("parseUnifiedDiff on malformed and hostile input", () => {
     assert.match(parsed.problems[0] ?? "", /unreadable hunk header/);
   });
 
+  it("decodes literal supplementary Unicode in quoted git paths", () => {
+    // Produced by git -c core.quotePath=false diff for a name containing a tab.
+    const parsed = parseUnifiedDiff(
+      'diff --git "a/emoji😀\\tfile.txt" "b/emoji😀\\tfile.txt"\n--- "a/emoji😀\\tfile.txt"\n+++ "b/emoji😀\\tfile.txt"\n@@ -1 +1 @@\n-before\n+after\n',
+    );
+    assert.equal(parsed.files[0]?.oldPath, "emoji😀\tfile.txt");
+    assert.equal(parsed.files[0]?.newPath, "emoji😀\tfile.txt");
+    assert.deepEqual(parsed.problems, []);
+  });
+
+  it("does not throw for a lone surrogate in a quoted path", () => {
+    assert.doesNotThrow(() =>
+      parseUnifiedDiff('diff --git "a/\ud800" "b/\ud800"\nnew file mode 100644\n'),
+    );
+  });
+
   it("keeps quoted paths with invalid escapes as raw text", () => {
     const parsed = parseUnifiedDiff('diff --git "a/\\377" "b/\\377"\nnew file mode 100644\n');
     assert.equal(parsed.files[0]?.newPath, '"b/\\377"');
