@@ -323,3 +323,52 @@ describe("Pipfile.lock graph (#432)", () => {
     assert.ok(oversized.evidence.some((e) => e.kind === "lockfile-too-large"));
   });
 });
+
+describe("uv resolution forks (#546)", () => {
+  for (const versions of [
+    ["1.0", "2.0"],
+    ["2.0", "1.0"],
+  ]) {
+    it(`flags name-only traversal as incomplete with fork order ${versions.join(", ")}`, async () => {
+      const fork = versions
+        .map(
+          (version) => `[[package]]
+name = "Foo"
+version = "${version}"
+source = { registry = "https://pypi.org/simple" }
+${version === "1.0" ? 'dependencies = [{ name = "bar" }]' : ""}
+`,
+        )
+        .join("\n");
+      const lock = `version = 1
+${fork}
+[[package]]
+name = "bar"
+version = "3.0"
+source = { registry = "https://pypi.org/simple" }
+`;
+      const files = {
+        "pyproject.toml": '[project]\nname = "app"\ndependencies = ["foo"]\n',
+        "uv.lock": lock,
+        "app/__init__.py": "",
+      };
+      const { graph, evidence } = await buildProjectGraph(ctx(files), project);
+      assert.equal(graph.incomplete, true);
+      const note = evidence.find((e) => e.kind === "lockfile-resolution-fork");
+      assert.equal(note?.file, "uv.lock");
+      assert.match(note?.statement ?? "", /foo.*2.*1\.0.*2\.0/);
+      assert.match(note?.statement ?? "", /name-only.*incomplete/);
+      const detection = await detectPython(ctx(files));
+      assert.ok(detection.evidence.some((e) => e.kind === "lockfile-resolution-fork"));
+    });
+  }
+
+  it("does not flag a single-version lockfile", async () => {
+    const { graph, evidence } = await buildProjectGraph(
+      ctx({ "pyproject.toml": PYPROJECT, "uv.lock": UV_LOCK }),
+      project,
+    );
+    assert.equal(graph.incomplete, false);
+    assert.ok(!evidence.some((e) => e.kind === "lockfile-resolution-fork"));
+  });
+});
