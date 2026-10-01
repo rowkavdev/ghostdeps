@@ -155,3 +155,21 @@ describe("package.json parser (issue #26)", () => {
     ]);
   });
 });
+
+it("optionalDependencies overrides duplicate runtime entries like npm", () => {
+  const result = parseManifestText(
+    JSON.stringify({
+      dependencies: { shared: "1", required: "1" },
+      optionalDependencies: { shared: "2" },
+    }),
+    rootProject,
+    "package.json",
+  );
+  assert.deepEqual(
+    result.dependencies.map((dep) => [dep.name, dep.constraint, dep.kind]),
+    [
+      ["required", "1", "runtime"],
+      ["shared", "2", "optional"],
+    ],
+  );
+});
