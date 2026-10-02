@@ -71,6 +71,11 @@ export function splitPythonStatements(source: string): LexedPython {
       i++;
       continue;
     }
+    // A leading form feed does not contribute to Python indentation.
+    if (atLineStart && c === "\f") {
+      i++;
+      continue;
+    }
     if (atLineStart && (c === " " || c === "\t")) {
       column += c === "\t" ? 8 - (column % 8) : 1;
       i++;

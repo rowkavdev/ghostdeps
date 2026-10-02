@@ -509,3 +509,19 @@ it("handles CR, LF and CRLF physical newlines identically", () => {
     assert.deepEqual(extractPythonImports(lines.join(newline)).imports, expected);
   }
 });
+
+it("ignores leading form feeds while measuring Python indentation", () => {
+  const source = "if TYPE_CHECKING:\n\f    import pandas\n\f    import numpy\n\fimport requests\n";
+  assert.deepEqual(
+    extractPythonImports(source).imports.map(({ module, conditional, typeOnly }) => [
+      module,
+      conditional,
+      typeOnly,
+    ]),
+    [
+      ["pandas", true, true],
+      ["numpy", true, true],
+      ["requests", false, false],
+    ],
+  );
+});
