@@ -9,7 +9,7 @@
     { "name": "winapi", "kind": "runtime", "constraint": "0.3", "declaredIn": "Cargo.toml" }
   ],
   "conditions": [
-    { "kind": "feature-gated-dependency", "statement": "serde_json is optional; enabled by feature: json" },
+    { "kind": "feature-gated-dependency", "statement": "serde_json is optional; enabled by features: json, default" },
     { "kind": "feature-gated-dependency", "statement": "simd-json is optional; enabled by features: fast, simd-json" },
     { "kind": "feature-gated-dependency", "statement": "log is optional; enabled by feature: log" },
     { "kind": "feature-gated-dependency", "statement": "flate2 is optional; enabled by feature: flate2" },

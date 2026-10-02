@@ -115,6 +115,35 @@ function invalid(key: string, file: string, errors: Evidence[], why: string): un
   return undefined;
 }
 
+/** Expand direct dependency gates through named local features. */
+function expandFeatureGates(
+  features: TomlTable,
+  optionalKeys: ReadonlySet<string>,
+  gates: ReadonlyMap<string, Set<string>>,
+): void {
+  // Feature aliases enable everything reachable through named local features.
+  // Reverse edges let each dependency walk only the ancestors of its gates;
+  // the visited gate set also stops cycles.
+  const parents = new Map<string, Set<string>>();
+  for (const [feature, entries] of Object.entries(features)) {
+    for (const child of stringArray(entries)) {
+      if (!Object.hasOwn(features, child) && !optionalKeys.has(child)) continue;
+      if (!parents.has(child)) parents.set(child, new Set());
+      parents.get(child)!.add(feature);
+    }
+  }
+  for (const set of gates.values()) {
+    const pending = [...set];
+    while (pending.length > 0) {
+      for (const parent of parents.get(pending.pop()!) ?? []) {
+        if (set.has(parent)) continue;
+        set.add(parent);
+        pending.push(parent);
+      }
+    }
+  }
+}
+
 /**
  * Which features enable each optional dependency key. An optional
  * dependency `foo` is enabled by `dep:foo`, `foo/<feat>` (which also turns
@@ -150,6 +179,7 @@ export function featureGates(
     if (!gates.has(key)) gates.set(key, new Set());
     if (!explicitDep.has(key)) gates.get(key)!.add(key);
   }
+  expandFeatureGates(features, optionalKeys, gates);
   const defaults = new Set(stringArray(features.default));
   return new Map(
     [...gates].map(([key, set]) => [
