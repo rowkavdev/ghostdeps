@@ -174,7 +174,10 @@ const JEST_LIST_KEYS = [
 
 function jestConfig(doc: Record<string, unknown>, add: Collector, depth = 0): void {
   add("jest preset", names(own(doc, "preset")), pkgOnly);
-  for (const key of JEST_MODULE_KEYS) add(`jest ${key}`, names(own(doc, key)), pkgOnly);
+  for (const key of JEST_MODULE_KEYS) {
+    if (depth > 0 && (key === "testResultsProcessor" || key === "testSequencer")) continue;
+    add(`jest ${key}`, names(own(doc, key)), pkgOnly);
+  }
   add(
     "jest testEnvironment",
     names(own(doc, "testEnvironment")).filter((n) => n !== "node"),
@@ -193,6 +196,7 @@ function jestConfig(doc: Record<string, unknown>, add: Collector, depth = 0): vo
   const transform = own(doc, "transform");
   if (isRecord(transform)) add("jest transform", names(Object.values(transform)), pkgOnly);
   for (const key of JEST_LIST_KEYS) {
+    if (depth > 0 && (key === "reporters" || key === "watchPlugins")) continue;
     add(
       `jest ${key}`,
       names(own(doc, key)).filter((n) => n !== "default"),
