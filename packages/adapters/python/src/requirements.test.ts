@@ -377,3 +377,16 @@ it("follows quoted requirements include filenames with spaces", async () => {
     assert.equal(outside.evidence[0]?.kind, "requirements-include-skipped");
   }
 });
+
+it("does not follow unknown options that only start with a long include name", async () => {
+  const result = await parse({
+    "requirements.txt": "--requirementbase.txt\n--constraintpins.txt\n-r pins.txt\nrequests\n",
+    "base.txt": "phantom\n",
+    "pins.txt": "urllib3\n",
+  });
+  assert.deepEqual(names(result), [
+    "urllib3 * runtime pins.txt",
+    "requests * runtime requirements.txt",
+  ]);
+  assert.deepEqual(result.evidence, []);
+});
