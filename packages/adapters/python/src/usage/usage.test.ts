@@ -554,3 +554,19 @@ it("resets indentation columns at a form feed after spaces or tabs", () => {
     ],
   );
 });
+
+it("does not credit a literal prefix of a computed dynamic import argument", () => {
+  const source = [
+    'importlib.import_module("requests" + suffix)',
+    '__import__("numpy".upper())',
+    'importlib.import_module("yaml" if flag else "tomli")',
+    'importlib.import_module("http" "x")',
+    'importlib.import_module("pandas")',
+    '__import__("scipy", globals(), locals())',
+    'importlib.import_module("matplotlib", package="app")',
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source).imports.map(({ module }) => module),
+    ["pandas", "scipy", "matplotlib"],
+  );
+});
