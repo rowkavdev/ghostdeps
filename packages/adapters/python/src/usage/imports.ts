@@ -86,7 +86,8 @@ function isTypeCheckingHeader(text: string): boolean {
   }
   return /^(?:typing\s*\.\s*)?TYPE_CHECKING$/.test(condition);
 }
-const DYNAMIC = /(?:\bimportlib\s*\.\s*)?\b(?:import_module|__import__)\s*\(\s*__S(\d+)__/g;
+const DYNAMIC =
+  /(?:\bimportlib\s*\.\s*)?\b(?:import_module|__import__)\s*\(\s*__S(\d+)__(?=\s*[,)])/g;
 
 const clean = (dotted: string) => dotted.replace(/\s+/g, "");
 
