@@ -63,11 +63,12 @@ export function parsePythonFloor(raw: string): Bound | undefined {
       if (op === "^" || op === "~" || op === "~=") {
         if (op === "~=" && version.length < 2) return undefined;
         const upper = [...version];
+        const firstNonzero = version.findIndex((component) => component !== 0);
         const index =
           op === "^"
-            ? version[0] === 0 && version.length > 1
-              ? 1
-              : 0
+            ? firstNonzero < 0
+              ? version.length - 1
+              : firstNonzero
             : op === "~"
               ? version.length > 1
                 ? 1

@@ -352,3 +352,23 @@ it("does not fuse setup.cfg continuation fragments into valid floor tokens", asy
     assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10], value);
   }
 });
+
+it("bounds zero-major caret ranges at the first nonzero component or explicit width", async () => {
+  for (const value of ["^0.0.3,>=0.0.4", "^0.0.0,>=0.0.1", "^0.0,>=0.1", "^0,>=1"]) {
+    assert.equal(parsePythonFloor(value), undefined, value);
+    const result = await read({
+      "pyproject.toml": `[tool.poetry.dependencies]\npython = "${value}"\n`,
+    });
+    assert.equal(result.status, "unparsed", value);
+  }
+  for (const [value, version] of [
+    ["^0.0.3", [0, 0, 3]],
+    ["^0.0.0", [0, 0, 0]],
+    ["^0.0", [0, 0]],
+    ["^0", [0]],
+    ["^0.2.3,>=0.2.4", [0, 2, 4]],
+    ["^3.10,>=3.12", [3, 12]],
+  ] as const) {
+    assert.deepEqual(parsePythonFloor(value), { version, exclusive: false }, value);
+  }
+});
