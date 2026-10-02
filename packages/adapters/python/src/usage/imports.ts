@@ -102,7 +102,8 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       typeCheckingIndent = undefined;
     }
     if (isTypeCheckingHeader(stmt.text)) {
-      typeCheckingIndent = stmt.indent;
+      // Keep the outermost guard: ending an inner block does not end it.
+      typeCheckingIndent ??= stmt.indent;
       continue;
     }
     if (inlineSuite?.line !== stmt.line) inlineSuite = undefined;

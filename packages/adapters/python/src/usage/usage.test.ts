@@ -456,3 +456,37 @@ it("marks parenthesized TYPE_CHECKING guards type-only without matching other co
     ],
   );
 });
+
+it("keeps the outer TYPE_CHECKING guard after nested guarded blocks end", () => {
+  const source = [
+    "from typing import TYPE_CHECKING",
+    "if TYPE_CHECKING:",
+    "    if (typing.TYPE_CHECKING):",
+    "        import pandas",
+    "        if TYPE_CHECKING:",
+    "            import scipy",
+    "        import matplotlib",
+    "    import numpy",
+    "    if enabled:",
+    "        import yaml",
+    "    else:",
+    "        import tomli",
+    "else:",
+    "    import requests",
+    "import httpx",
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source).imports.map((imp) => [imp.module, imp.typeOnly]),
+    [
+      ["typing", false],
+      ["pandas", true],
+      ["scipy", true],
+      ["matplotlib", true],
+      ["numpy", true],
+      ["yaml", true],
+      ["tomli", true],
+      ["requests", false],
+      ["httpx", false],
+    ],
+  );
+});
