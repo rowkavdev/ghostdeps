@@ -298,3 +298,12 @@ it("keeps setup.cfg floor continuation values across empty lines", async () => {
     assert.equal(contradiction.status, "unparsed");
   }
 });
+
+it("does not invent setup.cfg floors by stripping inline hash text", async () => {
+  for (const tail of [" # note", "#note", " # <4"]) {
+    const result = await read({ "setup.cfg": `[options]\npython_requires = >=3.10${tail}\n` });
+    assert.equal(result.status, "unparsed", tail);
+  }
+  const valid = await read({ "setup.cfg": "[options]\npython_requires = >=3.10\n" });
+  assert.equal(valid.status, "declared");
+});
