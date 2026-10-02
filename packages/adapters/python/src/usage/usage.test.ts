@@ -585,3 +585,20 @@ it("reads literal name keyword arguments to Python dynamic import functions", ()
     ["yaml", "requests", "numpy"],
   );
 });
+
+it("does not normalize whitespace in dynamic import module strings", () => {
+  const source = [
+    'importlib.import_module(" requests ")',
+    '__import__("numpy\\t")',
+    'importlib.import_module("PIL . Image")',
+    'importlib.import_module("yaml")',
+    '__import__("PIL.Image")',
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source).imports.map(({ module, form }) => [module, form]),
+    [
+      ["yaml", "dynamic"],
+      ["PIL.Image", "dynamic"],
+    ],
+  );
+});
