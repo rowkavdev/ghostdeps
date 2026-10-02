@@ -119,6 +119,16 @@ const WRAPPER_SPECS: Readonly<Record<string, WrapperSpec>> = Object.freeze({
   time: { isPackage: false, value: ["-f", "--format", "-o", "--output"], bool: ["-p", "-v"] },
   nice: { isPackage: false, value: ["-n", "--adjustment"] },
   exec: { isPackage: false, value: ["-a"], bool: ["-c", "-l"] },
+  xargs: {
+    isPackage: false,
+    value: ["-n", "-I", "-L", "-P", "-d", "-a", "-s", "-E", "--max-args", "--max-procs"],
+    bool: ["-0", "-r", "-t", "-p", "-x", "--null", "--no-run-if-empty", "--verbose"],
+  },
+  sudo: {
+    isPackage: false,
+    value: ["-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U"],
+    bool: ["-E", "-H", "-n", "-S", "-k", "-b", "--preserve-env"],
+  },
   "cross-env": { isPackage: true },
   "cross-env-shell": { isPackage: true },
   dotenv: { isPackage: true, value: ["-e", "-v", "-c", "-p"], bool: ["-o", "--debug"] },
@@ -156,6 +166,10 @@ const WRAPPER_SPECS: Readonly<Record<string, WrapperSpec>> = Object.freeze({
     ],
   },
 });
+/** Shell keywords that precede a command in the same segment (`if tsc`, `then eslint`, `! tsc`). */
+const LEADING_KEYWORDS = new Set(["if", "elif", "while", "until", "then", "else", "do", "!", "{"]);
+/** Shell keywords that carry no command (`fi`, `done`, `for f in a b`, `case $x in`). */
+const EMPTY_KEYWORDS = new Set(["fi", "done", "}", "esac", "for", "select", "case"]);
 /** Shells: `sh -c "<command>"` is analysed; `sh file.sh` runs a file we don't read. */
 const SHELLS = new Set(["sh", "bash", "zsh", "dash"]);
 /** Package-manager subcommands that run a bin: `pnpm exec x`, `yarn dlx x`, `bun x x`, `npm exec x`. */
@@ -329,7 +343,12 @@ function analyseNested(command: string | undefined, depth: number, out: ScriptAn
 function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): void {
   let i = 0;
   for (;;) {
-    while (i < words.length && (isAssignment(words[i]!) || words[i] === "--")) i++;
+    while (
+      i < words.length &&
+      (isAssignment(words[i]!) || words[i] === "--" || LEADING_KEYWORDS.has(words[i]!))
+    )
+      i++;
+    if (i < words.length && EMPTY_KEYWORDS.has(words[i]!)) return;
     // Flags before any command (rare) are skipped.
     while (i < words.length && words[i]!.startsWith("-")) i++;
     const word = words[i];
