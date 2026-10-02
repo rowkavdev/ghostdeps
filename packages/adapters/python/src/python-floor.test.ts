@@ -229,3 +229,15 @@ it("reads setup.py floors with every Python physical newline sequence", async ()
     );
   }
 });
+
+it("ignores whole comment lines while joining setup.cfg floor values", async () => {
+  for (const comment of ["# supported range", "; supported range"]) {
+    for (const indent of ["", "    "]) {
+      const cfg = `[options]\npython_requires =\n${indent}${comment}\n    >=3.10,\n${indent}${comment}\n    <4\npackages = find:\n`;
+      const result = await read({ "setup.cfg": cfg });
+      assert.equal(result.status, "declared", JSON.stringify([comment, indent]));
+      assert.equal(result.status === "declared" ? result.constraint : undefined, ">=3.10,<4");
+      assert.equal(result.status === "declared" ? result.line : undefined, 2);
+    }
+  }
+});
