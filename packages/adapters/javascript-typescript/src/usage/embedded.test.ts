@@ -61,3 +61,27 @@ it("keeps original offsets when Unicode text expands during lowercasing", () => 
     ],
   );
 });
+
+it("does not end script opening tags at greater-than signs inside quoted attributes", () => {
+  for (const quote of ['"', "'"]) {
+    const text = `<script data-note=${quote}>${quote} lang="ts">import "lodash";</script>`;
+    assert.deepEqual(
+      extractScriptBlocks("index.html", text).blocks.map(({ code }) => code),
+      ['import "lodash";'],
+    );
+    const data = `<script data-note=${quote}>${quote} type="application/json">{"x":1}</script>`;
+    assert.deepEqual(extractScriptBlocks("index.html", data).blocks, []);
+  }
+  assert.deepEqual(
+    extractScriptBlocks("index.html", "<script title=\"unterminated > import 'lodash';").blocks,
+    [],
+  );
+});
+
+it("does not treat quotes within unquoted attribute values as delimiters", () => {
+  const text = `<script data-x=it's>import "lodash";</script><script title = '>'>import "axios";</script>`;
+  assert.deepEqual(
+    extractScriptBlocks("index.html", text).blocks.map(({ code }) => code),
+    ['import "lodash";', 'import "axios";'],
+  );
+});

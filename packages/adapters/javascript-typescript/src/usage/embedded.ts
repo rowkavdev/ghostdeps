@@ -75,6 +75,24 @@ function kindFor(lang: string | undefined): ts.ScriptKind {
   }
 }
 
+/** Find the tag terminator, ignoring delimiters inside quoted attributes. */
+function openingTagEnd(text: string, start: number): number {
+  let quote: string | undefined;
+  let valueStart = false;
+  for (let i = start; i < text.length; i++) {
+    const character = text[i];
+    if (quote !== undefined) {
+      if (character === quote) quote = undefined;
+    } else if (character === ">") return i;
+    else if (character === "=") valueStart = true;
+    else if (valueStart && character !== undefined && !/[\t\n\f\r ]/.test(character)) {
+      if (character === '"' || character === "'") quote = character;
+      valueStart = false;
+    }
+  }
+  return -1;
+}
+
 export function extractScriptBlocks(file: string, text: string): ExtractedBlocks {
   const blocks: ScriptBlock[] = [];
   let dropped = 0;
@@ -120,7 +138,7 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
       from = open + 7;
       continue;
     }
-    const tagEnd = lower.indexOf(">", open);
+    const tagEnd = openingTagEnd(text, open + 7);
     if (tagEnd < 0) break;
     const tag = text.slice(open, tagEnd + 1);
     const close = lower.indexOf("</script", tagEnd + 1);
