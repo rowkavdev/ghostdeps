@@ -459,3 +459,21 @@ it("rejects duplicate python_requires in the same setup.cfg section", async () =
   ])
     assert.equal((await read({ "setup.cfg": contents })).status, "declared", contents);
 });
+
+it("rejects setup.cfg non-option lines outside continuations", async () => {
+  for (const contents of [
+    "[options]\ninvalid\npython_requires = >=3.10\n",
+    "[options]\npython_requires = >=3.10\ninvalid\n",
+    "[options]\npython_requires = >=3.10\n[metadata]\ninvalid\n",
+  ])
+    assert.equal((await read({ "setup.cfg": contents })).status, "unparsed", contents);
+  assert.equal(
+    (
+      await read({
+        "setup.cfg":
+          "[metadata]\nname = example\n  continuation\n[options]\npython_requires = >=3.10\n",
+      })
+    ).status,
+    "declared",
+  );
+});
