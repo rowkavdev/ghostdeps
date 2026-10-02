@@ -320,3 +320,23 @@ it("preserves inner spaces in setup.cfg section names", async () => {
     assert.equal(real.status === "declared" ? real.line : undefined, 4);
   }
 });
+
+it("uses ConfigParser's final closing bracket for setup.cfg section names", async () => {
+  for (const header of ["[options]]", "[options] # ]"]) {
+    assert.equal(
+      (await read({ "setup.cfg": `${header}\npython_requires = >=3.12\n` })).status,
+      "absent",
+      header,
+    );
+    const result = await read({
+      "setup.cfg": `${header}\npython_requires = >=3.12\n[options]\npython_requires = >=3.10\n`,
+    });
+    assert.equal(result.status, "declared");
+    assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10]);
+    assert.equal(result.status === "declared" ? result.line : undefined, 4);
+  }
+  assert.equal(
+    (await read({ "setup.cfg": "[options] # plain comment\npython_requires = >=3.10\n" })).status,
+    "declared",
+  );
+});
