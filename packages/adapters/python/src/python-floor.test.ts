@@ -257,3 +257,19 @@ it("ends setup.cfg floor values at options with equal or shallower indentation",
     assert.equal(result.status === "declared" ? result.constraint : undefined, ">=3.10,<4");
   }
 });
+
+it("accepts colon floor options but preserves setuptools case-sensitive keys", async () => {
+  for (const delimiter of ["=", ":"]) {
+    const result = await read({ "setup.cfg": `[options]\npython_requires ${delimiter} >=3.10\n` });
+    assert.equal(result.status, "declared", delimiter);
+    assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10]);
+    assert.equal(result.status === "declared" ? result.line : undefined, 2);
+    for (const key of ["Python_Requires", "PYTHON_REQUIRES"]) {
+      assert.equal(
+        (await read({ "setup.cfg": `[options]\n${key} ${delimiter} >=3.10\n` })).status,
+        "absent",
+        key,
+      );
+    }
+  }
+});
