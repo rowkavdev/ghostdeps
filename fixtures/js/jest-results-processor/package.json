@@ -1,0 +1,7 @@
+{
+  "name": "fixture-jest-results-processor",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": { "jest-sonar-reporter": "^2.0.0" },
+  "jest": { "testResultsProcessor": "jest-sonar-reporter" }
+}

@@ -1,0 +1,5 @@
+{
+  "description": "Jest's results processor package is used through declarative config without imports or scripts.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "jest-sonar-reporter" }]
+}

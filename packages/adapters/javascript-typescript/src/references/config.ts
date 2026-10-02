@@ -157,6 +157,7 @@ const JEST_MODULE_KEYS = [
   "globalSetup",
   "globalTeardown",
   "dependencyExtractor",
+  "testResultsProcessor",
 ] as const;
 
 const JEST_LIST_KEYS = [
