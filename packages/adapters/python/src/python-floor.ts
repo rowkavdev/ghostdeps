@@ -141,6 +141,7 @@ function tomlCandidate(text: string, target: "project" | "poetry"): Candidate {
 }
 function setupCfgCandidate(text: string): Candidate {
   let active = false;
+  let hasSection = false;
   let optionIndent: number | undefined;
   const lines = text.split(/\r\n?|\n/);
   for (const [i, raw] of lines.entries()) {
@@ -151,10 +152,12 @@ function setupCfgCandidate(text: string): Candidate {
     if (optionIndent !== undefined && currentIndent > optionIndent) continue;
     const header = /^\s*\[(.+)\]/.exec(raw);
     if (header) {
+      hasSection = true;
       active = header[1] === "options";
       optionIndent = undefined;
       continue;
     }
+    if (!hasSection) return { present: true, line: i + 1 };
     if (/^\s*[^=:]+[=:]/.test(raw)) optionIndent = currentIndent;
     if (!active) continue;
     const match = /^\s*python_requires\s*[=:]\s*(.*)$/.exec(raw);

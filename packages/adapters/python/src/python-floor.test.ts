@@ -397,3 +397,17 @@ it("does not treat setup.cfg continuation header text as a new options section",
   });
   assert.equal(valid.status, "declared");
 });
+
+it("does not infer a setup.cfg floor after data before the first section", async () => {
+  for (const prefix of ["python_requires = >=3.12", "name = demo", "invalid text"]) {
+    const result = await read({
+      "setup.cfg": `${prefix}\n[options]\npython_requires = >=3.10\n`,
+    });
+    assert.equal(result.status, "unparsed", prefix);
+    assert.equal(result.evidence[0]?.line, 1, prefix);
+  }
+  const valid = await read({
+    "setup.cfg": "# heading\n; note\n\n[options]\npython_requires = >=3.10\n",
+  });
+  assert.equal(valid.status, "declared");
+});
