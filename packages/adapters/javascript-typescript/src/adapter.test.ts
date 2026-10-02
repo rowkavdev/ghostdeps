@@ -142,6 +142,11 @@ describe("reference analysis completeness (#132)", () => {
     );
   });
 
+  it("credits Jest's configured results processor without imports", async () => {
+    const r = await report("jest-results-processor", "jest-sonar-reporter");
+    assert.ok(r.usages.some((u) => u.via === "config" && u.file === "package.json"));
+  });
+
   it("a JSON tsdown.config.json with no tsdown import still credits tsdown by convention", async () => {
     const r = await report("convention-tsdown-json", "tsdown");
     assert.ok(

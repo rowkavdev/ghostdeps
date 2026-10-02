@@ -757,3 +757,14 @@ it("credits tsdown's embedded package config without crediting a TypeScript load
   assert.deepEqual(await via(context, "tsdown"), [["convention", "package.json", 1]]);
   assert.deepEqual(await via(context, "unrun"), []);
 });
+
+it("credits Jest results processor packages and ignores local processor paths", async () => {
+  const context = ctx({
+    "package.json": JSON.stringify({ jest: { testResultsProcessor: "jest-sonar-reporter" } }),
+  });
+  assert.deepEqual(await via(context, "jest-sonar-reporter"), [["config", "package.json", 1]]);
+  for (const path of ["./processor.js", "<rootDir>/processor.js"]) {
+    const local = ctx({ "package.json": JSON.stringify({ jest: { testResultsProcessor: path } }) });
+    assert.deepEqual(await via(local, "processor"), []);
+  }
+});
