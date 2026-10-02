@@ -67,10 +67,11 @@ function logicalLines(text: string): { line: number; text: string }[] {
     // pip joins physical continuations before stripping inline comments.
     // Whole comment lines never continue, even when they end in backslash.
     if (line.endsWith("\\") && !/^\s*#/.test(line)) {
-      buffer += line.slice(0, -1) + " ";
+      buffer += line.slice(0, -1);
       continue;
     }
-    buffer += line;
+    // Keep a comment boundary when the preceding continuation has no whitespace.
+    buffer += /^\s*#/.test(line) ? ` ${line}` : line;
     buffer = buffer.replace(/(^|\s)#.*$/, "");
     if (buffer.trim().length > 0) out.push({ line: start, text: buffer.trim() });
     buffer = "";
