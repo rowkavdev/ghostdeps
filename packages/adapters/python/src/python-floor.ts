@@ -159,7 +159,18 @@ function setupCfgCandidate(text: string): Candidate {
       if (next.search(/\S/) <= indent) break;
       parts.push(next.trim());
     }
-    return { present: true, constraint: parts.join(""), line: i + 1 };
+    // ConfigParser joins physical continuation lines with newlines. Validate
+    // each comma-delimited specifier before removing whitespace so split
+    // version/operator tokens cannot turn into a declaration setuptools rejects.
+    const value = parts.join("\n").trim();
+    const valid = value
+      .split(",")
+      .every((term) => /^\s*(?:>=|>|<=|<|==|!=|~=)\s*\d+(?:\.\d+){0,2}(?:\.\*)?\s*$/.test(term));
+    return {
+      present: true,
+      ...(valid ? { constraint: value.replace(/\s+/g, "") } : {}),
+      line: i + 1,
+    };
   }
   return { present: false, line: 0 };
 }
