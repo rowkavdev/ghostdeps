@@ -444,3 +444,18 @@ it("rejects duplicate setup.cfg sections before or after python_requires", async
     "declared",
   );
 });
+
+it("rejects duplicate python_requires in the same setup.cfg section", async () => {
+  for (const contents of [
+    "[options]\npython_requires = >=3.10\npython_requires = >=3.12\n",
+    "[options]\npython_requires = >=3.10\npython_requires: >=3.12\n",
+    "[options]\npython_requires = >=3.10,\n  <4\npython_requires = >=3.12\n",
+  ])
+    assert.equal((await read({ "setup.cfg": contents })).status, "unparsed", contents);
+  for (const contents of [
+    "[options]\npython_requires = >=3.10\nPython_Requires = >=3.12\n",
+    "[DEFAULT]\npython_requires = >=3.9\n[options]\npython_requires = >=3.10\n",
+    "[options]\npython_requires = >=3.10\n[other]\npython_requires = >=3.12\n",
+  ])
+    assert.equal((await read({ "setup.cfg": contents })).status, "declared", contents);
+});
