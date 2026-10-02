@@ -92,7 +92,7 @@ const DYNAMIC =
 const clean = (dotted: string) => dotted.replace(/\s+/g, "");
 
 export const extractPythonImports: PythonImportExtractor = (source) => {
-  const { statements, strings } = splitPythonStatements(source);
+  const { statements, strings, byteStrings } = splitPythonStatements(source);
   const imports: PythonImport[] = [];
   const code: string[] = [];
   let typeCheckingIndent: number | undefined;
@@ -152,6 +152,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     }
     code.push(text);
     for (const m of text.matchAll(DYNAMIC)) {
+      if (byteStrings.has(Number(m[1]))) continue;
       const literal = strings[Number(m[1])] ?? "";
       if (literal === "" || literal.startsWith(".") || /\s/u.test(literal) || !DOTTED.test(literal))
         continue;
