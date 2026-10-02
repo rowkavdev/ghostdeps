@@ -296,3 +296,25 @@ it("keeps non-BMP Unicode letters in import aliases and selectors", () => {
   assert.equal(result.imports[0]?.alias, "𐐀");
   assert.deepEqual([...(result.selectors.get("𐐀") ?? [])], ["Println"]);
 });
+
+it("ignores Go source basenames beginning with underscore or dot", async () => {
+  const adapter = createGoAdapter();
+  const context: AdapterContext = {
+    repository: memoryHandle({
+      "go.mod": "module example.test/app\nrequire example.test/dep v1.0.0\n",
+      "_ignored.go": 'package app\nimport "example.test/dep"\n',
+      ".hidden.go": 'package app\nimport "example.test/dep"\n',
+      "sub/_ignored.go": 'package sub\nimport "example.test/dep"\n',
+      "app.go": "package app\n",
+    }),
+    network: { mode: "offline" },
+  };
+  const { projects } = await adapter.detect(context);
+  const [dep] = await adapter.listDirectDependencies(context, projects);
+  assert.deepEqual(normaliseUsageResult(await adapter.findUsage!(context, dep!)).usages, []);
+  const sourceOnly: AdapterContext = {
+    repository: memoryHandle({ "_ignored.go": "package app", ".hidden.go": "package app" }),
+    network: { mode: "offline" },
+  };
+  assert.equal((await adapter.detect(sourceOnly)).confidence, 0);
+});

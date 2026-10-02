@@ -11,9 +11,9 @@ export const GO_ECOSYSTEM = "go";
 const MODULE_CONFIDENCE = 0.95;
 const SOURCE_ONLY_CONFIDENCE = 0.2;
 
-/** True when the go command would skip this path (vendor, testdata, "." or "_" dirs). */
+/** True when Go skips this path (vendor/testdata dirs, hidden/underscore names). */
 export function isIgnoredGoPath(path: string): boolean {
-  const dirs = path.split("/").slice(0, -1);
+  const dirs = path.split("/");
   return dirs.some(
     (d) => d === "vendor" || d === "testdata" || d.startsWith(".") || d.startsWith("_"),
   );
