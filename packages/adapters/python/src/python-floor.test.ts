@@ -307,3 +307,16 @@ it("does not invent setup.cfg floors by stripping inline hash text", async () =>
   const valid = await read({ "setup.cfg": "[options]\npython_requires = >=3.10\n" });
   assert.equal(valid.status, "declared");
 });
+
+it("preserves inner spaces in setup.cfg section names", async () => {
+  for (const section of [" options ", " options", "options "]) {
+    const ignored = await read({ "setup.cfg": `[${section}]\npython_requires = >=3.12\n` });
+    assert.equal(ignored.status, "absent", section);
+    const real = await read({
+      "setup.cfg": `[${section}]\npython_requires = >=3.12\n[options]\npython_requires = >=3.10\n`,
+    });
+    assert.equal(real.status, "declared", section);
+    assert.deepEqual(real.status === "declared" ? real.version : [], [3, 10]);
+    assert.equal(real.status === "declared" ? real.line : undefined, 4);
+  }
+});
