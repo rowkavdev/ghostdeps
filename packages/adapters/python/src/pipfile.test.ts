@@ -62,3 +62,26 @@ describe("Pipfile declarations (#432)", () => {
     assert.deepEqual(malformed.requirements, []);
   });
 });
+
+it("preserves Pipfile shorthand platform and version markers", () => {
+  const parsed = parsePipfileText(
+    '[packages]\npywin32 = {version = "*", sys_platform = "== \'win32\'"}\ncompat = {version = "*", python_version = "< \'3.11\'"}\n',
+    project,
+    "Pipfile",
+  );
+  assert.equal(parsed.complete, true);
+  assert.equal(parsed.requirements[0]?.marker, "sys_platform == 'win32'");
+  assert.equal(parsed.requirements[1]?.marker, "python_version < '3.11'");
+});
+
+it("combines full and shorthand markers without losing an OR arm's scope", () => {
+  const parsed = parsePipfileText(
+    "[packages]\ncompat = {version = \"*\", markers = \"os_name == 'nt' or os_name == 'posix'\", python_version = \"< '3.11'\"}\n",
+    project,
+    "Pipfile",
+  );
+  assert.equal(
+    parsed.requirements[0]?.marker,
+    "(os_name == 'nt' or os_name == 'posix') and (python_version < '3.11')",
+  );
+});

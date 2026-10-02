@@ -166,8 +166,31 @@ export function parsePipfileText(
         extras: strings(options?.extras).map(normaliseName),
         groups: [],
       };
-      const marker = options?.markers;
-      if (typeof marker === "string") requirement.marker = marker;
+      const markerParts: string[] = [];
+      if (typeof options?.markers === "string" && options.markers.length > 0)
+        markerParts.push(options.markers);
+      for (const key of [
+        "os_name",
+        "sys_platform",
+        "platform_machine",
+        "platform_python_implementation",
+        "platform_release",
+        "platform_system",
+        "platform_version",
+        "python_version",
+        "python_full_version",
+        "implementation_name",
+        "implementation_version",
+        "extra",
+      ]) {
+        const value = options?.[key];
+        if (typeof value === "string" && value.length > 0) markerParts.push(`${key} ${value}`);
+      }
+      if (markerParts.length > 0)
+        requirement.marker =
+          markerParts.length === 1
+            ? markerParts[0]!
+            : markerParts.map((part) => `(${part})`).join(" and ");
       byKey.set(key, requirement);
       requirements.push(requirement);
     }
