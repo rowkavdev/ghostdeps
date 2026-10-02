@@ -58,9 +58,13 @@ const JS_TYPES = new Set([
   "text/babel",
 ]);
 
+/** Consume whole attributes so text inside quoted values cannot become a name. */
 function attr(tag: string, name: string): string | undefined {
-  const m = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
-  return m ? (m[1] ?? m[2] ?? m[3] ?? "") : undefined;
+  const attributes = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+  for (const match of tag.slice(7, -1).matchAll(attributes)) {
+    if (match[1]!.toLowerCase() === name) return match[2] ?? match[3] ?? match[4] ?? "";
+  }
+  return undefined;
 }
 
 function kindFor(lang: string | undefined): ts.ScriptKind {
