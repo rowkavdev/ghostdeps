@@ -1,0 +1,12 @@
+{
+  "name": "fixture-jest-custom-module-options",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": { "@acme/jest-tools": "1.0.0" },
+  "jest": {
+    "testSequencer": "@acme/jest-tools/sequencer",
+    "snapshotResolver": "@acme/jest-tools/snapshots",
+    "runtime": "@acme/jest-tools/runtime",
+    "prettierPath": "@acme/jest-tools/prettier"
+  }
+}

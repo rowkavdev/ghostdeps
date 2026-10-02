@@ -768,3 +768,16 @@ it("credits Jest results processor packages and ignores local processor paths", 
     assert.deepEqual(await via(local, "processor"), []);
   }
 });
+
+it("credits custom Jest module options separately and excludes local paths", async () => {
+  for (const key of ["testSequencer", "snapshotResolver", "runtime", "prettierPath"]) {
+    const context = ctx({
+      "package.json": JSON.stringify({ jest: { [key]: "@acme/jest-tools/custom" } }),
+    });
+    assert.deepEqual(await via(context, "@acme/jest-tools"), [["config", "package.json", 1]], key);
+    const local = ctx({
+      "package.json": JSON.stringify({ jest: { [key]: "<rootDir>/custom.js" } }),
+    });
+    assert.deepEqual(await via(local, "custom"), [], key);
+  }
+});
