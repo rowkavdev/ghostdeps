@@ -799,3 +799,30 @@ it("does not credit Jest global-only module options ignored inside inline projec
   }
   assert.ok((await via(child, "ts-jest")).length > 0);
 });
+
+it("credits Prettier's TypeScript config conventions without needing an import", async () => {
+  for (const file of [
+    ".prettierrc.ts",
+    ".prettierrc.mts",
+    ".prettierrc.cts",
+    "prettier.config.ts",
+    "prettier.config.mts",
+    "prettier.config.cts",
+  ]) {
+    const text = file.endsWith(".cts")
+      ? "module.exports = {semi: false}"
+      : "export default {semi: false}";
+    const context = ctx({ "package.json": "{}", [file]: text });
+    assert.deepEqual(await via(context, "prettier"), [["convention", file, 1]], file);
+  }
+});
+
+it("reads plugin references in nested TypeScript Prettier configs", async () => {
+  const context = ctx({
+    "package.json": "{}",
+    "src/prettier.config.mts": 'export default {plugins: ["prettier-plugin-astro"]}',
+  });
+  assert.deepEqual(await via(context, "prettier-plugin-astro"), [
+    ["config", "src/prettier.config.mts", 1],
+  ]);
+});

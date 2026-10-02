@@ -362,8 +362,8 @@ export const CONVENTIONS: readonly Convention[] = [
   {
     package: "prettier",
     files: [
-      ...rc(".prettierrc", ["", ".json", ".yaml", ".yml", ...JS_EXTS]),
-      ...rc("prettier.config", JS_EXTS),
+      ...rc(".prettierrc", ["", ".json", ".yaml", ".yml", ...JS_EXTS, ".ts", ".mts", ".cts"]),
+      ...rc("prettier.config", [...JS_EXTS, ".ts", ".mts", ".cts"]),
     ],
     packageJsonKey: "prettier",
   },
