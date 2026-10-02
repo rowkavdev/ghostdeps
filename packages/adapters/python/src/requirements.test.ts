@@ -274,3 +274,18 @@ it("reads attached editable short-option values like pip", async () => {
     assert.equal(result.requirements[0]?.dependency.specifier?.type, "git", option);
   }
 });
+
+it("splits standalone CR newlines in requirements and local includes", async () => {
+  const lines = ["# comment", "requests==2", "-r extra.txt", "numpy==1"];
+  const expected = await parse({
+    "requirements.txt": lines.join("\n"),
+    "extra.txt": "PyYAML>=6\nhttpx\n",
+  });
+  for (const newline of ["\r", "\r\n"]) {
+    const actual = await parse({
+      "requirements.txt": lines.join(newline),
+      "extra.txt": ["PyYAML>=6", "httpx", ""].join(newline),
+    });
+    assert.deepEqual(actual, expected);
+  }
+});
