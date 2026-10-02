@@ -186,11 +186,33 @@ function parseOptionalDependencies(
     }
     extras[name] = members;
   }
+  // Each extra gets its own members plus those of every extra reachable through
+  // self-references, in any order and through cycles (#743). A visited set keeps
+  // a ring of extras linear per extra instead of repeating whole passes.
+  const requests = new Map<string, string[]>();
   for (const ref of selfRefs) {
-    const merged = new Set(extras[ref.extra]);
-    for (const requested of ref.requested)
-      for (const member of extras[requested] ?? []) merged.add(member);
-    extras[ref.extra] = [...merged];
+    const list = requests.get(ref.extra) ?? [];
+    requests.set(ref.extra, list);
+    for (const requested of ref.requested) list.push(requested);
+  }
+  const own = new Map(Object.entries(extras).map(([name, list]) => [name, [...list]]));
+  for (const extra of requests.keys()) {
+    const merged = new Set(own.get(extra));
+    const visited = new Set([extra]);
+    const stack: string[] = [];
+    const pushRequests = (name: string): void => {
+      const list = requests.get(name) ?? [];
+      for (let i = list.length - 1; i >= 0; i--) stack.push(list[i] as string);
+    };
+    pushRequests(extra);
+    while (stack.length > 0) {
+      const next = stack.pop() as string;
+      if (visited.has(next)) continue;
+      visited.add(next);
+      for (const member of own.get(next) ?? []) merged.add(member);
+      pushRequests(next);
+    }
+    extras[extra] = [...merged];
   }
 }
 

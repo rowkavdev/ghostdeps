@@ -61,6 +61,47 @@ dev-dependencies = ["mypy"]
     assert.deepEqual(result.extras.a, ["numpy"]);
   });
 
+  it("settles self-referencing extras declared in reverse order and in cycles (#743)", () => {
+    const result = parse(
+      [
+        "[project]",
+        'name = "p"',
+        "[project.optional-dependencies]",
+        'all = ["p[b]"]',
+        'b = ["p[a]", "x"]',
+        'a = ["numpy", "p[b]"]',
+      ].join("\n"),
+    );
+    assert.deepEqual([...(result.extras.all ?? [])].sort(), ["numpy", "p", "x"]);
+    assert.deepEqual([...(result.extras.b ?? [])].sort(), ["numpy", "p", "x"]);
+  });
+
+  it("expands a ring of hundreds of self-referencing extras in linear time (#743)", () => {
+    const size = 400;
+    const lines = ["[project]", 'name = "p"', "[project.optional-dependencies]"];
+    for (let i = 0; i < size; i++) lines.push(`e${i} = ["p[e${(i + 1) % size}]", "m${i}"]`);
+    const started = Date.now();
+    const result = parse(lines.join("\n"));
+    assert.ok(Date.now() - started < 2000, "ring expansion stays fast");
+    assert.equal(result.extras.e0?.length, size + 1);
+    assert.ok(result.extras.e0?.includes(`m${size - 1}`));
+  });
+
+  it("expands tens of thousands of repeated self-references on one extra quickly (#743)", () => {
+    const refs = Array.from({ length: 40000 }, () => '"p[b]"').join(", ");
+    const text = [
+      "[project]",
+      'name = "p"',
+      "[project.optional-dependencies]",
+      `all = [${refs}]`,
+      'b = ["x"]',
+    ].join("\n");
+    const started = Date.now();
+    const result = parse(text);
+    assert.ok(Date.now() - started < 3000, "repeated self-references stay fast");
+    assert.deepEqual([...(result.extras.all ?? [])].sort(), ["p", "x"]);
+  });
+
   it("keeps markers and records direct references", () => {
     const result = parse(`[project]
 dependencies = ['tomli>=2; python_version < "3.11"', "lib @ git+https://example.com/lib.git"]
