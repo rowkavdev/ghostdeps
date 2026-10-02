@@ -477,3 +477,18 @@ it("rejects setup.cfg non-option lines outside continuations", async () => {
     "declared",
   );
 });
+
+it("rejects whitespace-only setup.cfg keys but preserves option continuations", async () => {
+  for (const delimiter of ["=", ":"]) {
+    const contents = `[options]\n  ${delimiter} value\npython_requires = >=3.10\n`;
+    assert.equal((await read({ "setup.cfg": contents })).status, "unparsed", contents);
+    assert.equal(
+      (
+        await read({
+          "setup.cfg": `[metadata]\nname = example\n  ${delimiter} value\n[options]\npython_requires = >=3.10\n`,
+        })
+      ).status,
+      "declared",
+    );
+  }
+});

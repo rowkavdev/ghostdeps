@@ -166,7 +166,7 @@ function setupCfgCandidate(text: string): Candidate {
       continue;
     }
     if (!hasSection) return { present: true, line: i + 1 };
-    if (/^\s*[^=:]+[=:]/.test(raw)) optionIndent = currentIndent;
+    if (/^[^=:]+[=:]/.test(raw.trimStart())) optionIndent = currentIndent;
     else return { present: true, line: i + 1 };
     if (!active) continue;
     const match = /^\s*python_requires\s*[=:]\s*(.*)$/.exec(raw);
