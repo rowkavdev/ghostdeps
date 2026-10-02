@@ -154,6 +154,7 @@ function setupCfgCandidate(text: string): Candidate {
     const indent = raw.search(/\S/);
     for (let j = i + 1; j < lines.length; j++) {
       const next = lines[j]!;
+      if (next.trim() === "") continue;
       if (/^\s*[#;]/.test(next)) continue;
       if (next.search(/\S/) <= indent) break;
       parts.push(next.trim());
