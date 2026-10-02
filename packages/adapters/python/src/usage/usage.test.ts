@@ -490,3 +490,22 @@ it("keeps the outer TYPE_CHECKING guard after nested guarded blocks end", () => 
     ],
   );
 });
+
+it("handles CR, LF and CRLF physical newlines identically", () => {
+  const lines = [
+    "from typing import TYPE_CHECKING",
+    "# comment before imports",
+    "if TYPE_CHECKING:",
+    "    import pandas",
+    "import requests",
+    "from numpy import (",
+    "    array,",
+    ")",
+    "import \\",
+    "    yaml",
+  ];
+  const expected = extractPythonImports(lines.join("\n")).imports;
+  for (const newline of ["\r", "\r\n"]) {
+    assert.deepEqual(extractPythonImports(lines.join(newline)).imports, expected);
+  }
+});

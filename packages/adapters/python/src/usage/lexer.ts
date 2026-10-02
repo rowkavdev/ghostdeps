@@ -30,6 +30,8 @@ export interface LexedPython {
 const STRING_PREFIX = /^(?:[rRbBuUfF]|[rR][bBfF]|[bBfF][rR])$/;
 
 export function splitPythonStatements(source: string): LexedPython {
+  // Python accepts LF, CRLF and standalone CR as physical newlines.
+  source = source.replace(/\r\n?/g, "\n");
   const statements: PythonStatement[] = [];
   const strings: string[] = [];
   let text = "";
