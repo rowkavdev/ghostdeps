@@ -432,3 +432,27 @@ it("credits an ASCII dependency imported with NFKC-equivalent module spelling", 
     ).some((usage) => usage.file === "main.py"),
   );
 });
+
+it("marks parenthesized TYPE_CHECKING guards type-only without matching other conditions", () => {
+  const imports = extractPythonImports(
+    [
+      "if (TYPE_CHECKING):",
+      "    import pandas",
+      "if ((typing.TYPE_CHECKING)): import numpy; import yaml",
+      "import requests",
+      "if (TYPE_CHECKING) or enabled: import flask",
+      "if (TYPE_CHECKING, enabled): import httpx",
+    ].join("\n"),
+  ).imports;
+  assert.deepEqual(
+    imports.map((imp) => [imp.module, imp.typeOnly]),
+    [
+      ["pandas", true],
+      ["numpy", true],
+      ["yaml", true],
+      ["requests", false],
+      ["flask", false],
+      ["httpx", false],
+    ],
+  );
+});
