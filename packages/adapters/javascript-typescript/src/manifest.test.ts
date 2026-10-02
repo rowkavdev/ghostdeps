@@ -173,3 +173,24 @@ it("optionalDependencies overrides duplicate runtime entries like npm", () => {
     ],
   );
 });
+
+it("classifies GitHub shorthand commit and semver refs as git dependencies", () => {
+  for (const raw of [
+    "user/repo#main",
+    "user/repo#feature/branch",
+    "user/repo#v1.2.3",
+    "user/repo#semver:^1.0.0",
+    "user/repo#deadbeef",
+  ]) {
+    assert.deepEqual(classifySpecifier(raw), { type: "git", detail: raw }, raw);
+    const parsed = parseManifestText(
+      JSON.stringify({ dependencies: { hosted: raw } }),
+      rootProject,
+      "package.json",
+    );
+    assert.deepEqual(parsed.dependencies[0]?.specifier, { type: "git", detail: raw });
+  }
+  for (const raw of ["@scope/pkg", "^1.0.0", "latest", "../local", "one/two/three"]) {
+    assert.notEqual(classifySpecifier(raw)?.type, "git", raw);
+  }
+});

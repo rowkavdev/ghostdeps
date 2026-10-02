@@ -50,7 +50,7 @@ export function classifySpecifier(raw: string): Specifier | undefined {
   }
   // GitHub shorthand ("user/repo"). Scoped registry names start with "@", so
   // they cannot collide with this shape.
-  if (/^[\w][\w.-]*\/[\w][\w.-]*$/.test(raw)) return { type: "git", detail: raw };
+  if (/^[\w][\w.-]*\/[\w][\w.-]*(?:#[^\s]+)?$/.test(raw)) return { type: "git", detail: raw };
   if (raw.startsWith("npm:")) return { type: "registry", detail: `npm alias: ${raw}` };
   if (raw.startsWith("http://") || raw.startsWith("https://")) {
     // Direct tarball URL: fetched at install time by the package manager, but
