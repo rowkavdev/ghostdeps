@@ -169,3 +169,29 @@ it("accepts HTML abrupt and bang comment endings before a real script", () => {
     );
   }
 });
+
+it("does not scan script-like text inside HTML text elements", () => {
+  for (const tag of ["style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"]) {
+    const text = `<${tag} data-note=">">\n<script>import "phantom";</script>\n</${tag.toUpperCase()} >\n<script>import "live";</script>`;
+    assert.deepEqual(
+      extractScriptBlocks("index.html", text).blocks.map(({ code, line }) => [code, line]),
+      [['import "live";', 4]],
+      tag,
+    );
+    assert.deepEqual(
+      extractScriptBlocks("index.htm", `<${tag}><script>import "phantom";</script>`).blocks,
+      [],
+      tag,
+    );
+    const longer = `<${tag}></${tag}-extra><script>import "phantom";</script></${tag}><script>import "live";</script>`;
+    assert.deepEqual(
+      extractScriptBlocks("index.html", longer).blocks.map(({ code }) => code),
+      ['import "live";'],
+      tag,
+    );
+  }
+  assert.deepEqual(
+    extractScriptBlocks("index.html", '<plaintext><script>import "phantom";</script>').blocks,
+    [],
+  );
+});

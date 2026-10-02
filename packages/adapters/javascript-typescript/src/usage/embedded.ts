@@ -107,28 +107,63 @@ function closingScriptStart(lower: string, from: number): number {
   }
 }
 
+/** HTML elements whose body is text rather than markup. */
+const HTML_TEXT_ELEMENTS = new Set([
+  "style",
+  "textarea",
+  "title",
+  "xmp",
+  "iframe",
+  "noembed",
+  "noframes",
+]);
+
+/** HTML text elements end only at an appropriate complete end-tag name. */
+function textElementEnd(lower: string, name: string, from: number): number {
+  const needle = `</${name}`;
+  for (;;) {
+    const close = lower.indexOf(needle, from);
+    if (close < 0) return -1;
+    if (/[\t\n\f\r />]/.test(lower[close + needle.length] ?? "")) {
+      const end = openingTagEnd(lower, close + needle.length);
+      return end < 0 ? -1 : end + 1;
+    }
+    from = close + needle.length;
+  }
+}
+
+/** HTML comment endings include abrupt empty comments and --!>. */
+function commentEnd(text: string, start: number): number {
+  if (text[start] === ">") return start + 1;
+  if (text.startsWith("->", start)) return start + 2;
+  const end = /--!?>/g;
+  end.lastIndex = start;
+  return end.exec(text) === null ? -1 : end.lastIndex;
+}
+
+/** Skip one markup tag and, for HTML, any text-only body. */
+function markupEnd(text: string, lower: string, open: number, html: boolean): number {
+  const end = openingTagEnd(text, open + 1);
+  if (end < 0) return -1;
+  if (!html) return end + 1;
+  const name = /^<([a-z]+)(?=[\t\n\f\r />])/.exec(lower.slice(open, end + 1))?.[1];
+  if (name === "plaintext") return -1;
+  return name !== undefined && HTML_TEXT_ELEMENTS.has(name)
+    ? textElementEnd(lower, name, end + 1)
+    : end + 1;
+}
+
 /** Scan markup boundaries, never tag-looking text inside comments or attributes. */
-function nextScriptStart(text: string, lower: string, from: number): number {
+function nextScriptStart(text: string, lower: string, from: number, html: boolean): number {
   for (;;) {
     const open = lower.indexOf("<", from);
     if (open < 0) return -1;
-    if (lower.startsWith("<!--", open)) {
-      const start = open + 4;
-      if (text[start] === ">") from = start + 1;
-      else if (text.startsWith("->", start)) from = start + 2;
-      else {
-        const end = /--!?>/g;
-        end.lastIndex = start;
-        const match = end.exec(text);
-        if (match === null) return -1;
-        from = end.lastIndex;
-      }
-    } else if (lower.startsWith("<script", open)) return open;
-    else if (/^<\/?[a-z!]/i.test(text.slice(open, open + 3))) {
-      const end = openingTagEnd(text, open + 1);
-      if (end < 0) return -1;
-      from = end + 1;
-    } else from = open + 1;
+    if (lower.startsWith("<!--", open)) from = commentEnd(text, open + 4);
+    else if (lower.startsWith("<script", open)) return open;
+    else if (/^<\/?[a-z!]/i.test(text.slice(open, open + 3)))
+      from = markupEnd(text, lower, open, html);
+    else from = open + 1;
+    if (from < 0) return -1;
   }
 }
 
@@ -174,7 +209,7 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
   // characters (e.g. İ), which shifts indices into the original source.
   const lower = text.replace(/[A-Z]/g, (character) => character.toLowerCase());
   for (;;) {
-    const open = nextScriptStart(text, lower, from);
+    const open = nextScriptStart(text, lower, from, /\.html?$/i.test(file));
     if (open < 0) break;
     const next = lower.charCodeAt(open + 7);
     // `<scripts>` or `<script-x>` are other tags.
