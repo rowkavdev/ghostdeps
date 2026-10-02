@@ -419,3 +419,28 @@ it("does not read a setup.cfg Python floor through a leading UTF-8 BOM", async (
   const valid = await read({ "setup.cfg": "[options]\npython_requires = >=3.10\n" });
   assert.equal(valid.status, "declared");
 });
+
+it("rejects duplicate setup.cfg sections before or after python_requires", async () => {
+  for (const contents of [
+    "[options]\n[options]\npython_requires = >=3.10\n",
+    "[options]\npython_requires = >=3.10\n[options]\nother = value\n",
+    "[options]\npython_requires = >=3.10\n[metadata]\nname = example\n[metadata]\nversion = 1\n",
+  ])
+    assert.equal((await read({ "setup.cfg": contents })).status, "unparsed", contents);
+  assert.equal(
+    (
+      await read({
+        "setup.cfg": "[options]\npython_requires = >=3.10\n[metadata]\nname = example\n",
+      })
+    ).status,
+    "declared",
+  );
+  assert.equal(
+    (
+      await read({
+        "setup.cfg": "[DEFAULT]\na = 1\n[DEFAULT]\nb = 2\n[options]\npython_requires = >=3.10\n",
+      })
+    ).status,
+    "declared",
+  );
+});

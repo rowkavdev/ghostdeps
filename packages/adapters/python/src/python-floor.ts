@@ -145,6 +145,8 @@ function setupCfgCandidate(text: string): Candidate {
   if (text.startsWith("\uFEFF")) return { present: true, line: 1 };
   let active = false;
   let hasSection = false;
+  const sections = new Set<string>();
+  let candidate: Candidate = { present: false, line: 0 };
   let optionIndent: number | undefined;
   const lines = text.split(/\r\n?|\n/);
   for (const [i, raw] of lines.entries()) {
@@ -155,6 +157,9 @@ function setupCfgCandidate(text: string): Candidate {
     if (optionIndent !== undefined && currentIndent > optionIndent) continue;
     const header = /^\s*\[(.+)\]/.exec(raw);
     if (header) {
+      const section = header[1]!;
+      if (section !== "DEFAULT" && sections.has(section)) return { present: true, line: i + 1 };
+      sections.add(section);
       hasSection = true;
       active = header[1] === "options";
       optionIndent = undefined;
@@ -165,9 +170,10 @@ function setupCfgCandidate(text: string): Candidate {
     if (!active) continue;
     const match = /^\s*python_requires\s*[=:]\s*(.*)$/.exec(raw);
     if (!match) continue;
-    return setupCfgFloorValue(lines, i, match[1]!);
+    if (candidate.present) continue;
+    candidate = setupCfgFloorValue(lines, i, match[1]!);
   }
-  return { present: false, line: 0 };
+  return candidate;
 }
 
 function setupCfgFloorValue(lines: string[], i: number, first: string): Candidate {
