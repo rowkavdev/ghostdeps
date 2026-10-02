@@ -348,3 +348,25 @@ it("handles npm exec's short package alias without crediting the option value as
   assert.deepEqual(commandWords("npm exec -p typescript -- tsc -b"), ["tsc"]);
   assert.deepEqual(commandWords("npm exec -p=typescript -- tsc -b"), ["tsc"]);
 });
+
+describe("shell keywords and wrappers", () => {
+  const words = (s: string) => analyseScript(s).words;
+  it("reads the command after if/then/else/do/!/{", () => {
+    assert.deepEqual(words("if tsc -p .; then eslint .; else prettier .; fi"), [
+      "tsc",
+      "eslint",
+      "prettier",
+    ]);
+    assert.deepEqual(words("! tsc -p ."), ["tsc"]);
+    assert.deepEqual(words("while true; do vitest; done"), ["true", "vitest"]);
+    assert.deepEqual(words("{ tsc -p .; }"), ["tsc"]);
+  });
+  it("ignores loop headers and closers", () => {
+    assert.deepEqual(words("for f in a b; do eslint $f; done"), ["eslint"]);
+    assert.deepEqual(analyseScript("for f in a b; do eslint $f; done").gaps, []);
+  });
+  it("sees through xargs and sudo", () => {
+    assert.deepEqual(words("xargs -n 1 tsc"), ["tsc"]);
+    assert.deepEqual(words("sudo -u root eslint ."), ["eslint"]);
+  });
+});
