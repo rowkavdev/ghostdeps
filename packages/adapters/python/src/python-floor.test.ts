@@ -207,3 +207,25 @@ it("does not read setup.py floor declarations from multiline string contents", a
     assert.equal(result.status === "declared" ? result.line : undefined, 3, quote);
   }
 });
+
+it("reads setup.py floors with every Python physical newline sequence", async () => {
+  const lines = [
+    "from setuptools import setup",
+    '"""Documentation:',
+    'setup(python_requires=">=3.12")',
+    '"""',
+    "setup(",
+    '    python_requires=">=3.10",',
+    ")",
+  ];
+  const expected = await read({ "setup.py": lines.join("\n") });
+  assert.equal(expected.status, "declared");
+  assert.equal(expected.status === "declared" ? expected.line : undefined, 6);
+  for (const newline of ["\r", "\r\n"]) {
+    assert.deepEqual(
+      await read({ "setup.py": lines.join(newline) }),
+      expected,
+      JSON.stringify(newline),
+    );
+  }
+});

@@ -163,7 +163,7 @@ function setupCfgCandidate(text: string): Candidate {
 
 /** A bounded static setup(...) literal reader. It never runs setup.py code. */
 function setupPyCandidate(text: string): Candidate {
-  const lines = text.split(/\r?\n/);
+  const lines = text.split(/\r\n?|\n/);
   let inSetup = false;
   let depth = 0;
   let quote = "";
