@@ -71,8 +71,9 @@ export function splitPythonStatements(source: string): LexedPython {
       i++;
       continue;
     }
-    // A leading form feed does not contribute to Python indentation.
+    // CPython resets the indentation column at a form feed.
     if (atLineStart && c === "\f") {
+      column = 0;
       i++;
       continue;
     }
