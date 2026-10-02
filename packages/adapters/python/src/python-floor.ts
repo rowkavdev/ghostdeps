@@ -144,7 +144,7 @@ function setupCfgCandidate(text: string): Candidate {
   for (const [i, raw] of lines.entries()) {
     const header = /^\s*\[([^\]]+)\]/.exec(raw);
     if (header) {
-      active = header[1]!.trim().toLowerCase() === "options";
+      active = header[1]!.trim() === "options";
       continue;
     }
     if (!active) continue;

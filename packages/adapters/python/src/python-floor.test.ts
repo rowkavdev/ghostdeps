@@ -273,3 +273,16 @@ it("accepts colon floor options but preserves setuptools case-sensitive keys", a
     }
   }
 });
+
+it("does not infer setup.cfg floors from differently cased section names", async () => {
+  for (const section of ["OPTIONS", "Options"]) {
+    const result = await read({ "setup.cfg": `[${section}]\npython_requires = >=3.12\n` });
+    assert.equal(result.status, "absent", section);
+  }
+  const result = await read({
+    "setup.cfg": "[OPTIONS]\npython_requires = >=3.12\n[options]\npython_requires = >=3.10\n",
+  });
+  assert.equal(result.status, "declared");
+  assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10]);
+  assert.equal(result.status === "declared" ? result.line : undefined, 4);
+});
