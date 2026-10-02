@@ -133,3 +133,39 @@ it("keeps HTML script bodies after ignored self-closing slashes while retaining 
   }
   assert.deepEqual(extractScriptBlocks("App.vue", '<script/>import "lodash";</script>').blocks, []);
 });
+
+it("skips script-like tags inside markup comments without changing live block lines", () => {
+  for (const file of ["index.html", "App.vue", "App.svelte", "Page.astro"]) {
+    const text = [
+      '<!-- <script>import "commented";</script>',
+      "-->",
+      "<script><!-- legacy wrapper",
+      'import "live";</script>',
+      '<!-- unclosed <script>import "also-commented";</script>',
+    ].join("\n");
+    assert.deepEqual(
+      extractScriptBlocks(file, text).blocks.map(({ code, line }) => [code, line]),
+      [['<!-- legacy wrapper\nimport "live";', 3]],
+      file,
+    );
+  }
+});
+
+it("keeps comments inside tag attributes from swallowing following scripts", () => {
+  const text = '<div title="<!--"></div><script>import "live";</script>';
+  assert.deepEqual(
+    extractScriptBlocks("index.html", text).blocks.map(({ code }) => code),
+    ['import "live";'],
+  );
+});
+
+it("accepts HTML abrupt and bang comment endings before a real script", () => {
+  for (const comment of ["<!-->", "<!--->", "<!-- note --!>", "<!-- note --->"]) {
+    const text = `${comment}<script>import "live";</script>`;
+    assert.deepEqual(
+      extractScriptBlocks("index.html", text).blocks.map(({ code }) => code),
+      ['import "live";'],
+      comment,
+    );
+  }
+});
