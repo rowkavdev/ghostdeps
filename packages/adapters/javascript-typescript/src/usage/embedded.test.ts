@@ -95,3 +95,14 @@ it("does not read type or lang text inside unrelated attribute values", () => {
   const typed = `<script data-note=' lang="js"' lang="ts">import "lodash";</script>`;
   assert.equal(extractScriptBlocks("index.html", typed).blocks[0]?.kind, ts.ScriptKind.TS);
 });
+
+it("does not treat longer closing tag names as script terminators", () => {
+  for (const suffix of ["ure>", "-x>", "s>", "_>"]) {
+    const code = `const label = "</script${suffix}"; import "lodash";`;
+    const text = `<script>${code}</SCRIPT ><script>import "axios";</script>`;
+    assert.deepEqual(
+      extractScriptBlocks("index.html", text).blocks.map(({ code }) => code),
+      [code, 'import "axios";'],
+    );
+  }
+});
