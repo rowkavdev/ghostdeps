@@ -44,3 +44,20 @@ it("scans every HTML JavaScript MIME essence but not data or parameterized types
     );
   }
 });
+
+it("keeps original offsets when Unicode text expands during lowercasing", () => {
+  const text = [
+    "<p>İİİ</p>",
+    '<SCRIPT title="İ">import "lodash";</SCRIPT>',
+    "<p>İ</p>",
+    '<script>import "axios";</script>',
+  ].join("\n");
+  const { blocks } = extractScriptBlocks("index.html", text);
+  assert.deepEqual(
+    blocks.map(({ code, line }) => [code, line]),
+    [
+      ['import "lodash";', 2],
+      ['import "axios";', 4],
+    ],
+  );
+});
