@@ -602,3 +602,16 @@ it("does not normalize whitespace in dynamic import module strings", () => {
     ],
   );
 });
+
+it("does not credit bytes literals as dynamic import module names", () => {
+  const source = [
+    '__import__(b"requests")',
+    'importlib.import_module(rb"numpy")',
+    '__import__(Br"scipy")',
+    '__import__(B"pandas")',
+    '__import__(r"yaml")',
+    'importlib.import_module("PIL.Image")',
+  ].join("\n");
+  assert.deepEqual(modules(source), ["yaml", "PIL.Image"]);
+  assert.deepEqual(splitPythonStatements('__import__(b"requests")').strings, ["requests"]);
+});

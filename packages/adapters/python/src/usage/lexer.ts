@@ -25,6 +25,8 @@ export interface PythonStatement {
 export interface LexedPython {
   statements: PythonStatement[];
   strings: string[];
+  /** Indexes of byte literals, which are not valid dynamic module names. */
+  byteStrings: Set<number>;
 }
 
 const STRING_PREFIX = /^(?:[rRbBuUfF]|[rR][bBfF]|[bBfF][rR])$/;
@@ -34,6 +36,7 @@ export function splitPythonStatements(source: string): LexedPython {
   source = source.replace(/\r\n?/g, "\n");
   const statements: PythonStatement[] = [];
   const strings: string[] = [];
+  const byteStrings = new Set<number>();
   let text = "";
   let startLine = 1;
   let indent = 0;
@@ -104,10 +107,14 @@ export function splitPythonStatements(source: string): LexedPython {
     }
     if (c === "'" || c === '"') {
       // A string prefix is the identifier run just before the quote.
+      let bytes = false;
       const prefixMatch = /[A-Za-z]{1,2}$/.exec(text);
       if (prefixMatch && STRING_PREFIX.test(prefixMatch[0])) {
         const before = text.slice(0, -prefixMatch[0].length);
-        if (!/[A-Za-z0-9_]$/.test(before)) text = before;
+        if (!/[A-Za-z0-9_]$/.test(before)) {
+          text = before;
+          bytes = /b/i.test(prefixMatch[0]);
+        }
       }
       const triple = source.startsWith(c.repeat(3), i);
       const quote = triple ? c.repeat(3) : c;
@@ -134,6 +141,7 @@ export function splitPythonStatements(source: string): LexedPython {
       }
       lastLine = line;
       text += ` __S${strings.length}__ `;
+      if (bytes) byteStrings.add(strings.length);
       strings.push(content);
       continue;
     }
@@ -152,5 +160,5 @@ export function splitPythonStatements(source: string): LexedPython {
     i++;
   }
   flush();
-  return { statements, strings };
+  return { statements, strings, byteStrings };
 }
