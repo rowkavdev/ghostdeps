@@ -241,3 +241,19 @@ it("ignores whole comment lines while joining setup.cfg floor values", async () 
     }
   }
 });
+
+it("ends setup.cfg floor values at options with equal or shallower indentation", async () => {
+  for (const indent of ["    ", "\t"]) {
+    for (const nextIndent of [indent, ""]) {
+      const cfg = `[options]\n${indent}python_requires = >=3.10\n${nextIndent}packages = find:\n`;
+      const result = await read({ "setup.cfg": cfg });
+      assert.equal(result.status, "declared", JSON.stringify([indent, nextIndent]));
+      assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10]);
+      assert.equal(result.status === "declared" ? result.line : undefined, 2);
+    }
+    const cfg = `[options]\n${indent}python_requires =\n${indent}  >=3.10,\n${indent}  <4\n${indent}packages = find:\n`;
+    const result = await read({ "setup.cfg": cfg });
+    assert.equal(result.status, "declared");
+    assert.equal(result.status === "declared" ? result.constraint : undefined, ">=3.10,<4");
+  }
+});
