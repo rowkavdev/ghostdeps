@@ -390,3 +390,15 @@ it("does not follow unknown options that only start with a long include name", a
   ]);
   assert.deepEqual(result.evidence, []);
 });
+
+it("preserves leading equals in attached short include filenames like pip", async () => {
+  const result = await parse({
+    "requirements.txt": "-r=base.txt\n-c=pins.txt\n-r =pins.txt\n",
+    "=base.txt": "requests\n",
+    "base.txt": "phantom\n",
+    "=pins.txt": "urllib3\n",
+    "pins.txt": "phantom-pins\n",
+  });
+  assert.deepEqual(names(result), ["requests * runtime =base.txt", "urllib3 * runtime =pins.txt"]);
+  assert.deepEqual(result.evidence, []);
+});
