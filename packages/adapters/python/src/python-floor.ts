@@ -142,7 +142,7 @@ function setupCfgCandidate(text: string): Candidate {
   let active = false;
   const lines = text.split(/\r?\n/);
   for (const [i, raw] of lines.entries()) {
-    const header = /^\s*\[([^\]]+)\]/.exec(raw);
+    const header = /^\s*\[(.+)\]/.exec(raw);
     if (header) {
       active = header[1] === "options";
       continue;
