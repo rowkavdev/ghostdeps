@@ -218,3 +218,25 @@ it("retains empty dependency constraints as npm wildcard declarations", () => {
   assert.equal(result.errors.length, 1);
   assert.ok(result.errors[0]?.statement.includes('"invalid"'));
 });
+
+it("classifies bare local dependency paths without treating them as registry constraints", () => {
+  for (const raw of [
+    "../local",
+    "./local",
+    "/opt/local",
+    "~/local",
+    "../../local",
+    "./local/package.tgz",
+  ]) {
+    assert.deepEqual(classifySpecifier(raw), { type: "file", detail: raw }, raw);
+    const parsed = parseManifestText(
+      JSON.stringify({ dependencies: { local: raw } }),
+      rootProject,
+      "package.json",
+    );
+    assert.deepEqual(parsed.dependencies[0]?.specifier, { type: "file", detail: raw });
+  }
+  for (const raw of ["@scope/pkg", "^1.0.0", "latest", "user/repo"]) {
+    assert.notEqual(classifySpecifier(raw)?.type, "file", raw);
+  }
+});
