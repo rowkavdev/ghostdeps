@@ -209,9 +209,8 @@ export async function parseRequirementsFiles(
     }
     const physical = text.split(/\r\n?|\n/);
     for (const { line, text: entry } of logicalLines(text)) {
-      const option = /^(-r|-c|--requirement(?=\s|=)|--constraint(?=\s|=))(?:\s+|=)?(.+)$/.exec(
-        entry,
-      );
+      const shortOption = /^(-r|-c)\s*(.+)$/.exec(entry);
+      const option = shortOption ?? /^(--requirement|--constraint)(?:\s+|=)(.+)$/.exec(entry);
       if (option) {
         const constraint = option[1] === "-c" || option[1] === "--constraint";
         const argument = option[2]!.trim();
