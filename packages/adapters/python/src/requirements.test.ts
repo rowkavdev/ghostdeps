@@ -310,3 +310,50 @@ it("joins requirements continuations before stripping inline comments like pip",
     ],
   );
 });
+
+it("joins requirements continuation text without inserting extra spaces", async () => {
+  const slash = String.fromCharCode(92);
+  const result = await parse({
+    "requirements.txt": [
+      `req${slash}`,
+      "uests==2",
+      `PyYAML>${slash}`,
+      "=6",
+      `httpx==1 ${slash}`,
+      " --hash=sha256:abc",
+    ].join("\n"),
+  });
+  assert.deepEqual(
+    result.requirements.map(({ dependency }) => [dependency.name, dependency.constraint]),
+    [
+      ["requests", "==2"],
+      ["pyyaml", ">=6"],
+      ["httpx", "==1"],
+    ],
+  );
+  assert.equal(result.requirements[0]?.dependency.declaredLine, undefined);
+});
+
+it("preserves comment boundaries after continuations without preceding spaces", async () => {
+  const slash = String.fromCharCode(92);
+  for (const comment of ["# note", `# note ${slash}`, "  # note"]) {
+    const result = await parse({
+      "requirements.txt": [`requests==2${slash}`, comment, `httpx${slash}`, comment, "numpy"].join(
+        "\n",
+      ),
+    });
+    assert.deepEqual(
+      result.requirements.map(({ dependency }) => [
+        dependency.name,
+        dependency.constraint,
+        dependency.declaredLine,
+      ]),
+      [
+        ["requests", "==2", 1],
+        ["httpx", "*", 3],
+        ["numpy", "*", 5],
+      ],
+      comment,
+    );
+  }
+});
