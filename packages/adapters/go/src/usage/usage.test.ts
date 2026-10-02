@@ -318,3 +318,21 @@ it("ignores Go source basenames beginning with underscore or dot", async () => {
   };
   assert.equal((await adapter.detect(sourceOnly)).confidence, 0);
 });
+
+it("accepts line breaks after Go import keywords without losing later declarations", () => {
+  const source = [
+    "package app",
+    "import",
+    '  "example.test/one"',
+    "import // comment",
+    "(",
+    '  alias "example.test/two"',
+    ")",
+    'import "example.test/three"',
+    "func f() { alias.Do() }",
+  ].join("\n");
+  assert.deepEqual(
+    extractGoImports(source).imports.map(({ path }) => path),
+    ["example.test/one", "example.test/two", "example.test/three"],
+  );
+});
