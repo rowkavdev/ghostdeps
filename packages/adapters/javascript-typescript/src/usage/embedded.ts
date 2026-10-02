@@ -108,7 +108,9 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
     }
   }
 
-  const lower = text.toLowerCase();
+  // HTML tag matching is ASCII-insensitive. Unicode folding can expand
+  // characters (e.g. İ), which shifts indices into the original source.
+  const lower = text.replace(/[A-Z]/g, (character) => character.toLowerCase());
   for (;;) {
     const open = lower.indexOf("<script", from);
     if (open < 0) break;
