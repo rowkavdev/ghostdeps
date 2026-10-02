@@ -96,3 +96,39 @@ it("ignores a Pipfile shorthand value with no operator and the non-pipenv extra 
   assert.equal(parsed.requirements[0]?.marker, undefined);
   assert.equal(parsed.requirements[1]?.marker, undefined);
 });
+
+it("drops a Pipfile marker that does not parse, including unquoted shorthand values", () => {
+  const parsed = parsePipfileText(
+    [
+      "[packages]",
+      'unquoted = {version = "*", python_version = "< 3.11"}',
+      'platform = {version = "*", sys_platform = "== win32"}',
+      'badfull = {version = "*", markers = "python_version >="}',
+      'mixed = {version = "*", markers = "os_name == \'nt\'", python_version = "< 3.11"}',
+      'good = {version = "*", sys_platform = "== \'win32\'", platform_machine = "== \'x86_64\'"}',
+      "",
+    ].join("\n"),
+    project,
+    "Pipfile",
+  );
+  assert.equal(parsed.complete, true);
+  const marker = (name: string) =>
+    parsed.requirements.find((r) => r.dependency.name === name)?.marker;
+  assert.equal(marker("unquoted"), undefined);
+  assert.equal(marker("platform"), undefined);
+  assert.equal(marker("badfull"), undefined);
+  assert.equal(marker("mixed"), undefined);
+  assert.equal(marker("good"), "(sys_platform == 'win32') and (platform_machine == 'x86_64')");
+});
+
+it("keeps parsing when a Pipfile marker is nested absurdly deep", () => {
+  const deep = `${"(".repeat(20000)}os_name == 'nt'${")".repeat(20000)}`;
+  const parsed = parsePipfileText(
+    `[packages]\ndeep = {version = "*", markers = "${deep}"}\nplain = "*"\n`,
+    project,
+    "Pipfile",
+  );
+  assert.equal(parsed.complete, true);
+  assert.equal(parsed.requirements.length, 2);
+  assert.equal(parsed.requirements[0]?.marker, undefined);
+});

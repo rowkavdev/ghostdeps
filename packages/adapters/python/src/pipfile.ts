@@ -2,6 +2,7 @@
 import { parse as parseToml } from "smol-toml";
 import type { Dependency, Evidence, ProjectRef } from "@ghostdeps/core";
 import { PyprojectLines } from "./declared-line.js";
+import { isValidMarker } from "./marker-syntax.js";
 import { normaliseName } from "./pep508.js";
 import { classifyUrl, type PythonRequirement } from "./pyproject.js";
 
@@ -167,7 +168,6 @@ export function parsePipfileText(
         groups: [],
       };
       const markerParts: string[] = [];
-      let shorthandInvalid = false;
       if (typeof options?.markers === "string" && options.markers.length > 0)
         markerParts.push(options.markers);
       for (const key of [
@@ -185,20 +185,17 @@ export function parsePipfileText(
       ]) {
         const value = options?.[key];
         if (typeof value !== "string" || value.length === 0) continue;
-        // pipenv builds "<key> <value>" and discards the whole combined marker
-        // when that is not valid marker syntax, so a value with no operator
-        // leaves the requirement unconditional.
-        if (!/^\s*(?:===|==|!=|<=|>=|~=|<|>|in\b|not\s+in\b)\s*\S/.test(value)) {
-          shorthandInvalid = true;
-          continue;
-        }
         markerParts.push(`${key} ${value}`);
       }
-      if (markerParts.length > 0 && !shorthandInvalid)
-        requirement.marker =
+      // pipenv joins "<key> <value>" parts and discards the whole combined
+      // marker when it does not parse, leaving the requirement unconditional.
+      if (markerParts.length > 0) {
+        const combined =
           markerParts.length === 1
             ? markerParts[0]!
             : markerParts.map((part) => `(${part})`).join(" and ");
+        if (isValidMarker(combined)) requirement.marker = combined;
+      }
       byKey.set(key, requirement);
       requirements.push(requirement);
     }
