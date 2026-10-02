@@ -167,6 +167,7 @@ export function parsePipfileText(
         groups: [],
       };
       const markerParts: string[] = [];
+      let shorthandInvalid = false;
       if (typeof options?.markers === "string" && options.markers.length > 0)
         markerParts.push(options.markers);
       for (const key of [
@@ -181,12 +182,19 @@ export function parsePipfileText(
         "python_full_version",
         "implementation_name",
         "implementation_version",
-        "extra",
       ]) {
         const value = options?.[key];
-        if (typeof value === "string" && value.length > 0) markerParts.push(`${key} ${value}`);
+        if (typeof value !== "string" || value.length === 0) continue;
+        // pipenv builds "<key> <value>" and discards the whole combined marker
+        // when that is not valid marker syntax, so a value with no operator
+        // leaves the requirement unconditional.
+        if (!/^\s*(?:===|==|!=|<=|>=|~=|<|>|in\b|not\s+in\b)\s*\S/.test(value)) {
+          shorthandInvalid = true;
+          continue;
+        }
+        markerParts.push(`${key} ${value}`);
       }
-      if (markerParts.length > 0)
+      if (markerParts.length > 0 && !shorthandInvalid)
         requirement.marker =
           markerParts.length === 1
             ? markerParts[0]!

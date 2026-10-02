@@ -85,3 +85,14 @@ it("combines full and shorthand markers without losing an OR arm's scope", () =>
     "(os_name == 'nt' or os_name == 'posix') and (python_version < '3.11')",
   );
 });
+
+it("ignores a Pipfile shorthand value with no operator and the non-pipenv extra key", () => {
+  const parsed = parsePipfileText(
+    '[packages]\nbare = {version = "*", python_version = "3.10"}\nextra = {version = "*", extra = "== \'x\'"}\n',
+    project,
+    "Pipfile",
+  );
+  assert.equal(parsed.complete, true);
+  assert.equal(parsed.requirements[0]?.marker, undefined);
+  assert.equal(parsed.requirements[1]?.marker, undefined);
+});
