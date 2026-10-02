@@ -212,3 +212,31 @@ describe("rust detection", () => {
     assert.deepEqual(result, { confidence: 0, projects: [], evidence: [] });
   });
 });
+
+it("reports transitive Cargo feature gates with cycles and weak dependency controls", async () => {
+  const [result] = await parse({
+    "Cargo.toml": `[package]
+name = "app"
+version = "0.1.0"
+[dependencies]
+serde = { version = "1", optional = true }
+rgb = { version = "1", optional = true }
+[features]
+default = ["full"]
+full = ["support", "cycle-a"]
+support = ["dep:serde", "rgb?/serde"]
+cycle-a = ["cycle-b"]
+cycle-b = ["cycle-a", "support"]
+`,
+  });
+  const serde = result!.conditions.find((entry) => entry.statement.startsWith("serde is optional"));
+  assert.equal(
+    serde?.statement,
+    "serde is optional; enabled by features: full, cycle-a, cycle-b, default, support",
+  );
+  assert.ok(
+    result!.conditions.some(
+      (entry) => entry.statement === "rgb is optional; enabled by feature: rgb",
+    ),
+  );
+});
