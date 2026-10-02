@@ -159,7 +159,7 @@ function setupCfgCandidate(text: string): Candidate {
       if (next.search(/\S/) <= indent) break;
       parts.push(next.trim());
     }
-    return { present: true, constraint: parts.join("").replace(/\s*#.*$/, ""), line: i + 1 };
+    return { present: true, constraint: parts.join(""), line: i + 1 };
   }
   return { present: false, line: 0 };
 }
