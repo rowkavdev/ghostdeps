@@ -246,3 +246,12 @@ it("retains GitHub shorthand with an empty ref as a git dependency", () => {
   assert.deepEqual(classifySpecifier(raw), { type: "git", detail: raw });
   assert.equal(classifySpecifier("@scope/pkg#")?.type, undefined);
 });
+
+it("retains whitespace inside GitHub shorthand semver selectors", () => {
+  for (const raw of ["user/repo#semver:>=1 <2", "user/repo#semver:^1 || ^2"]) {
+    assert.deepEqual(classifySpecifier(raw), { type: "git", detail: raw }, raw);
+  }
+  for (const raw of ["user/repo#feature branch", "user/repo extra", "@scope/pkg#semver:>=1 <2"]) {
+    assert.equal(classifySpecifier(raw), undefined, raw);
+  }
+});
