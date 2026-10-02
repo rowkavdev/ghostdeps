@@ -151,10 +151,11 @@ function setupCfgCandidate(text: string): Candidate {
     const match = /^\s*python_requires\s*=\s*(.*)$/.exec(raw);
     if (!match) continue;
     const parts = [match[1]!.trim()];
+    const indent = raw.search(/\S/);
     for (let j = i + 1; j < lines.length; j++) {
       const next = lines[j]!;
       if (/^\s*[#;]/.test(next)) continue;
-      if (!/^\s+\S/.test(next)) break;
+      if (next.search(/\S/) <= indent) break;
       parts.push(next.trim());
     }
     return { present: true, constraint: parts.join("").replace(/\s*#.*$/, ""), line: i + 1 };
