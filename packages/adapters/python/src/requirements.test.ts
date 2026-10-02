@@ -357,3 +357,23 @@ it("preserves comment boundaries after continuations without preceding spaces", 
     );
   }
 });
+
+it("follows quoted requirements include filenames with spaces", async () => {
+  for (const quote of ['"', "'"]) {
+    for (const flag of ["-r", "--requirement", "--requirement="]) {
+      const result = await parse({
+        "requirements.txt": `${flag}${flag.endsWith("=") ? "" : " "}${quote}base file.txt${quote}\n`,
+        "base file.txt": "requests>=2\n",
+      });
+      assert.deepEqual(names(result), ["requests >=2 runtime base file.txt"]);
+      assert.deepEqual(result.evidence, []);
+    }
+    const result = await parse({
+      "requirements.txt": `-c ${quote}base file.txt${quote}\n-r ${quote}base file.txt${quote}\n`,
+      "base file.txt": "requests>=2\n",
+    });
+    assert.deepEqual(names(result), ["requests >=2 runtime base file.txt"]);
+    const outside = await parse({ "requirements.txt": `-r ${quote}../base file.txt${quote}\n` });
+    assert.equal(outside.evidence[0]?.kind, "requirements-include-skipped");
+  }
+});

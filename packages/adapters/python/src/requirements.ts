@@ -212,7 +212,11 @@ export async function parseRequirementsFiles(
       const option = /^(-r|--requirement|-c|--constraint)(?:\s+|=)?(.+)$/.exec(entry);
       if (option) {
         const constraint = option[1] === "-c" || option[1] === "--constraint";
-        const target = resolveInclude(file, option[2]!.trim());
+        const argument = option[2]!.trim();
+        // pip shlex-parses include options. Plain paired quotes group a
+        // filename; they are not literal filename characters.
+        const quoted = /^(?:"([^"\\]*)"|'([^']*)')$/.exec(argument);
+        const target = resolveInclude(file, quoted ? (quoted[1] ?? quoted[2]!) : argument);
         if (target === undefined) {
           note(
             "requirements-include-skipped",
