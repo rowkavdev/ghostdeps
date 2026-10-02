@@ -570,3 +570,18 @@ it("does not credit a literal prefix of a computed dynamic import argument", () 
     ["pandas", "scipy", "matplotlib"],
   );
 });
+
+it("reads literal name keyword arguments to Python dynamic import functions", () => {
+  const source = [
+    'importlib.import_module(name="yaml")',
+    '__import__(name="requests", fromlist=["get"])',
+    'import_module(name = "numpy", package="app")',
+    'importlib.import_module(name="pandas" + suffix)',
+    "__import__(name=module)",
+    'importlib.import_module(package="scipy")',
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source).imports.map(({ module }) => module),
+    ["yaml", "requests", "numpy"],
+  );
+});
