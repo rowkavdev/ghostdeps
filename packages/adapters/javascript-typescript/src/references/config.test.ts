@@ -781,3 +781,21 @@ it("credits custom Jest module options separately and excludes local paths", asy
     assert.deepEqual(await via(local, "custom"), [], key);
   }
 });
+
+it("does not credit Jest global-only module options ignored inside inline projects", async () => {
+  const globalOnly = {
+    testResultsProcessor: "result-processor",
+    testSequencer: "test-sequencer",
+    reporters: ["custom-reporter"],
+    watchPlugins: ["watch-plugin"],
+  };
+  const child = ctx({
+    "package.json": JSON.stringify({ jest: { projects: [{ ...globalOnly, preset: "ts-jest" }] } }),
+  });
+  const root = ctx({ "package.json": JSON.stringify({ jest: globalOnly }) });
+  for (const name of ["result-processor", "test-sequencer", "custom-reporter", "watch-plugin"]) {
+    assert.deepEqual(await via(child, name), [], name);
+    assert.ok((await via(root, name)).length > 0, name);
+  }
+  assert.ok((await via(child, "ts-jest")).length > 0);
+});
