@@ -37,7 +37,8 @@ type Specifier = NonNullable<Dependency["specifier"]>;
 export function classifySpecifier(raw: string): Specifier | undefined {
   if (raw.startsWith("workspace:")) return { type: "workspace", detail: raw };
   if (raw.startsWith("link:")) return { type: "link", detail: raw };
-  if (raw.startsWith("file:") || /^(?:\.|~\/|\/)/.test(raw)) return { type: "file", detail: raw };
+  if (raw.startsWith("file:") || /^(?:\.|~\/|\/|[A-Za-z]:[\\/])/.test(raw))
+    return { type: "file", detail: raw };
   if (
     raw.startsWith("git:") ||
     raw.startsWith("git+") ||

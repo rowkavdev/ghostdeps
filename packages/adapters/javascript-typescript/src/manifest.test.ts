@@ -270,3 +270,18 @@ it("classifies dot-prefixed directory specifiers as file sources", () => {
     assert.equal(classifySpecifier(raw), undefined, raw);
   }
 });
+
+it("classifies absolute drive-letter dependency paths as file sources", () => {
+  for (const raw of ["C:/local", "C:\\local", "d:/packages/pkg", "d:\\packages\\pkg"]) {
+    assert.deepEqual(classifySpecifier(raw), { type: "file", detail: raw }, raw);
+    const result = parseManifestText(
+      JSON.stringify({ dependencies: { local: raw } }),
+      rootProject,
+      "package.json",
+    );
+    assert.deepEqual(result.dependencies[0]?.specifier, { type: "file", detail: raw });
+  }
+  for (const raw of ["C:tag", "latest", "1.2.3"]) {
+    assert.equal(classifySpecifier(raw), undefined, raw);
+  }
+});
