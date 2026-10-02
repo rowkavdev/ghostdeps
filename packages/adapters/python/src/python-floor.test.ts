@@ -286,3 +286,15 @@ it("does not infer setup.cfg floors from differently cased section names", async
   assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10]);
   assert.equal(result.status === "declared" ? result.line : undefined, 4);
 });
+
+it("keeps setup.cfg floor continuation values across empty lines", async () => {
+  for (const blank of ["", "    "]) {
+    const cfg = `[options]\npython_requires =\n    >=3.10,\n${blank}\n    <4\npackages = find:\n`;
+    const result = await read({ "setup.cfg": cfg });
+    assert.equal(result.status, "declared", JSON.stringify(blank));
+    assert.equal(result.status === "declared" ? result.constraint : undefined, ">=3.10,<4");
+    assert.equal(result.status === "declared" ? result.line : undefined, 2);
+    const contradiction = await read({ "setup.cfg": cfg.replace("<4", "<3.10") });
+    assert.equal(contradiction.status, "unparsed");
+  }
+});
