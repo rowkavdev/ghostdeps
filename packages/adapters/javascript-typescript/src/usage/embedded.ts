@@ -107,6 +107,11 @@ function closingScriptStart(lower: string, from: number): number {
   }
 }
 
+/** HTML ignores self-closing flags on non-void script; components do not. */
+function isSelfClosingScript(file: string, tag: string): boolean {
+  return !/\.html?$/i.test(file) && tag.endsWith("/>");
+}
+
 export function extractScriptBlocks(file: string, text: string): ExtractedBlocks {
   const blocks: ScriptBlock[] = [];
   let dropped = 0;
@@ -166,7 +171,7 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
     const close = closingScriptStart(lower, tagEnd + 1);
     const bodyEnd = close < 0 ? text.length : close;
     const type = (attr(tag, "type") ?? "").trim().toLowerCase();
-    const selfClosing = tag.endsWith("/>");
+    const selfClosing = isSelfClosingScript(file, tag);
     if (!selfClosing && JS_TYPES.has(type)) {
       const lang = attr(tag, "lang") ?? (type.includes("typescript") ? "ts" : undefined);
       push(tagEnd + 1, bodyEnd, kindFor(lang));
