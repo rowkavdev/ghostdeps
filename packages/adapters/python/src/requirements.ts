@@ -62,18 +62,20 @@ function logicalLines(text: string): { line: number; text: string }[] {
   let start = 0;
   const raw = text.split(/\r\n?|\n/);
   for (let i = 0; i < raw.length; i++) {
-    let line = raw[i]!;
+    const line = raw[i]!;
     if (buffer === "") start = i + 1;
-    // A "#" at line start or after whitespace starts a comment (pip's rule).
-    line = line.replace(/(^|\s)#.*$/, "");
-    if (line.endsWith("\\")) {
+    // pip joins physical continuations before stripping inline comments.
+    // Whole comment lines never continue, even when they end in backslash.
+    if (line.endsWith("\\") && !/^\s*#/.test(line)) {
       buffer += line.slice(0, -1) + " ";
       continue;
     }
     buffer += line;
+    buffer = buffer.replace(/(^|\s)#.*$/, "");
     if (buffer.trim().length > 0) out.push({ line: start, text: buffer.trim() });
     buffer = "";
   }
+  buffer = buffer.replace(/(^|\s)#.*$/, "");
   if (buffer.trim().length > 0) out.push({ line: start, text: buffer.trim() });
   return out;
 }

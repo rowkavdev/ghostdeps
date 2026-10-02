@@ -289,3 +289,24 @@ it("splits standalone CR newlines in requirements and local includes", async () 
     assert.deepEqual(actual, expected);
   }
 });
+
+it("joins requirements continuations before stripping inline comments like pip", async () => {
+  const slash = String.fromCharCode(92);
+  const result = await parse({
+    "requirements.txt": [
+      `requests # note ${slash}`,
+      "numpy",
+      "httpx",
+      `# whole comment ${slash}`,
+      "PyYAML",
+    ].join("\n"),
+  });
+  assert.deepEqual(
+    result.requirements.map(({ dependency }) => [dependency.name, dependency.declaredLine]),
+    [
+      ["requests", 1],
+      ["httpx", 3],
+      ["pyyaml", 5],
+    ],
+  );
+});
