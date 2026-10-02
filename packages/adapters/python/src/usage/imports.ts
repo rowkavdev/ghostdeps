@@ -152,8 +152,9 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     }
     code.push(text);
     for (const m of text.matchAll(DYNAMIC)) {
-      const literal = strings[Number(m[1])]?.trim() ?? "";
-      if (literal === "" || literal.startsWith(".") || !DOTTED.test(literal)) continue;
+      const literal = strings[Number(m[1])] ?? "";
+      if (literal === "" || literal.startsWith(".") || /\s/u.test(literal) || !DOTTED.test(literal))
+        continue;
       imports.push({ module: literal, form: "dynamic", names: [], ...base });
     }
   }
