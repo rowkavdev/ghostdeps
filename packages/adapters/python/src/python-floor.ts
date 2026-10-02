@@ -153,6 +153,7 @@ function setupCfgCandidate(text: string): Candidate {
     const parts = [match[1]!.trim()];
     for (let j = i + 1; j < lines.length; j++) {
       const next = lines[j]!;
+      if (/^\s*[#;]/.test(next)) continue;
       if (!/^\s+\S/.test(next)) break;
       parts.push(next.trim());
     }
