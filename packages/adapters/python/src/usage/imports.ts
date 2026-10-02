@@ -65,9 +65,27 @@ function clauseHeader(text: string): string | undefined {
   }
   return undefined;
 }
-/** The same guard written with its body on one line: `if TYPE_CHECKING: import x`. */
-const TYPE_CHECKING_HEADER = /^if\s+(?:typing\s*\.\s*)?TYPE_CHECKING\s*:\s*/;
-const TYPE_CHECKING_IF = /^if\s+(?:typing\s*\.\s*)?TYPE_CHECKING\s*:\s*$/;
+/** Parentheses around the exact guard do not change its runtime value. */
+function isTypeCheckingHeader(text: string): boolean {
+  const match = /^if\s+(.+)\s*:\s*$/s.exec(text);
+  if (!match) return false;
+  let condition = match[1]!.trim();
+  while (condition.startsWith("(") && condition.endsWith(")")) {
+    let depth = 0;
+    let wraps = true;
+    for (let i = 0; i < condition.length; i++) {
+      if (condition[i] === "(") depth++;
+      else if (condition[i] === ")") depth--;
+      if (depth === 0 && i < condition.length - 1) {
+        wraps = false;
+        break;
+      }
+    }
+    if (!wraps || depth !== 0) break;
+    condition = condition.slice(1, -1).trim();
+  }
+  return /^(?:typing\s*\.\s*)?TYPE_CHECKING$/.test(condition);
+}
 const DYNAMIC = /(?:\bimportlib\s*\.\s*)?\b(?:import_module|__import__)\s*\(\s*__S(\d+)__/g;
 
 const clean = (dotted: string) => dotted.replace(/\s+/g, "");
@@ -83,7 +101,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     if (typeCheckingIndent !== undefined && stmt.indent <= typeCheckingIndent) {
       typeCheckingIndent = undefined;
     }
-    if (TYPE_CHECKING_IF.test(stmt.text)) {
+    if (isTypeCheckingHeader(stmt.text)) {
       typeCheckingIndent = stmt.indent;
       continue;
     }
@@ -93,7 +111,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     let conditional = stmt.indent > 0 || inlineSuite !== undefined;
     const header = clauseHeader(text);
     if (header && header.length < text.length) {
-      if (TYPE_CHECKING_HEADER.test(header)) typeOnly = true;
+      if (isTypeCheckingHeader(header)) typeOnly = true;
       text = text.slice(header.length).trimStart();
       conditional = true;
       inlineSuite = { line: stmt.endLine, typeOnly };
