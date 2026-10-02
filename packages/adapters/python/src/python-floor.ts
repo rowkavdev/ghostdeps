@@ -148,7 +148,7 @@ function setupCfgCandidate(text: string): Candidate {
       continue;
     }
     if (!active) continue;
-    const match = /^\s*python_requires\s*=\s*(.*)$/.exec(raw);
+    const match = /^\s*python_requires\s*[=:]\s*(.*)$/.exec(raw);
     if (!match) continue;
     const parts = [match[1]!.trim()];
     const indent = raw.search(/\S/);
