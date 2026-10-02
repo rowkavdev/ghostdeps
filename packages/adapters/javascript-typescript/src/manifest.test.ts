@@ -194,3 +194,27 @@ it("classifies GitHub shorthand commit and semver refs as git dependencies", () 
     assert.notEqual(classifySpecifier(raw)?.type, "git", raw);
   }
 });
+
+it("retains empty dependency constraints as npm wildcard declarations", () => {
+  const result = parseManifestText(
+    JSON.stringify({
+      dependencies: { runtime: "" },
+      devDependencies: { dev: "" },
+      peerDependencies: { peer: "" },
+      optionalDependencies: { optional: "", invalid: null },
+    }),
+    rootProject,
+    "package.json",
+  );
+  assert.deepEqual(
+    result.dependencies.map((dep) => [dep.name, dep.constraint, dep.kind]),
+    [
+      ["runtime", "", "runtime"],
+      ["dev", "", "dev"],
+      ["peer", "", "peer"],
+      ["optional", "", "optional"],
+    ],
+  );
+  assert.equal(result.errors.length, 1);
+  assert.ok(result.errors[0]?.statement.includes('"invalid"'));
+});

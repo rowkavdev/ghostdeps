@@ -113,7 +113,7 @@ export function parseManifestText(
       // npm gives optionalDependencies precedence over dependencies, including
       // the effective constraint and kind. Never emit an overridden runtime row.
       if (field === "dependencies" && optionalNames.has(name)) continue;
-      if (typeof constraint !== "string" || constraint.length === 0) {
+      if (typeof constraint !== "string") {
         errors.push({
           kind: "manifest-entry-skipped",
           statement: `${declaredIn}: "${name}" in ${field} has no string constraint; entry skipped`,
