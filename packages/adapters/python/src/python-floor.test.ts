@@ -383,3 +383,17 @@ it("reads setup.cfg physical newlines with standalone carriage returns", async (
     assert.equal((await read({ "setup.cfg": text.replace("<4", "<3.10") })).status, "unparsed");
   }
 });
+
+it("does not treat setup.cfg continuation header text as a new options section", async () => {
+  const cfg = "[metadata]\ndescription = notes\n    [options]\npython_requires = >=3.12\n";
+  const result = await read({ "setup.cfg": cfg });
+  assert.equal(result.status, "absent");
+  const phantomKey = await read({
+    "setup.cfg": "[options]\ndescription = notes\n    python_requires = >=3.12\n",
+  });
+  assert.equal(phantomKey.status, "absent");
+  const valid = await read({
+    "setup.cfg": "[metadata]\ndescription = notes\n[options]\npython_requires = >=3.10\n",
+  });
+  assert.equal(valid.status, "declared");
+});

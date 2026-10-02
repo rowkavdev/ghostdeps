@@ -141,13 +141,21 @@ function tomlCandidate(text: string, target: "project" | "poetry"): Candidate {
 }
 function setupCfgCandidate(text: string): Candidate {
   let active = false;
+  let optionIndent: number | undefined;
   const lines = text.split(/\r\n?|\n/);
   for (const [i, raw] of lines.entries()) {
+    if (raw.trim() === "" || /^\s*[#;]/.test(raw)) continue;
+    const currentIndent = raw.search(/\S/);
+    // ConfigParser recognizes a deeper option continuation before section
+    // headers, even when the value itself looks like a header or another key.
+    if (optionIndent !== undefined && currentIndent > optionIndent) continue;
     const header = /^\s*\[(.+)\]/.exec(raw);
     if (header) {
       active = header[1] === "options";
+      optionIndent = undefined;
       continue;
     }
+    if (/^\s*[^=:]+[=:]/.test(raw)) optionIndent = currentIndent;
     if (!active) continue;
     const match = /^\s*python_requires\s*[=:]\s*(.*)$/.exec(raw);
     if (!match) continue;
