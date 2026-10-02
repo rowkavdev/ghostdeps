@@ -368,3 +368,29 @@ it("does not treat a lambda suffix inside an identifier as a lambda keyword", ()
     "tomli",
   ]);
 });
+
+it("keeps semicolon-separated inline suite imports conditional and type-only", () => {
+  const source = [
+    "if TYPE_CHECKING: import yaml; import tomli",
+    "import requests",
+    "if flag: import numpy; import pandas",
+    "import flask",
+    "try: import rich; import click",
+    "except ImportError: pass",
+    "import httpx",
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source).imports.map((imp) => [imp.module, imp.conditional, imp.typeOnly]),
+    [
+      ["yaml", true, true],
+      ["tomli", true, true],
+      ["requests", false, false],
+      ["numpy", true, false],
+      ["pandas", true, false],
+      ["flask", false, false],
+      ["rich", true, false],
+      ["click", true, false],
+      ["httpx", false, false],
+    ],
+  );
+});

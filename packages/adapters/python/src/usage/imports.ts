@@ -76,6 +76,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
   const imports: PythonImport[] = [];
   const code: string[] = [];
   let typeCheckingIndent: number | undefined;
+  let inlineSuite: { line: number; typeOnly: boolean } | undefined;
 
   for (const stmt of statements) {
     if (typeCheckingIndent !== undefined && stmt.indent <= typeCheckingIndent) {
@@ -85,14 +86,16 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       typeCheckingIndent = stmt.indent;
       continue;
     }
-    let typeOnly = typeCheckingIndent !== undefined;
+    if (inlineSuite?.line !== stmt.line) inlineSuite = undefined;
+    let typeOnly = typeCheckingIndent !== undefined || (inlineSuite?.typeOnly ?? false);
     let text = stmt.text;
-    let conditional = stmt.indent > 0;
+    let conditional = stmt.indent > 0 || inlineSuite !== undefined;
     const header = clauseHeader(text);
     if (header && header.length < text.length) {
       if (TYPE_CHECKING_HEADER.test(header)) typeOnly = true;
       text = text.slice(header.length).trimStart();
       conditional = true;
+      inlineSuite = { line: stmt.endLine, typeOnly };
     }
     const base = { line: stmt.line, endLine: stmt.endLine, conditional, typeOnly };
 
