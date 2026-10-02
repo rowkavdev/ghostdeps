@@ -372,3 +372,14 @@ it("bounds zero-major caret ranges at the first nonzero component or explicit wi
     assert.deepEqual(parsePythonFloor(value), { version, exclusive: false }, value);
   }
 });
+
+it("reads setup.cfg physical newlines with standalone carriage returns", async () => {
+  for (const newline of ["\r", "\r\n", "\n"]) {
+    const text = ["[options]", "python_requires = >=3.10,", "    <4", ""].join(newline);
+    const result = await read({ "setup.cfg": text });
+    assert.equal(result.status, "declared", JSON.stringify(newline));
+    assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10]);
+    assert.equal(result.status === "declared" ? result.line : undefined, 2);
+    assert.equal((await read({ "setup.cfg": text.replace("<4", "<3.10") })).status, "unparsed");
+  }
+});

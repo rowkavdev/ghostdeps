@@ -141,7 +141,7 @@ function tomlCandidate(text: string, target: "project" | "poetry"): Candidate {
 }
 function setupCfgCandidate(text: string): Candidate {
   let active = false;
-  const lines = text.split(/\r?\n/);
+  const lines = text.split(/\r\n?|\n/);
   for (const [i, raw] of lines.entries()) {
     const header = /^\s*\[(.+)\]/.exec(raw);
     if (header) {
