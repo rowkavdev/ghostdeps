@@ -97,6 +97,16 @@ function openingTagEnd(text: string, start: number): number {
   return -1;
 }
 
+/** A script end tag needs a delimiter after its complete ASCII name. */
+function closingScriptStart(lower: string, from: number): number {
+  for (;;) {
+    const close = lower.indexOf("</script", from);
+    if (close < 0) return -1;
+    if (/[\t\n\f\r />]/.test(lower[close + 8] ?? "")) return close;
+    from = close + 8;
+  }
+}
+
 export function extractScriptBlocks(file: string, text: string): ExtractedBlocks {
   const blocks: ScriptBlock[] = [];
   let dropped = 0;
@@ -145,7 +155,7 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
     const tagEnd = openingTagEnd(text, open + 7);
     if (tagEnd < 0) break;
     const tag = text.slice(open, tagEnd + 1);
-    const close = lower.indexOf("</script", tagEnd + 1);
+    const close = closingScriptStart(lower, tagEnd + 1);
     const bodyEnd = close < 0 ? text.length : close;
     const type = (attr(tag, "type") ?? "").trim().toLowerCase();
     const selfClosing = tag.endsWith("/>");
