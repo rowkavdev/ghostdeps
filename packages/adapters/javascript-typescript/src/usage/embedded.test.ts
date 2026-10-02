@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
+import ts from "typescript";
 import { extractScriptBlocks } from "./embedded.js";
 
 it("scans every HTML JavaScript MIME essence but not data or parameterized types", () => {
@@ -84,4 +85,13 @@ it("does not treat quotes within unquoted attribute values as delimiters", () =>
     extractScriptBlocks("index.html", text).blocks.map(({ code }) => code),
     ['import "lodash";', 'import "axios";'],
   );
+});
+
+it("does not read type or lang text inside unrelated attribute values", () => {
+  const js = `<script data-note=' type="application/json" lang="tsx"'>import "lodash";</script>`;
+  assert.equal(extractScriptBlocks("index.html", js).blocks[0]?.code, 'import "lodash";');
+  const data = `<script data-note=' type="module"' type="application/json">{"x":1}</script>`;
+  assert.deepEqual(extractScriptBlocks("index.html", data).blocks, []);
+  const typed = `<script data-note=' lang="js"' lang="ts">import "lodash";</script>`;
+  assert.equal(extractScriptBlocks("index.html", typed).blocks[0]?.kind, ts.ScriptKind.TS);
 });
