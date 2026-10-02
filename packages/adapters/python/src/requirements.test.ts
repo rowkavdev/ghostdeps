@@ -402,3 +402,36 @@ it("preserves leading equals in attached short include filenames like pip", asyn
   assert.deepEqual(names(result), ["requests * runtime =base.txt", "urllib3 * runtime =pins.txt"]);
   assert.deepEqual(result.evidence, []);
 });
+
+it("reads requirements-directory files with uppercase extensions detected as manifests", async () => {
+  for (const name of ["BASE.TXT", "dev.IN", "base.Txt"]) {
+    const file = `requirements/${name}`;
+    const result = await parseManifests(
+      memoryHandle({ [file]: "requests>=2\n", "app.py": "import requests\n" }),
+      project,
+    );
+    assert.equal(result.requirements.length, 1, file);
+    assert.equal(result.requirements[0]?.dependency.name, "requests");
+    assert.equal(result.requirements[0]?.dependency.declaredIn, file);
+  }
+});
+
+it("treats an uppercase or mixed-case .TXT as compiled output of its .IN source", async () => {
+  const cases: [string, string][] = [
+    ["requirements/BASE.IN", "requirements/BASE.TXT"],
+    ["requirements/base.in", "requirements/base.TXT"],
+    ["requirements.IN", "requirements.TXT"],
+  ];
+  for (const [source, compiled] of cases) {
+    const result = await parseManifests(
+      memoryHandle({
+        [source]: "requests>=2\n",
+        [compiled]: "requests==2.0\nurllib3==2.0\n",
+        "app.py": "import requests\n",
+      }),
+      project,
+    );
+    assert.deepEqual(names(result), [`requests >=2 runtime ${source}`], `${source} + ${compiled}`);
+    assert.equal(result.requirements[0]?.dependency.declaredIn, source);
+  }
+});

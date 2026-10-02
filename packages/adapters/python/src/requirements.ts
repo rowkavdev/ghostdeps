@@ -94,14 +94,20 @@ export function requirementsEntryPoints(
   const inRoot = files.filter(
     (file) =>
       (dirName(file) === project.path && isRequirementsFile(baseName(file))) ||
-      (dirName(file) === joinPath(project.path, "requirements") && /\.(?:txt|in)$/.test(file)),
+      (dirName(file) === joinPath(project.path, "requirements") && /\.(?:txt|in)$/i.test(file)),
   );
-  const fileSet = new Set(inRoot);
   const evidence: Evidence[] = [];
   const entries = inRoot.filter((file) => {
-    if (!file.endsWith(".txt")) return true;
-    const source = `${file.slice(0, -".txt".length)}.in`;
-    if (!fileSet.has(source)) return true;
+    const match = /^(.*)\.txt$/i.exec(file);
+    if (match === null) return true;
+    const stem = match[1] as string;
+    const source = inRoot.find(
+      (other) =>
+        other.length === stem.length + 3 &&
+        other.startsWith(`${stem}.`) &&
+        other.slice(-2).toLowerCase() === "in",
+    );
+    if (source === undefined) return true;
     evidence.push({
       kind: "requirements-compiled",
       statement: `${file} is compiled from ${source}; direct dependencies are read from ${source}`,
