@@ -106,3 +106,18 @@ it("does not treat longer closing tag names as script terminators", () => {
     );
   }
 });
+
+it("accepts every ASCII whitespace delimiter after script tag names", () => {
+  for (const whitespace of [" ", "\t", "\n", "\r", "\f"]) {
+    const text = `<script${whitespace}type="module">import "lodash";</script${whitespace}><script>import "axios";</script>`;
+    assert.deepEqual(
+      extractScriptBlocks("index.html", text).blocks.map(({ code }) => code),
+      ['import "lodash";', 'import "axios";'],
+    );
+  }
+  assert.deepEqual(
+    extractScriptBlocks("index.html", '<script\u00a0type="module">import "lodash";</script>')
+      .blocks,
+    [],
+  );
+});

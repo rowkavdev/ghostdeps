@@ -148,7 +148,15 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
     if (open < 0) break;
     const next = lower.charCodeAt(open + 7);
     // `<scripts>` or `<script-x>` are other tags.
-    if (!(next === 62 || next === 47 || next === 32 || next === 9 || next === 10 || next === 13)) {
+    if (!(
+      next === 62 ||
+      next === 47 ||
+      next === 32 ||
+      next === 9 ||
+      next === 10 ||
+      next === 12 ||
+      next === 13
+    )) {
       from = open + 7;
       continue;
     }
