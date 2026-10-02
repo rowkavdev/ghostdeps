@@ -255,3 +255,18 @@ it("retains whitespace inside GitHub shorthand semver selectors", () => {
     assert.equal(classifySpecifier(raw), undefined, raw);
   }
 });
+
+it("classifies dot-prefixed directory specifiers as file sources", () => {
+  for (const raw of [".", "..", ".tag", "..tag", ".hidden", "..."]) {
+    assert.deepEqual(classifySpecifier(raw), { type: "file", detail: raw }, raw);
+    const result = parseManifestText(
+      JSON.stringify({ dependencies: { local: raw } }),
+      rootProject,
+      "package.json",
+    );
+    assert.deepEqual(result.dependencies[0]?.specifier, { type: "file", detail: raw });
+  }
+  for (const raw of ["latest", "1.2.3"]) {
+    assert.equal(classifySpecifier(raw), undefined, raw);
+  }
+});
