@@ -826,3 +826,22 @@ it("reads plugin references in nested TypeScript Prettier configs", async () => 
     ["config", "src/prettier.config.mts", 1],
   ]);
 });
+
+describe("eslint plugin: extends with a scoped plugin", () => {
+  const extendsOnly = (list: string[]) =>
+    ctx({
+      "package.json": JSON.stringify({ name: "app" }),
+      ".eslintrc.json": JSON.stringify({ extends: list }),
+    });
+  it("credits the plugin when the config is the second segment", async () => {
+    const context = extendsOnly(["plugin:@typescript-eslint/recommended"]);
+    assert.deepEqual(await via(context, "@typescript-eslint/eslint-plugin"), [
+      ["config", ".eslintrc.json", 1],
+    ]);
+  });
+  it("still credits scoped plugins with a named sub-package", async () => {
+    const context = extendsOnly(["plugin:@next/next/recommended", "plugin:react/recommended"]);
+    assert.equal((await via(context, "@next/eslint-plugin-next")).length, 1);
+    assert.equal((await via(context, "eslint-plugin-react")).length, 1);
+  });
+});

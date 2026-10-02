@@ -117,6 +117,11 @@ function eslintConfig(doc: Record<string, unknown>, add: Collector, depth = 0): 
     "eslint extends",
     names(own(doc, "extends")).filter((n) => !n.startsWith("eslint:")),
     (n) => {
+      // ESLint reads "plugin:<name>/<config>" with the config as the last
+      // segment, so "@scope/recommended" names plugin "@scope".
+      if (n.startsWith("plugin:") && n.includes("/")) {
+        return expandShorthand(n.slice("plugin:".length, n.lastIndexOf("/")), "eslint-plugin");
+      }
       const m = /^plugin:((?:@[^/]+\/)?[^/]+)/.exec(n);
       if (m) return expandShorthand(m[1]!, "eslint-plugin");
       return expandShorthand(n, "eslint-config");
