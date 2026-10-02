@@ -121,3 +121,15 @@ it("accepts every ASCII whitespace delimiter after script tag names", () => {
     [],
   );
 });
+
+it("keeps HTML script bodies after ignored self-closing slashes while retaining component self-closing tags", () => {
+  for (const file of ["index.html", "index.htm", "INDEX.HTML"]) {
+    assert.deepEqual(
+      extractScriptBlocks(file, '<script/>import "lodash";</script>').blocks.map(
+        ({ code }) => code,
+      ),
+      ['import "lodash";'],
+    );
+  }
+  assert.deepEqual(extractScriptBlocks("App.vue", '<script/>import "lodash";</script>').blocks, []);
+});
