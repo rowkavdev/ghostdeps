@@ -340,3 +340,15 @@ it("uses ConfigParser's final closing bracket for setup.cfg section names", asyn
     "declared",
   );
 });
+
+it("does not fuse setup.cfg continuation fragments into valid floor tokens", async () => {
+  for (const value of [">=3.\n    10", ">=3\n    .10", ">\n    =3.10", ">=3.10\n    <4"]) {
+    const result = await read({ "setup.cfg": `[options]\npython_requires = ${value}\n` });
+    assert.equal(result.status, "unparsed", value);
+  }
+  for (const value of [">=3.10,\n    <4", ">=\n    3.10,\n    <4", ">=3.10\n    ,<4"]) {
+    const result = await read({ "setup.cfg": `[options]\npython_requires = ${value}\n` });
+    assert.equal(result.status, "declared", value);
+    assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10], value);
+  }
+});
