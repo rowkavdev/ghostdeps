@@ -300,16 +300,16 @@ function parsePoetryEntry(
   // One required alternative makes the dependency required.
   const optional = entries.every((entry) => entry.optional === true);
   const extras = [...new Set(entries.flatMap((entry) => strings(entry.extras)))].map(normaliseName);
-  const markers = entries
+  const marker = entries
     .map((entry) => (typeof entry.markers === "string" ? entry.markers : undefined))
-    .filter((m): m is string => m !== undefined);
+    .reduce(mergeMarkers);
   const options: {
     marker?: string;
     group?: string;
     specifier?: Dependency["specifier"];
     line?: number | undefined;
   } = { line };
-  if (markers.length > 0) options.marker = markers.join(" or ");
+  if (marker !== undefined) options.marker = marker;
   if (group !== undefined) options.group = group;
   if (specifier !== undefined) options.specifier = specifier;
   out.add(name, constraint, optional && kind === "runtime" ? "optional" : kind, extras, options);
