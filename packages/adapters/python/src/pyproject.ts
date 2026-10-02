@@ -160,6 +160,40 @@ export function classifyUrl(url: string): NonNullable<Dependency["specifier"]> {
   return { type: "registry", detail: url };
 }
 
+/** [project.optional-dependencies]: one extra per key, self-references expanded (#741). */
+function parseOptionalDependencies(
+  project: Table,
+  out: Collector,
+  extras: Record<string, string[]>,
+): void {
+  const selfName = typeof project.name === "string" ? normaliseName(project.name) : undefined;
+  const optional = table(project, "optional-dependencies") ?? {};
+  // "pkg[a,b]" inside an extra of pkg itself pulls in extras a and b (#741).
+  const selfRefs: { extra: string; requested: string[] }[] = [];
+  for (const [extra, list] of Object.entries(optional)) {
+    const name = normaliseName(extra);
+    const members: string[] = [];
+    for (const text of strings(list)) {
+      const parsed = parseRequirement(text);
+      if (parsed !== undefined && normaliseName(parsed.name) === selfName) {
+        selfRefs.push({ extra: name, requested: parsed.extras.map(normaliseName) });
+      }
+      const dep = out.addPep508(text, "optional", name, {
+        section: "project.optional-dependencies",
+        key: extra,
+      });
+      if (dep !== undefined) members.push(dep);
+    }
+    extras[name] = members;
+  }
+  for (const ref of selfRefs) {
+    const merged = new Set(extras[ref.extra]);
+    for (const requested of ref.requested)
+      for (const member of extras[requested] ?? []) merged.add(member);
+    extras[ref.extra] = [...merged];
+  }
+}
+
 function parsePep621(doc: Table, out: Collector, extras: Record<string, string[]>): void {
   const project = table(doc, "project");
   if (project !== undefined) {
@@ -175,19 +209,7 @@ function parsePep621(doc: Table, out: Collector, extras: Record<string, string[]
     for (const text of strings(project.dependencies)) {
       out.addPep508(text, "runtime", undefined, { section: "project", key: "dependencies" });
     }
-    const optional = table(project, "optional-dependencies") ?? {};
-    for (const [extra, list] of Object.entries(optional)) {
-      const name = normaliseName(extra);
-      const members: string[] = [];
-      for (const text of strings(list)) {
-        const dep = out.addPep508(text, "optional", name, {
-          section: "project.optional-dependencies",
-          key: extra,
-        });
-        if (dep !== undefined) members.push(dep);
-      }
-      extras[name] = members;
-    }
+    parseOptionalDependencies(project, out, extras);
   }
   // PEP 735 dependency groups. Groups are not dev by definition, but in
   // practice they hold test/lint/docs tooling, so they are reported as dev

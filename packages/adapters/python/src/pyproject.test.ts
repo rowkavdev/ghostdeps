@@ -46,6 +46,21 @@ dev-dependencies = ["mypy"]
     assert.deepEqual(parse(text).extras, { cli: ["typer"] });
   });
 
+  it("expands self-referencing extras into the members of the extras they request (#741)", () => {
+    const result = parse(
+      [
+        "[project]",
+        'name = "My_Pkg"',
+        "[project.optional-dependencies]",
+        'a = ["numpy"]',
+        'b = ["pandas"]',
+        'all = ["my-pkg[a,b]"]',
+      ].join("\n"),
+    );
+    assert.deepEqual(result.extras.all, ["my-pkg", "numpy", "pandas"]);
+    assert.deepEqual(result.extras.a, ["numpy"]);
+  });
+
   it("keeps markers and records direct references", () => {
     const result = parse(`[project]
 dependencies = ['tomli>=2; python_version < "3.11"', "lib @ git+https://example.com/lib.git"]
