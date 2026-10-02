@@ -525,3 +525,32 @@ it("ignores leading form feeds while measuring Python indentation", () => {
     ],
   );
 });
+
+it("resets indentation columns at a form feed after spaces or tabs", () => {
+  const source = [
+    "if TYPE_CHECKING:",
+    "    import pandas",
+    "    \fimport requests",
+    "if TYPE_CHECKING:",
+    "    import numpy",
+    "\t\fimport httpx",
+    "if TYPE_CHECKING:",
+    "    \f    import yaml",
+    "import flask",
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source).imports.map(({ module, conditional, typeOnly }) => [
+      module,
+      conditional,
+      typeOnly,
+    ]),
+    [
+      ["pandas", true, true],
+      ["requests", false, false],
+      ["numpy", true, true],
+      ["httpx", false, false],
+      ["yaml", true, true],
+      ["flask", false, false],
+    ],
+  );
+});
