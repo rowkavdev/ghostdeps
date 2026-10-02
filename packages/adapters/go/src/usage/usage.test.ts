@@ -7,6 +7,7 @@ import type { AdapterContext, Dependency } from "@ghostdeps/core";
 import { createGoAdapter } from "../adapter.js";
 import { FIXTURES_ROOT, fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
 import { defaultPackageName, extractGoImports } from "./imports.js";
+import { lexGo } from "./lexer.js";
 import { MAX_GO_SOURCE_BYTES, owningModule } from "./scan.js";
 
 type ExpectedUsage = { file: string; line: number; symbols: string[]; via?: string };
@@ -334,5 +335,17 @@ it("accepts line breaks after Go import keywords without losing later declaratio
   assert.deepEqual(
     extractGoImports(source).imports.map(({ path }) => path),
     ["example.test/one", "example.test/two", "example.test/three"],
+  );
+});
+
+it("only suppresses newline semicolons after the import keyword, not string values", () => {
+  const tokens = lexGo('package app\nimport "import"\nimport "example.test/dep"\n');
+  const literal = tokens.findIndex((token) => token.kind === "string" && token.text === "import");
+  assert.equal(tokens[literal + 1]?.text, ";");
+  assert.deepEqual(
+    extractGoImports('package app\nimport\n "import"\nimport\n "example.test/dep"').imports.map(
+      ({ path }) => path,
+    ),
+    ["import", "example.test/dep"],
   );
 });
