@@ -60,7 +60,7 @@ function logicalLines(text: string): { line: number; text: string }[] {
   const out: { line: number; text: string }[] = [];
   let buffer = "";
   let start = 0;
-  const raw = text.split(/\r?\n/);
+  const raw = text.split(/\r\n?|\n/);
   for (let i = 0; i < raw.length; i++) {
     let line = raw[i]!;
     if (buffer === "") start = i + 1;
@@ -204,7 +204,7 @@ export async function parseRequirementsFiles(
       );
       return;
     }
-    const physical = text.split(/\r?\n/);
+    const physical = text.split(/\r\n?|\n/);
     for (const { line, text: entry } of logicalLines(text)) {
       const option = /^(-r|--requirement|-c|--constraint)(?:\s+|=)?(.+)$/.exec(entry);
       if (option) {
