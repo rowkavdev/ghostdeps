@@ -55,8 +55,11 @@ export function parsePythonFloor(raw: string): Bound | undefined {
         continue;
       }
       if (op === "==" && !m[3]) uppers.push({ version, exclusive: false });
-      if (op === "==" && m[3])
-        uppers.push({ version: [version[0]!, version[1]! + 1], exclusive: true });
+      if (op === "==" && m[3]) {
+        const upper = [...version];
+        upper[upper.length - 1] = upper.at(-1)! + 1;
+        uppers.push({ version: upper, exclusive: true });
+      }
       if (op === "^" || op === "~" || op === "~=") {
         if (op === "~=" && version.length < 2) return undefined;
         const upper = [...version];

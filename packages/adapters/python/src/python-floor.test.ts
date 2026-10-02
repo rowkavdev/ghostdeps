@@ -178,3 +178,20 @@ describe("declared Python floor (#300)", () => {
     assert.equal(fallback.evidence[0]?.line, 2);
   });
 });
+
+it("bounds wildcard equality at the width of its version prefix", async () => {
+  for (const value of ["==3.9.2.*,>=3.9.3", "==3.9.2.*,>3.9.3", "==3.*,>=4", "==3.9.*,>=3.10"]) {
+    assert.equal(parsePythonFloor(value), undefined, value);
+    const result = await read({ "pyproject.toml": `[project]\nrequires-python = "${value}"\n` });
+    assert.equal(result.status, "unparsed", value);
+  }
+  for (const [value, version] of [
+    ["==3.9.2.*", [3, 9, 2]],
+    ["==3.9.*", [3, 9]],
+    ["==3.*", [3]],
+    ["==3.*,>=3.12", [3, 12]],
+    ["==3.9.2.*,>=3.9.2", [3, 9, 2]],
+  ] as const) {
+    assert.deepEqual(parsePythonFloor(value), { version, exclusive: false }, value);
+  }
+});
