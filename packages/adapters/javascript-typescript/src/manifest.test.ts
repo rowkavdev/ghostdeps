@@ -240,3 +240,9 @@ it("classifies bare local dependency paths without treating them as registry con
     assert.notEqual(classifySpecifier(raw)?.type, "file", raw);
   }
 });
+
+it("retains GitHub shorthand with an empty ref as a git dependency", () => {
+  const raw = "user/repo#";
+  assert.deepEqual(classifySpecifier(raw), { type: "git", detail: raw });
+  assert.equal(classifySpecifier("@scope/pkg#")?.type, undefined);
+});
