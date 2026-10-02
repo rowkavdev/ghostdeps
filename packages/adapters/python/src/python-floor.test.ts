@@ -411,3 +411,11 @@ it("does not infer a setup.cfg floor after data before the first section", async
   });
   assert.equal(valid.status, "declared");
 });
+
+it("does not read a setup.cfg Python floor through a leading UTF-8 BOM", async () => {
+  const result = await read({ "setup.cfg": "\uFEFF[options]\npython_requires = >=3.10\n" });
+  assert.equal(result.status, "unparsed");
+  assert.equal(result.evidence[0]?.line, 1);
+  const valid = await read({ "setup.cfg": "[options]\npython_requires = >=3.10\n" });
+  assert.equal(valid.status, "declared");
+});

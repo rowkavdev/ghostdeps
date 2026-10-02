@@ -140,6 +140,9 @@ function tomlCandidate(text: string, target: "project" | "poetry"): Candidate {
   return { present: true, ...(typeof constraint === "string" ? { constraint } : {}), line };
 }
 function setupCfgCandidate(text: string): Candidate {
+  // setuptools reads UTF-8, not utf-8-sig: ConfigParser sees a leading BOM
+  // as data rather than whitespace and rejects the first section header.
+  if (text.startsWith("\uFEFF")) return { present: true, line: 1 };
   let active = false;
   let hasSection = false;
   let optionIndent: number | undefined;
@@ -162,29 +165,34 @@ function setupCfgCandidate(text: string): Candidate {
     if (!active) continue;
     const match = /^\s*python_requires\s*[=:]\s*(.*)$/.exec(raw);
     if (!match) continue;
-    const parts = [match[1]!.trim()];
-    const indent = raw.search(/\S/);
-    for (let j = i + 1; j < lines.length; j++) {
-      const next = lines[j]!;
-      if (next.trim() === "") continue;
-      if (/^\s*[#;]/.test(next)) continue;
-      if (next.search(/\S/) <= indent) break;
-      parts.push(next.trim());
-    }
-    // ConfigParser joins physical continuation lines with newlines. Validate
-    // each comma-delimited specifier before removing whitespace so split
-    // version/operator tokens cannot turn into a declaration setuptools rejects.
-    const value = parts.join("\n").trim();
-    const valid = value
-      .split(",")
-      .every((term) => /^\s*(?:>=|>|<=|<|==|!=|~=)\s*\d+(?:\.\d+){0,2}(?:\.\*)?\s*$/.test(term));
-    return {
-      present: true,
-      ...(valid ? { constraint: value.replace(/\s+/g, "") } : {}),
-      line: i + 1,
-    };
+    return setupCfgFloorValue(lines, i, match[1]!);
   }
   return { present: false, line: 0 };
+}
+
+function setupCfgFloorValue(lines: string[], i: number, first: string): Candidate {
+  const raw = lines[i]!;
+  const parts = [first.trim()];
+  const indent = raw.search(/\S/);
+  for (let j = i + 1; j < lines.length; j++) {
+    const next = lines[j]!;
+    if (next.trim() === "") continue;
+    if (/^\s*[#;]/.test(next)) continue;
+    if (next.search(/\S/) <= indent) break;
+    parts.push(next.trim());
+  }
+  // ConfigParser joins physical continuation lines with newlines. Validate
+  // each comma-delimited specifier before removing whitespace so split
+  // version/operator tokens cannot turn into a declaration setuptools rejects.
+  const value = parts.join("\n").trim();
+  const valid = value
+    .split(",")
+    .every((term) => /^\s*(?:>=|>|<=|<|==|!=|~=)\s*\d+(?:\.\d+){0,2}(?:\.\*)?\s*$/.test(term));
+  return {
+    present: true,
+    ...(valid ? { constraint: value.replace(/\s+/g, "") } : {}),
+    line: i + 1,
+  };
 }
 
 /** A bounded static setup(...) literal reader. It never runs setup.py code. */
