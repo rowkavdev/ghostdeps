@@ -279,3 +279,24 @@ dev-mixed = [{ version = "^1", optional = true }, { version = "^2" }]
     });
   }
 });
+
+it("makes a Poetry alternative union unconditional when any arm has no marker", () => {
+  for (const arms of [
+    `{ version = "<2", markers = "sys_platform == 'win32'" }, { version = ">=2" }`,
+    `{ version = ">=2" }, { version = "<2", markers = "sys_platform == 'win32'" }`,
+  ]) {
+    const result = parse(`[tool.poetry.dependencies]\nlib = [${arms}]\n`);
+    assert.equal(result.requirements.length, 1);
+    assert.equal(result.requirements[0]?.marker, undefined);
+  }
+  const conditional = parse(`[tool.poetry.dependencies]
+lib = [
+  { version = "<2", markers = "sys_platform == 'win32' and python_version < '3.11'" },
+  { version = ">=2", markers = "sys_platform == 'linux'" },
+]
+`);
+  assert.equal(
+    conditional.requirements[0]?.marker,
+    "(sys_platform == 'win32' and python_version < '3.11') or (sys_platform == 'linux')",
+  );
+});
