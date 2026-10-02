@@ -50,6 +50,11 @@ runAdapterContractTests(createJavaScriptTypeScriptAdapter(), ctx("lockfile-npm-v
 runAdapterContractTests(createJavaScriptTypeScriptAdapter(), ctx("usage-static-and-require"));
 
 describe("reference analysis completeness (#132)", () => {
+  it("credits Jest custom module option packages without imports", async () => {
+    const r = await report("jest-custom-module-options", "@acme/jest-tools");
+    assert.ok(r.usages.some((u) => u.via === "config" && u.file === "package.json"));
+  });
+
   const adapter = createJavaScriptTypeScriptAdapter();
   const dev = (name: string): Dependency => ({
     name,

@@ -1,0 +1,5 @@
+{
+  "description": "Jest custom module options credit the configured package without imports or scripts.",
+  "findings": [],
+  "mustNotFind": [{ "kind": "unused", "dependency": "@acme/jest-tools" }]
+}
