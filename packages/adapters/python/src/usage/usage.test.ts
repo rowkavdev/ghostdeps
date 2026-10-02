@@ -394,3 +394,41 @@ it("keeps semicolon-separated inline suite imports conditional and type-only", (
     ],
   );
 });
+
+it("reads Unicode module and imported names with Python's static NFKC normalization", () => {
+  const imports = extractPythonImports(
+    "import café as c\nfrom café.sub import Résumé\nimport ｒｅｑｕｅｓｔｓ as r\nfrom ｒｅｑｕｅｓｔｓ import ｇｅｔ\nimportlib.import_module('ｒｅｑｕｅｓｔｓ')\n",
+  ).imports;
+  assert.deepEqual(
+    imports.map((imp) => [imp.module, imp.names, imp.form]),
+    [
+      ["café", [], "static"],
+      ["café.sub", ["Résumé"], "static"],
+      ["requests", [], "static"],
+      ["requests", ["get"], "static"],
+      ["ｒｅｑｕｅｓｔｓ", [], "dynamic"],
+    ],
+  );
+});
+
+it("credits an ASCII dependency imported with NFKC-equivalent module spelling", async () => {
+  const project: ProjectRef = { path: ".", ecosystem: "python", packageManagers: [] };
+  const context: AdapterContext = {
+    repository: memoryHandle({
+      "pyproject.toml": '[project]\nname="app"\ndependencies=["requests"]\n',
+      "main.py": "import ｒｅｑｕｅｓｔｓ as r\nr.get('url')\n",
+    }),
+    network: { mode: "offline" },
+  };
+  assert.ok(
+    (
+      await findPythonUsage(context, {
+        name: "requests",
+        kind: "runtime",
+        constraint: "",
+        declaredIn: "pyproject.toml",
+        project,
+      })
+    ).some((usage) => usage.file === "main.py"),
+  );
+});

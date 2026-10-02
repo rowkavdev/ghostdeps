@@ -33,8 +33,9 @@ export interface PythonFileImports {
 
 export type PythonImportExtractor = (source: string) => PythonFileImports;
 
-const DOTTED = /^[A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)*$/;
-const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const DOTTED =
+  /^[\p{XID_Start}_][\p{XID_Continue}]*(?:\s*\.\s*[\p{XID_Start}_][\p{XID_Continue}]*)*$/u;
+const IDENT = /^[\p{XID_Start}_][\p{XID_Continue}]*$/u;
 /** Clause headers that can carry a one-line body: `try: import x`. */
 // `case` is a soft keyword, but a statement starting with `case` and a
 // top-level colon is a match case (or a harmless annotated variable, whose
@@ -104,14 +105,15 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       for (const part of plain[1]!.split(",")) {
         const m = /^\s*(.+?)(?:\s+as\s+([\p{XID_Start}_][\p{XID_Continue}]*))?\s*$/su.exec(part);
         if (!m || !DOTTED.test(m[1]!.trim())) continue;
-        const module = clean(m[1]!);
+        const module = clean(m[1]!).normalize("NFKC");
         // `import a.b` binds `a`; `import a.b as c` binds `c`.
         const local = (m[2] ?? module.split(".")[0]!).normalize("NFKC");
         imports.push({ module, form: "static", names: [], local, ...base });
       }
       continue;
     }
-    const from = /^from\s+(\.*)\s*([A-Za-z_][A-Za-z0-9_.\s]*?)?\s+import\s+(.+)$/s.exec(text);
+    const from =
+      /^from\s+(\.*)\s*([\p{XID_Start}_][\p{XID_Continue}.\s]*?)?\s+import\s+(.+)$/su.exec(text);
     if (from) {
       if (from[1] !== "" || from[2] === undefined || !DOTTED.test(from[2].trim())) continue;
       const names = from[3]!
@@ -123,8 +125,9 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
             .split(/\s+as\s+/)[0]!
             .trim(),
         )
-        .filter((name) => name === "*" || IDENT.test(name));
-      imports.push({ module: clean(from[2]), form: "static", names, ...base });
+        .filter((name) => name === "*" || IDENT.test(name))
+        .map((name) => name.normalize("NFKC"));
+      imports.push({ module: clean(from[2]).normalize("NFKC"), form: "static", names, ...base });
       continue;
     }
     code.push(text);
