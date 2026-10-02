@@ -195,3 +195,15 @@ it("bounds wildcard equality at the width of its version prefix", async () => {
     assert.deepEqual(parsePythonFloor(value), { version, exclusive: false }, value);
   }
 });
+
+it("does not read setup.py floor declarations from multiline string contents", async () => {
+  for (const quote of ['"""', "'''"]) {
+    const docstring = `${quote}Example:\nsetup(python_requires=">=3.12")\n${quote}\n`;
+    assert.equal((await read({ "setup.py": docstring })).status, "absent", quote);
+    const script = `setup(description=${quote}\npython_requires=">=3.12",\n${quote}, python_requires=">=3.10")`;
+    const result = await read({ "setup.py": script });
+    assert.equal(result.status, "declared", quote);
+    assert.deepEqual(result.status === "declared" ? result.version : [], [3, 10], quote);
+    assert.equal(result.status === "declared" ? result.line : undefined, 3, quote);
+  }
+});

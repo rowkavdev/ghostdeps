@@ -166,11 +166,11 @@ function setupPyCandidate(text: string): Candidate {
   const lines = text.split(/\r?\n/);
   let inSetup = false;
   let depth = 0;
+  let quote = "";
   for (const [i, raw] of lines.entries()) {
     // Lex one line, replacing quoted bytes with spaces in the search view.
     // Keep the original for extracting a literal at the matched index.
     let code = "";
-    let quote = "";
     for (let j = 0; j < raw.length; j++) {
       const ch = raw[j]!;
       if (quote) {
@@ -178,11 +178,16 @@ function setupPyCandidate(text: string): Candidate {
         if (ch === "\\" && j + 1 < raw.length) {
           code += " ";
           j++;
-        } else if (ch === quote) quote = "";
+        } else if (raw.startsWith(quote, j)) {
+          code += " ".repeat(quote.length - 1);
+          j += quote.length - 1;
+          quote = "";
+        }
       } else if (ch === "#") break;
       else if (ch === '"' || ch === "'") {
-        quote = ch;
-        code += " ";
+        quote = raw.startsWith(ch.repeat(3), j) ? ch.repeat(3) : ch;
+        code += " ".repeat(quote.length);
+        j += quote.length - 1;
       } else code += ch;
     }
     let start = 0;
