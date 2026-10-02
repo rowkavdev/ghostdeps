@@ -6,6 +6,7 @@ import {
   KNOWN_IMPORT_NAMES,
   NAMESPACE_ROOTS,
   distributionFromMetadataPath,
+  firstPartyModules,
   parseTopLevel,
   readTopLevelMetadata,
   topLevelModule,
@@ -239,4 +240,31 @@ it("treats Object-prototype import names as ordinary names, not table entries", 
       via: "name",
     });
   }
+});
+
+it("discovers Unicode Python module identifiers in source and metadata", () => {
+  assert.deepEqual(
+    firstPartyModules(".", ["café.py", "src/naïve/__init__.py", "bad-name.py", "1bad.py"]),
+    ["café", "naïve"],
+  );
+  assert.deepEqual(parseTopLevel("café\nnaïve\n_module\nbad-name\n1bad\n"), [
+    "café",
+    "naïve",
+    "_module",
+  ]);
+  const resolver = new ImportResolver({
+    declared: ["café"],
+    firstParty: firstPartyModules(".", ["café.py"]),
+  });
+  assert.deepEqual(resolver.resolve("café.helpers"), { kind: "first-party", module: "café" });
+  const metadata = new ImportResolver({
+    declared: ["acme"],
+    topLevel: new Map([["acme", parseTopLevel("naïve\n")]]),
+  });
+  assert.deepEqual(metadata.resolve("naïve.tools"), {
+    kind: "dependency",
+    module: "naïve",
+    distributions: ["acme"],
+    via: "metadata",
+  });
 });

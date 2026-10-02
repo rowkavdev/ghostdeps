@@ -199,7 +199,7 @@ export function parseTopLevel(text: string): string[] {
   return text
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(line));
+    .filter((line) => IDENTIFIER.test(line));
 }
 
 /**
@@ -251,7 +251,7 @@ export async function readTopLevelMetadata(
   return out;
 }
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const IDENTIFIER = /^[\p{XID_Start}_][\p{XID_Continue}]*$/u;
 
 /**
  * Top-level modules the project itself provides: packages (a directory
