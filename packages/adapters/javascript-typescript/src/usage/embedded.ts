@@ -107,6 +107,31 @@ function closingScriptStart(lower: string, from: number): number {
   }
 }
 
+/** Scan markup boundaries, never tag-looking text inside comments or attributes. */
+function nextScriptStart(text: string, lower: string, from: number): number {
+  for (;;) {
+    const open = lower.indexOf("<", from);
+    if (open < 0) return -1;
+    if (lower.startsWith("<!--", open)) {
+      const start = open + 4;
+      if (text[start] === ">") from = start + 1;
+      else if (text.startsWith("->", start)) from = start + 2;
+      else {
+        const end = /--!?>/g;
+        end.lastIndex = start;
+        const match = end.exec(text);
+        if (match === null) return -1;
+        from = end.lastIndex;
+      }
+    } else if (lower.startsWith("<script", open)) return open;
+    else if (/^<\/?[a-z!]/i.test(text.slice(open, open + 3))) {
+      const end = openingTagEnd(text, open + 1);
+      if (end < 0) return -1;
+      from = end + 1;
+    } else from = open + 1;
+  }
+}
+
 /** HTML ignores self-closing flags on non-void script; components do not. */
 function isSelfClosingScript(file: string, tag: string): boolean {
   return !/\.html?$/i.test(file) && tag.endsWith("/>");
@@ -149,7 +174,7 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
   // characters (e.g. İ), which shifts indices into the original source.
   const lower = text.replace(/[A-Z]/g, (character) => character.toLowerCase());
   for (;;) {
-    const open = lower.indexOf("<script", from);
+    const open = nextScriptStart(text, lower, from);
     if (open < 0) break;
     const next = lower.charCodeAt(open + 7);
     // `<scripts>` or `<script-x>` are other tags.
