@@ -170,7 +170,7 @@ function setupCfgCandidate(text: string): Candidate {
     if (!active) continue;
     const match = /^\s*python_requires\s*[=:]\s*(.*)$/.exec(raw);
     if (!match) continue;
-    if (candidate.present) continue;
+    if (candidate.present) return { present: true, line: i + 1 };
     candidate = setupCfgFloorValue(lines, i, match[1]!);
   }
   return candidate;
