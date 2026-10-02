@@ -35,7 +35,8 @@ export function lexGo(src: string): GoToken[] {
     if (c === "\n") {
       // Automatic semicolons matter for import blocks only as separators;
       // emit one so `import "a"\nfunc` splits cleanly.
-      out.push({ kind: "punct", text: ";", line });
+      // The import keyword is not eligible for Go's automatic semicolon.
+      if (out.at(-1)?.text !== "import") out.push({ kind: "punct", text: ";", line });
       line++;
       i++;
       continue;
