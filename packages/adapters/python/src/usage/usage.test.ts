@@ -821,3 +821,40 @@ it("invalidates TYPE_CHECKING aliases rebound through NFKC-equivalent identifier
     );
   }
 });
+
+it("does not credit a relative __import__ level as an external dependency", () => {
+  const source = [
+    '__import__("rel_kw", level=1)',
+    '__import__("rel_kw2", level = 2)',
+    '__import__("rel_pos", globals(), locals(), [], 1)',
+    '__import__("rel_hex", globals(), locals(), [], 0x1)',
+    '__import__("rel_paren", globals(), locals(), [], (1))',
+    'builtins.__import__("rel_b", level=1)',
+    'importlib.__import__("rel_i", None, None, None, 3)',
+    '__import__(name="rel_named", level=1)',
+    '__import__("abs_zero", level=0)',
+    '__import__("abs_zero_pos", globals(), locals(), [], 0)',
+    '__import__("abs_plain")',
+    '__import__("abs_four", globals(), locals(), [])',
+    '__import__("abs_unknown", level=lvl)',
+    '__import__("abs_unknown_pos", globals(), locals(), [], n + 1)',
+    '__import__("abs_star", *args)',
+    '__import__("abs_kw", fromlist=["x"], level=0)',
+    '__import__("abs_nested", f(level=1))',
+    'importlib.import_module(".rel_mod", package="app")',
+    'importlib.import_module(".rel_mod2", "app")',
+    'importlib.import_module("abs_mod", package="app")',
+  ].join("\n");
+  assert.deepEqual(modules(source), [
+    "abs_zero",
+    "abs_zero_pos",
+    "abs_plain",
+    "abs_four",
+    "abs_unknown",
+    "abs_unknown_pos",
+    "abs_star",
+    "abs_kw",
+    "abs_nested",
+    "abs_mod",
+  ]);
+});
