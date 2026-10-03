@@ -742,6 +742,33 @@ describe("TYPE_CHECKING aliases", () => {
     }
   });
 
+  it("lets the last binding in one import statement win", () => {
+    assert.deepEqual(
+      typeOnly("import typing as t, other as t\nif t.TYPE_CHECKING:\n    import pandas\n"),
+      { pandas: false },
+    );
+    assert.deepEqual(
+      typeOnly("from typing import TYPE_CHECKING as TC, Any as TC\nif TC:\n    import pandas\n"),
+      { pandas: false },
+    );
+    assert.deepEqual(
+      typeOnly(
+        "from typing import TYPE_CHECKING as TC, TYPE_CHECKING as TC2\nif TC2:\n    import pandas\n",
+      ),
+      { pandas: true },
+    );
+    assert.deepEqual(
+      typeOnly("import other as t, typing as t\nif t.TYPE_CHECKING:\n    import pandas\n"),
+      { pandas: true },
+    );
+    assert.deepEqual(
+      typeOnly(
+        "from other import TC, typing\nfrom typing import TYPE_CHECKING as TC\nif TC:\n    import pandas\n",
+      ),
+      { pandas: true },
+    );
+  });
+
   it("trusts a re-established alias", () => {
     assert.deepEqual(
       typeOnly(

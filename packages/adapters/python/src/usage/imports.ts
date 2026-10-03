@@ -136,19 +136,33 @@ function updateTypeCheckingNames(
     }
   }
   if (!moduleLevel) return;
+  // Clauses bind in source order, so the last binding of a name wins.
+  const bind = (name: string, flag: boolean, module: boolean) => {
+    const bound = name.normalize("NFKC");
+    names.flags.delete(bound);
+    names.modules.delete(bound);
+    if (flag) names.flags.add(bound);
+    if (module) names.modules.add(bound);
+  };
+  const ident = "[\\p{XID_Start}_][\\p{XID_Continue}]*";
   const from = /^from\s+typing\s+import\s+(.+)$/s.exec(text);
   if (from) {
     for (const part of from[1]!.replace(/[()]/g, " ").split(",")) {
-      const m = /^\s*TYPE_CHECKING\s+as\s+([\p{XID_Start}_][\p{XID_Continue}]*)\s*$/su.exec(part);
-      if (m) names.flags.add(m[1]!.normalize("NFKC"));
+      const m = new RegExp(`^\\s*(${ident})(?:\\s+as\\s+(${ident}))?\\s*$`, "su").exec(part);
+      if (m) bind(m[2] ?? m[1]!, m[1] === "TYPE_CHECKING", false);
     }
     return;
   }
   const plain = /^import\s+(.+)$/s.exec(text);
   if (plain) {
     for (const part of plain[1]!.split(",")) {
-      const m = /^\s*typing\s+as\s+([\p{XID_Start}_][\p{XID_Continue}]*)\s*$/su.exec(part);
-      if (m) names.modules.add(m[1]!.normalize("NFKC"));
+      const m = new RegExp(
+        `^\\s*(${ident}(?:\\s*\\.\\s*${ident})*)(?:\\s+as\\s+(${ident}))?\\s*$`,
+        "su",
+      ).exec(part);
+      if (!m) continue;
+      if (m[2]) bind(m[2], false, m[1] === "typing");
+      else bind(m[1]!.split(".")[0]!.trim(), false, m[1] === "typing");
     }
   }
 }
