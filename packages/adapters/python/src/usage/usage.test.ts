@@ -807,3 +807,17 @@ it("does not credit unrelated methods named like dynamic import functions", () =
     "jinja2",
   ]);
 });
+
+it("invalidates TYPE_CHECKING aliases rebound through NFKC-equivalent identifiers", () => {
+  for (const source of [
+    "from typing import TYPE_CHECKING as K\n\u212a = True\nif K:\n    import pandas\n",
+    "from typing import TYPE_CHECKING as \u212a\n\u212a = True\nif \u212a:\n    import pandas\n",
+    "import typing as K\n\u212a = object()\nif K.TYPE_CHECKING:\n    import pandas\n",
+  ]) {
+    assert.equal(
+      extractPythonImports(source).imports.find((i) => i.module === "pandas")?.typeOnly,
+      false,
+      source,
+    );
+  }
+});
