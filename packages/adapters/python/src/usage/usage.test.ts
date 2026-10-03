@@ -615,3 +615,79 @@ it("does not credit bytes literals as dynamic import module names", () => {
   assert.deepEqual(modules(source), ["yaml", "PIL.Image"]);
   assert.deepEqual(splitPythonStatements('__import__(b"requests")').strings, ["requests"]);
 });
+
+describe("TYPE_CHECKING aliases", () => {
+  const typeOnly = (source: string) =>
+    Object.fromEntries(
+      extractPythonImports(source)
+        .imports.filter((i) => i.module !== "typing" && i.module !== "os" && i.module !== "other")
+        .map((i) => [i.module, i.typeOnly]),
+    );
+
+  it("treats guards through an aliased flag or an aliased typing module as type-only", () => {
+    assert.deepEqual(
+      typeOnly(
+        "from typing import TYPE_CHECKING as TC\nif TC:\n    import pandas\nimport requests\n",
+      ),
+      { pandas: true, requests: false },
+    );
+    assert.deepEqual(typeOnly("import typing as t\nif t.TYPE_CHECKING:\n    import pandas\n"), {
+      pandas: true,
+    });
+    assert.deepEqual(
+      typeOnly("from typing import Any, TYPE_CHECKING as TC\nif (TC): import pandas\n"),
+      { pandas: true },
+    );
+    assert.deepEqual(
+      typeOnly("import os, typing as t\nif t . TYPE_CHECKING:\n    import pandas\n"),
+      { pandas: true },
+    );
+  });
+
+  it("does not trust an alias that was rebound, shadowed or never bound to typing", () => {
+    const head = "from typing import TYPE_CHECKING as TC\n";
+    for (const rebind of [
+      "TC = False\n",
+      "TC: bool = False\n",
+      "a, TC = 1, 2\n",
+      "import os as TC\n",
+      "from other import TC\n",
+      "def TC():\n    return 1\n",
+      "for TC in range(2):\n    pass\n",
+    ]) {
+      assert.deepEqual(
+        typeOnly(`${head}${rebind}if TC:\n    import pandas\n`),
+        { pandas: false },
+        rebind,
+      );
+    }
+    assert.deepEqual(
+      typeOnly("from other import TYPE_CHECKING as TC\nif TC:\n    import pandas\n"),
+      { pandas: false },
+    );
+    assert.deepEqual(
+      typeOnly("if TC:\n    import pandas\nfrom typing import TYPE_CHECKING as TC\n"),
+      { pandas: false },
+    );
+    assert.deepEqual(
+      typeOnly("def f():\n    from typing import TYPE_CHECKING as TC\nif TC:\n    import pandas\n"),
+      { pandas: false },
+    );
+    assert.deepEqual(
+      typeOnly("import typing as t\nt = object()\nif t.TYPE_CHECKING:\n    import pandas\n"),
+      { pandas: false },
+    );
+    assert.deepEqual(typeOnly("import typing as t\nif u.TYPE_CHECKING:\n    import pandas\n"), {
+      pandas: false,
+    });
+  });
+
+  it("trusts a re-established alias", () => {
+    assert.deepEqual(
+      typeOnly(
+        "from typing import TYPE_CHECKING as TC\nTC = False\nfrom typing import TYPE_CHECKING as TC\nif TC:\n    import pandas\n",
+      ),
+      { pandas: true },
+    );
+  });
+});
