@@ -124,6 +124,85 @@ describe("extractPythonImports", () => {
     );
   });
 
+  it("credits aliased importlib, import_module and __import__ calls", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    assert.deepEqual(dyn('import importlib as il\nil.import_module("x")\n'), ["x"]);
+    assert.deepEqual(dyn('from importlib import import_module as im\nim("y")\n'), ["y"]);
+    assert.deepEqual(dyn('from importlib import __import__ as imp\nimp("z")\n'), ["z"]);
+    // A relative __import__ level is still never an external dependency.
+    assert.deepEqual(
+      dyn('from importlib import __import__ as imp\nimp("z", None, None, [], 1)\n'),
+      [],
+    );
+    // Attribute access on something else, or a rebound alias, is not credited.
+    assert.deepEqual(dyn('import importlib as il\nobj.il.import_module("x")\n'), []);
+    assert.deepEqual(dyn('import importlib as il\nil = other\nil.import_module("x")\n'), []);
+    assert.deepEqual(dyn('from importlib import import_module as im\nim = fake\nim("y")\n'), []);
+    // Unaliased names and plain calls without an alias import are unchanged.
+    assert.deepEqual(dyn('im("y")\n'), []);
+  });
+
+  it("drops an importlib alias that is rebound anywhere in the file", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    const mod = "import importlib as il\n";
+    const fn = "from importlib import import_module as im\n";
+    const call = 'il.import_module("x")\n';
+    const fcall = 'im("y")\n';
+    const moduleCases = [
+      "def f(il):\n    pass\n",
+      "def f(a, *, il):\n    pass\n",
+      "async def f(*il):\n    pass\n",
+      "g = lambda il: il\n",
+      "for il in items:\n    pass\n",
+      "with open(p) as il:\n    pass\n",
+      "try:\n    pass\nexcept E as il:\n    pass\n",
+      "import numpy as il\n",
+      "from x import y as il\n",
+      "il, x = 1, 2\n",
+      "x, il = 1, 2\n",
+      "x = il = 1\n",
+      "il: int = 1\n",
+      "(il := 3)\n",
+      "if x:\n    il = 2\n",
+      "global il\n",
+      "del il\n",
+      "class il:\n    pass\n",
+      "def il(x):\n    pass\n",
+    ];
+    for (const rebind of moduleCases) {
+      assert.deepEqual(dyn(mod + rebind + call), [], rebind);
+    }
+    const functionCases = [
+      "def f(im):\n    pass\n",
+      "g = lambda im: im\n",
+      "from other import thing as im\n",
+      "import numpy as im\n",
+      "def im(x):\n    pass\n",
+      "class im:\n    pass\n",
+      "im, x = 1, 2\n",
+      "x = im = 1\n",
+      "im: int = 1\n",
+      "(im := 3)\n",
+      "for im in items:\n    pass\n",
+      "del im\n",
+    ];
+    for (const rebind of functionCases) {
+      assert.deepEqual(dyn(fn + rebind + fcall), [], rebind);
+    }
+    // A second from-import that rebinds the alias drops it too.
+    assert.deepEqual(dyn(fn + "from other import thing as im\n" + fcall), []);
+    // Controls: an unrelated name, a repeated identical alias import, a mixed import.
+    assert.deepEqual(dyn(mod + "def f(other):\n    pass\n" + call), ["x"]);
+    assert.deepEqual(dyn(mod + mod + call), ["x"]);
+    assert.deepEqual(dyn(fn + "from importlib import import_module as im\n" + fcall), ["y"]);
+  });
+
   it("collects attributes used on imported module names", () => {
     const { attributes } = extractPythonImports(
       'import requests\nimport numpy as np\nr = requests.get("u")\nrequests.post("u")\nnp.array([1])\nobj.requests.nope\n',

@@ -256,6 +256,98 @@ function importLevel(args: string[]): number | undefined {
 const DYNAMIC =
   /(?<![\p{XID_Continue}.])(?<!\.\s*)(?:importlib\s*\.\s*import_module|(?:(?:importlib|builtins|__builtins__)\s*\.\s*)?__import__|import_module)\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])/gu;
 
+/** Whether a lambda in the statement takes `name` as a parameter. */
+function bindsAsLambdaParameter(text: string, name: string): boolean {
+  const id = new RegExp(
+    `(?<![\\p{XID_Continue}.])${escapeRegExp(name)}(?![\\p{XID_Continue}])`,
+    "u",
+  );
+  for (const m of text.normalize("NFKC").matchAll(/(?<![\p{XID_Continue}])lambda\b([^:]*):/gu)) {
+    if (id.test(m[1]!)) return true;
+  }
+  return false;
+}
+
+const NEVER = /(?!)/gu;
+const IDENT_SRC = String.raw`[\p{XID_Start}_][\p{XID_Continue}]*`;
+
+/**
+ * Names bound to `importlib` or to its `import_module` / `__import__` by an
+ * import alias (`import importlib as il`, `from importlib import import_module
+ * as im`). A name that is also assigned elsewhere in the file is dropped: it
+ * may no longer point at importlib, and a missed credit beats a wrong one.
+ */
+function importlibAliases(texts: readonly string[]): {
+  modules: RegExp;
+  functions: RegExp;
+  targets: Map<string, string>;
+} {
+  const modules = new Set<string>();
+  const targets = new Map<string, string>();
+  const moduleAlias = new RegExp(String.raw`^\s*importlib\s+as\s+(${IDENT_SRC})\s*$`, "u");
+  const functionAlias = new RegExp(
+    String.raw`^\s*(import_module|__import__)\s+as\s+(${IDENT_SRC})\s*$`,
+    "u",
+  );
+  // Statement index -> the alias definitions it makes, as [name, import part].
+  const defs = new Map<number, { name: string; part: string }[]>();
+  const statementParts = (raw: string): { head: string; parts: string[] } | undefined => {
+    const text = raw.trim();
+    const plain = /^import\s+(.+)$/s.exec(text);
+    if (plain) return { head: "import ", parts: plain[1]!.split(",") };
+    const from = /^from\s+importlib\s+import\s+(.+)$/s.exec(text);
+    if (from)
+      return { head: "from importlib import ", parts: from[1]!.replace(/[()]/g, " ").split(",") };
+    return undefined;
+  };
+  texts.forEach((raw, index) => {
+    const parsed = statementParts(raw);
+    if (!parsed) return;
+    for (const part of parsed.parts) {
+      const isFrom = parsed.head !== "import ";
+      const m = (isFrom ? functionAlias : moduleAlias).exec(part);
+      if (!m) continue;
+      const name = (isFrom ? m[2]! : m[1]!).normalize("NFKC");
+      if (isFrom) targets.set(name, m[1]!);
+      else modules.add(name);
+      const list = defs.get(index) ?? [];
+      list.push({ name, part });
+      defs.set(index, list);
+    }
+  });
+  // Any other statement that may bind the name drops it for the whole file.
+  for (const name of new Set([...modules, ...targets.keys()])) {
+    const dropped = texts.some((raw, index) => {
+      const own = defs.get(index)?.filter((d) => d.name === name) ?? [];
+      const parsed = statementParts(raw);
+      if (own.length > 0 && parsed) {
+        const ownParts = new Set(own.map((d) => d.part));
+        return parsed.parts.some(
+          (part) => !ownParts.has(part) && rebinds(parsed.head + part.trim(), name),
+        );
+      }
+      return rebinds(raw.trim(), name) || bindsAsLambdaParameter(raw, name);
+    });
+    if (dropped) {
+      modules.delete(name);
+      targets.delete(name);
+    }
+  }
+  const lead = String.raw`(?<![\p{XID_Continue}.])(?<!\.\s*)`;
+  const tail = String.raw`\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])`;
+  const alt = (names: Iterable<string>) =>
+    [...names].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return {
+    modules:
+      modules.size === 0
+        ? NEVER
+        : new RegExp(`${lead}(${alt(modules)})\\s*\\.\\s*import_module${tail}`, "gu"),
+    functions:
+      targets.size === 0 ? NEVER : new RegExp(`${lead}(${alt(targets.keys())})${tail}`, "gu"),
+    targets,
+  };
+}
+
 const clean = (dotted: string) => dotted.replace(/\s+/g, "");
 
 export const extractPythonImports: PythonImportExtractor = (source) => {
@@ -265,6 +357,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
   let typeCheckingIndent: number | undefined;
   let inlineSuite: { line: number; typeOnly: boolean } | undefined;
   const typeNames: TypeCheckingNames = { flags: new Set(), modules: new Set() };
+  const aliases = importlibAliases(statements.map((stmt) => stmt.text));
 
   for (const stmt of statements) {
     if (typeCheckingIndent !== undefined && stmt.indent <= typeCheckingIndent) {
@@ -320,16 +413,36 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       continue;
     }
     code.push(text);
+    const calls: { index: number; start: number; dunder: boolean }[] = [];
     for (const m of text.matchAll(DYNAMIC)) {
-      if (byteStrings.has(Number(m[1]))) continue;
-      const literal = strings[Number(m[1])] ?? "";
+      const callee = m[0].slice(0, m[0].indexOf("(")).trim();
+      calls.push({
+        index: Number(m[1]),
+        start: m.index + m[0].indexOf("("),
+        dunder: /__import__$/.test(callee),
+      });
+    }
+    for (const m of text.matchAll(aliases.modules)) {
+      calls.push({ index: Number(m[2]), start: m.index + m[0].indexOf("("), dunder: false });
+    }
+    for (const m of text.matchAll(aliases.functions)) {
+      const target = aliases.targets.get(m[1]!.normalize("NFKC"));
+      calls.push({
+        index: Number(m[2]),
+        start: m.index + m[0].indexOf("("),
+        dunder: target === "__import__",
+      });
+    }
+    for (const call of calls) {
+      if (byteStrings.has(call.index)) continue;
+      const literal = strings[call.index] ?? "";
       if (literal === "" || literal.startsWith(".") || /\s/u.test(literal) || !DOTTED.test(literal))
         continue;
       // __import__(name, globals, locals, fromlist, level): a positive level is
       // package-relative, never an external dependency. An unknown level keeps
       // the credit, as before.
-      if (/__import__$/.test(m[0].slice(0, m[0].indexOf("(")).trim())) {
-        const args = callArguments(text, m.index + m[0].indexOf("("));
+      if (call.dunder) {
+        const args = callArguments(text, call.start);
         const level = args && importLevel(args);
         if (level !== undefined && level > 0) continue;
       }
