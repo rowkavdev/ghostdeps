@@ -682,6 +682,21 @@ describe("TYPE_CHECKING aliases", () => {
     });
   });
 
+  it("does not trust an alias inside a function or class scope", () => {
+    const head = "from typing import TYPE_CHECKING as TC\nimport typing as t\n";
+    for (const body of [
+      "def f(TC):\n    if TC:\n        import pandas\n",
+      "def f(t):\n    if t.TYPE_CHECKING:\n        import pandas\n",
+      "def f(*, TC=False):\n    if TC:\n        import pandas\n",
+      "g = lambda TC: 1\ndef f():\n    if TC:\n        import pandas\n",
+      "def f():\n    if TC:\n        import pandas\n    TC = 1\n",
+      "class C:\n    if TC:\n        import pandas\n",
+      "def f():\n    if TC: import pandas\n",
+    ]) {
+      assert.deepEqual(typeOnly(`${head}${body}`), { pandas: false }, body);
+    }
+  });
+
   it("trusts a re-established alias", () => {
     assert.deepEqual(
       typeOnly(

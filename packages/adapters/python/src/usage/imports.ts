@@ -122,7 +122,11 @@ function updateTypeCheckingNames(
 }
 
 /** Parentheses around the exact guard do not change its runtime value. */
-function isTypeCheckingHeader(text: string, names: TypeCheckingNames): boolean {
+function isTypeCheckingHeader(
+  text: string,
+  names: TypeCheckingNames,
+  moduleScope: boolean,
+): boolean {
   const match = /^if\s+(.+)\s*:\s*$/s.exec(text);
   if (!match) return false;
   let condition = match[1]!.trim();
@@ -141,6 +145,9 @@ function isTypeCheckingHeader(text: string, names: TypeCheckingNames): boolean {
     condition = condition.slice(1, -1).trim();
   }
   if (/^(?:typing\s*\.\s*)?TYPE_CHECKING$/.test(condition)) return true;
+  // Aliases are only trusted at indent 0: inside a def, lambda or class a
+  // parameter or a local binding anywhere in the scope can shadow the name.
+  if (!moduleScope) return false;
   if (names.flags.has(condition.normalize("NFKC"))) return true;
   const attribute = /^([\p{XID_Start}_][\p{XID_Continue}]*)\s*\.\s*TYPE_CHECKING$/u.exec(condition);
   return attribute !== null && names.modules.has(attribute[1]!.normalize("NFKC"));
@@ -162,7 +169,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     if (typeCheckingIndent !== undefined && stmt.indent <= typeCheckingIndent) {
       typeCheckingIndent = undefined;
     }
-    if (isTypeCheckingHeader(stmt.text, typeNames)) {
+    if (isTypeCheckingHeader(stmt.text, typeNames, stmt.indent === 0)) {
       // Keep the outermost guard: ending an inner block does not end it.
       typeCheckingIndent ??= stmt.indent;
       continue;
@@ -173,7 +180,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     let conditional = stmt.indent > 0 || inlineSuite !== undefined;
     const header = clauseHeader(text);
     if (header && header.length < text.length) {
-      if (isTypeCheckingHeader(header, typeNames)) typeOnly = true;
+      if (isTypeCheckingHeader(header, typeNames, stmt.indent === 0)) typeOnly = true;
       text = text.slice(header.length).trimStart();
       conditional = true;
       inlineSuite = { line: stmt.endLine, typeOnly };
