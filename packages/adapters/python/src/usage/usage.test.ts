@@ -203,6 +203,57 @@ describe("extractPythonImports", () => {
     assert.deepEqual(dyn(fn + "from importlib import import_module as im\n" + fcall), ["y"]);
   });
 
+  it("scopes importlib aliases to the function that imports them", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    // Valid: used in the same function, and in a function nested inside it.
+    assert.deepEqual(
+      dyn('def f():\n    import importlib as il\n    il.import_module("requests")\n'),
+      ["requests"],
+    );
+    assert.deepEqual(
+      dyn('def f():\n    from importlib import import_module as im\n    im("requests")\n'),
+      ["requests"],
+    );
+    assert.deepEqual(
+      dyn(
+        'def f():\n    import importlib as il\n    def g():\n        il.import_module("requests")\n',
+      ),
+      ["requests"],
+    );
+    // A module-level alias is visible inside functions.
+    assert.deepEqual(dyn('import importlib as il\ndef f():\n    il.import_module("x")\n'), ["x"]);
+    // Invalid: the alias is local to f, so module-level or sibling use is not credited.
+    assert.deepEqual(
+      dyn('def f():\n    import importlib as il\nil.import_module("requests")\n'),
+      [],
+    );
+    assert.deepEqual(
+      dyn('def f():\n    from importlib import import_module as im\nim("requests")\n'),
+      [],
+    );
+    assert.deepEqual(
+      dyn('def f():\n    import importlib as il\ndef g():\n    il.import_module("requests")\n'),
+      [],
+    );
+    // A class-body alias is not visible inside its methods.
+    assert.deepEqual(
+      dyn(
+        'class C:\n    import importlib as il\n    def m(self):\n        il.import_module("requests")\n',
+      ),
+      [],
+    );
+    // A local rebinding inside the defining function still drops the alias.
+    assert.deepEqual(
+      dyn(
+        'def f():\n    import importlib as il\n    il = other\n    il.import_module("requests")\n',
+      ),
+      [],
+    );
+  });
+
   it("collects attributes used on imported module names", () => {
     const { attributes } = extractPythonImports(
       'import requests\nimport numpy as np\nr = requests.get("u")\nrequests.post("u")\nnp.array([1])\nobj.requests.nope\n',
