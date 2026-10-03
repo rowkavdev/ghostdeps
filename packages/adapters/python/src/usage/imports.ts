@@ -65,8 +65,64 @@ function clauseHeader(text: string): string | undefined {
   }
   return undefined;
 }
+/**
+ * Names bound at module level to typing.TYPE_CHECKING (`from typing import
+ * TYPE_CHECKING as TC`) and to the typing module (`import typing as t`).
+ * A rebinding drops the name again, so a shadowed alias is never trusted.
+ */
+interface TypeCheckingNames {
+  flags: Set<string>;
+  modules: Set<string>;
+}
+
+const escapeRegExp = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Whether a statement binds `name` to something else (assignment, import, def, loop, ...). */
+function rebinds(text: string, name: string): boolean {
+  const id = `(?<![\\p{XID_Continue}.])${escapeRegExp(name)}(?![\\p{XID_Continue}])`;
+  return [
+    // TC = x, TC: T = x, TC += x, (TC := x), a, TC = x
+    new RegExp(`${id}\\s*(?:,[^=\\n]*)?(?:=(?!=)|:=|[-+*/%&|^@]=|//=|\\*\\*=|<<=|>>=)`, "u"),
+    new RegExp(`^${id}\\s*:[^=\\n]*=`, "u"),
+    // import x as TC, with y as TC, except E as TC
+    new RegExp(`(?<![\\p{XID_Continue}])as\\s+${id}`, "u"),
+    // from m import TC, import TC
+    new RegExp(`^(?:from\\s+[^\\n]*?\\s+)?import\\b[^\\n]*${id}`, "u"),
+    new RegExp(`^(?:async\\s+)?(?:def|class)\\s+${id}`, "u"),
+    new RegExp(`^(?:async\\s+)?for\\s+[^\\n]*?${id}[^\\n]*?\\s+in\\b`, "u"),
+    new RegExp(`^(?:global|nonlocal|del)\\s[^\\n]*${id}`, "u"),
+  ].some((pattern) => pattern.test(text));
+}
+
+/** Record bindings made by one statement; only module-level imports add names. */
+function updateTypeCheckingNames(
+  names: TypeCheckingNames,
+  text: string,
+  moduleLevel: boolean,
+): void {
+  for (const set of [names.flags, names.modules]) {
+    for (const name of [...set]) if (rebinds(text, name)) set.delete(name);
+  }
+  if (!moduleLevel) return;
+  const from = /^from\s+typing\s+import\s+(.+)$/s.exec(text);
+  if (from) {
+    for (const part of from[1]!.replace(/[()]/g, " ").split(",")) {
+      const m = /^\s*TYPE_CHECKING\s+as\s+([\p{XID_Start}_][\p{XID_Continue}]*)\s*$/su.exec(part);
+      if (m) names.flags.add(m[1]!.normalize("NFKC"));
+    }
+    return;
+  }
+  const plain = /^import\s+(.+)$/s.exec(text);
+  if (plain) {
+    for (const part of plain[1]!.split(",")) {
+      const m = /^\s*typing\s+as\s+([\p{XID_Start}_][\p{XID_Continue}]*)\s*$/su.exec(part);
+      if (m) names.modules.add(m[1]!.normalize("NFKC"));
+    }
+  }
+}
+
 /** Parentheses around the exact guard do not change its runtime value. */
-function isTypeCheckingHeader(text: string): boolean {
+function isTypeCheckingHeader(text: string, names: TypeCheckingNames): boolean {
   const match = /^if\s+(.+)\s*:\s*$/s.exec(text);
   if (!match) return false;
   let condition = match[1]!.trim();
@@ -84,7 +140,10 @@ function isTypeCheckingHeader(text: string): boolean {
     if (!wraps || depth !== 0) break;
     condition = condition.slice(1, -1).trim();
   }
-  return /^(?:typing\s*\.\s*)?TYPE_CHECKING$/.test(condition);
+  if (/^(?:typing\s*\.\s*)?TYPE_CHECKING$/.test(condition)) return true;
+  if (names.flags.has(condition.normalize("NFKC"))) return true;
+  const attribute = /^([\p{XID_Start}_][\p{XID_Continue}]*)\s*\.\s*TYPE_CHECKING$/u.exec(condition);
+  return attribute !== null && names.modules.has(attribute[1]!.normalize("NFKC"));
 }
 const DYNAMIC =
   /(?:\bimportlib\s*\.\s*)?\b(?:import_module|__import__)\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])/g;
@@ -97,12 +156,13 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
   const code: string[] = [];
   let typeCheckingIndent: number | undefined;
   let inlineSuite: { line: number; typeOnly: boolean } | undefined;
+  const typeNames: TypeCheckingNames = { flags: new Set(), modules: new Set() };
 
   for (const stmt of statements) {
     if (typeCheckingIndent !== undefined && stmt.indent <= typeCheckingIndent) {
       typeCheckingIndent = undefined;
     }
-    if (isTypeCheckingHeader(stmt.text)) {
+    if (isTypeCheckingHeader(stmt.text, typeNames)) {
       // Keep the outermost guard: ending an inner block does not end it.
       typeCheckingIndent ??= stmt.indent;
       continue;
@@ -113,11 +173,12 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     let conditional = stmt.indent > 0 || inlineSuite !== undefined;
     const header = clauseHeader(text);
     if (header && header.length < text.length) {
-      if (isTypeCheckingHeader(header)) typeOnly = true;
+      if (isTypeCheckingHeader(header, typeNames)) typeOnly = true;
       text = text.slice(header.length).trimStart();
       conditional = true;
       inlineSuite = { line: stmt.endLine, typeOnly };
     }
+    updateTypeCheckingNames(typeNames, text, !conditional);
     const base = { line: stmt.line, endLine: stmt.endLine, conditional, typeOnly };
 
     const plain = /^import\s+(.+)$/s.exec(text);
