@@ -99,6 +99,7 @@ function assignmentTargets(text: string): string {
 
 /** Whether a statement may bind `name` to something else; errs towards yes. */
 function rebinds(text: string, name: string): boolean {
+  text = text.normalize("NFKC");
   const id = `(?<![\\p{XID_Continue}.])${escapeRegExp(name)}(?![\\p{XID_Continue}])`;
   const mentions = (part: string) => new RegExp(id, "u").test(part);
   // x = y, (a, TC) = v, [TC] = v, *TC, a = v, TC: T = v, TC += v, type TC = v
