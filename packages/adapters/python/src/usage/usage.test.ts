@@ -620,7 +620,10 @@ describe("TYPE_CHECKING aliases", () => {
   const typeOnly = (source: string) =>
     Object.fromEntries(
       extractPythonImports(source)
-        .imports.filter((i) => i.module !== "typing" && i.module !== "os" && i.module !== "other")
+        .imports.filter(
+          (i) =>
+            i.module !== "typing" && i.module !== "os" && i.module !== "other" && i.module !== "x",
+        )
         .map((i) => [i.module, i.typeOnly]),
     );
 
@@ -653,6 +656,25 @@ describe("TYPE_CHECKING aliases", () => {
       "import os as TC\n",
       "from other import TC\n",
       "def TC():\n    return 1\n",
+      "(a, TC) = (1, True)\n",
+      "[TC] = [True]\n",
+      "*TC, a = [True, 1]\n",
+      "a = TC = False\n",
+      "[a, *TC] = [1, True]\n",
+      "(a, (b, TC)) = (1, (2, True))\n",
+      "TC += 1\n",
+      "(TC := False)\n",
+      "type TC = int\n",
+      "with open(f) as TC:\n    pass\n",
+      "with open(f) as (a, TC):\n    pass\n",
+      "try:\n    pass\nexcept E as TC:\n    pass\n",
+      "match v:\n    case TC:\n        pass\n",
+      "match v:\n    case [a, TC]:\n        pass\n",
+      "match v:\n    case _ as TC:\n        pass\n",
+      "for a, TC in x:\n    pass\n",
+      "for (a, TC) in x:\n    pass\n",
+      "from x import *\n",
+      "del TC\n",
       "for TC in range(2):\n    pass\n",
     ]) {
       assert.deepEqual(

@@ -77,21 +77,49 @@ interface TypeCheckingNames {
 
 const escapeRegExp = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Whether a statement binds `name` to something else (assignment, import, def, loop, ...). */
+/** Text left of the last depth-0 assignment operator (all chained targets), or "". */
+function assignmentTargets(text: string): string {
+  let depth = 0;
+  let last = -1;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) depth--;
+    else if (c === "=" && depth === 0 && text[i + 1] !== "=") {
+      const prev = text[i - 1] ?? "";
+      if ("=!:".includes(prev) && prev !== "") {
+        if (prev !== ":") continue;
+      }
+      if ((prev === "<" || prev === ">") && text[i - 2] !== prev) continue;
+      last = i;
+    }
+  }
+  return last < 0 ? "" : text.slice(0, last);
+}
+
+/** Whether a statement may bind `name` to something else; errs towards yes. */
 function rebinds(text: string, name: string): boolean {
   const id = `(?<![\\p{XID_Continue}.])${escapeRegExp(name)}(?![\\p{XID_Continue}])`;
-  return [
-    // TC = x, TC: T = x, TC += x, (TC := x), a, TC = x
-    new RegExp(`${id}\\s*(?:,[^=\\n]*)?(?:=(?!=)|:=|[-+*/%&|^@]=|//=|\\*\\*=|<<=|>>=)`, "u"),
-    new RegExp(`^${id}\\s*:[^=\\n]*=`, "u"),
-    // import x as TC, with y as TC, except E as TC
-    new RegExp(`(?<![\\p{XID_Continue}])as\\s+${id}`, "u"),
-    // from m import TC, import TC
-    new RegExp(`^(?:from\\s+[^\\n]*?\\s+)?import\\b[^\\n]*${id}`, "u"),
-    new RegExp(`^(?:async\\s+)?(?:def|class)\\s+${id}`, "u"),
-    new RegExp(`^(?:async\\s+)?for\\s+[^\\n]*?${id}[^\\n]*?\\s+in\\b`, "u"),
-    new RegExp(`^(?:global|nonlocal|del)\\s[^\\n]*${id}`, "u"),
-  ].some((pattern) => pattern.test(text));
+  const mentions = (part: string) => new RegExp(id, "u").test(part);
+  // x = y, (a, TC) = v, [TC] = v, *TC, a = v, TC: T = v, TC += v, type TC = v
+  if (mentions(assignmentTargets(text))) return true;
+  // (TC := v)
+  if (new RegExp(`${id}\\s*:=`, "u").test(text)) return true;
+  // import x as TC, with y as TC / as (a, TC), except E as TC, case _ as TC
+  const as = /(?<![\p{XID_Continue}])as\b/u.exec(text);
+  if (as && mentions(text.slice(as.index))) return true;
+  // from m import TC, import TC
+  if (/^(?:from\s+[^\n]*?\s+)?import\b/u.test(text) && mentions(text)) return true;
+  // from m import *
+  if (/^from\s+[^\n]*?\s+import\s+\*/u.test(text)) return true;
+  // def TC, class TC, for ... TC ... in, async variants
+  if (/^(?:async\s+)?(?:def|class)\s/u.test(text) && mentions(text)) return true;
+  const loop = /^(?:async\s+)?for\s+(.*?)\s+in\b/su.exec(text);
+  if (loop && mentions(loop[1]!)) return true;
+  // match capture patterns
+  if (/^case\b/u.test(text) && mentions(text)) return true;
+  // global/nonlocal/del
+  return /^(?:global|nonlocal|del)\s/u.test(text) && mentions(text);
 }
 
 /** Record bindings made by one statement; only module-level imports add names. */
