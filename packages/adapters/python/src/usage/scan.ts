@@ -168,11 +168,18 @@ export async function findPythonUsage(
   }
   for (const { path, parsed } of scan.files) {
     for (const imp of parsed.imports) {
-      const resolved = scan.resolver.resolve(imp.module);
-      if (resolved.kind !== "dependency" || !resolved.distributions.includes(target)) continue;
+      const matched = scan.resolver
+        .resolveFromImport(imp.module, imp.names)
+        .filter(
+          (group) =>
+            group.resolution.kind === "dependency" &&
+            group.resolution.distributions.includes(target),
+        );
+      if (matched.length === 0) continue;
+      const names = matched.flatMap((group) => group.names);
       const symbols =
         imp.names.length > 0
-          ? imp.names.filter((name) => name !== "*")
+          ? names.filter((name) => name !== "*")
           : imp.local !== undefined
             ? [...(parsed.attributes.get(imp.local) ?? [])]
             : [];
@@ -187,9 +194,14 @@ export async function findPythonUsage(
       });
     }
   }
-  const removed = await findRemovedPythonUsages(context, dependency, (module) => {
-    const resolved = scan.resolver.resolve(module);
-    return resolved.kind === "dependency" && resolved.distributions.includes(target);
+  const removed = await findRemovedPythonUsages(context, dependency, (module, names) => {
+    const matched = scan.resolver
+      .resolveFromImport(module, names)
+      .filter(
+        (group) =>
+          group.resolution.kind === "dependency" && group.resolution.distributions.includes(target),
+      );
+    return matched.length === 0 ? false : { names: matched.flatMap((group) => group.names) };
   });
   return [...usages, ...removed];
 }
