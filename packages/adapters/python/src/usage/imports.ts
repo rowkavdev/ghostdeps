@@ -385,10 +385,14 @@ function importlibAliases(
     if (cached) return cached;
     const modules = new Set<string>();
     const targets = new Map<string, string>();
+    const seen = new Set<string>();
     for (let s = own; s >= 0; s = parent[s]!) {
       // A class body is visible to its own statements only, not to nested defs.
       if (s !== own && kind[s] === "class") continue;
       for (const [name, what] of bound.get(s) ?? []) {
+        // The nearest binding of a name wins; outer ones are shadowed.
+        if (seen.has(name)) continue;
+        seen.add(name);
         if (what === "module") modules.add(name);
         else targets.set(name, what);
       }

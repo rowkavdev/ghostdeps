@@ -254,6 +254,51 @@ describe("extractPythonImports", () => {
     );
   });
 
+  it("uses the nearest importlib alias binding of a name", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    const outerFn = "from importlib import import_module as im\n";
+    const outerDunder = "from importlib import __import__ as im\n";
+    // Inner __import__ shadows the outer import_module: a relative level is not credited.
+    assert.deepEqual(
+      dyn(
+        outerFn +
+          'def f():\n    from importlib import __import__ as im\n    im("requests", None, None, [], 1)\n',
+      ),
+      [],
+    );
+    // Absolute use of the inner __import__ is still credited.
+    assert.deepEqual(
+      dyn(outerFn + 'def f():\n    from importlib import __import__ as im\n    im("requests")\n'),
+      ["requests"],
+    );
+    // Reverse: inner import_module shadows the outer __import__, so the level is just an argument.
+    assert.deepEqual(
+      dyn(
+        outerDunder +
+          'def f():\n    from importlib import import_module as im\n    im("requests", 1)\n',
+      ),
+      ["requests"],
+    );
+    // The outer binding still applies outside the inner function.
+    assert.deepEqual(
+      dyn(
+        outerDunder +
+          'def f():\n    from importlib import import_module as im\nim("requests", None, None, [], 1)\n',
+      ),
+      [],
+    );
+    assert.deepEqual(
+      dyn(
+        outerFn +
+          'def f():\n    from importlib import __import__ as im\nim("requests", None, None, [], 1)\n',
+      ),
+      ["requests"],
+    );
+  });
+
   it("collects attributes used on imported module names", () => {
     const { attributes } = extractPythonImports(
       'import requests\nimport numpy as np\nr = requests.get("u")\nrequests.post("u")\nnp.array([1])\nobj.requests.nope\n',
