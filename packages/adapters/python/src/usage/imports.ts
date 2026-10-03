@@ -271,19 +271,53 @@ function bindsAsLambdaParameter(text: string, name: string): boolean {
 const NEVER = /(?!)/gu;
 const IDENT_SRC = String.raw`[\p{XID_Start}_][\p{XID_Continue}]*`;
 
-/**
- * Names bound to `importlib` or to its `import_module` / `__import__` by an
- * import alias (`import importlib as il`, `from importlib import import_module
- * as im`). A name that is also assigned elsewhere in the file is dropped: it
- * may no longer point at importlib, and a missed credit beats a wrong one.
- */
-function importlibAliases(texts: readonly string[]): {
+interface ImportlibAliases {
   modules: RegExp;
   functions: RegExp;
   targets: Map<string, string>;
+}
+
+/**
+ * Scope of every statement: 0 is the module; each def or class block opens a
+ * new scope. `parent` and `kind` describe the scope tree.
+ */
+function statementScopes(statements: readonly { text: string; indent: number }[]): {
+  scopeOf: number[];
+  parent: number[];
+  kind: ("module" | "function" | "class")[];
 } {
-  const modules = new Set<string>();
-  const targets = new Map<string, string>();
+  const parent = [-1];
+  const kind: ("module" | "function" | "class")[] = ["module"];
+  const stack: { indent: number; id: number }[] = [];
+  const scopeOf: number[] = [];
+  for (const stmt of statements) {
+    while (stack.length > 0 && stack[stack.length - 1]!.indent >= stmt.indent) stack.pop();
+    const current = stack.length > 0 ? stack[stack.length - 1]!.id : 0;
+    scopeOf.push(current);
+    const header = /^(?:async\s+)?(def|class)\b/u.exec(stmt.text.normalize("NFKC"));
+    if (header) {
+      parent.push(current);
+      kind.push(header[1] === "class" ? "class" : "function");
+      stack.push({ indent: stmt.indent, id: parent.length - 1 });
+    }
+  }
+  return { scopeOf, parent, kind };
+}
+
+/**
+ * Names bound to `importlib` or to its `import_module` / `__import__` by an
+ * import alias (`import importlib as il`, `from importlib import import_module
+ * as im`). An alias is only visible in the scope that imports it and in the
+ * functions nested inside that scope (a class body does not leak into its
+ * methods). A name that is also bound by another statement in that scope, or
+ * in anything nested in it, is dropped: it may no longer point at importlib,
+ * and a missed credit beats a wrong one.
+ */
+function importlibAliases(
+  statements: readonly { text: string; indent: number }[],
+): (index: number) => ImportlibAliases {
+  const texts = statements.map((stmt) => stmt.text);
+  const { scopeOf, parent, kind } = statementScopes(statements);
   const moduleAlias = new RegExp(String.raw`^\s*importlib\s+as\s+(${IDENT_SRC})\s*$`, "u");
   const functionAlias = new RegExp(
     String.raw`^\s*(import_module|__import__)\s+as\s+(${IDENT_SRC})\s*$`,
@@ -300,6 +334,8 @@ function importlibAliases(texts: readonly string[]): {
       return { head: "from importlib import ", parts: from[1]!.replace(/[()]/g, " ").split(",") };
     return undefined;
   };
+  // Scope id -> alias name -> "module" or the imported function name.
+  const bound = new Map<number, Map<string, string>>();
   texts.forEach((raw, index) => {
     const parsed = statementParts(raw);
     if (!parsed) return;
@@ -308,43 +344,66 @@ function importlibAliases(texts: readonly string[]): {
       const m = (isFrom ? functionAlias : moduleAlias).exec(part);
       if (!m) continue;
       const name = (isFrom ? m[2]! : m[1]!).normalize("NFKC");
-      if (isFrom) targets.set(name, m[1]!);
-      else modules.add(name);
+      const scope = scopeOf[index]!;
+      const names = bound.get(scope) ?? new Map<string, string>();
+      names.set(name, isFrom ? m[1]! : "module");
+      bound.set(scope, names);
       const list = defs.get(index) ?? [];
       list.push({ name, part });
       defs.set(index, list);
     }
   });
-  // Any other statement that may bind the name drops it for the whole file.
-  for (const name of new Set([...modules, ...targets.keys()])) {
-    const dropped = texts.some((raw, index) => {
-      const own = defs.get(index)?.filter((d) => d.name === name) ?? [];
-      const parsed = statementParts(raw);
-      if (own.length > 0 && parsed) {
-        const ownParts = new Set(own.map((d) => d.part));
-        return parsed.parts.some(
-          (part) => !ownParts.has(part) && rebinds(parsed.head + part.trim(), name),
-        );
-      }
-      return rebinds(raw.trim(), name) || bindsAsLambdaParameter(raw, name);
-    });
-    if (dropped) {
-      modules.delete(name);
-      targets.delete(name);
+  const inside = (scope: number, of: number): boolean => {
+    for (let s = scope; s >= 0; s = parent[s]!) if (s === of) return true;
+    return false;
+  };
+  for (const [scope, names] of bound) {
+    for (const name of [...names.keys()]) {
+      const dropped = texts.some((raw, index) => {
+        if (!inside(scopeOf[index]!, scope)) return false;
+        const own = defs.get(index)?.filter((d) => d.name === name) ?? [];
+        const parsed = statementParts(raw);
+        if (own.length > 0 && parsed) {
+          const ownParts = new Set(own.map((d) => d.part));
+          return parsed.parts.some(
+            (part) => !ownParts.has(part) && rebinds(parsed.head + part.trim(), name),
+          );
+        }
+        return rebinds(raw.trim(), name) || bindsAsLambdaParameter(raw, name);
+      });
+      if (dropped) names.delete(name);
     }
   }
   const lead = String.raw`(?<![\p{XID_Continue}.])(?<!\.\s*)`;
   const tail = String.raw`\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])`;
   const alt = (names: Iterable<string>) =>
     [...names].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  return {
-    modules:
-      modules.size === 0
-        ? NEVER
-        : new RegExp(`${lead}(${alt(modules)})\\s*\\.\\s*import_module${tail}`, "gu"),
-    functions:
-      targets.size === 0 ? NEVER : new RegExp(`${lead}(${alt(targets.keys())})${tail}`, "gu"),
-    targets,
+  const cache = new Map<number, ImportlibAliases>();
+  return (index) => {
+    const own = scopeOf[index]!;
+    const cached = cache.get(own);
+    if (cached) return cached;
+    const modules = new Set<string>();
+    const targets = new Map<string, string>();
+    for (let s = own; s >= 0; s = parent[s]!) {
+      // A class body is visible to its own statements only, not to nested defs.
+      if (s !== own && kind[s] === "class") continue;
+      for (const [name, what] of bound.get(s) ?? []) {
+        if (what === "module") modules.add(name);
+        else targets.set(name, what);
+      }
+    }
+    const result: ImportlibAliases = {
+      modules:
+        modules.size === 0
+          ? NEVER
+          : new RegExp(`${lead}(${alt(modules)})\\s*\\.\\s*import_module${tail}`, "gu"),
+      functions:
+        targets.size === 0 ? NEVER : new RegExp(`${lead}(${alt(targets.keys())})${tail}`, "gu"),
+      targets,
+    };
+    cache.set(own, result);
+    return result;
   };
 }
 
@@ -357,9 +416,9 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
   let typeCheckingIndent: number | undefined;
   let inlineSuite: { line: number; typeOnly: boolean } | undefined;
   const typeNames: TypeCheckingNames = { flags: new Set(), modules: new Set() };
-  const aliases = importlibAliases(statements.map((stmt) => stmt.text));
+  const aliasesAt = importlibAliases(statements);
 
-  for (const stmt of statements) {
+  for (const [statementIndex, stmt] of statements.entries()) {
     if (typeCheckingIndent !== undefined && stmt.indent <= typeCheckingIndent) {
       typeCheckingIndent = undefined;
     }
@@ -413,6 +472,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       continue;
     }
     code.push(text);
+    const aliases = aliasesAt(statementIndex);
     const calls: { index: number; start: number; dunder: boolean }[] = [];
     for (const m of text.matchAll(DYNAMIC)) {
       const callee = m[0].slice(0, m[0].indexOf("(")).trim();
