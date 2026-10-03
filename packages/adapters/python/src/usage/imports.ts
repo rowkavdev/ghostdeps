@@ -199,7 +199,7 @@ function isTypeCheckingHeader(
   return attribute !== null && names.modules.has(attribute[1]!.normalize("NFKC"));
 }
 const DYNAMIC =
-  /(?<![\p{XID_Continue}.])(?<!\.\s*)(?:importlib\s*\.\s*import_module|(?:(?:builtins|__builtins__)\s*\.\s*)?__import__|import_module)\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])/gu;
+  /(?<![\p{XID_Continue}.])(?<!\.\s*)(?:importlib\s*\.\s*import_module|(?:(?:importlib|builtins|__builtins__)\s*\.\s*)?__import__|import_module)\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])/gu;
 
 const clean = (dotted: string) => dotted.replace(/\s+/g, "");
 

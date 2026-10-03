@@ -794,6 +794,16 @@ it("does not credit unrelated methods named like dynamic import functions", () =
     '__builtins__.__import__("attrs")',
     'importlib . import_module("rich")',
     'builtins . __import__("click")',
+    'importlib.__import__("jinja2")',
   ].join("\n");
-  assert.deepEqual(modules(source), ["yaml", "flask", "httpx", "toml", "attrs", "rich", "click"]);
+  assert.deepEqual(modules(source), [
+    "yaml",
+    "flask",
+    "httpx",
+    "toml",
+    "attrs",
+    "rich",
+    "click",
+    "jinja2",
+  ]);
 });
