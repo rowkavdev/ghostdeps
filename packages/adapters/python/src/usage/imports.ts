@@ -125,11 +125,15 @@ function rebinds(text: string, name: string): boolean {
 /** Record bindings made by one statement; only module-level imports add names. */
 function updateTypeCheckingNames(
   names: TypeCheckingNames,
+  fullText: string,
   text: string,
   moduleLevel: boolean,
 ): void {
+  // The full statement still carries a one-line header (`for TC in x: pass`).
   for (const set of [names.flags, names.modules]) {
-    for (const name of [...set]) if (rebinds(text, name)) set.delete(name);
+    for (const name of [...set]) {
+      if (rebinds(fullText, name) || rebinds(text, name)) set.delete(name);
+    }
   }
   if (!moduleLevel) return;
   const from = /^from\s+typing\s+import\s+(.+)$/s.exec(text);
@@ -213,7 +217,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       conditional = true;
       inlineSuite = { line: stmt.endLine, typeOnly };
     }
-    updateTypeCheckingNames(typeNames, text, !conditional);
+    updateTypeCheckingNames(typeNames, stmt.text, text, !conditional);
     const base = { line: stmt.line, endLine: stmt.endLine, conditional, typeOnly };
 
     const plain = /^import\s+(.+)$/s.exec(text);
