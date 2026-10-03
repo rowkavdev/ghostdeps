@@ -199,6 +199,53 @@ function isTypeCheckingHeader(
   const attribute = /^([\p{XID_Start}_][\p{XID_Continue}]*)\s*\.\s*TYPE_CHECKING$/u.exec(condition);
   return attribute !== null && names.modules.has(attribute[1]!.normalize("NFKC"));
 }
+/** Top-level arguments of the call whose "(" is at `open`, or undefined if it never closes. */
+function callArguments(text: string, open: number): string[] | undefined {
+  const args: string[] = [];
+  let depth = 0;
+  let start = open + 1;
+  for (let i = open; i < text.length; i++) {
+    const c = text[i]!;
+    if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) {
+      depth--;
+      if (depth === 0) {
+        args.push(text.slice(start, i).trim());
+        return args.filter((arg, k) => arg !== "" || k < args.length - 1);
+      }
+    } else if (c === "," && depth === 1) {
+      args.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The relative-import level a `__import__` call passes: a number when it is a
+ * plain integer literal, undefined when absent or not known statically.
+ */
+function importLevel(args: string[]): number | undefined {
+  let value: string | undefined;
+  let positional = 0;
+  let starred = false;
+  for (const arg of args) {
+    const keyword = /^([\p{XID_Start}_][\p{XID_Continue}]*)\s*=(?!=)\s*(.*)$/su.exec(arg);
+    if (keyword) {
+      if (keyword[1] === "level") value = keyword[2]!;
+    } else if (arg.startsWith("*")) {
+      starred = true;
+    } else {
+      if (positional === 4 && !starred) value = arg;
+      positional++;
+    }
+  }
+  if (value === undefined) return undefined;
+  let literal = value.trim();
+  while (/^\(.*\)$/s.test(literal)) literal = literal.slice(1, -1).trim();
+  if (!/^(?:0[xX][\da-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d[\d_]*)$/.test(literal)) return undefined;
+  return Number(literal.replace(/_/g, ""));
+}
 const DYNAMIC =
   /(?<![\p{XID_Continue}.])(?<!\.\s*)(?:importlib\s*\.\s*import_module|(?:(?:importlib|builtins|__builtins__)\s*\.\s*)?__import__|import_module)\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])/gu;
 
@@ -271,6 +318,14 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       const literal = strings[Number(m[1])] ?? "";
       if (literal === "" || literal.startsWith(".") || /\s/u.test(literal) || !DOTTED.test(literal))
         continue;
+      // __import__(name, globals, locals, fromlist, level): a positive level is
+      // package-relative, never an external dependency. An unknown level keeps
+      // the credit, as before.
+      if (/__import__$/.test(m[0].slice(0, m[0].indexOf("(")).trim())) {
+        const args = callArguments(text, m.index + m[0].indexOf("("));
+        const level = args && importLevel(args);
+        if (level !== undefined && level > 0) continue;
+      }
       imports.push({ module: literal, form: "dynamic", names: [], ...base });
     }
   }
