@@ -778,3 +778,22 @@ describe("TYPE_CHECKING aliases", () => {
     );
   });
 });
+
+it("does not credit unrelated methods named like dynamic import functions", () => {
+  const source = [
+    'obj.import_module("requests")',
+    'obj . import_module("requests")',
+    'obj . importlib . import_module("requests")',
+    'obj.__import__("numpy")',
+    'myimportlib.import_module("scipy")',
+    'obj.importlib.import_module("pandas")',
+    'importlib.import_module("yaml")',
+    'import_module("flask")',
+    '__import__("httpx")',
+    'builtins.__import__("toml")',
+    '__builtins__.__import__("attrs")',
+    'importlib . import_module("rich")',
+    'builtins . __import__("click")',
+  ].join("\n");
+  assert.deepEqual(modules(source), ["yaml", "flask", "httpx", "toml", "attrs", "rich", "click"]);
+});
