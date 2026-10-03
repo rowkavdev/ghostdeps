@@ -180,6 +180,39 @@ export class ImportResolver {
     return { kind: "unresolved", module: namespaced ? knownKey : module, candidates };
   }
 
+  /**
+   * Resolve `from module import names`. A from-import under a namespace root
+   * (`from google.cloud import storage`) names a member module, so each name
+   * is resolved as `module.name` against the dotted table; the bare root is
+   * still never credited. Ordinary modules, and namespace paths that already
+   * resolve on their own (`from google.cloud.storage import Client`), keep the
+   * base resolution and its names. Names that resolve to nothing are dropped.
+   */
+  resolveFromImport(
+    module: string,
+    names: readonly string[],
+  ): { names: string[]; resolution: ImportResolution }[] {
+    const base = this.resolve(module);
+    const members = names.filter((name) => name !== "*");
+    if (
+      !NAMESPACE_ROOTS.has(topLevelModule(module)) ||
+      base.kind === "dependency" ||
+      members.length === 0
+    ) {
+      return [{ names: [...names], resolution: base }];
+    }
+    const groups = new Map<string, { names: string[]; resolution: ImportResolution }>();
+    for (const name of members) {
+      const resolution = this.resolve(`${module}.${name}`);
+      if (resolution.kind !== "dependency") continue;
+      const key = `${resolution.module}|${resolution.distributions.join(",")}`;
+      const group = groups.get(key);
+      if (group === undefined) groups.set(key, { names: [name], resolution });
+      else group.names.push(name);
+    }
+    return groups.size > 0 ? [...groups.values()] : [{ names: [...names], resolution: base }];
+  }
+
   /** Every import name that would resolve to `distribution` (for usage search). */
   importNamesFor(distribution: string): string[] {
     const dist = normaliseName(distribution);

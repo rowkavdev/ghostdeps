@@ -104,7 +104,7 @@ async function collect(context: AdapterContext): Promise<RemovedImport[]> {
 export async function findRemovedPythonUsages(
   context: AdapterContext,
   dependency: Dependency,
-  resolves: (module: string) => boolean,
+  resolves: (module: string, names: readonly string[]) => boolean | { names: readonly string[] },
 ): Promise<Usage[]> {
   if ((context.pullRequestSourceChanges ?? []).length === 0) return [];
   const removed = await removedPythonImports(context);
@@ -112,9 +112,15 @@ export async function findRemovedPythonUsages(
   const roots = new Set(await headRoots(context));
   roots.add(dependency.project.path);
   const byLine = new Map<string, Usage>();
-  for (const { file, imp, symbols } of removed) {
+  for (const { file, imp, symbols: allSymbols } of removed) {
     if (nearestRoot(file, roots) !== dependency.project.path) continue;
-    if (!resolves(imp.module)) continue;
+    const hit = resolves(imp.module, imp.names);
+    if (hit === false) continue;
+    // Only the names that resolved to this dependency count as its symbols.
+    const symbols =
+      imp.names.length > 0 && hit !== true
+        ? allSymbols.filter((name) => hit.names.includes(name))
+        : allSymbols;
     const key = `${file}:${imp.line}`;
     const existing = byLine.get(key);
     if (existing !== undefined) {
