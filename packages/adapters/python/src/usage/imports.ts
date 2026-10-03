@@ -242,7 +242,14 @@ function importLevel(args: string[]): number | undefined {
   }
   if (value === undefined) return undefined;
   let literal = value.trim();
-  while (/^\(.*\)$/s.test(literal)) literal = literal.slice(1, -1).trim();
+  // Parentheses and a unary plus do not change the value. Only literals are read.
+  for (;;) {
+    if (/^\(.*\)$/s.test(literal)) literal = literal.slice(1, -1).trim();
+    else if (literal.startsWith("+")) literal = literal.slice(1).trim();
+    else break;
+  }
+  if (literal === "True") return 1;
+  if (literal === "False") return 0;
   if (!/^(?:0[xX][\da-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d[\d_]*)$/.test(literal)) return undefined;
   return Number(literal.replace(/_/g, ""));
 }
