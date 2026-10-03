@@ -71,6 +71,10 @@ export const KNOWN_IMPORT_NAMES: Readonly<Record<string, readonly string[]>> = {
   win32con: ["pywin32"],
   yaml: ["pyyaml"],
   zmq: ["pyzmq"],
+  "zope.component": ["zope-component"],
+  "zope.event": ["zope-event"],
+  "zope.interface": ["zope-interface"],
+  "zope.schema": ["zope-schema"],
 };
 
 /**
