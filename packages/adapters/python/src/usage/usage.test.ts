@@ -374,6 +374,40 @@ describe("extractPythonImports", () => {
     assert.deepEqual(dyn(fn + fn + 'im("httpx")\n'), ["httpx"]);
   });
 
+  it("drops an importlib alias that a comprehension target shadows", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    const mod = "import importlib as il\n";
+    const fn = "from importlib import import_module as im\n";
+    const moduleCases = [
+      '[il.import_module("requests") for il in items]\n',
+      '{il.import_module("requests") for il in items}\n',
+      '{k: il.import_module("requests") for il in items for k in il}\n',
+      'list(il.import_module("requests") for il in items)\n',
+      '[il.import_module("requests") for a, il in items]\n',
+      '[il.import_module("requests") for (a, il) in items]\n',
+      '[il.import_module("requests") for x in y for il in x]\n',
+      'async def f():\n    return [il.import_module("requests") async for il in items]\n',
+    ];
+    for (const src of moduleCases) assert.deepEqual(dyn(mod + src), [], src);
+    const functionCases = [
+      '[im("requests") for im in items]\n',
+      '{im("requests") for im in items}\n',
+      '{k: im("requests") for k, im in items}\n',
+      'list(im("requests") for im in items)\n',
+      '[im("requests") for [a, im] in items]\n',
+    ];
+    for (const src of functionCases) assert.deepEqual(dyn(fn + src), [], src);
+    // An unshadowed alias inside a comprehension is still credited.
+    assert.deepEqual(dyn(mod + '[il.import_module("requests") for x in items]\n'), ["requests"]);
+    assert.deepEqual(dyn(fn + 'list(im("requests") for x in items)\n'), ["requests"]);
+    assert.deepEqual(dyn(mod + '{k: il.import_module("yaml") for k in items}\n'), ["yaml"]);
+    // A target that only looks similar does not shadow.
+    assert.deepEqual(dyn(mod + '[il.import_module("requests") for ill in items]\n'), ["requests"]);
+  });
+
   it("collects attributes used on imported module names", () => {
     const { attributes } = extractPythonImports(
       'import requests\nimport numpy as np\nr = requests.get("u")\nrequests.post("u")\nnp.array([1])\nobj.requests.nope\n',
