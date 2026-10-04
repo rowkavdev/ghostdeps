@@ -281,24 +281,33 @@ interface ImportlibAliases {
  * Scope of every statement: 0 is the module; each def or class block opens a
  * new scope. `parent` and `kind` describe the scope tree.
  */
-function statementScopes(statements: readonly { text: string; indent: number }[]): {
+function statementScopes(
+  statements: readonly { text: string; indent: number; line: number; endLine: number }[],
+): {
   scopeOf: number[];
   parent: number[];
   kind: ("module" | "function" | "class")[];
 } {
   const parent = [-1];
   const kind: ("module" | "function" | "class")[] = ["module"];
-  const stack: { indent: number; id: number }[] = [];
+  const stack: { indent: number; id: number; endLine: number }[] = [];
   const scopeOf: number[] = [];
   for (const stmt of statements) {
-    while (stack.length > 0 && stack[stack.length - 1]!.indent >= stmt.indent) stack.pop();
+    // A `;` continuation on the physical line of a one-line def/class suite
+    // (`def f(): pass; import importlib as il`) stays inside that suite.
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      const sameLine = stmt.indent === top.indent && stmt.line === top.endLine;
+      if (top.indent >= stmt.indent && !sameLine) stack.pop();
+      else break;
+    }
     const current = stack.length > 0 ? stack[stack.length - 1]!.id : 0;
     scopeOf.push(current);
     const header = /^(?:async\s+)?(def|class)\b/u.exec(stmt.text.normalize("NFKC"));
     if (header) {
       parent.push(current);
       kind.push(header[1] === "class" ? "class" : "function");
-      stack.push({ indent: stmt.indent, id: parent.length - 1 });
+      stack.push({ indent: stmt.indent, id: parent.length - 1, endLine: stmt.endLine });
     }
   }
   return { scopeOf, parent, kind };
@@ -314,7 +323,7 @@ function statementScopes(statements: readonly { text: string; indent: number }[]
  * and a missed credit beats a wrong one.
  */
 function importlibAliases(
-  statements: readonly { text: string; indent: number }[],
+  statements: readonly { text: string; indent: number; line: number; endLine: number }[],
 ): (index: number) => ImportlibAliases {
   const texts = statements.map((stmt) => stmt.text);
   const { scopeOf, parent, kind } = statementScopes(statements);

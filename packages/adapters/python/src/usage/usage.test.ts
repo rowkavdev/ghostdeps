@@ -299,6 +299,47 @@ describe("extractPythonImports", () => {
     );
   });
 
+  it("keeps a one-line def or class suite scope across semicolons", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    // Local import on the suite's line, used outside: not credited.
+    assert.deepEqual(
+      dyn('def f(): pass; import importlib as il\nil.import_module("requests")\n'),
+      [],
+    );
+    assert.deepEqual(
+      dyn('async def f(): pass; import importlib as il\nil.import_module("requests")\n'),
+      [],
+    );
+    assert.deepEqual(
+      dyn('def f(): pass; from importlib import import_module as im\nim("requests")\n'),
+      [],
+    );
+    assert.deepEqual(
+      dyn('class C: pass; from importlib import import_module as im\nim("requests")\n'),
+      [],
+    );
+    assert.deepEqual(
+      dyn('class C: pass; import importlib as il\nil.import_module("requests")\n'),
+      [],
+    );
+    // Same-line use after the local import is credited.
+    assert.deepEqual(dyn('def f(): import importlib as il; il.import_module("requests")\n'), []);
+    assert.deepEqual(dyn('def f(): pass; import importlib as il; il.import_module("requests")\n'), [
+      "requests",
+    ]);
+    assert.deepEqual(
+      dyn('async def f(): pass; from importlib import import_module as im; im("requests")\n'),
+      ["requests"],
+    );
+    // A statement on the next line is back in the outer scope.
+    assert.deepEqual(dyn('def f(): pass\nimport importlib as il\nil.import_module("requests")\n'), [
+      "requests",
+    ]);
+  });
+
   it("collects attributes used on imported module names", () => {
     const { attributes } = extractPythonImports(
       'import requests\nimport numpy as np\nr = requests.get("u")\nrequests.post("u")\nnp.array([1])\nobj.requests.nope\n',
