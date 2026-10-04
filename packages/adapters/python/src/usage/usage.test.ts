@@ -340,6 +340,40 @@ describe("extractPythonImports", () => {
     ]);
   });
 
+  it("does not trust a name bound to conflicting importlib targets in one scope", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    const dunder = "from importlib import __import__ as im\n";
+    const fn = "from importlib import import_module as im\n";
+    const rel = 'im("requests", None, None, [], 1)\n';
+    // __import__ first, then import_module.
+    assert.deepEqual(dyn(dunder + rel + fn + 'im("httpx")\n'), []);
+    // import_module first, then __import__.
+    assert.deepEqual(dyn(fn + 'im("httpx")\n' + dunder + rel), []);
+    // Conflicting aliases in one statement.
+    assert.deepEqual(
+      dyn("from importlib import __import__ as im, import_module as im\n" + rel + 'im("httpx")\n'),
+      [],
+    );
+    // A module alias and a function alias under one name conflict too.
+    assert.deepEqual(
+      dyn("import importlib as im\n" + fn + 'im("httpx")\nim.import_module("yaml")\n'),
+      [],
+    );
+    // A conflict in an inner scope does not let the outer binding through.
+    assert.deepEqual(
+      dyn(
+        fn +
+          'def f():\n    from importlib import __import__ as im\n    from importlib import import_module as im\n    im("httpx")\n',
+      ),
+      [],
+    );
+    // Repeating the same target is still trusted.
+    assert.deepEqual(dyn(fn + fn + 'im("httpx")\n'), ["httpx"]);
+  });
+
   it("collects attributes used on imported module names", () => {
     const { attributes } = extractPythonImports(
       'import requests\nimport numpy as np\nr = requests.get("u")\nrequests.post("u")\nnp.array([1])\nobj.requests.nope\n',

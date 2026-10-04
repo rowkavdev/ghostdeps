@@ -268,6 +268,7 @@ function bindsAsLambdaParameter(text: string, name: string): boolean {
   return false;
 }
 
+const CONFLICT = "<conflict>";
 const NEVER = /(?!)/gu;
 const IDENT_SRC = String.raw`[\p{XID_Start}_][\p{XID_Continue}]*`;
 
@@ -355,7 +356,11 @@ function importlibAliases(
       const name = (isFrom ? m[2]! : m[1]!).normalize("NFKC");
       const scope = scopeOf[index]!;
       const names = bound.get(scope) ?? new Map<string, string>();
-      names.set(name, isFrom ? m[1]! : "module");
+      const what = isFrom ? m[1]! : "module";
+      // Two imports binding one name to different importlib targets: which one a
+      // call reaches depends on order, so the name is not trusted in this scope.
+      const earlier = names.get(name);
+      names.set(name, earlier !== undefined && earlier !== what ? CONFLICT : what);
       bound.set(scope, names);
       const list = defs.get(index) ?? [];
       list.push({ name, part });
@@ -380,7 +385,7 @@ function importlibAliases(
         }
         return rebinds(raw.trim(), name) || bindsAsLambdaParameter(raw, name);
       });
-      if (dropped) names.delete(name);
+      if (dropped) names.set(name, CONFLICT);
     }
   }
   const lead = String.raw`(?<![\p{XID_Continue}.])(?<!\.\s*)`;
@@ -402,6 +407,7 @@ function importlibAliases(
         // The nearest binding of a name wins; outer ones are shadowed.
         if (seen.has(name)) continue;
         seen.add(name);
+        if (what === CONFLICT) continue;
         if (what === "module") modules.add(name);
         else targets.set(name, what);
       }
