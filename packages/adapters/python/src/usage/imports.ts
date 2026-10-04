@@ -268,6 +268,23 @@ function bindsAsLambdaParameter(text: string, name: string): boolean {
   return false;
 }
 
+/**
+ * Whether a comprehension or generator clause (`for il in items`) binds `name`.
+ * Such a target is local to the comprehension, but dropping the alias for the
+ * whole scope is the safe side: a missed credit beats a wrong one.
+ */
+function bindsInComprehension(text: string, name: string): boolean {
+  const id = new RegExp(
+    `(?<![\\p{XID_Continue}.])${escapeRegExp(name)}(?![\\p{XID_Continue}])`,
+    "u",
+  );
+  const clause = /(?<![\p{XID_Continue}])for\s+(.*?)\s+in\b/gsu;
+  for (const m of text.normalize("NFKC").matchAll(clause)) {
+    if (id.test(m[1]!)) return true;
+  }
+  return false;
+}
+
 const CONFLICT = "<conflict>";
 const NEVER = /(?!)/gu;
 const IDENT_SRC = String.raw`[\p{XID_Start}_][\p{XID_Continue}]*`;
@@ -383,7 +400,11 @@ function importlibAliases(
             (part) => !ownParts.has(part) && rebinds(parsed.head + part.trim(), name),
           );
         }
-        return rebinds(raw.trim(), name) || bindsAsLambdaParameter(raw, name);
+        return (
+          rebinds(raw.trim(), name) ||
+          bindsAsLambdaParameter(raw, name) ||
+          bindsInComprehension(raw, name)
+        );
       });
       if (dropped) names.set(name, CONFLICT);
     }
