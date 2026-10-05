@@ -388,9 +388,26 @@ function importlibAliases(
     for (let s = scope; s >= 0; s = parent[s]!) if (s === of) return true;
     return false;
   };
+  // Identifier -> statements that mention it. A statement can only rebind a
+  // name it contains, so each alias checks just those statements instead of
+  // rescanning the whole file once per alias (quadratic on many aliases).
+  const mentions = new Map<string, number[]>();
+  const identifier = /[\p{XID_Start}_][\p{XID_Continue}]*/gu;
+  texts.forEach((raw, index) => {
+    const seenHere = new Set<string>();
+    for (const form of new Set([raw, raw.normalize("NFKC")])) {
+      for (const m of form.matchAll(identifier)) seenHere.add(m[0]);
+    }
+    for (const word of seenHere) {
+      const list = mentions.get(word);
+      if (list) list.push(index);
+      else mentions.set(word, [index]);
+    }
+  });
   for (const [scope, names] of bound) {
     for (const name of [...names.keys()]) {
-      const dropped = texts.some((raw, index) => {
+      const dropped = (mentions.get(name) ?? []).some((index) => {
+        const raw = texts[index]!;
         if (!inside(scopeOf[index]!, scope)) return false;
         const own = defs.get(index)?.filter((d) => d.name === name) ?? [];
         const parsed = statementParts(raw);

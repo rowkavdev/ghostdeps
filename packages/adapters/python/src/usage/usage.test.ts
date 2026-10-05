@@ -124,6 +124,23 @@ describe("extractPythonImports", () => {
     );
   });
 
+  it("scans many importlib aliases in linear time", () => {
+    const count = 1000;
+    const source =
+      Array.from({ length: count }, (_, i) => `import importlib as il${i}`).join("\n") +
+      '\nil0.import_module("yaml")\nil999.import_module("toml")\n' +
+      'il5 = other\nil5.import_module("dropped")\n';
+    const started = performance.now();
+    const dynamic = extractPythonImports(source)
+      .imports.filter((i) => i.form === "dynamic")
+      .map((i) => i.module);
+    const elapsed = performance.now() - started;
+    // Correctness first: a rebound alias is still dropped, the others credited.
+    assert.deepEqual(dynamic, ["yaml", "toml"]);
+    // 1000 aliases took ~5s when every alias rescanned every statement.
+    assert.ok(elapsed < 1500, `took ${Math.round(elapsed)}ms`);
+  });
+
   it("credits aliased importlib, import_module and __import__ calls", () => {
     const dyn = (src: string) =>
       extractPythonImports(src)
