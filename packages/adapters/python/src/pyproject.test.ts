@@ -300,3 +300,17 @@ lib = [
     "(sys_platform == 'win32' and python_version < '3.11') or (sys_platform == 'linux')",
   );
 });
+
+it("keeps every Poetry extra that declares one optional dependency", () => {
+  for (const section of ["tool.poetry.dependencies", "tool.poetry.group.main.dependencies"]) {
+    const result = parsePyprojectText(
+      `[${section}]\nrequests = {version="^2", optional=true}\n[tool.poetry.extras]\nweb=["requests"]\nhttp=["requests", "requests"]\n`,
+      project,
+      "pyproject.toml",
+    );
+    assert.equal(result.requirements.length, 1);
+    assert.equal(result.requirements[0]?.dependency.kind, "optional");
+    assert.deepEqual(result.requirements[0]?.groups, ["web", "http"], section);
+    assert.deepEqual(result.extras, { web: ["requests"], http: ["requests"] });
+  }
+});

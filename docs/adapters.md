@@ -54,3 +54,10 @@ recommendation policy lives in core.
 | `@ghostdeps/python`                | Python (pip, Poetry, uv, Pipenv, PDM)        | detection (#42), pyproject.toml parsing incl. PEP 621/735 and Poetry groups (#43), requirements files with includes/constraints (#44), uv.lock/poetry.lock graphs incl. uv workspaces (#45), import-name mapping (#46); PEP 735 dependency groups count as dev; no usage scanning yet, so never reports unused |
 
 New adapters: read [contributing-adapters.md](contributing-adapters.md).
+
+## Poetry extras membership
+
+When an optional Poetry dependency appears in several `tool.poetry.extras`
+lists, its Python requirement records every declaring extra in `groups`.
+Repeated members do not create duplicate dependencies or group names. This
+also applies to runtime dependencies declared in `tool.poetry.group.main`.
