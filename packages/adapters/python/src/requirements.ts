@@ -313,9 +313,17 @@ export async function parseRequirementsFiles(
   // Runtime entry points first: requirements-dev.txt usually starts with
   // "-r requirements.txt", and the shared base must be read as runtime
   // before a dev file can pull it in (each file is read once).
+  // Ancestors outside this project do not describe its dependency role:
+  // tools/api/requirements.txt is runtime for the tools/api project.
+  // The project directory's own name still counts (a project at tests/ is a
+  // test project); only directories above it are dropped.
+  const slash = project.path.lastIndexOf("/");
+  const projectPrefix = slash < 0 ? "" : `${project.path.slice(0, slash + 1)}`;
+  const entryKind = (file: string): DependencyKind =>
+    requirementsKind(file.startsWith(projectPrefix) ? file.slice(projectPrefix.length) : file);
   const ordered = [...entries].sort(
-    (a, b) => Number(requirementsKind(a) === "dev") - Number(requirementsKind(b) === "dev"),
+    (a, b) => Number(entryKind(a) === "dev") - Number(entryKind(b) === "dev"),
   );
-  for (const entry of ordered) await visit(entry, 0, requirementsKind(entry), false);
+  for (const entry of ordered) await visit(entry, 0, entryKind(entry), false);
   return { requirements, evidence };
 }

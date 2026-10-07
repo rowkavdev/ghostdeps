@@ -461,3 +461,45 @@ it("does not replace an already constrained requirements declaration with a late
   assert.equal(result.requirements[0]?.dependency.constraint, ">=2");
   assert.equal(result.requirements[0]?.dependency.specifier, undefined);
 });
+
+it("does not inherit dependency kind from directories above the Python project", async () => {
+  for (const root of ["tools/api", "services/dev/api", "docs/service"]) {
+    const nested: ProjectRef = { path: root, ecosystem: "python", packageManagers: [] };
+    const files = {
+      [`${root}/requirements.txt`]: "-r shared.txt\nrequests\n",
+      [`${root}/shared.txt`]: "flask\n",
+      [`${root}/requirements-dev.txt`]: "-r requirements.txt\npytest\n",
+      [`${root}/requirements/lint.txt`]: "ruff\n",
+    };
+    const result = await parseManifests(memoryHandle(files), nested);
+    assert.deepEqual(
+      result.requirements.map((r) => [r.dependency.name, r.dependency.kind]),
+      [
+        ["flask", "runtime"],
+        ["requests", "runtime"],
+        ["pytest", "dev"],
+        ["ruff", "dev"],
+      ],
+      root,
+    );
+  }
+});
+
+it("keeps the project directory's own dev name but not the directories above it", async () => {
+  for (const [root, kind] of [
+    ["tests", "dev"],
+    ["services/tests", "dev"],
+    ["tools/api", "runtime"],
+  ] as const) {
+    const nested: ProjectRef = { path: root, ecosystem: "python", packageManagers: [] };
+    const result = await parseManifests(
+      memoryHandle({ [`${root}/requirements/py3.txt`]: "asgiref\n" }),
+      nested,
+    );
+    assert.deepEqual(
+      result.requirements.map((r) => [r.dependency.name, r.dependency.kind]),
+      [["asgiref", kind]],
+      root,
+    );
+  }
+});
