@@ -435,3 +435,26 @@ it("treats an uppercase or mixed-case .TXT as compiled output of its .IN source"
     assert.equal(result.requirements[0]?.dependency.declaredIn, source);
   }
 });
+
+it("does not inherit dependency kind from directories above the Python project", async () => {
+  for (const root of ["tools/api", "services/dev/api", "docs/service"]) {
+    const nested: ProjectRef = { path: root, ecosystem: "python", packageManagers: [] };
+    const files = {
+      [`${root}/requirements.txt`]: "-r shared.txt\nrequests\n",
+      [`${root}/shared.txt`]: "flask\n",
+      [`${root}/requirements-dev.txt`]: "-r requirements.txt\npytest\n",
+      [`${root}/requirements/lint.txt`]: "ruff\n",
+    };
+    const result = await parseManifests(memoryHandle(files), nested);
+    assert.deepEqual(
+      result.requirements.map((r) => [r.dependency.name, r.dependency.kind]),
+      [
+        ["flask", "runtime"],
+        ["requests", "runtime"],
+        ["pytest", "dev"],
+        ["ruff", "dev"],
+      ],
+      root,
+    );
+  }
+});

@@ -90,3 +90,13 @@ are checked against the published wheels; scanning does not install them.
 `opencv-python-headless`, `opencv-contrib-python` and
 `opencv-contrib-python-headless` distributions. When several are declared,
 each receives the usage credit; the resolver does not pick one silently.
+
+## Python requirements dependency kinds
+
+Requirements entry paths are classified relative to their Python project.
+For example, `tools/api/requirements.txt` declares runtime dependencies for
+the `tools/api` project, even though an ancestor is named `tools`.
+Project-relative dev names such as `requirements-dev.txt` and
+`requirements/lint.txt` still declare dev dependencies. Included files
+inherit the entry's kind, and runtime entry points are read first so a dev
+file including a runtime base does not change that base's kind.
