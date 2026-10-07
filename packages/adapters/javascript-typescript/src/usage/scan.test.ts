@@ -33,6 +33,24 @@ describe("scanSource", () => {
     );
   });
 
+  it("collects many distinct member symbols in linear time", () => {
+    const count = 50_000;
+    const text = [
+      'import * as api from "example";',
+      ...Array.from({ length: count }, (_, i) => `api.member${i}();`),
+      "api.member0(); api.member49999();",
+    ].join("\n");
+    const start = performance.now();
+    const refs = byPkg("a.ts", text);
+    const elapsed = performance.now() - start;
+    assert.equal(refs.length, 1);
+    assert.deepEqual(refs[0]?.symbols, [
+      "*",
+      ...Array.from({ length: count }, (_, i) => `member${i}`),
+    ]);
+    assert.ok(elapsed < 2_000, `member symbol collection took ${Math.round(elapsed)}ms`);
+  });
+
   it("records require() with destructured and member-accessed symbols", () => {
     const refs = byPkg(
       "a.cjs",

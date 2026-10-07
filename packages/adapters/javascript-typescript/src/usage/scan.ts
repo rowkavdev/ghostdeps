@@ -353,10 +353,20 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   // e.g. `axios.get(...)` adds "get". Shadowing is not tracked; this can only
   // add symbols to an existing reference, never create a usage.
   if (bindings.size > 0) {
+    // Keep output order in the array, but do not rescan it for every member.
+    const symbolSets = new Map<ImportReference, Set<string>>();
     const collect = (node: ts.Node): void => {
       if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
         for (const ref of bindings.get(node.expression.text) ?? []) {
-          if (!ref.symbols.includes(node.name.text)) ref.symbols.push(node.name.text);
+          let symbols = symbolSets.get(ref);
+          if (symbols === undefined) {
+            symbols = new Set(ref.symbols);
+            symbolSets.set(ref, symbols);
+          }
+          if (!symbols.has(node.name.text)) {
+            symbols.add(node.name.text);
+            ref.symbols.push(node.name.text);
+          }
         }
       }
       ts.forEachChild(node, collect);
