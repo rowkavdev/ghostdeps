@@ -35,7 +35,12 @@ import { STDLIB_MODULES } from "./stdlib.js";
 export const KNOWN_IMPORT_NAMES: Readonly<Record<string, readonly string[]>> = {
   attr: ["attrs"],
   bs4: ["beautifulsoup4"],
-  cv2: ["opencv-python", "opencv-python-headless", "opencv-contrib-python"],
+  cv2: [
+    "opencv-python",
+    "opencv-python-headless",
+    "opencv-contrib-python",
+    "opencv-contrib-python-headless",
+  ],
   Crypto: ["pycryptodome", "pycrypto"],
   Cryptodome: ["pycryptodomex"],
   dateutil: ["python-dateutil"],
