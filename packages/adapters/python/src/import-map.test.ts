@@ -106,7 +106,12 @@ describe("ImportResolver", () => {
     assert.deepEqual(resolver.resolve("cv2"), {
       kind: "unresolved",
       module: "cv2",
-      candidates: ["opencv-python", "opencv-python-headless", "opencv-contrib-python"],
+      candidates: [
+        "opencv-python",
+        "opencv-python-headless",
+        "opencv-contrib-python",
+        "opencv-contrib-python-headless",
+      ],
     });
   });
 
@@ -149,6 +154,26 @@ describe("ImportResolver", () => {
     // A bare namespace root, or an unknown child, is never credited.
     assert.equal(ns.resolve("google").kind, "unresolved");
     assert.equal(ns.resolve("google.cloud.unknownsvc").kind, "unresolved");
+  });
+
+  it("credits cv2 to declared opencv-contrib-python-headless", () => {
+    const dist = "opencv-contrib-python-headless";
+    const resolver = new ImportResolver({ declared: [dist] });
+    for (const module of ["cv2", "cv2.aruco"]) {
+      assert.deepEqual(resolver.resolve(module), {
+        kind: "dependency",
+        module: "cv2",
+        distributions: [dist],
+        via: "table",
+      });
+    }
+    assert.equal(new ImportResolver({ declared: [] }).resolve("cv2").kind, "unresolved");
+    const alternatives = ["opencv-python", "opencv-python-headless", "opencv-contrib-python", dist];
+    assert.deepEqual(
+      (new ImportResolver({ declared: alternatives }).resolve("cv2") as { distributions: string[] })
+        .distributions,
+      [...alternatives].sort(),
+    );
   });
 
   it("credits common zope distributions under the zope namespace root", () => {

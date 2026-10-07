@@ -83,3 +83,10 @@ The Python import-name table maps `zope.i18nmessageid`, `zope.security`,
 matching declared distributions. An undeclared distribution, the bare
 `zope` root or an unknown child of that root stays unresolved. These entries
 are checked against the published wheels; scanning does not install them.
+
+## OpenCV import mapping
+
+`cv2` and its child modules map to declared `opencv-python`,
+`opencv-python-headless`, `opencv-contrib-python` and
+`opencv-contrib-python-headless` distributions. When several are declared,
+each receives the usage credit; the resolver does not pick one silently.
