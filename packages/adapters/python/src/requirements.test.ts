@@ -435,3 +435,29 @@ it("treats an uppercase or mixed-case .TXT as compiled output of its .IN source"
     assert.equal(result.requirements[0]?.dependency.declaredIn, source);
   }
 });
+
+it("keeps direct-reference metadata when a bare requirements declaration is upgraded", async () => {
+  for (const url of [
+    "git+https://example.com/pkg.git",
+    "file:../pkg",
+    "https://example.com/pkg.whl",
+  ]) {
+    const result = await parse({ "requirements.txt": `pkg\npkg @ ${url}\n` });
+    assert.equal(result.requirements.length, 1);
+    const dep = result.requirements[0]!.dependency;
+    assert.equal(dep.constraint, url);
+    assert.deepEqual(dep.specifier, {
+      type: url.startsWith("git+") ? "git" : url.startsWith("file:") ? "file" : "registry",
+      detail: url,
+    });
+    assert.equal(dep.declaredLine, 1);
+  }
+});
+
+it("does not replace an already constrained requirements declaration with a later source", async () => {
+  const result = await parse({
+    "requirements.txt": "pkg>=2\npkg @ git+https://example.com/pkg.git\n",
+  });
+  assert.equal(result.requirements[0]?.dependency.constraint, ">=2");
+  assert.equal(result.requirements[0]?.dependency.specifier, undefined);
+});

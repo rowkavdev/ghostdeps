@@ -314,3 +314,28 @@ it("keeps every Poetry extra that declares one optional dependency", () => {
     assert.deepEqual(result.extras, { web: ["requests"], http: ["requests"] });
   }
 });
+
+it("keeps source metadata when a bare PEP 621 declaration is upgraded", () => {
+  for (const url of [
+    "git+https://example.com/pkg.git",
+    "file:../pkg",
+    "https://example.com/pkg.whl",
+  ]) {
+    const result = parse(`[project]\ndependencies=["pkg", "pkg @ ${url}"]\n`);
+    assert.equal(result.requirements.length, 1);
+    const dep = result.requirements[0]!.dependency;
+    assert.equal(dep.constraint, url);
+    assert.deepEqual(dep.specifier, {
+      type: url.startsWith("git+") ? "git" : url.startsWith("file:") ? "file" : "registry",
+      detail: url,
+    });
+  }
+});
+
+it("does not replace an already constrained PEP 621 declaration with a later source", () => {
+  const result = parse(
+    '[project]\ndependencies=["pkg>=2", "pkg @ git+https://example.com/pkg.git"]\n',
+  );
+  assert.equal(result.requirements[0]?.dependency.constraint, ">=2");
+  assert.equal(result.requirements[0]?.dependency.specifier, undefined);
+});
