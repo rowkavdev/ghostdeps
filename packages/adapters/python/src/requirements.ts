@@ -152,6 +152,7 @@ export async function parseRequirementsFiles(
       for (const extra of extras) if (!existing.extras.includes(extra)) existing.extras.push(extra);
       if (existing.dependency.constraint === "*" && constraint.length > 0) {
         existing.dependency.constraint = constraint;
+        if (specifier !== undefined) existing.dependency.specifier = specifier;
       }
       const merged = mergeMarkers(existing.marker, marker);
       if (merged === undefined) delete existing.marker;

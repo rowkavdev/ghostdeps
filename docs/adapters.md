@@ -90,3 +90,11 @@ are checked against the published wheels; scanning does not install them.
 `opencv-python-headless`, `opencv-contrib-python` and
 `opencv-contrib-python-headless` distributions. When several are declared,
 each receives the usage credit; the resolver does not pick one silently.
+
+## Repeated Python direct references
+
+If a bare requirement is repeated with a direct reference, the merged
+requirement keeps that reference's constraint and source type together.
+This applies to requirements files and pyproject declarations. An already
+constrained declaration still keeps its original constraint and source;
+a later duplicate does not replace them.

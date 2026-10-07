@@ -87,6 +87,7 @@ class Collector {
       }
       if (existing.dependency.constraint === "*" && constraint.length > 0) {
         existing.dependency.constraint = constraint;
+        if (options.specifier !== undefined) existing.dependency.specifier = options.specifier;
       }
       const marker = mergeMarkers(existing.marker, options.marker);
       if (marker === undefined) delete existing.marker;
