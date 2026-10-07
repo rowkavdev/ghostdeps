@@ -105,3 +105,14 @@ Pipfile package keys are validated before name normalization. They must
 start and end with an ASCII letter or digit; internal periods, underscores
 and hyphens are allowed. An invalid key is skipped with malformed-manifest
 evidence, and the declaration set is marked incomplete rather than guessed.
+
+## Python requirements dependency kinds
+
+Requirements entry paths are classified relative to their Python project.
+For example, `tools/api/requirements.txt` declares runtime dependencies for
+the `tools/api` project, even though an ancestor is named `tools`.
+The project directory's own name still counts, so a project at `tests/` stays dev.
+Project-relative dev names such as `requirements-dev.txt` and
+`requirements/lint.txt` still declare dev dependencies. Included files
+inherit the entry's kind, and runtime entry points are read first so a dev
+file including a runtime base does not change that base's kind.
