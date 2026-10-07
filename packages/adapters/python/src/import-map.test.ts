@@ -173,6 +173,31 @@ describe("ImportResolver", () => {
     assert.equal(ns.resolve("zope.unknownpkg").kind, "unresolved");
   });
 
+  it("credits the additional zope namespace distributions only when declared", () => {
+    const entries = [
+      ["zope.i18nmessageid", "zope-i18nmessageid"],
+      ["zope.security", "zope-security"],
+      ["zope.deprecation", "zope-deprecation"],
+      ["zope.proxy", "zope-proxy"],
+    ] as const;
+    const ns = new ImportResolver({ declared: entries.map(([, dist]) => dist) });
+    const undeclared = new ImportResolver({ declared: [] });
+    for (const [path, dist] of entries) {
+      for (const module of [path, `${path}.child`]) {
+        assert.deepEqual(ns.resolve(module), {
+          kind: "dependency",
+          module: path,
+          distributions: [dist],
+          via: "table",
+        });
+        assert.equal(undeclared.resolve(module).kind, "unresolved", module);
+      }
+      assert.equal(ns.resolve(`${path}extra`).kind, "unresolved");
+    }
+    assert.equal(ns.resolve("zope").kind, "unresolved");
+    assert.equal(ns.resolve("zope.unknownpkg").kind, "unresolved");
+  });
+
   it("does not credit a namespace root through metadata or the name rule", () => {
     const ns = new ImportResolver({
       declared: ["google", "google-cloud-storage"],
