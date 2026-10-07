@@ -75,3 +75,11 @@ Named Unicode escapes, adjacent string concatenation and executable f-string
 fields remain unsupported. Tuples, arithmetic and conditional expressions
 are not treated as constant module names. Relative imports with a known
 positive `__import__` level still receive no external usage credit.
+
+## Python namespace import mapping
+
+The Python import-name table maps `zope.i18nmessageid`, `zope.security`,
+`zope.deprecation` and `zope.proxy` (including their child modules) to the
+matching declared distributions. An undeclared distribution, the bare
+`zope` root or an unknown child of that root stays unresolved. These entries
+are checked against the published wheels; scanning does not install them.

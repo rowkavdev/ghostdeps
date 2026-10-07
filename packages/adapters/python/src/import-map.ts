@@ -72,9 +72,13 @@ export const KNOWN_IMPORT_NAMES: Readonly<Record<string, readonly string[]>> = {
   yaml: ["pyyaml"],
   zmq: ["pyzmq"],
   "zope.component": ["zope-component"],
+  "zope.deprecation": ["zope-deprecation"],
   "zope.event": ["zope-event"],
+  "zope.i18nmessageid": ["zope-i18nmessageid"],
   "zope.interface": ["zope-interface"],
+  "zope.proxy": ["zope-proxy"],
   "zope.schema": ["zope-schema"],
+  "zope.security": ["zope-security"],
 };
 
 /**
