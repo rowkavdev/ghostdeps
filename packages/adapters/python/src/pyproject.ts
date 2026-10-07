@@ -325,24 +325,22 @@ function parsePoetry(
   if (poetry === undefined) return;
   // Poetry extras name optional runtime dependencies: [tool.poetry.extras].
   const poetryExtras = table(poetry, "extras") ?? {};
-  const extraOf = new Map<string, string>();
+  const extraOf = new Map<string, string[]>();
   for (const [extra, members] of Object.entries(poetryExtras)) {
     const name = normaliseName(extra);
     const list = strings(members).map(normaliseName);
     extras[name] = [...new Set([...(extras[name] ?? []), ...list])];
-    for (const member of list) if (!extraOf.has(member)) extraOf.set(member, name);
+    for (const member of list) {
+      const groups = extraOf.get(member) ?? [];
+      if (!groups.includes(name)) groups.push(name);
+      extraOf.set(member, groups);
+    }
   }
   for (const [name, value] of Object.entries(table(poetry, "dependencies") ?? {})) {
     if (name.toLowerCase() === "python") continue;
-    parsePoetryEntry(
-      name,
-      value,
-      "runtime",
-      out,
-      extraOf.get(normaliseName(name)),
-      declaredIn,
-      "tool.poetry.dependencies",
-    );
+    for (const extra of extraOf.get(normaliseName(name)) ?? [undefined]) {
+      parsePoetryEntry(name, value, "runtime", out, extra, declaredIn, "tool.poetry.dependencies");
+    }
   }
   for (const [name, value] of Object.entries(table(poetry, "dev-dependencies") ?? {})) {
     parsePoetryEntry(name, value, "dev", out, "dev", declaredIn, "tool.poetry.dev-dependencies");
@@ -354,8 +352,9 @@ function parsePoetry(
     for (const [name, value] of Object.entries(table(body, "dependencies") ?? {})) {
       if (name.toLowerCase() === "python") continue;
       if (main) {
-        const extra = extraOf.get(normaliseName(name));
-        parsePoetryEntry(name, value, "runtime", out, extra, declaredIn, section);
+        for (const extra of extraOf.get(normaliseName(name)) ?? [undefined]) {
+          parsePoetryEntry(name, value, "runtime", out, extra, declaredIn, section);
+        }
       } else {
         parsePoetryEntry(name, value, "dev", out, normaliseName(group), declaredIn, section);
       }
