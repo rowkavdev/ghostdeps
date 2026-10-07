@@ -98,3 +98,10 @@ requirement keeps that reference's constraint and source type together.
 This applies to requirements files and pyproject declarations. An already
 constrained declaration still keeps its original constraint and source;
 a later duplicate does not replace them.
+
+## Pipfile package names
+
+Pipfile package keys are validated before name normalization. They must
+start and end with an ASCII letter or digit; internal periods, underscores
+and hyphens are allowed. An invalid key is skipped with malformed-manifest
+evidence, and the declaration set is marked incomplete rather than guessed.

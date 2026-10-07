@@ -132,3 +132,28 @@ it("keeps parsing when a Pipfile marker is nested absurdly deep", () => {
   assert.equal(parsed.requirements.length, 2);
   assert.equal(parsed.requirements[0]?.marker, undefined);
 });
+
+it("rejects Pipfile names ending in separators or newline before normalization", () => {
+  for (const name of ["pkg-", "pkg_", "pkg.", "pkg\n"]) {
+    const result = parsePipfileText(
+      `[packages]\n${JSON.stringify(name)} = "*"\n`,
+      project,
+      "Pipfile",
+    );
+    assert.equal(result.complete, false, name);
+    assert.deepEqual(result.requirements, [], name);
+    assert.ok(
+      result.evidence.some((e) => e.kind === "manifest-malformed"),
+      name,
+    );
+  }
+  for (const name of ["p", "0pkg", "Pkg..Name", "pkg_name"]) {
+    const result = parsePipfileText(
+      `[packages]\n${JSON.stringify(name)} = "*"\n`,
+      project,
+      "Pipfile",
+    );
+    assert.equal(result.complete, true, name);
+    assert.equal(result.requirements.length, 1, name);
+  }
+});
