@@ -30,4 +30,29 @@ describe("escapeTerminal", () => {
   it("keeps newlines out of single-line fields by replacing them", () => {
     assert.equal(escapeTerminal("a\nb"), "a\uFFFDb");
   });
+
+  it("replaces invisible format characters", () => {
+    for (const ch of [
+      "\u00AD",
+      "\u180E",
+      "\u2028",
+      "\u2029",
+      "\u2060",
+      "\u2061",
+      "\u2064",
+      "\u206A",
+      "\u{E0041}",
+    ]) {
+      assert.equal(escapeTerminal(`a${ch}b`), "a\uFFFDb", JSON.stringify(ch));
+    }
+  });
+
+  it("does not touch visible non-ASCII text", () => {
+    assert.equal(escapeTerminal("pkg-é-日本-😀"), "pkg-é-日本-😀");
+  });
+
+  it("accepts that tag-block escaping breaks subdivision-flag emoji", () => {
+    const england = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
+    assert.equal(escapeTerminal(england), "\u{1F3F4}\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD");
+  });
 });
