@@ -112,7 +112,8 @@ export function parsePipfileText(
     if (entries === undefined) continue;
     for (const [rawName, raw] of Object.entries(entries)) {
       const name = normaliseName(rawName);
-      if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) {
+      // Validate the raw key; JS $ also accepts a final newline, so use strict EOF.
+      if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?(?![\s\S])/.test(rawName)) {
         incomplete = true;
         evidence.push({
           kind: "manifest-malformed",
