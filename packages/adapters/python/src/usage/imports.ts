@@ -221,6 +221,50 @@ function callArguments(text: string, open: number): string[] | undefined {
   return undefined;
 }
 
+/** A whole literal name argument, whether positional or a reordered keyword. */
+function moduleArgumentIndex(args: string[], stringPrefix: string): number | undefined {
+  let value: string | undefined;
+  let named = false;
+  let first = true;
+  for (const arg of args) {
+    const keyword = /^([\p{XID_Start}_][\p{XID_Continue}]*)\s*=(?!=)\s*(.*)$/su.exec(arg);
+    if (keyword) {
+      if (keyword[1] === "name") {
+        if (named || value !== undefined) return undefined;
+        named = true;
+        value = keyword[2]!;
+      }
+    } else if (first && !arg.startsWith("*")) {
+      value = arg;
+    }
+    first = false;
+  }
+  if (value === undefined) return undefined;
+  // Only parentheses wrapping the whole literal are transparent. Walk once,
+  // rather than repeatedly slicing deeply nested parentheses (quadratic).
+  let position = 0;
+  let wrappers = 0;
+  const whitespace = () => {
+    while (/\s/u.test(value[position] ?? "") && position < value.length) position++;
+  };
+  whitespace();
+  while (value[position] === "(") {
+    wrappers++;
+    position++;
+    whitespace();
+  }
+  const literal = new RegExp(`^${stringPrefix}(\\d+)__`).exec(value.slice(position));
+  if (!literal) return undefined;
+  position += literal[0].length;
+  whitespace();
+  while (wrappers > 0 && value[position] === ")") {
+    wrappers--;
+    position++;
+    whitespace();
+  }
+  return wrappers === 0 && position === value.length ? Number(literal[1]) : undefined;
+}
+
 /**
  * The relative-import level a `__import__` call passes: a number when it is a
  * plain integer literal, undefined when absent or not known statically.
@@ -254,7 +298,7 @@ function importLevel(args: string[]): number | undefined {
   return Number(literal.replace(/_/g, ""));
 }
 const DYNAMIC =
-  /(?<![\p{XID_Continue}.])(?<!\.\s*)(?:importlib\s*\.\s*import_module|(?:(?:importlib|builtins|__builtins__)\s*\.\s*)?__import__|import_module)\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])/gu;
+  /(?<![\p{XID_Continue}.])(?<!\.\s*)(?:importlib\s*\.\s*import_module|(?:(?:importlib|builtins|__builtins__)\s*\.\s*)?__import__|import_module)\s*\(/gu;
 
 /** Whether a lambda in the statement takes `name` as a parameter. */
 function bindsAsLambdaParameter(text: string, name: string): boolean {
@@ -427,7 +471,7 @@ function importlibAliases(
     }
   }
   const lead = String.raw`(?<![\p{XID_Continue}.])(?<!\.\s*)`;
-  const tail = String.raw`\s*\(\s*(?:name\s*=\s*)?__S(\d+)__(?=\s*[,)])`;
+  const tail = String.raw`\s*\(`;
   const alt = (names: Iterable<string>) =>
     [...names].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const cache = new Map<number, ImportlibAliases>();
@@ -466,8 +510,62 @@ function importlibAliases(
 
 const clean = (dotted: string) => dotted.replace(/\s+/g, "");
 
+/** Decode Python escapes without executing source or changing the lexer's raw strings. */
+function decodedModuleLiteral(content: string, raw: boolean): string | undefined {
+  if (raw) return content;
+  let result = "";
+  const simple: Record<string, string> = {
+    "\\": "\\",
+    "'": "'",
+    '"': '"',
+    a: "\x07",
+    b: "\b",
+    f: "\f",
+    n: "\n",
+    r: "\r",
+    t: "\t",
+    v: "\x0b",
+  };
+  for (let i = 0; i < content.length; i++) {
+    const c = content[i]!;
+    if (c !== "\\") {
+      result += c;
+      continue;
+    }
+    const next = content[++i];
+    if (next === undefined) return undefined;
+    if (next === "\n") continue;
+    if (Object.hasOwn(simple, next)) {
+      result += simple[next];
+      continue;
+    }
+    if (/[0-7]/.test(next)) {
+      const digits = /^[0-7]{1,3}/.exec(content.slice(i))![0];
+      result += String.fromCodePoint(parseInt(digits, 8));
+      i += digits.length - 1;
+      continue;
+    }
+    const width = next === "x" ? 2 : next === "u" ? 4 : next === "U" ? 8 : 0;
+    if (width > 0) {
+      const digits = content.slice(i + 1, i + 1 + width);
+      if (digits.length !== width || !/^[\da-fA-F]+$/.test(digits)) return undefined;
+      const point = parseInt(digits, 16);
+      if (point > 0x10ffff) return undefined;
+      result += String.fromCodePoint(point);
+      i += width;
+      continue;
+    }
+    // Named Unicode escapes need a Unicode-name database. Do not guess their value.
+    if (next === "N") return undefined;
+    // Python retains unknown escapes literally; they cannot become a module identifier.
+    result += "\\" + next;
+  }
+  return result;
+}
+
 export const extractPythonImports: PythonImportExtractor = (source) => {
-  const { statements, strings, byteStrings } = splitPythonStatements(source);
+  const { statements, strings, byteStrings, rawStrings, stringPrefix } =
+    splitPythonStatements(source);
   const imports: PythonImport[] = [];
   const code: string[] = [];
   let typeCheckingIndent: number | undefined;
@@ -530,37 +628,38 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
     }
     code.push(text);
     const aliases = aliasesAt(statementIndex);
-    const calls: { index: number; start: number; dunder: boolean }[] = [];
+    const calls: { start: number; dunder: boolean }[] = [];
     for (const m of text.matchAll(DYNAMIC)) {
       const callee = m[0].slice(0, m[0].indexOf("(")).trim();
       calls.push({
-        index: Number(m[1]),
         start: m.index + m[0].indexOf("("),
         dunder: /__import__$/.test(callee),
       });
     }
     for (const m of text.matchAll(aliases.modules)) {
-      calls.push({ index: Number(m[2]), start: m.index + m[0].indexOf("("), dunder: false });
+      calls.push({ start: m.index + m[0].indexOf("("), dunder: false });
     }
     for (const m of text.matchAll(aliases.functions)) {
       const target = aliases.targets.get(m[1]!.normalize("NFKC"));
       calls.push({
-        index: Number(m[2]),
         start: m.index + m[0].indexOf("("),
         dunder: target === "__import__",
       });
     }
     for (const call of calls) {
-      if (byteStrings.has(call.index)) continue;
-      const literal = strings[call.index] ?? "";
+      const args = callArguments(text, call.start);
+      if (!args) continue;
+      const index = moduleArgumentIndex(args, stringPrefix);
+      if (index === undefined || byteStrings.has(index)) continue;
+      const literal = decodedModuleLiteral(strings[index] ?? "", rawStrings.has(index));
+      if (literal === undefined) continue;
       if (literal === "" || literal.startsWith(".") || /\s/u.test(literal) || !DOTTED.test(literal))
         continue;
       // __import__(name, globals, locals, fromlist, level): a positive level is
       // package-relative, never an external dependency. An unknown level keeps
       // the credit, as before.
       if (call.dunder) {
-        const args = callArguments(text, call.start);
-        const level = args && importLevel(args);
+        const level = importLevel(args);
         if (level !== undefined && level > 0) continue;
       }
       imports.push({ module: literal, form: "dynamic", names: [], ...base });

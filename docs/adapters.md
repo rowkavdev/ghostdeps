@@ -61,3 +61,17 @@ When an optional Poetry dependency appears in several `tool.poetry.extras`
 lists, its Python requirement records every declaring extra in `groups`.
 Repeated members do not create duplicate dependencies or group names. This
 also applies to runtime dependencies declared in `tool.poetry.group.main`.
+
+## Python dynamic import literals
+
+Literal module names in `importlib.import_module` and `__import__` calls
+can be positional or supplied as a reordered `name` keyword. Parentheses
+around the whole literal do not change its value. String placeholders are
+chosen per file so source identifiers cannot impersonate literal tokens.
+
+Supported Python escapes are decoded statically, without executing source;
+raw strings retain backslashes and byte strings are not module names.
+Named Unicode escapes, adjacent string concatenation and executable f-string
+fields remain unsupported. Tuples, arithmetic and conditional expressions
+are not treated as constant module names. Relative imports with a known
+positive `__import__` level still receive no external usage credit.

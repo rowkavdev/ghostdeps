@@ -5,7 +5,8 @@
  *
  * - `#` comments are dropped.
  * - String literals (any prefix; single, double and triple quoted) become an
- *   identifier placeholder `__S<n>__`; `strings[n]` holds the raw content.
+ *   identifier placeholder `<stringPrefix><n>__`; the per-file prefix cannot
+ *   collide with normalized source, and `strings[n]` holds the raw content.
  *   Docstrings and strings that merely contain "import x" never match.
  * - Newlines inside brackets or after a backslash continue the statement;
  *   `;` and newlines outside brackets end it.
@@ -25,8 +26,12 @@ export interface PythonStatement {
 export interface LexedPython {
   statements: PythonStatement[];
   strings: string[];
+  /** Per-file placeholder prefix, guaranteed absent from normalized source. */
+  stringPrefix: string;
   /** Indexes of byte literals, which are not valid dynamic module names. */
   byteStrings: Set<number>;
+  /** Raw literals keep backslashes instead of interpreting escape sequences. */
+  rawStrings: Set<number>;
 }
 
 const STRING_PREFIX = /^(?:[rRbBuUfF]|[rR][bBfF]|[bBfF][rR])$/;
@@ -34,9 +39,19 @@ const STRING_PREFIX = /^(?:[rRbBuUfF]|[rR][bBfF]|[bBfF][rR])$/;
 export function splitPythonStatements(source: string): LexedPython {
   // Python accepts LF, CRLF and standalone CR as physical newlines.
   source = source.replace(/\r\n?/g, "\n");
+  const normalizedSource = source.normalize("NFKC");
+  let stringPrefix = "__S";
+  if (normalizedSource.includes(stringPrefix)) {
+    const used = new Set(normalizedSource.match(/__PYSTRING\d+_/g) ?? []);
+    let candidate = 0;
+    do {
+      stringPrefix = `__PYSTRING${candidate++}_`;
+    } while (used.has(stringPrefix));
+  }
   const statements: PythonStatement[] = [];
   const strings: string[] = [];
   const byteStrings = new Set<number>();
+  const rawStrings = new Set<number>();
   let text = "";
   let startLine = 1;
   let indent = 0;
@@ -108,12 +123,14 @@ export function splitPythonStatements(source: string): LexedPython {
     if (c === "'" || c === '"') {
       // A string prefix is the identifier run just before the quote.
       let bytes = false;
+      let raw = false;
       const prefixMatch = /[A-Za-z]{1,2}$/.exec(text);
       if (prefixMatch && STRING_PREFIX.test(prefixMatch[0])) {
         const before = text.slice(0, -prefixMatch[0].length);
         if (!/[A-Za-z0-9_]$/.test(before)) {
           text = before;
           bytes = /b/i.test(prefixMatch[0]);
+          raw = /r/i.test(prefixMatch[0]);
         }
       }
       const triple = source.startsWith(c.repeat(3), i);
@@ -140,8 +157,9 @@ export function splitPythonStatements(source: string): LexedPython {
         i++;
       }
       lastLine = line;
-      text += ` __S${strings.length}__ `;
+      text += ` ${stringPrefix}${strings.length}__ `;
       if (bytes) byteStrings.add(strings.length);
+      if (raw) rawStrings.add(strings.length);
       strings.push(content);
       continue;
     }
@@ -160,5 +178,5 @@ export function splitPythonStatements(source: string): LexedPython {
     i++;
   }
   flush();
-  return { statements, strings, byteStrings };
+  return { statements, strings, byteStrings, rawStrings, stringPrefix };
 }

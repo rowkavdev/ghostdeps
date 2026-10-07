@@ -1172,3 +1172,156 @@ it("does not credit a relative __import__ level as an external dependency", () =
     "abs_mod",
   ]);
 });
+
+it("does not mistake source-written string placeholder identifiers for literals", () => {
+  const source = [
+    's = "requests"',
+    "__import__(__S0__)",
+    "importlib.import_module(__S0__)",
+    "import importlib as il",
+    "il.import_module(__S0__)",
+    "from importlib import import_module as im",
+    "im(__S0__)",
+    '__PYSTRING0_0__ = "other"',
+    "__import__(__PYSTRING0_0__)",
+    "__import__(＿＿Ｓ0＿＿)",
+    '__import__("requests")',
+    'il.import_module("numpy")',
+    'im("scipy")',
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source)
+      .imports.filter((i) => i.form === "dynamic")
+      .map((i) => i.module),
+    ["requests", "numpy", "scipy"],
+  );
+  const lexed = splitPythonStatements(source);
+  assert.ok(!source.normalize("NFKC").includes(lexed.stringPrefix));
+});
+
+it("reads reordered literal name keywords without crediting other arguments", () => {
+  const source = [
+    'importlib.import_module(package="app", name="yaml")',
+    '__import__(globals={}, locals={}, name="requests", fromlist=["get"])',
+    "import importlib as il",
+    'il.import_module(package={"nested": [1, 2]}, name="numpy")',
+    "from importlib import import_module as im",
+    'im(package="app", name="scipy")',
+    'importlib.import_module(package="pandas")',
+    'importlib.import_module(package="app", name="pandas" + suffix)',
+    'importlib.import_module(package="app", name=module)',
+    'importlib.import_module(package="app", name="http" "x")',
+    '__import__(globals={}, name="relative", level=1)',
+    'obj.import_module(package="app", name="unrelated")',
+    'importlib.import_module(package="app", name="yaml", name="duplicate")',
+    'importlib.import_module("positional", name="duplicate")',
+    'importlib.import_module(package="app", name=b"bytes")',
+    'importlib.import_module(package=__import__("toml"), name="rich")',
+    'importlib.import_module(name="plain")',
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source)
+      .imports.filter((i) => i.form === "dynamic")
+      .map((i) => i.module),
+    ["yaml", "requests", "numpy", "scipy", "rich", "toml", "plain"],
+  );
+});
+
+it("reads whole parenthesized literal module arguments but rejects computed values", () => {
+  const source = [
+    'collision = "unused"; __S0__ = other',
+    "import importlib as il",
+    "from importlib import import_module as im",
+    '__import__(("yaml"))',
+    'importlib.import_module((("requests")))',
+    'il.import_module(("numpy"))',
+    'im(package="app", name=(("scipy")))',
+    '__import__(name=("toml"))',
+    '__import__(("tuple",))',
+    '__import__(("computed") + suffix)',
+    '__import__(("conditional" if flag else "other"))',
+    "__import__((__S0__))",
+    '__import__((b"bytes"))',
+    '__import__(name=("relative"), level=1)',
+    'obj.import_module(("unrelated"))',
+    'im(name=("first"), name=("duplicate"))',
+    '__import__("plain")',
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source)
+      .imports.filter((i) => i.form === "dynamic")
+      .map((i) => i.module),
+    ["yaml", "requests", "numpy", "scipy", "toml", "plain"],
+  );
+});
+
+it("decodes escaped constant module names while preserving raw and byte literals", () => {
+  const source = [
+    String.raw`__import__('\x79aml')`,
+    String.raw`importlib.import_module('google\u002ecloud.storage')`,
+    String.raw`import_module('\U00000079aml')`,
+    String.raw`__import__('\171aml')`,
+    "__import__('ya\\\nml')",
+    String.raw`__import__(r'\x79aml')`,
+    String.raw`__import__(R'\u0079aml')`,
+    String.raw`__import__(b'\x79aml')`,
+    String.raw`__import__('ya\nml')`,
+    String.raw`__import__('ya\\ml')`,
+    String.raw`__import__('\qyaml')`,
+    String.raw`__import__('\xzzaml')`,
+    String.raw`__import__('\U00110000aml')`,
+    String.raw`__import__('\N{LATIN SMALL LETTER Y}aml')`,
+    String.raw`__import__('yaml', level=1)`,
+    String.raw`__import__('yaml')`,
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source).imports.map((imp) => [imp.module, imp.line]),
+    [
+      ["yaml", 1],
+      ["google.cloud.storage", 2],
+      ["yaml", 3],
+      ["yaml", 4],
+      ["yaml", 5],
+      ["yaml", 17],
+    ],
+  );
+  const lexed = splitPythonStatements(String.raw`__import__('\x79aml'); __import__(r'\x79aml')`);
+  assert.deepEqual(lexed.strings, [String.raw`\x79aml`, String.raw`\x79aml`]);
+  assert.deepEqual([...lexed.rawStrings], [1]);
+});
+
+it("combines reordered wrapped escaped names with collision-safe placeholders", () => {
+  const source = [
+    'sentinel = "not_a_module"; __S0__ = value; __PYSTRING0_0__ = value',
+    "import importlib as il",
+    "from importlib import import_module as im",
+    String.raw`il.import_module(package="app", name=(("\x79aml")))`,
+    String.raw`im(package="app", name=(("google\u002ecloud.storage")))`,
+    String.raw`__import__(globals={}, name=(("\171aml")), level=0)`,
+    String.raw`__import__(name=(("\x79aml")), level=1)`,
+    String.raw`im(name=((r"\x79aml")))`,
+    String.raw`im(name=((b"\x79aml")))`,
+    String.raw`im(name=(("\x79aml",)))`,
+    String.raw`im(name=(("\x79aml")) + suffix)`,
+    String.raw`im(name=(("\x79aml" if flag else "toml")))`,
+    String.raw`im(name=((f"{name}")))`,
+    String.raw`im(name=(("http" "x")))`,
+    "im(name=((__S0__)))",
+    "im(name=((＿＿Ｓ0＿＿)))",
+    String.raw`im(name=(("\x79aml")), name="duplicate")`,
+    String.raw`obj.import_module(name=(("\x79aml")))`,
+  ].join("\n");
+  assert.deepEqual(
+    extractPythonImports(source)
+      .imports.filter((i) => i.form === "dynamic")
+      .map((i) => i.module),
+    ["yaml", "google.cloud.storage", "yaml"],
+  );
+});
+
+it("handles deep whole-argument parentheses without repeated slicing", () => {
+  const n = 20000;
+  const started = performance.now();
+  assert.deepEqual(modules(`__import__(${"(".repeat(n)}"yaml"${")".repeat(n)})`), ["yaml"]);
+  assert.ok(performance.now() - started < 1000);
+});
