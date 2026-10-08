@@ -408,6 +408,44 @@ describe("default recommendation policy", () => {
     assert.ok(peer[0]?.limitations.length);
   });
 
+  it("a resolved peer host never turns into a confident unused verdict", async () => {
+    // yarn lockfiles record resolved peer edges without a closure edge:
+    // the peer-host guard must hold in the unused rule, not only in the note rule.
+    const graph: DependencyGraph = {
+      project,
+      nodes: [],
+      transitiveClosure: { host: [], peer: [] },
+      directPeers: { host: ["peer"] },
+      incomplete: false,
+    };
+    const findings = await run({ dependencies: [dep("host"), dep("peer")], graphs: [graph] });
+    const peer = byDep(findings, "peer");
+    assert.equal(peer.length, 1);
+    assert.equal(peer[0]?.kind, "info");
+    assert.equal(peer[0]?.evidence[1]?.kind, "required-by-peer-host");
+  });
+
+  it("a resolved peer host blocks removed-last-usage in a pull request", async () => {
+    const graph: DependencyGraph = {
+      project,
+      nodes: [],
+      transitiveClosure: { host: [], peer: [] },
+      directPeers: { host: ["peer"] },
+      incomplete: false,
+    };
+    const findings = await run({
+      mode: "pull-request",
+      pullRequestChanges: [],
+      dependencies: [dep("host"), dep("peer")],
+      usages: [use("peer", "src/old.ts", { line: 9, removedInPr: true })],
+      graphs: [graph],
+    });
+    const peer = byDep(findings, "peer");
+    assert.equal(peer.filter((f) => f.kind === "unused").length, 0);
+    assert.equal(peer[0]?.kind, "info");
+    assert.equal(peer[0]?.evidence[1]?.kind, "required-by-peer-host");
+  });
+
   it("flags runtime deps imported only from non-shipped code as should-be-dev", async () => {
     const findings = await run({
       dependencies: [dep("supertest"), dep("express")],

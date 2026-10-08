@@ -170,8 +170,12 @@ const unusedRule: PolicyRule = {
   evaluate(d, context) {
     if (!hasNoUsageEvidence(d, context)) return undefined;
     if (!context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
+    // A resolved peer host suppresses the verdict as well: the lockfile
+    // proves another direct dependency needs this package, even when no
+    // closure edge records it (yarn lockfiles carry no peer edges).
     if (
       context.requiredByOtherDirect.has(dependencyGraphKey(d)) ||
+      context.peerHostByDirect.has(dependencyGraphKey(d)) ||
       context.unresolvedPeerByDirect.has(dependencyGraphKey(d))
     )
       return undefined;
@@ -220,6 +224,7 @@ const removedLastUsageRule: PolicyRule = {
     if (!context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
     if (
       context.requiredByOtherDirect.has(dependencyGraphKey(d)) ||
+      context.peerHostByDirect.has(dependencyGraphKey(d)) ||
       context.unresolvedPeerByDirect.has(dependencyGraphKey(d))
     )
       return undefined;
