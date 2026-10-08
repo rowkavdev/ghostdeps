@@ -213,6 +213,22 @@ source = { registry = "https://pypi.org/simple" }
     assert.equal(evidence[0]?.kind, "lockfile-missing");
   });
 
+  it("says pdm.lock is present but not parsed instead of claiming no lockfile", async () => {
+    const { graph, evidence } = await buildProjectGraph(
+      ctx({
+        "pyproject.toml": PYPROJECT,
+        "pdm.lock": '[[package]]\nname = "httpx"\nversion = "0.27.2"\n',
+      }),
+      project,
+    );
+    assert.equal(graph.incomplete, true);
+    assert.deepEqual(graph.nodes, []);
+    assert.equal(evidence[0]?.kind, "lockfile-missing");
+    assert.match(evidence[0]?.statement ?? "", /pdm\.lock.*not parsed/);
+    assert.doesNotMatch(evidence[0]?.statement ?? "", /no uv\.lock/);
+    assert.equal(evidence[0]?.file, "pdm.lock");
+  });
+
   it("degrades on a malformed lockfile", async () => {
     const { graph, evidence } = await buildProjectGraph(
       ctx({ "pyproject.toml": PYPROJECT, "uv.lock": "[[package]\n" }),

@@ -252,10 +252,21 @@ export async function buildProjectGraph(
     break;
   }
   if (parsed === undefined) {
-    evidence.push({
-      kind: "lockfile-missing",
-      statement: `no uv.lock, poetry.lock or Pipfile.lock at ${project.path}; transitive dependencies are not resolved`,
-    });
+    // Detection names pdm from pdm.lock, so do not tell a pdm project it has
+    // no lockfile: the graph stays incomplete with the true reason.
+    const pdmLock = joinPath(project.path, "pdm.lock");
+    evidence.push(
+      (await repository.exists(pdmLock))
+        ? {
+            kind: "lockfile-missing",
+            statement: `${pdmLock} is present but pdm.lock is not parsed; transitive dependencies are not resolved`,
+            file: pdmLock,
+          }
+        : {
+            kind: "lockfile-missing",
+            statement: `no uv.lock, poetry.lock or Pipfile.lock at ${project.path}; transitive dependencies are not resolved`,
+          },
+    );
     return empty();
   }
 
