@@ -517,6 +517,37 @@ describe("findRemovedUsages (#168, PR mode)", () => {
     assert.deepEqual(await findRemovedUsages(context, dep("x")), []);
   });
 
+  it("does not scan reconstructed bases above the source byte limit", async () => {
+    const comment = "//" + "x".repeat(1_998);
+    const lines: [number, string][] = Array.from({ length: 500 }, (_, i) => [i + 1, comment]);
+    lines.push([501, 'import "too-large";']);
+    for (const files of [{ "package.json": "{}" }, { "package.json": "{}", "gone.ts": "" }]) {
+      const context = prCtx(files, [removed("gone.ts", lines)]);
+      assert.deepEqual(await findRemovedUsages(context, dep("too-large")), []);
+    }
+  });
+
+  it("bounds removed payloads by UTF-8 bytes rather than characters", async () => {
+    const lines: [number, string][] = Array.from({ length: 170 }, (_, i) => [
+      i + 1,
+      "//" + "界".repeat(1_998),
+    ]);
+    lines.push([171, 'import "too-large";']);
+    const context = prCtx({ "package.json": "{}" }, [removed("gone.ts", lines)]);
+    assert.deepEqual(await findRemovedUsages(context, dep("too-large")), []);
+  });
+
+  it("does not scan a base whose kept head plus removals exceeds the source limit", async () => {
+    const head = "//" + "x".repeat(600_000);
+    const lines: [number, string][] = Array.from({ length: 201 }, (_, i) => [
+      i + 1,
+      "//" + "x".repeat(1_998),
+    ]);
+    lines.push([202, 'import "too-large";']);
+    const context = prCtx({ "package.json": "{}", "a.ts": head }, [removed("a.ts", lines)]);
+    assert.deepEqual(await findRemovedUsages(context, dep("too-large")), []);
+  });
+
   it("marks static imports, re-exports and literal requires on removed lines", async () => {
     // Head keeps lines 1-2, 4-6 and 8 of the base file.
     const head = ["// a", "", "const a = 1;", "", "", "export {};"].join("\n");

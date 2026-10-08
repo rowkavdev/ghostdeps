@@ -546,8 +546,24 @@ function removedReferences(
         } catch {
           continue;
         }
+        // Deleted text is not covered by the head read limit. Reject large
+        // removed payloads before reconstruction allocates its maps/arrays.
+        let removedBytes = 0;
+        for (const line of change.removedLines) {
+          removedBytes += Buffer.byteLength(line.text, "utf8");
+          if (removedBytes > MAX_SOURCE_BYTES) break;
+        }
+        if (removedBytes > MAX_SOURCE_BYTES) continue;
         const base = reconstructBase(head, change);
         if (base === undefined) continue;
+        // Count the actual reconstructed text, including joining newlines,
+        // before allocating a joined string or giving it to the parser.
+        let baseBytes = Math.max(0, base.length - 1);
+        for (const line of base) {
+          baseBytes += Buffer.byteLength(line, "utf8");
+          if (baseBytes > MAX_SOURCE_BYTES) break;
+        }
+        if (baseBytes > MAX_SOURCE_BYTES) continue;
         const removedLines = new Set(change.removedLines.map((l) => l.line));
         const result = scanSource(file, base.join("\n"));
         await applyAliases(scan.aliases, file, result);
