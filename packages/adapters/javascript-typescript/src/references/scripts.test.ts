@@ -68,6 +68,24 @@ describe("commandWords", () => {
     assert.deepEqual(commandWords("env -u CI jest"), ["jest"]);
   });
 
+  it("treats a nodemon script file as a file gap, not a command (#858)", () => {
+    const a = analyseScript("nodemon -w src server.js --port 3000");
+    assert.deepEqual(a.words, ["nodemon"]);
+    assert.deepEqual(a.gaps, ["nodemon runs server.js; commands it spawns are not read"]);
+    assert.deepEqual(analyseScript("nodemon").gaps, []);
+    assert.deepEqual(commandWords('nodemon --exec "ts-node src/index.ts"'), ["nodemon", "ts-node"]);
+  });
+
+  it("reads a cross-env-shell command string as commands (#858)", () => {
+    assert.deepEqual(commandWords('cross-env-shell NODE_ENV=test "tsc -b && vitest run"'), [
+      "cross-env-shell",
+      "tsc",
+      "vitest",
+    ]);
+    assert.deepEqual(commandWords("cross-env-shell FOO=1 eslint ."), ["cross-env-shell", "eslint"]);
+    assert.deepEqual(commandWords("cross-env FOO=1 jest"), ["cross-env", "jest"]);
+  });
+
   it("reads concurrently's quoted arguments as commands", () => {
     assert.deepEqual(commandWords('concurrently -k -s first "tsc -w" "autocannon -c 100 x"'), [
       "concurrently",
