@@ -16,29 +16,83 @@ export type Membership =
 
 const SIMPLE_SEGMENT = /^[^[\]{}()!+@|\\]+$/u;
 
-function segmentRegExp(segment: string): RegExp {
-  const source = segment
-    .split("")
-    .map((c) => (c === "*" ? "[^/]*" : c === "?" ? "[^/]" : c.replace(/[.^$]/g, "\\$&")))
-    .join("");
-  return new RegExp(`^${source}$`, "u");
+/** Wildcards match Unicode code points, without regex backtracking. */
+function matchSegment(pattern: string[], path: string[]): boolean {
+  let next = new Uint8Array(path.length + 1);
+  next[path.length] = 1;
+  for (let p = pattern.length - 1; p >= 0; p--) {
+    const current = new Uint8Array(path.length + 1);
+    const char = pattern[p]!;
+    if (char === "*") {
+      current[path.length] = next[path.length]!;
+      for (let j = path.length - 1; j >= 0; j--) current[j] = next[j] || current[j + 1] ? 1 : 0;
+    } else {
+      for (let j = path.length - 1; j >= 0; j--) {
+        current[j] = next[j + 1] && (char === "?" || char === path[j]) ? 1 : 0;
+      }
+    }
+    next = current;
+  }
+  return next[0] === 1;
+}
+
+/** Cap repository-controlled matching work; an over-budget result is unknown. */
+const MAX_MATCH_STATES = 100_000;
+
+/** Whether matching stays inside the work budget, counting character work too. */
+function withinBudget(pattern: string[], patternChars: string[][], pathChars: string[][]): boolean {
+  const segmentStates = (pattern.length + 1) * (pathChars.length + 1);
+  if (segmentStates > MAX_MATCH_STATES) return false;
+  const patternWork = patternChars.reduce(
+    (sum, chars, i) => sum + (pattern[i] === "**" ? 0 : chars.length + 1),
+    0,
+  );
+  const pathWork = pathChars.reduce((sum, chars) => sum + chars.length + 1, 0);
+  return patternWork * pathWork + segmentStates <= MAX_MATCH_STATES;
+}
+
+function globstarRow(next: Uint8Array, path: string[], dot: boolean): Uint8Array {
+  const current = new Uint8Array(path.length + 1);
+  current[path.length] = next[path.length]!;
+  for (let j = path.length - 1; j >= 0; j--) {
+    current[j] = next[j] || ((dot || !path[j]!.startsWith(".")) && current[j + 1]) ? 1 : 0;
+  }
+  return current;
+}
+
+function segmentRow(
+  next: Uint8Array,
+  head: string,
+  headChars: string[],
+  path: string[],
+  pathChars: string[][],
+  dot: boolean,
+): Uint8Array {
+  const current = new Uint8Array(path.length + 1);
+  for (let j = path.length - 1; j >= 0; j--) {
+    const dotOk = dot || !path[j]!.startsWith(".") || head.startsWith(".");
+    current[j] = next[j + 1] && dotOk && matchSegment(headChars, pathChars[j]!) ? 1 : 0;
+  }
+  return current;
 }
 
 /** `**` matches zero or more whole segments; other segments match one. */
-function matchSegments(pattern: string[], path: string[], dot: boolean): boolean {
-  if (pattern.length === 0) return path.length === 0;
-  const [head, ...rest] = pattern;
-  if (head === "**") {
-    for (let i = 0; i <= path.length; i++) {
-      if (matchSegments(rest, path.slice(i), dot)) return true;
-      if (!dot && path[i]?.startsWith(".")) return false; // `**` never crosses a dot segment
-    }
-    return false;
+function matchSegments(pattern: string[], path: string[], dot: boolean): boolean | undefined {
+  const patternChars = pattern.map((segment) => Array.from(segment));
+  const pathChars = path.map((segment) => Array.from(segment));
+  if (!withinBudget(pattern, patternChars, pathChars)) return undefined;
+  // Bottom-up dynamic programming visits each (pattern, path) suffix once.
+  // Two rows avoid recursive stack growth and repeated globstar backtracking.
+  let next: Uint8Array = new Uint8Array(path.length + 1);
+  next[path.length] = 1;
+  for (let p = pattern.length - 1; p >= 0; p--) {
+    const head = pattern[p]!;
+    next =
+      head === "**"
+        ? globstarRow(next, path, dot)
+        : segmentRow(next, head, patternChars[p]!, path, pathChars, dot);
   }
-  if (path.length === 0) return false;
-  // Without `dot: true` (pnpm's tinyglobby call) wildcards skip dot segments; a literal "." prefix still matches.
-  if (!dot && path[0]!.startsWith(".") && !head!.startsWith(".")) return false;
-  return segmentRegExp(head!).test(path[0]!) && matchSegments(rest, path.slice(1), dot);
+  return next[0] === 1;
 }
 
 function normalisePattern(raw: string): string[] {
@@ -47,6 +101,19 @@ function normalisePattern(raw: string): string[] {
     .replace(/\/+$/, "")
     .split("/")
     .filter((s) => s !== "" && s !== ".");
+}
+
+function unsupportedReason(raw: string, body: string, segments: string[]): string | undefined {
+  if (/^(\/|\\|[A-Za-z]:)/.test(body) || segments.includes("..")) {
+    return `absolute or parent glob "${raw}"`;
+  }
+  // A literal dot segment next to `**` is where tinyglobby's behaviour is subtle; don't guess.
+  if (segments.includes("**") && segments.some((x) => x.startsWith("."))) {
+    return `dot segment combined with ** in "${raw}"`;
+  }
+  if (!segments.every((x) => x === "**" || SIMPLE_SEGMENT.test(x)))
+    return `unsupported glob "${raw}"`;
+  return undefined;
 }
 
 /** Whether `rel` (posix, relative to the workspace root) is a member per `patterns`. */
@@ -70,17 +137,13 @@ export function matchWorkspacePatterns(patterns: string[], rel: string): Members
     const negated = raw.startsWith("!");
     const body = negated ? raw.slice(1) : raw;
     const segments = normalisePattern(body);
-    if (/^(\/|\\|[A-Za-z]:)/.test(body) || segments.includes("..")) {
-      return { kind: "unknown", reason: `absolute or parent glob "${raw}"` };
+    const unsupported = unsupportedReason(raw, body, segments);
+    if (unsupported) return { kind: "unknown", reason: unsupported };
+    const matches = matchSegments(segments, path, negated);
+    if (matches === undefined) {
+      return { kind: "unknown", reason: "workspace glob matching exceeds the work limit" };
     }
-    // A literal dot segment next to `**` is where tinyglobby's behaviour is subtle; don't guess.
-    if (segments.includes("**") && segments.some((x) => x.startsWith("."))) {
-      return { kind: "unknown", reason: `dot segment combined with ** in "${raw}"` };
-    }
-    if (!segments.every((s) => s === "**" || SIMPLE_SEGMENT.test(s))) {
-      return { kind: "unknown", reason: `unsupported glob "${raw}"` };
-    }
-    if (matchSegments(segments, path, negated)) {
+    if (matches) {
       if (negated) excluded = true;
       else included = true;
     }
