@@ -16,6 +16,6 @@
   },
   "devDependencies": {
     "@ghostdeps/core": "workspace:*",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.20.5"
   }
 }

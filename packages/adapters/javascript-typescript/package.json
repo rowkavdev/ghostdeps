@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@ghostdeps/core": "workspace:*",
-    "@types/node": "^22.10.0",
+    "@types/node": "^22.20.5",
     "@types/npm-package-arg": "^6.1.4"
   }
 }
