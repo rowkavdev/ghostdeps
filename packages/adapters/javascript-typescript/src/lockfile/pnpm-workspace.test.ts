@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { matchWorkspacePatterns } from "./pnpm-workspace.js";
@@ -76,4 +77,53 @@ describe("matchWorkspacePatterns (#894)", () => {
       assert.equal(kind([glob], "packages/a"), "unknown", glob);
     }
   });
+});
+
+it("bounds repeated globstar matching in an isolated process", () => {
+  const moduleUrl = new URL("./pnpm-workspace.js", import.meta.url).href;
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import assert from "node:assert/strict";
+    import { matchWorkspacePatterns } from ${JSON.stringify(moduleUrl)};
+    const pattern = "**/".repeat(18) + "no-match";
+    const path = Array(25).fill("a").join("/");
+    assert.equal(matchWorkspacePatterns([pattern], path).kind, "nonmember");
+    assert.equal(matchWorkspacePatterns(["**/".repeat(18) + "a"], path).kind, "member");
+    assert.equal(matchWorkspacePatterns(["**/".repeat(18) + "a"], ".hidden/" + path).kind, "nonmember");
+  `,
+    ],
+    { timeout: 1500 },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, result.stderr.toString());
+});
+
+it("leaves excessive matching work unknown rather than guessing or overflowing the stack", () => {
+  const pattern = Array(1000).fill("a").join("/");
+  const path = Array(1000).fill("a").join("/");
+  assert.equal(matchWorkspacePatterns([pattern], path).kind, "unknown");
+});
+
+it("bounds stars inside one segment in an isolated process", () => {
+  const moduleUrl = new URL("./pnpm-workspace.js", import.meta.url).href;
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import assert from "node:assert/strict";
+    import { matchWorkspacePatterns } from ${JSON.stringify(moduleUrl)};
+    assert.equal(matchWorkspacePatterns(["a*".repeat(30) + "X"], "a".repeat(100)).kind, "nonmember");
+    assert.equal(matchWorkspacePatterns(["a*".repeat(30)], "a".repeat(100)).kind, "member");
+  `,
+    ],
+    { timeout: 1500 },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, result.stderr.toString());
 });
