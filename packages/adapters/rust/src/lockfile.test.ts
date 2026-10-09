@@ -105,6 +105,31 @@ version = "0.7.3"
     assert.equal(evidence[0]?.kind, "lockfile-unresolved-reference");
   });
 
+  it("unions name-keyed closures across distinct direct resolutions (#859)", () => {
+    const lock = parseCargoLock(`version = 4
+[[package]]
+name = "app"
+version = "0.1.0"
+dependencies = ["foo 1.0.0", "foo 2.0.0"]
+[[package]]
+name = "foo"
+version = "1.0.0"
+dependencies = ["a"]
+[[package]]
+name = "foo"
+version = "2.0.0"
+dependencies = ["b"]
+[[package]]
+name = "a"
+version = "1.0.0"
+[[package]]
+name = "b"
+version = "1.0.0"
+`);
+    const { graph } = crateGraph(project, "app", lock, new Set(), "Cargo.lock");
+    assert.deepEqual(graph.transitiveClosure.foo, ["a", "b"]);
+  });
+
   it("reports a lockfile without the crate as incomplete", () => {
     const { graph, evidence } = crateGraph(
       project,
