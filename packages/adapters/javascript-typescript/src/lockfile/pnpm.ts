@@ -3,7 +3,7 @@
  * `yaml` package (alias expansion capped, no custom tags); nothing is
  * resolved against a registry.
  */
-import { parse } from "yaml";
+import { parseAllDocuments } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
 import { scopedOrigin, tarballOrigin } from "./origin.js";
@@ -26,9 +26,23 @@ const baseVersion = (v: string) => {
   return i < 0 ? v : v.slice(0, i);
 };
 
+/** The stale-lockfile claim for a project with no importer entry (#894 gates it on membership). */
+export const missingImporterStatement = (lockfile: string, importerPath: string): string =>
+  `${lockfile} has no importer for ${importerPath}; the lockfile is stale`;
+
 /** Parse pnpm-lock.yaml text once; the result is shared read-only across importers. */
 export function loadPnpmLockfile(text: string): LoadedLockfile {
-  return { doc: parse(text, { maxAliasCount: 100, uniqueKeys: true }) as unknown };
+  // pnpm writes one or two YAML documents: an optional env lockfile first and
+  // the project lockfile last (https://pnpm.io/lockfile). The project's
+  // dependency graph is the last document (#894).
+  const docs = parseAllDocuments(text, { uniqueKeys: true });
+  if (docs.length === 0 || docs.length > 2) {
+    throw new Error(`expected one or two YAML documents, found ${docs.length}`);
+  }
+  const last = docs[docs.length - 1]!;
+  const [firstError] = docs.flatMap((doc) => doc.errors);
+  if (firstError) throw firstError;
+  return { doc: last.toJS({ maxAliasCount: 100 }) as unknown };
 }
 
 export function parsePnpmLockfile(
@@ -104,7 +118,7 @@ export function parsePnpmLockfile(
   if (!isObject(importer)) {
     evidence.push({
       kind: "lockfile-manifest-mismatch",
-      statement: `${lockfile} has no importer for ${importerPath}; the lockfile is stale`,
+      statement: missingImporterStatement(lockfile, importerPath),
       file: lockfile,
     });
     return { packages, direct, evidence };

@@ -963,3 +963,153 @@ describe("lockfileNotes: structural lockfile problems (#864)", () => {
     assert.deepEqual(await notesFor(repository), []);
   });
 });
+
+describe("buildLockfileGraph: two-document pnpm lockfile (#894)", () => {
+  const env = [
+    "---",
+    "lockfileVersion: '9.0'",
+    "importers:",
+    "  .:",
+    "    configDependencies: {}",
+    "    packageManagerDependencies:",
+    "      pnpm:",
+    "        specifier: 12.3.4",
+    "        version: 12.3.4",
+    "packages:",
+    "  pnpm@12.3.4:",
+    "    resolution: {integrity: sha512-env}",
+    "snapshots:",
+    "  pnpm@12.3.4: {}",
+  ];
+  const projectDoc = [
+    "---",
+    "lockfileVersion: '9.0'",
+    "importers:",
+    "  .:",
+    "    dependencies:",
+    "      lodash:",
+    "        specifier: ^4.17.0",
+    "        version: 4.17.21",
+    "packages:",
+    "  lodash@4.17.21:",
+    "    resolution: {integrity: sha512-x}",
+    "snapshots:",
+    "  lodash@4.17.21: {}",
+  ];
+  const build = (lines: string[]) =>
+    buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "pnpm-lock.yaml": lines.join("\n"),
+          "package.json": JSON.stringify({ dependencies: { lodash: "^4.17.0" } }),
+        }),
+      ),
+      project(".", ["pnpm"]),
+    );
+
+  it("reads the project graph from the last document", async () => {
+    const res = await build([...env, ...projectDoc]);
+    assert.deepEqual(
+      res.evidence.filter((e) => e.kind === "lockfile-malformed"),
+      [],
+    );
+    assert.deepEqual(
+      res.graph.nodes.map((n) => [n.name, n.version]),
+      [["lodash", "4.17.21"]],
+    );
+  });
+
+  it("still reads a single document that starts with ---", async () => {
+    const res = await build(projectDoc);
+    assert.deepEqual(
+      res.graph.nodes.map((n) => [n.name, n.version]),
+      [["lodash", "4.17.21"]],
+    );
+  });
+
+  it("reports more than two documents as malformed", async () => {
+    const res = await build([...env, ...env, ...projectDoc]);
+    assert.ok(res.evidence.some((e) => e.kind === "lockfile-malformed"));
+  });
+
+  it("reports a syntax error in any document as malformed", async () => {
+    const res = await build([
+      ...env,
+      "---",
+      "lockfileVersion: '9.0'",
+      "importers: [",
+      ...projectDoc.slice(1),
+    ]);
+    assert.ok(res.evidence.some((e) => e.kind === "lockfile-malformed"));
+  });
+});
+
+describe("buildLockfileGraph: pnpm workspace membership gates stale importers (#894)", () => {
+  const lock = [
+    "lockfileVersion: '9.0'",
+    "importers:",
+    "  .: {}",
+    "  packages/a:",
+    "    dependencies:",
+    "      lodash:",
+    "        specifier: ^4.17.0",
+    "        version: 4.17.21",
+    "packages:",
+    "  lodash@4.17.21:",
+    "    resolution: {integrity: sha512-x}",
+    "snapshots:",
+    "  lodash@4.17.21: {}",
+  ].join("\n");
+  const manifest = JSON.stringify({ dependencies: { lodash: "^4.17.0" } });
+  const build = (dir: string, workspace: string | undefined) =>
+    buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "pnpm-lock.yaml": lock,
+          "package.json": "{}",
+          [`${dir}/package.json`]: manifest,
+          ...(workspace === undefined ? {} : { "pnpm-workspace.yaml": workspace }),
+        }),
+      ),
+      project(dir, ["pnpm"]),
+    );
+  const kinds = (res: Awaited<ReturnType<typeof build>>) => res.evidence.map((e) => e.kind);
+
+  it("does not call a non-member stale", async () => {
+    const res = await build("templates/x", "packages:\n  - packages/*\n");
+    assert.deepEqual(
+      kinds(res).filter((k) => k.startsWith("lockfile-")),
+      ["lockfile-not-workspace-member"],
+    );
+    assert.equal(res.graph.incomplete, true);
+  });
+
+  it("still flags a real member that has no importer", async () => {
+    const res = await build("packages/b", "packages:\n  - packages/*\n");
+    assert.ok(kinds(res).includes("lockfile-manifest-mismatch"));
+    assert.equal(res.graph.incomplete, true);
+  });
+
+  it("builds a member that has an importer", async () => {
+    const res = await build("packages/a", "packages:\n  - packages/*\n");
+    assert.deepEqual(
+      res.evidence.filter((e) => e.kind === "lockfile-manifest-mismatch"),
+      [],
+    );
+    assert.equal(res.graph.nodes.length, 1);
+  });
+
+  for (const [name, workspace] of [
+    ["missing", undefined],
+    ["malformed", "packages: [\n"],
+    ["without a packages list", "catalog: {}\n"],
+    ["with an unsupported glob", "packages:\n  - 'packages/{a,b}'\n"],
+  ] as const) {
+    it(`reports a limitation, not a stale claim, when the workspace file is ${name}`, async () => {
+      const res = await build("packages/b", workspace);
+      assert.ok(kinds(res).includes("lockfile-workspace-unverified"));
+      assert.ok(!kinds(res).includes("lockfile-manifest-mismatch"));
+      assert.equal(res.graph.incomplete, true);
+    });
+  }
+});

@@ -6,7 +6,9 @@ import type { AdapterContext, DependencyGraph, Evidence, ProjectRef } from "@gho
 import { assembleGraph, emptyGraph } from "./model.js";
 import type { LoadedLockfile, LockfileGraphResult, ParsedLockfile } from "./model.js";
 import { loadNpmLockfile, parseNpmLockfile } from "./npm.js";
-import { loadPnpmLockfile, parsePnpmLockfile } from "./pnpm.js";
+import { loadPnpmLockfile, missingImporterStatement, parsePnpmLockfile } from "./pnpm.js";
+import { pnpmWorkspaceMembership } from "./pnpm-workspace.js";
+import type { Membership } from "./pnpm-workspace.js";
 import { loadYarnLockfile, parseYarnLockfile } from "./yarn.js";
 import { loadBunLockfile, parseBunLockfile } from "./bun.js";
 import { MAX_NPMRC_BYTES, mergeBindings, scopedRegistries } from "./origin.js";
@@ -265,6 +267,35 @@ function npmrcBindings(context: AdapterContext, dir: string): Promise<Map<string
   return pending;
 }
 
+const INCOMPLETE_KINDS: ReadonlySet<string> = new Set([
+  "lockfile-unsupported",
+  "lockfile-manifest-mismatch",
+  "lockfile-workspace-unverified",
+]);
+
+/**
+ * Without proven pnpm workspace membership a missing importer cannot be called
+ * stale: report the limitation instead of the claim (#894).
+ */
+function reconcileMembership(
+  evidence: Evidence[],
+  lockfile: string,
+  rel: string,
+  membership: Membership | undefined,
+): Evidence[] {
+  if (membership?.kind !== "unknown") return evidence;
+  const stale = missingImporterStatement(lockfile, rel);
+  return evidence.map((e) =>
+    e.statement === stale
+      ? {
+          kind: "lockfile-workspace-unverified",
+          statement: `${lockfile} has no importer for ${rel}, and pnpm workspace membership could not be verified (${membership.reason})`,
+          file: lockfile,
+        }
+      : e,
+  );
+}
+
 /** Build the lockfile graph for one project, with evidence. Never throws on bad input. */
 export async function buildLockfileGraph(
   context: AdapterContext,
@@ -305,6 +336,20 @@ export async function buildLockfileGraph(
           projectDir === lock.dir ? undefined : await npmrcBindings(context, projectDir),
         )
       : undefined;
+  // A project below a pnpm lockfile's directory is covered only if the
+  // workspace includes it (#894): a non-member is not a stale lockfile.
+  const membership =
+    lock.format === "pnpm" && projectDir !== lock.dir
+      ? await pnpmWorkspaceMembership(context, lock.dir, rel)
+      : undefined;
+  if (membership?.kind === "nonmember") {
+    evidence.push({
+      kind: "lockfile-not-workspace-member",
+      statement: `${projectDir} is not a pnpm workspace member per ${lock.dir === "." ? "" : `${lock.dir}/`}pnpm-workspace.yaml, so ${lock.path} does not cover it`,
+      file: lock.path,
+    });
+    return { graph: emptyGraph(project), evidence, lockfile: lock.path };
+  }
   let parsed: ParsedLockfile;
   try {
     const source = loaded.lockfile;
@@ -320,13 +365,12 @@ export async function buildLockfileGraph(
     evidence.push(malformed(lock.path, err));
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
-  evidence.push(...capMismatchEvidence(parsed.evidence, lock.path));
+  const reconciled = reconcileMembership(parsed.evidence, lock.path, rel, membership);
+  evidence.push(...capMismatchEvidence(reconciled, lock.path));
   const assembled = assembleGraph(project, parsed);
   evidence.push(...assembled.evidence);
   const graph = assembled.graph;
-  const unsupported = parsed.evidence.some((e) => e.kind === "lockfile-unsupported");
-  if (unsupported || parsed.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"))
-    graph.incomplete = true;
+  if (reconciled.some((e) => INCOMPLETE_KINDS.has(e.kind))) graph.incomplete = true;
   return { graph, evidence, lockfile: lock.path };
 }
 
@@ -347,6 +391,7 @@ const STRUCTURAL_NOTE_KINDS: ReadonlySet<string> = new Set([
   "lockfile-too-large",
   "lockfile-unsupported",
   "lockfile-workspace-unsupported",
+  "lockfile-workspace-unverified",
 ]);
 
 const isNoteEvidence = (kind: string): boolean =>
