@@ -60,6 +60,16 @@ class BlockReader {
     this.iter = source[Symbol.asyncIterator]();
   }
 
+  private countBytes(chunk: Uint8Array): void {
+    this.seen += chunk.byteLength;
+    if (this.seen > this.maxBytes) {
+      throw new ExtractionError(
+        "ARCHIVE_TOO_LARGE",
+        `decompressed archive exceeds ${this.maxBytes} bytes`,
+      );
+    }
+  }
+
   private async fill(need: number): Promise<void> {
     while (this.buffered < need && !this.eof) {
       const next = await this.iter.next();
@@ -69,13 +79,7 @@ class BlockReader {
       }
       const chunk = next.value;
       if (chunk.byteLength === 0) continue;
-      this.seen += chunk.byteLength;
-      if (this.seen > this.maxBytes) {
-        throw new ExtractionError(
-          "ARCHIVE_TOO_LARGE",
-          `decompressed archive exceeds ${this.maxBytes} bytes`,
-        );
-      }
+      this.countBytes(chunk);
       this.chunks.push(chunk);
       this.buffered += chunk.byteLength;
     }
@@ -131,6 +135,7 @@ class BlockReader {
     for (;;) {
       const next = await this.iter.next();
       if (next.done) return;
+      this.countBytes(next.value);
       for (const byte of next.value) {
         if (byte !== 0) {
           throw new ExtractionError("MALFORMED_ARCHIVE", "non-zero data after end of archive");
