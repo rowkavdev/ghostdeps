@@ -21,6 +21,8 @@ export interface LockedPackage {
   name: string;
   version: string;
   dependencies: string[];
+  /** Edges that may legitimately have no lock entry (poetry optional dependencies). */
+  optionalDependencies?: string[];
 }
 
 export interface ParsedPythonLockfile {
@@ -136,11 +138,19 @@ export function parsePoetryLock(text: string): ParsedPythonLockfile {
   const packages: LockedPackage[] = [];
   for (const entry of list) {
     if (typeof entry.name !== "string") continue;
-    const deps = isTable(entry.dependencies) ? Object.keys(entry.dependencies) : [];
+    const table = isTable(entry.dependencies) ? entry.dependencies : {};
+    const deps = Object.keys(table);
+    // An optional dependency is only locked when an extra selects it.
+    const isOptional = (value: unknown): boolean =>
+      Array.isArray(value)
+        ? value.length > 0 && value.every(isOptional)
+        : isTable(value) && value.optional === true;
+    const optional = deps.filter((d) => isOptional(table[d])).map(normaliseName);
     packages.push({
       name: normaliseName(entry.name),
       version: typeof entry.version === "string" ? entry.version : "0",
       dependencies: [...new Set(deps.map(normaliseName))].filter((d) => d !== "python").sort(),
+      ...(optional.length > 0 ? { optionalDependencies: optional.sort() } : {}),
     });
   }
   return { packages };
@@ -366,6 +376,26 @@ export async function buildProjectGraph(
     }
     transitiveClosure[dep.name] = thirdParty(closureOf(dep.name, byName));
   }
+  // A package the lock reaches may name a dependency the lock never
+  // resolved. Only what direct dependencies reach counts: unreachable
+  // entries, workspace members and optional dependencies are exempt.
+  const unlocked = new Set<string>();
+  for (const name of allReach) {
+    const pkg = byName.get(name);
+    if (pkg === undefined) continue;
+    const optional = new Set(pkg.optionalDependencies ?? []);
+    for (const dep of pkg.dependencies) {
+      if (!byName.has(dep) && !members.has(dep) && !optional.has(dep)) unlocked.add(dep);
+    }
+  }
+  if (unlocked.size > 0 && lockPath !== undefined) {
+    const names = [...unlocked].sort();
+    evidence.push({
+      kind: "lockfile-unlocked-reachable",
+      statement: `${names.length} reachable dependenc${names.length === 1 ? "y has" : "ies have"} no entry in ${lockPath} (${names.join(", ")}); the graph is incomplete`,
+      file: lockPath,
+    });
+  }
   const missing = missingNames.length;
   if (missing > 0 && lockPath !== undefined) {
     evidence.push({
@@ -375,7 +405,12 @@ export async function buildProjectGraph(
     });
   }
   return {
-    graph: { project, nodes, transitiveClosure, incomplete: missing > 0 || resolutionFork },
+    graph: {
+      project,
+      nodes,
+      transitiveClosure,
+      incomplete: missing > 0 || resolutionFork || unlocked.size > 0,
+    },
     evidence,
   };
 }

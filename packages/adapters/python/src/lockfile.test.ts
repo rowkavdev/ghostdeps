@@ -251,6 +251,90 @@ source = { registry = "https://pypi.org/simple" }
     assert.equal(graph.transitiveClosure.hatchling, undefined);
   });
 
+  it("flags a reachable dependency that has no lock entry as incomplete (#854)", async () => {
+    const pyproject = `[project]\nname = "app"\nversion = "0.1.0"\ndependencies = ["requests"]\n`;
+    const uv = `version = 1
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [{ name = "requests" }]
+
+[[package]]
+name = "requests"
+version = "2.32.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [{ name = "urllib3" }]
+`;
+    const poetry = `[[package]]
+name = "requests"
+version = "2.32.0"
+
+[package.dependencies]
+urllib3 = ">=1.21"
+`;
+    for (const files of [
+      { "pyproject.toml": pyproject, "uv.lock": uv },
+      { "pyproject.toml": pyproject, "poetry.lock": poetry },
+    ]) {
+      const { graph, evidence } = await buildProjectGraph(ctx(files), project);
+      assert.equal(graph.incomplete, true);
+      const note = evidence.find((e) => e.kind === "lockfile-unlocked-reachable");
+      assert.match(note?.statement ?? "", /urllib3/);
+    }
+  });
+
+  it("does not flag unreachable gaps, workspace members or unselected optional dependencies (#854)", async () => {
+    const pyproject = `[project]\nname = "app"\nversion = "0.1.0"\ndependencies = ["requests"]\n`;
+    const uv = `version = 1
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [{ name = "requests" }, { name = "libs" }]
+
+[[package]]
+name = "libs"
+version = "0.1.0"
+source = { editable = "libs" }
+
+[[package]]
+name = "requests"
+version = "2.32.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "orphan"
+version = "1.0.0"
+dependencies = [{ name = "ghost" }]
+`;
+    const poetry = `[[package]]
+name = "requests"
+version = "2.32.0"
+
+[package.dependencies]
+PySocks = { version = ">=1.5", optional = true }
+
+[package.extras]
+socks = ["PySocks"]
+
+[[package]]
+name = "orphan"
+version = "1.0.0"
+
+[package.dependencies]
+ghost = "*"
+`;
+    for (const files of [
+      { "pyproject.toml": pyproject, "uv.lock": uv },
+      { "pyproject.toml": pyproject, "poetry.lock": poetry },
+    ]) {
+      const { graph, evidence } = await buildProjectGraph(ctx(files), project);
+      assert.equal(graph.incomplete, false);
+      assert.ok(!evidence.some((e) => e.kind === "lockfile-unlocked-reachable"));
+    }
+  });
+
   it("flags declared dependencies missing from the lockfile", async () => {
     const { graph, evidence } = await buildProjectGraph(
       ctx({
