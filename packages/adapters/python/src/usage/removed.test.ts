@@ -49,6 +49,33 @@ describe("python removedInPr usages (#287)", () => {
     ]);
   });
 
+  it("skips removed payloads and reconstructed bases over the source byte limit (#868)", async () => {
+    // The removed text alone exceeds MAX_PYTHON_SOURCE_BYTES (1_000_000).
+    const bigRemoved = [
+      { line: 1, text: "import requests" },
+      ...Array.from({ length: 10_100 }, (_, i) => ({ line: i + 2, text: `# ${"x".repeat(98)}` })),
+    ];
+    const dropped = context({ "requirements.txt": REQS }, [
+      { path: "old.py", removedLines: bigRemoved, addedLines: [] },
+    ]);
+    assert.deepEqual(await removedOf(dropped, dep("requests")), []);
+
+    // The removed text is small, but the head file passes the read cap while
+    // the reconstructed base exceeds the parse limit: fail closed, no scan.
+    const head = `${Array.from({ length: 10_500 }, () => `# ${"y".repeat(98)}`).join("\n")}\n`;
+    const bigBase = context({ "requirements.txt": REQS, "big.py": head }, [
+      { path: "big.py", removedLines: [{ line: 1, text: "import requests" }], addedLines: [] },
+    ]);
+    assert.deepEqual(await removedOf(bigBase, dep("requests")), []);
+
+    // Control: a base just under the limit is still scanned.
+    const smallHead = `${Array.from({ length: 100 }, () => `# ${"y".repeat(98)}`).join("\n")}\n`;
+    const small = context({ "requirements.txt": REQS, "small.py": smallHead }, [
+      { path: "small.py", removedLines: [{ line: 1, text: "import requests" }], addedLines: [] },
+    ]);
+    assert.deepEqual(await removedOf(small, dep("requests")), [["small.py", 1, "static", []]]);
+  });
+
   it("rebuilds the base of an edited file and cites base-side lines", async () => {
     // base: 1 import os / 2 import requests / 3 import attrs / 4 x = 1
     const head = "import os\nimport attrs\ny = 2\n";
