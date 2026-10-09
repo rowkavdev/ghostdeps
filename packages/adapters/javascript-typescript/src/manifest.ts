@@ -5,6 +5,11 @@
  * non-registry specifiers (git/file/link/workspace) are recorded, never
  * executed.
  */
+// npm-package-arg is pinned to the 12.x line: 13.x/14.x declare engines
+// (>=22.9 / ^22.22.2) narrower than the product's >=22. 12.0.2 is the newest
+// with full >=22 coverage and shows zero classification divergence from
+// 14.0.0 over 34 specifier forms.
+import npa from "npm-package-arg";
 import { scanDeclaredLines } from "./declared-lines.js";
 import type {
   Dependency,
@@ -28,6 +33,15 @@ const KIND_BY_FIELD: Readonly<Record<string, DependencyKind>> = {
 };
 
 type Specifier = NonNullable<Dependency["specifier"]>;
+
+/** npm's git verdict for a raw specifier; false means "not git" (or npa rejects it). */
+function npaGit(raw: string): boolean {
+  try {
+    return npa(raw).type === "git";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Classify a raw version specifier. Plain semver ranges and dist-tags are
@@ -58,6 +72,20 @@ export function classifySpecifier(raw: string): Specifier | undefined {
     // Direct tarball URL: fetched at install time by the package manager, but
     // never by GhostDeps. Recorded as registry-shaped with the URL preserved.
     return { type: "registry", detail: `tarball URL (never fetched): ${raw}` };
+  }
+  // Everything else git-shaped (scp-style "git@github.com:org/repo.git",
+  // ssh:// remotes, provider subgroups, gists) is decided by npm's owning
+  // parser through the npa() entry npm install uses. npa classes ANY
+  // user@host.tld:path scp-style remote as git - there is no known-host
+  // check - and rejects ssh:// URLs to unrecognised hosts and other
+  // unsupported protocols outright, which GhostDeps records as not git
+  // (npm could not install them as git either). The gate keeps this to
+  // scp/ssh forms ("user@host:..." or "ssh://..."): bare "user/repo#ref"
+  // shorthand stays governed by the shorthand branch above, whose contract
+  // (whitespace refs require semver:) is a documented divergence from npa,
+  // which classes "user/repo#feature branch" as git.
+  if ((raw.startsWith("ssh://") || raw.includes("@")) && npaGit(raw)) {
+    return { type: "git", detail: raw };
   }
   return undefined; // plain semver range, "*", exact version, or dist-tag
 }
