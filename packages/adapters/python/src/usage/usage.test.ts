@@ -220,6 +220,44 @@ describe("extractPythonImports", () => {
     assert.deepEqual(dyn(fn + "from importlib import import_module as im\n" + fcall), ["y"]);
   });
 
+  it("drops an importlib alias that a wildcard import could rebind (#853)", () => {
+    const dyn = (src: string) =>
+      extractPythonImports(src)
+        .imports.filter((i) => i.form === "dynamic")
+        .map((i) => i.module);
+    const star = "from other import *\n";
+    // Module, import_module and __import__ aliases all yield to a wildcard.
+    assert.deepEqual(dyn("import importlib as il\n" + star + 'il.import_module("requests")\n'), []);
+    assert.deepEqual(
+      dyn("from importlib import import_module as im\n" + star + 'im("requests")\n'),
+      [],
+    );
+    assert.deepEqual(
+      dyn("from importlib import __import__ as imp\n" + star + 'imp("requests")\n'),
+      [],
+    );
+    // A wildcard in a nested scope can still rebind a module-level name.
+    assert.deepEqual(
+      dyn(
+        'import importlib as il\ndef f():\n    from other import *\nil.import_module("requests")\n',
+      ),
+      [],
+    );
+    // Controls: a named from-import, an unrelated wildcard-free file, and a
+    // wildcard in a sibling function the call cannot see stay credited.
+    assert.deepEqual(
+      dyn('import importlib as il\nfrom other import thing\nil.import_module("requests")\n'),
+      ["requests"],
+    );
+    assert.deepEqual(dyn('import importlib as il\nil.import_module("requests")\n'), ["requests"]);
+    assert.deepEqual(
+      dyn(
+        'def f():\n    from other import *\ndef g():\n    import importlib as il\n    il.import_module("requests")\n',
+      ),
+      ["requests"],
+    );
+  });
+
   it("scopes importlib aliases to the function that imports them", () => {
     const dyn = (src: string) =>
       extractPythonImports(src)
