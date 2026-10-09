@@ -340,14 +340,28 @@ export async function buildDependencyGraph(
   return out;
 }
 
+/** Structural lockfile problems that degrade a scan and are disclosed as run notes (#864). */
+const STRUCTURAL_NOTE_KINDS: ReadonlySet<string> = new Set([
+  "lockfile-malformed",
+  "lockfile-unreadable",
+  "lockfile-too-large",
+  "lockfile-unsupported",
+  "lockfile-workspace-unsupported",
+]);
+
+const isNoteEvidence = (kind: string): boolean =>
+  kind.startsWith("lockfile-manifest-mismatch") || STRUCTURAL_NOTE_KINDS.has(kind);
+
 /** Reuse parsed lockfiles and disclose graph evidence through adapter run notes. */
 export async function lockfileNotes(context: AdapterContext, projects: ProjectRef[]) {
   const notes: { statement: string }[] = [];
+  const seen = new Set<string>();
   for (const project of projects) {
     const result = await buildLockfileGraph(context, project);
     for (const evidence of result.evidence) {
-      if (evidence.kind.startsWith("lockfile-manifest-mismatch"))
-        notes.push({ statement: evidence.statement });
+      if (!isNoteEvidence(evidence.kind) || seen.has(evidence.statement)) continue;
+      seen.add(evidence.statement);
+      notes.push({ statement: evidence.statement });
     }
   }
   return notes;

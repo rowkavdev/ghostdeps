@@ -10,6 +10,7 @@ import {
   MAX_MISMATCH_EVIDENCE,
   buildDependencyGraph,
   buildLockfileGraph,
+  lockfileNotes,
 } from "./build.js";
 import { MAX_NPMRC_BYTES } from "./origin.js";
 
@@ -892,4 +893,73 @@ it("npm missing workspace importer stays incomplete despite hoisted packages", a
   );
   assert.equal(res.graph.incomplete, true);
   assert.ok(res.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"));
+});
+
+describe("lockfileNotes: structural lockfile problems (#864)", () => {
+  const notesFor = async (repository: AdapterContext["repository"], pm = "npm") =>
+    (await lockfileNotes(ctx(repository), [project(".", [pm])])).map((n) => n.statement);
+
+  it("discloses a malformed lockfile", async () => {
+    const notes = await notesFor(memoryHandle({ "package.json": "{}", "package-lock.json": "{" }));
+    assert.equal(notes.length, 1);
+    assert.match(notes[0]!, /package-lock\.json could not be parsed/);
+  });
+
+  it("discloses an unreadable lockfile", async () => {
+    const files = { "package.json": "{}", "package-lock.json": "{}" };
+    const base = memoryHandle(files);
+    const repository = {
+      ...base,
+      readFile: (p: string) =>
+        p === "package-lock.json" ? Promise.reject(new Error("EACCES")) : base.readFile(p),
+    };
+    assert.deepEqual(await notesFor(repository), ["could not read package-lock.json"]);
+  });
+
+  it("discloses an oversize lockfile", async () => {
+    const big = JSON.stringify({ lockfileVersion: 3, pad: "x".repeat(MAX_LOCKFILE_BYTES) });
+    const notes = await notesFor(memoryHandle({ "package.json": "{}", "package-lock.json": big }));
+    assert.equal(notes.length, 1);
+    assert.match(notes[0]!, /exceeds \d+ bytes and was not parsed/);
+  });
+
+  it("discloses an unsupported bun.lockb", async () => {
+    const notes = await notesFor(
+      memoryHandle({ "package.json": "{}", "bun.lockb": "\u0000binary" }),
+      "bun",
+    );
+    assert.equal(notes.length, 1);
+    assert.match(notes[0]!, /bun\.lockb/);
+  });
+
+  it("discloses a version 1 npm lockfile used for a workspace member", async () => {
+    const lock = JSON.stringify({ lockfileVersion: 1, dependencies: {} });
+    const notes = (
+      await lockfileNotes(
+        ctx(memoryHandle({ "package-lock.json": lock, "packages/a/package.json": "{}" })),
+        [project("packages/a", ["npm"])],
+      )
+    ).map((n) => n.statement);
+    assert.equal(notes.length, 1);
+    assert.match(notes[0]!, /lockfileVersion 1/);
+  });
+
+  it("reports a shared lockfile problem once across workspace projects", async () => {
+    const repository = memoryHandle({
+      "package.json": "{}",
+      "packages/a/package.json": "{}",
+      "packages/b/package.json": "{}",
+      "package-lock.json": "{",
+    });
+    const notes = await lockfileNotes(ctx(repository), [
+      project("packages/a", ["npm"]),
+      project("packages/b", ["npm"]),
+    ]);
+    assert.equal(notes.length, 1);
+  });
+
+  it("adds no note for a clean lockfile", async () => {
+    const repository = fixtureHandle("js", "lockfile-npm-v3");
+    assert.deepEqual(await notesFor(repository), []);
+  });
 });
