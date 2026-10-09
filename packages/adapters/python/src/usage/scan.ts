@@ -20,7 +20,7 @@
  * PR mode (#287): imports on lines the pull request removed come from
  * removed.ts, marked removedInPr and resolved with this project's resolver.
  */
-import { MAX_FILE_READ_BYTES, hasExcludedSegment } from "@ghostdeps/core";
+import { hasExcludedSegment } from "@ghostdeps/core";
 import type {
   AdapterContext,
   Dependency,
@@ -33,13 +33,14 @@ import { ImportResolver, firstPartyModules, readTopLevelMetadata } from "../impo
 import { parseManifests } from "../manifest.js";
 import { normaliseName } from "../pep508.js";
 import { extractPythonImports, type PythonFileImports } from "./imports.js";
+import { MAX_PYTHON_SOURCE_BYTES } from "./limits.js";
 import { findRemovedPythonUsages } from "./removed.js";
 
 /**
  * .py files larger than this are skipped, not scanned (security model:
  * parser input limits). Same bound as the JS and Go adapters.
  */
-export const MAX_PYTHON_SOURCE_BYTES = Math.min(1_000_000, MAX_FILE_READ_BYTES);
+export { MAX_PYTHON_SOURCE_BYTES } from "./limits.js";
 
 const isPythonSource = (path: string) => path.endsWith(".py") || path.endsWith(".pyw");
 

@@ -16,6 +16,7 @@ import { MAX_FILE_READ_BYTES, hasExcludedSegment, reconstructBase } from "@ghost
 import type { AdapterContext, Dependency, Usage } from "@ghostdeps/core";
 import { candidateRoots, nearestRoot } from "../detect.js";
 import { extractPythonImports, type PythonImport } from "./imports.js";
+import { MAX_PYTHON_SOURCE_BYTES } from "./limits.js";
 
 export interface RemovedImport {
   file: string;
@@ -57,6 +58,38 @@ export function removedPythonImports(context: AdapterContext): Promise<RemovedIm
   return pending;
 }
 
+/** Deleted text is not covered by the head read limit, so bound it here. */
+function removedTextTooLarge(lines: readonly { text: string }[]): boolean {
+  let bytes = 0;
+  for (const line of lines) {
+    bytes += Buffer.byteLength(line.text, "utf8");
+    if (bytes > MAX_PYTHON_SOURCE_BYTES) return true;
+  }
+  return false;
+}
+
+/** Counts the reconstructed text, including joining newlines, before it is joined. */
+function reconstructedTextTooLarge(base: readonly string[]): boolean {
+  let bytes = Math.max(0, base.length - 1);
+  for (const line of base) {
+    bytes += Buffer.byteLength(line, "utf8");
+    if (bytes > MAX_PYTHON_SOURCE_BYTES) return true;
+  }
+  return false;
+}
+
+/** A file deleted by the PR has no head: its base is the removed lines. */
+async function readHead(context: AdapterContext, file: string): Promise<string[] | undefined> {
+  try {
+    if (!(await context.repository.exists(file))) return [];
+    const text = await context.repository.readFile(file);
+    if (Buffer.byteLength(text, "utf8") > MAX_FILE_READ_BYTES) return undefined;
+    return text.split(/\r?\n/);
+  } catch {
+    return undefined;
+  }
+}
+
 async function collect(context: AdapterContext): Promise<RemovedImport[]> {
   const out: RemovedImport[] = [];
   for (const change of context.pullRequestSourceChanges ?? []) {
@@ -65,19 +98,12 @@ async function collect(context: AdapterContext): Promise<RemovedImport[]> {
     if (!isPythonSource(file) || hasExcludedSegment(file) || change.removedLines.length === 0) {
       continue;
     }
-    // A file deleted by the PR has no head: its base is the removed lines.
-    let head: string[] = [];
-    try {
-      if (await context.repository.exists(file)) {
-        const text = await context.repository.readFile(file);
-        if (Buffer.byteLength(text, "utf8") > MAX_FILE_READ_BYTES) continue;
-        head = text.split(/\r?\n/);
-      }
-    } catch {
-      continue;
-    }
+    const head = await readHead(context, file);
+    if (head === undefined) continue;
+    if (removedTextTooLarge(change.removedLines)) continue;
     const base = reconstructBase(head, change);
     if (base === undefined) continue;
+    if (reconstructedTextTooLarge(base)) continue;
     const removed = new Set(change.removedLines.map((l) => l.line));
     const parsed = extractPythonImports(base.join("\n"));
     for (const imp of parsed.imports) {
