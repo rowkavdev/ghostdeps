@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { memoryHandle } from "../testing/fs-handle.js";
-import { AliasResolver, MAX_CONFIG_BYTES, joinPath } from "./aliases.js";
+import { AliasResolver, MAX_CONFIG_BYTES, MAX_EXTENDS_DEPTH, joinPath } from "./aliases.js";
 
 const resolver = (files: Record<string, string>) =>
   new AliasResolver(memoryHandle(files), Object.keys(files));
@@ -82,6 +82,215 @@ describe("AliasResolver", () => {
     assert.equal(await internal(files, "apps/b", "@shared/x"), false);
     assert.equal(await internal(files, "apps/b", "@b/y"), false);
     assert.equal(await internal(files, "apps/b", "apps/b/src/y"), true);
+  });
+
+  it("merges every local base in an extends array, later entries per option (#862)", async () => {
+    // base.json sets baseUrl "."; config/paths.json sets paths pkg -> src/pkg.ts.
+    // Real TS 5.9.3 merges both bases: the substitution resolves against the
+    // merged root baseUrl, not against config/.
+    const files = {
+      "tsconfig.json": `{"extends":["./base.json","./config/paths.json"],"compilerOptions":{}}`,
+      "base.json": `{"compilerOptions":{"baseUrl":"."}}`,
+      "config/paths.json": `{"compilerOptions":{"paths":{"pkg":["src/pkg.ts"]}}}`,
+      "config/src/pkg.ts": "",
+      "node_modules/pkg/index.js": "",
+    };
+    // src/pkg.ts does not exist at the root baseUrl, so pkg stays a package.
+    assert.equal(await internal(files, ".", "pkg"), false);
+    // With the target at the root baseUrl the merged alias does apply.
+    assert.equal(await internal({ ...files, "src/pkg.ts": "" }, ".", "pkg"), true);
+  });
+
+  it("merges a shared base reached through a diamond of extends (#862)", async () => {
+    const files = {
+      "tsconfig.json": `{"extends":["./b.json","./c.json"],"compilerOptions":{}}`,
+      "b.json": `{"extends":"./d.json"}`,
+      "c.json": `{"extends":"./d.json","compilerOptions":{"paths":{"@c/*":["src/*"]}}}`,
+      "d.json": `{"compilerOptions":{"baseUrl":"."}}`,
+      "src/x.ts": "",
+      "lib/y.ts": "",
+    };
+    // c's paths resolve against d's baseUrl, inherited through both arms.
+    assert.equal(await internal(files, ".", "@c/x"), true);
+    assert.equal(await internal(files, ".", "lib/y"), true);
+  });
+
+  it("a shared base repeated across many arms counts once (#862)", async () => {
+    // 17 arms each extending shared.json, then last.json with baseUrl: 19
+    // distinct bases, so nothing is capped. Real tsc 5.9.3 retains last's
+    // baseUrl and resolves pkg internally.
+    const files: Record<string, string> = {
+      "tsconfig.json": `{"extends":[${Array.from({ length: 17 }, (_, i) => `"./arm${i}.json"`).join(",")},"./last.json"],"compilerOptions":{}}`,
+      "shared.json": "{}",
+      "last.json": `{"compilerOptions":{"baseUrl":"."}}`,
+      "pkg/index.ts": "",
+    };
+    for (let i = 0; i < 17; i++) files[`arm${i}.json`] = `{"extends":"./shared.json"}`;
+    const r = resolver(files);
+    const config = await r.configFor("tsconfig.json");
+    assert.ok(config);
+    assert.equal(r.isInternal("pkg", config), true);
+    assert.deepEqual(r.limitations, []);
+  });
+
+  it("a cycle beside a repeated shared base keeps the distinct-base cache (#862)", async () => {
+    // cycle.json extends itself: the cycle is cut and noted, but the acyclic
+    // arms must keep their cache - 20 distinct bases, so nothing is capped.
+    const files: Record<string, string> = {
+      "tsconfig.json": `{"extends":["./cycle.json",${Array.from({ length: 17 }, (_, i) => `"./arm${i}.json"`).join(",")},"./last.json"],"compilerOptions":{}}`,
+      "cycle.json": `{"extends":"./cycle.json"}`,
+      "shared.json": "{}",
+      "last.json": `{"compilerOptions":{"baseUrl":"."}}`,
+      "pkg/index.ts": "",
+    };
+    for (let i = 0; i < 17; i++) files[`arm${i}.json`] = `{"extends":"./shared.json"}`;
+    const r = resolver(files);
+    const config = await r.configFor("tsconfig.json");
+    assert.ok(config);
+    assert.equal(r.isInternal("pkg", config), true);
+    assert.deepEqual(
+      r.limitations.map((e) => [e.kind, e.file]),
+      [["tsconfig-extends-cycle", "tsconfig.json"]],
+    );
+  });
+
+  it("a cycle below a shared base does not leak across paths (#862)", async () => {
+    // b3 <-> b4: b4's merged baseUrl depends on the path taken, so no merge
+    // whose subtree touched the cycle may be cached. An uncached active-stack
+    // traversal ends with baseUrl d1 from the root's last base b2.
+    const files: Record<string, string> = {
+      "tsconfig.json": `{"extends":["./b0.json","./b1.json","./b2.json"],"compilerOptions":{}}`,
+      "b0.json": `{"extends":["./b1.json","./b2.json"]}`,
+      "b1.json": `{"extends":"./b4.json","compilerOptions":{"baseUrl":"d1"}}`,
+      "b2.json": `{"extends":["./b3.json","./b0.json"]}`,
+      "b3.json": `{"extends":"./b4.json","compilerOptions":{"baseUrl":"d3"}}`,
+      "b4.json": `{"extends":"./b3.json"}`,
+    };
+    const r = resolver(files);
+    const config = await r.configFor("tsconfig.json");
+    assert.ok(config);
+    assert.equal(config.baseUrl, "d1");
+    assert.ok(r.limitations.some((e) => e.kind === "tsconfig-extends-cycle"));
+  });
+
+  it("a base reached deep then shallow is not served a depth-truncated cache (#862)", async () => {
+    // b0->...->b6->shared reaches shared at the depth cap, where its own base
+    // last is cut; the direct root->shared visit must still merge last.
+    const files: Record<string, string> = {
+      "tsconfig.json": `{"extends":["./b0.json","./shared.json"],"compilerOptions":{}}`,
+      "shared.json": `{"extends":"./last.json"}`,
+      "last.json": `{"compilerOptions":{"baseUrl":"."}}`,
+      "pkg/index.ts": "",
+    };
+    for (let i = 0; i < 7; i++)
+      files[`b${i}.json`] = `{"extends":"./${i === 6 ? "shared" : `b${i + 1}`}.json"}`;
+    const r = resolver(files);
+    const config = await r.configFor("tsconfig.json");
+    assert.ok(config);
+    assert.equal(r.isInternal("pkg", config), true);
+    assert.deepEqual(
+      r.limitations.map((e) => [e.kind, e.file]),
+      [["tsconfig-extends-too-deep", "tsconfig.json"]],
+    );
+  });
+
+  it("bounds extends branching: too many bases fail closed with a limitation (#862)", async () => {
+    const files: Record<string, string> = {
+      "tsconfig.json": `{"extends":[${Array.from({ length: 33 }, (_, i) => `"./b${i}.json"`).join(",")}],"compilerOptions":{}}`,
+      "pkg/index.ts": "",
+    };
+    for (let i = 0; i < 33; i++)
+      files[`b${i}.json`] = i === 32 ? `{"compilerOptions":{"baseUrl":"."}}` : "{}";
+    const r = resolver(files);
+    const config = await r.configFor("tsconfig.json");
+    assert.ok(config);
+    // The 33rd base carries baseUrl: past the breadth cap it is not read, so
+    // pkg is not internal and the run records the exhaustion.
+    assert.equal(r.isInternal("pkg", config), false);
+    assert.deepEqual(
+      r.limitations.map((e) => [e.kind, e.file]),
+      [["tsconfig-extends-too-broad", "tsconfig.json"]],
+    );
+  });
+
+  it("cached extends merges match an uncached reference on random small graphs (#862)", async () => {
+    // Deterministic PRNG: a failure prints its graph and reproduces exactly.
+    const mulberry32 = (seed: number) => () => {
+      seed |= 0;
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    interface Node {
+      extends: string[];
+      baseUrl?: string;
+    }
+    // The uncached active-stack traversal every cached run must agree with.
+    // Entries are "./"-relative to root-level files, like the fixtures.
+    const reference = (
+      graph: Record<string, Node>,
+      file: string,
+      stack: readonly string[],
+    ): string | undefined => {
+      if (stack.includes(file)) return undefined;
+      if (stack.length > MAX_EXTENDS_DEPTH) return undefined;
+      const node = graph[file];
+      if (!node) return undefined;
+      let merged: string | undefined;
+      for (const base of node.extends) {
+        const b = reference(graph, base.slice(2), [...stack, file]);
+        if (b !== undefined) merged = b;
+      }
+      if (node.baseUrl !== undefined) merged = node.baseUrl;
+      return merged;
+    };
+    const rand = mulberry32(862);
+    for (let g = 0; g < 1000; g++) {
+      const graph: Record<string, Node> = {};
+      const files: Record<string, string> = {};
+      const emit = (name: string, bases: string[], baseUrl?: string) => {
+        const node: Node = { extends: bases };
+        if (baseUrl !== undefined) node.baseUrl = baseUrl;
+        graph[name] = node;
+        files[name] = JSON.stringify({
+          ...(bases.length ? { extends: bases } : {}),
+          ...(baseUrl !== undefined ? { compilerOptions: { baseUrl } } : {}),
+        });
+      };
+      if (rand() < 0.5) {
+        // Chain mode: a spine longer than MAX_EXTENDS_DEPTH plus random
+        // cross-links, so some visits hit the depth cap and others do not.
+        const m = 9 + Math.floor(rand() * 5); // 9..13 nodes
+        const cnames = Array.from({ length: m }, (_, i) => `c${i}.json`);
+        const cpick = (): string => `./${cnames[Math.floor(rand() * m)]!}`;
+        for (let i = 0; i < m; i++) {
+          const bases: string[] = [];
+          if (i + 1 < m) bases.push(`./c${i + 1}.json`);
+          if (rand() < 0.4) bases.push(cpick());
+          emit(cnames[i]!, bases, rand() < 0.5 ? `d-c${i}` : undefined);
+        }
+        const roots = [`./${cnames[0]!}`];
+        if (rand() < 0.6) roots.push(cpick()); // shallow revisit of a chain node
+        emit("tsconfig.json", roots, rand() < 0.3 ? "d-root" : undefined);
+      } else {
+        const count = 2 + Math.floor(rand() * 6); // 2..7 bases, caps never trip
+        const names = Array.from({ length: count }, (_, i) => `n${i}.json`);
+        const pick = (): string =>
+          rand() < 0.15 ? "./missing.json" : `./${names[Math.floor(rand() * count)]!}`;
+        for (const name of [...names, "tsconfig.json"]) {
+          emit(
+            name,
+            Array.from({ length: Math.floor(rand() * 4) }, pick),
+            rand() < 0.5 ? `d-${name}` : undefined,
+          );
+        }
+      }
+      const expected = reference(graph, "tsconfig.json", []);
+      const r = resolver(files);
+      const config = await r.configFor("tsconfig.json");
+      assert.equal(config?.baseUrl, expected, `graph ${g}: ${JSON.stringify(graph)}`);
+    }
   });
 
   it("follows extends into a workspace package (#145): subpath, bare name, tsconfig field", async () => {
