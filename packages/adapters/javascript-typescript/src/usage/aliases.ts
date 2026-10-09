@@ -33,6 +33,8 @@ import type { Evidence, RepositoryHandle } from "@ghostdeps/core";
 export const MAX_CONFIG_BYTES = 256 * 1024;
 /** Maximum `extends` chain length followed. */
 export const MAX_EXTENDS_DEPTH = 8;
+/** Maximum distinct `extends` bases merged per config resolution (#862). */
+export const MAX_EXTENDS_BASES = 32;
 /** Maximum `paths` entries honoured per config; the rest are ignored with a limitation. */
 export const MAX_PATH_ENTRIES = 1_000;
 /** Maximum targets considered per `paths` entry. */
@@ -103,7 +105,7 @@ function own(record: Record<string, unknown>, key: string): unknown {
 
 interface ParsedConfigFile {
   config: RawConfig;
-  extendsFile: string | undefined;
+  extendsFiles: string[];
 }
 
 /** "<name>" or "<name>/<subpath>" for a package-style extends value. */
@@ -139,6 +141,28 @@ interface RawConfig {
 }
 
 /** Alias resolution for one repository listing. Create one per scan. */
+/** A later config replaces only the options it defines. */
+function overrideOptions(target: RawConfig, source: RawConfig): void {
+  if (source.baseUrl !== undefined) target.baseUrl = source.baseUrl;
+  if (source.paths === undefined) return;
+  target.paths = source.paths;
+  if (source.pathsDir !== undefined) target.pathsDir = source.pathsDir;
+}
+
+function cacheMerge(
+  cache: Map<string, Map<number, RawConfig>>,
+  file: string,
+  depth: number,
+  merged: RawConfig,
+): void {
+  let byDepth = cache.get(file);
+  if (!byDepth) {
+    byDepth = new Map();
+    cache.set(file, byDepth);
+  }
+  byDepth.set(depth, merged);
+}
+
 export class AliasResolver {
   private readonly files: Set<string>;
   private readonly dirs: Set<string>;
@@ -251,43 +275,77 @@ export class AliasResolver {
   }
 
   private async resolveEffective(configFile: string): Promise<AliasConfig | undefined> {
-    const chain: RawConfig[] = [];
+    // TS 5 array extends: every resolvable base is merged in array order and
+    // a later base replaces only the options it defines (#862). The walk is a
+    // DAG, not a chain: cycles are detected against the current path, depth
+    // against MAX_EXTENDS_DEPTH, and breadth against MAX_EXTENDS_BASES counted
+    // in a DISTINCT-seen set, separate from the cache. Merges are cached per
+    // remaining depth budget (keyed by stack length, so a depth-truncated
+    // merge never serves a shallower visit and a full merge never serves a
+    // deeper one) and their effect still applied at every edge in order, so
+    // a shared base repeated across many arms costs one slot. A merge whose
+    // subtree touched a cycle cut depends on the path taken, so it is never
+    // cached and neither is any ancestor's merge; acyclic sibling subtrees
+    // still cache. All caps fail closed (the unmerged options stay unknown).
+    const cache = new Map<string, Map<number, RawConfig>>();
     const seen = new Set<string>();
-    let current: string | undefined = configFile;
-    let depth = 0;
-    while (current !== undefined) {
-      if (seen.has(current)) {
+    let breadthNoted = false;
+    const merge = async (
+      file: string,
+      stack: readonly string[],
+    ): Promise<{ config: RawConfig | undefined; cycleTainted: boolean }> => {
+      const hit = cache.get(file)?.get(stack.length);
+      if (hit !== undefined) return { config: hit, cycleTainted: false };
+      if (stack.includes(file)) {
         this.limit(
           "tsconfig-extends-cycle",
           `${configFile} has a circular extends chain`,
           configFile,
         );
-        break;
+        return { config: undefined, cycleTainted: true };
       }
-      if (depth > MAX_EXTENDS_DEPTH) {
+      if (stack.length > MAX_EXTENDS_DEPTH) {
         this.limit(
           "tsconfig-extends-too-deep",
           `${configFile} extends more than ${MAX_EXTENDS_DEPTH} levels; the rest was not read`,
           configFile,
         );
-        break;
+        return { config: undefined, cycleTainted: false };
       }
-      seen.add(current);
-      depth += 1;
-      const parsed = await this.readRaw(current);
-      if (!parsed) break;
-      chain.push(parsed.config);
-      current = parsed.extendsFile;
-    }
-    // Nearest config wins: walk from the base outward.
-    const merged: RawConfig = {};
-    for (const raw of chain.reverse()) {
-      if (raw.baseUrl !== undefined) merged.baseUrl = raw.baseUrl;
-      if (raw.paths !== undefined) {
-        merged.paths = raw.paths;
-        if (raw.pathsDir !== undefined) merged.pathsDir = raw.pathsDir;
+      if (stack.length > 0 && !seen.has(file)) {
+        if (seen.size >= MAX_EXTENDS_BASES) {
+          if (!breadthNoted) {
+            breadthNoted = true;
+            this.limit(
+              "tsconfig-extends-too-broad",
+              `${configFile} extends more than ${MAX_EXTENDS_BASES} distinct bases; the rest were not read`,
+              configFile,
+            );
+          }
+          return { config: undefined, cycleTainted: false };
+        }
+        seen.add(file);
       }
-    }
+      const parsed = await this.readRaw(file);
+      if (!parsed) return { config: undefined, cycleTainted: false };
+      const merged: RawConfig = {};
+      let tainted = false;
+      for (const base of parsed.extendsFiles) {
+        const res = await merge(base, [...stack, file]);
+        // A cycle cut anywhere below makes this merge path-dependent: it and
+        // every ancestor stay uncached, while sibling subtrees computed from
+        // scratch keep their cache.
+        if (res.cycleTainted) tainted = true;
+        if (res.config === undefined) continue;
+        overrideOptions(merged, res.config);
+      }
+      overrideOptions(merged, parsed.config);
+      if (!tainted) cacheMerge(cache, file, stack.length, merged);
+      return { config: merged, cycleTainted: tainted };
+    };
+    const root = await merge(configFile, []);
+    const merged = root.config;
+    if (merged === undefined) return undefined;
     const out: AliasConfig = { configFile, paths: merged.paths ?? [] };
     if (merged.baseUrl !== undefined) out.baseUrl = merged.baseUrl;
     const pathsBase = merged.baseUrl ?? merged.pathsDir;
@@ -370,26 +428,24 @@ export class AliasResolver {
         raw.pathsDir = dir;
       }
     }
-    return { config: raw, extendsFile: await this.localExtends(own(config, "extends"), dir, file) };
+    return {
+      config: raw,
+      extendsFiles: await this.localExtends(own(config, "extends"), dir, file),
+    };
   }
 
   /**
-   * The nearest `extends` base that is a listed repository file: a relative
-   * path, a path inside a workspace package of this repository (#145), or a
-   * file inside an installed node_modules package (#276). node_modules bases
-   * that are not installed are skipped and recorded for the run note.
+   * Every resolvable `extends` base, in array order (#862): relative paths,
+   * paths inside workspace packages of this repository (#145), or files
+   * inside installed node_modules packages (#276). node_modules bases that
+   * are not installed are skipped and recorded for the run note.
    */
-  private async localExtends(
-    value: unknown,
-    dir: string,
-    file: string,
-  ): Promise<string | undefined> {
+  private async localExtends(value: unknown, dir: string, file: string): Promise<string[]> {
     const list = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
-    // TS 5 array extends: later entries override earlier ones, so the last local one is the nearest base.
-    let found: string | undefined;
-    // Every entry is looked at, so each unread package base is recorded even
-    // when a nearer base was found.
-    for (const entry of [...list].reverse()) {
+    const bases: string[] = [];
+    // TS 5 array extends: later entries override earlier ones per option, so
+    // every resolvable entry is returned for the merge.
+    for (const entry of list) {
       if (typeof entry !== "string") continue;
       if (entry.startsWith("./") || entry.startsWith("../")) {
         const target = joinPath(dir, entry);
@@ -403,7 +459,7 @@ export class AliasResolver {
           // A relative path into node_modules: read it when the listing has
           // the file (installed); otherwise record the base for the run note.
           if (hit !== undefined) {
-            if (found === undefined) found = hit;
+            bases.push(hit);
           } else {
             const nm = target.split("/").indexOf("node_modules");
             const pkg = packageName(
@@ -416,24 +472,24 @@ export class AliasResolver {
           }
           continue;
         }
-        if (found !== undefined) continue;
-        if (hit !== undefined) found = hit;
+        if (hit !== undefined) bases.push(hit);
         continue;
       }
       const pkg = packageName(entry);
       if (pkg === undefined) continue;
       if ((await this.workspacePackages()).has(pkg)) {
-        if (found === undefined) found = await this.workspaceExtends(entry, file);
+        const resolved = await this.workspaceExtends(entry, file);
+        if (resolved !== undefined) bases.push(resolved);
         continue;
       }
       const resolved = await this.nodeModulesExtends(entry, dir);
       if (resolved !== undefined) {
-        if (found === undefined) found = resolved;
+        bases.push(resolved);
       } else {
         this.notePackageBase(pkg);
       }
     }
-    return found;
+    return bases;
   }
 
   /**
