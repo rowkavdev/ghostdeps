@@ -432,7 +432,10 @@ export class TarReader {
       if (nul >= 0) nameBytes = nameBytes.subarray(0, nul);
       const prefix = block.subarray(345, 500);
       const prefixNul = prefix.indexOf(0);
-      const prefixText = prefixNul > 0 ? decodeUtf8(prefix.subarray(0, prefixNul), "prefix") : "";
+      const prefixText = decodeUtf8(
+        prefixNul >= 0 ? prefix.subarray(0, prefixNul) : prefix,
+        "prefix",
+      );
 
       const size = overrides.size ?? rawSize;
 
