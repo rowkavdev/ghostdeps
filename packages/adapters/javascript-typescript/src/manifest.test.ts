@@ -251,8 +251,62 @@ it("retains whitespace inside GitHub shorthand semver selectors", () => {
   for (const raw of ["user/repo#semver:>=1 <2", "user/repo#semver:^1 || ^2"]) {
     assert.deepEqual(classifySpecifier(raw), { type: "git", detail: raw }, raw);
   }
+  // Deliberate divergence from npa (which classes "user/repo#feature branch"
+  // as git): shorthand whitespace refs must use semver:.
   for (const raw of ["user/repo#feature branch", "user/repo extra", "@scope/pkg#semver:>=1 <2"]) {
     assert.equal(classifySpecifier(raw), undefined, raw);
+  }
+});
+
+it("classifies hosted git URL specifiers as git dependencies (#861)", () => {
+  // Positive and negative cases grounded against npm's owning parser: npa
+  // 12.0.2 and 14.0.0 give identical verdicts for every one of these forms
+  // (probed over 34 forms through the npa() entry npm install uses).
+  // Note npa applies NO known-host check to scp-style remotes: any
+  // user@host.tld:path is git, even unrecognised hosts, absolute paths and
+  // deep repository paths.
+  for (const raw of [
+    "git@github.com:org/repo.git",
+    "git@github.com:org/repo",
+    "git@github.com:org/repo#branch",
+    "git@gitlab.com:group/sub/repo",
+    "user@bitbucket.org:org/repo",
+    "git@gist.github.com:abc123",
+    "git@git.sr.ht:~user/repo",
+    "git@github.com:o/r/",
+    "git@github.com:o/r:weird",
+    "git@github.com:org/repo/sub",
+    "user@host.co:org/repo",
+    "user@host.co:/absolute/path",
+    "git@sourcehut.org:~user/repo",
+    "ssh://git@github.com/org/repo.git",
+    "ssh://git@github.com:2222/org/repo.git",
+    "ssh://github.com/org/repo",
+    "ssh://git@gitlab.com/org/repo",
+    "ssh://git@github.com/o/r#main",
+    "ssh://git@gist.github.com/abc123",
+    "ssh://git@github.com/o/r/",
+  ]) {
+    assert.deepEqual(classifySpecifier(raw), { type: "git", detail: raw }, raw);
+    const parsed = parseManifestText(
+      JSON.stringify({ dependencies: { hosted: raw } }),
+      rootProject,
+      "package.json",
+    );
+    assert.deepEqual(parsed.dependencies[0]?.specifier, { type: "git", detail: raw });
+  }
+  // npa rejects these outright (unsupported protocol or invalid URL), so npm
+  // could not install them as git either: ssh:// to hosts no provider
+  // recognises, a port out of range, and non-URL "protocol:" shapes.
+  for (const raw of [
+    "user@host:repo/foo@bar:latest",
+    "foo@bar:https://example.com",
+    "ssh://foo",
+    "ssh://git@custom.host.co/x/y.git",
+    "ssh://evilgithub.com/x/y",
+    "ssh://git@github.com:99999/x/y",
+  ]) {
+    assert.notEqual(classifySpecifier(raw)?.type, "git", raw);
   }
 });
 

@@ -316,6 +316,7 @@ writeFileSync(
       bundledDependencies: ["tree-sitter-rust", "web-tree-sitter"],
       dependencies: {
         "smol-toml": python.dependencies["smol-toml"],
+        "npm-package-arg": jsTs.dependencies["npm-package-arg"],
         typescript: jsTs.dependencies.typescript,
         yaml: jsTs.dependencies.yaml,
         "tree-sitter-rust": "0.24.0",

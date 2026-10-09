@@ -170,6 +170,7 @@ const manifest = {
   bugs: "https://github.com/rowkavdev/ghostdeps/issues",
   dependencies: {
     "smol-toml": python.dependencies["smol-toml"],
+    "npm-package-arg": jsTs.dependencies["npm-package-arg"],
     typescript: jsTs.dependencies.typescript,
     yaml: jsTs.dependencies.yaml,
     // Vendored packages are also listed here (exact versions matching the
