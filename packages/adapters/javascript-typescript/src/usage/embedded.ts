@@ -228,11 +228,16 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
     const tagEnd = openingTagEnd(text, open + 7);
     if (tagEnd < 0) break;
     const tag = text.slice(open, tagEnd + 1);
+    // A self-closing component script has no body: resume right after the tag
+    // instead of seeking the next closing tag (#867).
+    if (isSelfClosingScript(file, tag)) {
+      from = tagEnd + 1;
+      continue;
+    }
     const close = closingScriptStart(lower, tagEnd + 1);
     const bodyEnd = close < 0 ? text.length : close;
     const type = (attr(tag, "type") ?? "").trim().toLowerCase();
-    const selfClosing = isSelfClosingScript(file, tag);
-    if (!selfClosing && JS_TYPES.has(type)) {
+    if (JS_TYPES.has(type)) {
       const lang = attr(tag, "lang") ?? (type.includes("typescript") ? "ts" : undefined);
       push(tagEnd + 1, bodyEnd, kindFor(lang));
     }
