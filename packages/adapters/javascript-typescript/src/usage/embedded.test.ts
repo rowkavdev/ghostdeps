@@ -195,3 +195,19 @@ it("does not scan script-like text inside HTML text elements", () => {
     [],
   );
 });
+
+it("keeps the block after a self-closing script in component files (#867)", () => {
+  const text = '<script src="./external.js"/>\n<script>\nimport "lodash";\n</script>\n';
+  for (const file of ["a.astro", "a.vue", "a.svelte"]) {
+    assert.deepEqual(
+      extractScriptBlocks(file, text).blocks.map(({ code }) => code.trim()),
+      ['import "lodash";'],
+      file,
+    );
+  }
+  // HTML ignores the slash, so the text up to the next closing tag is still the body.
+  assert.deepEqual(
+    extractScriptBlocks("index.html", text).blocks.map(({ code }) => code.trim()),
+    ['<script>\nimport "lodash";'],
+  );
+});
