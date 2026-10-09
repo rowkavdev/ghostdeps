@@ -55,6 +55,19 @@ describe("TarReader", () => {
     assert.equal(entries[3]?.linkName, "index.js");
   });
 
+  for (const length of [154, 155]) {
+    it(`preserves a ${length}-byte ustar prefix`, async () => {
+      const tar = buildTar([{ name: "file.txt", data: "x" }]);
+      tar.set(Buffer.from("p".repeat(length)), 345);
+      tar.fill(0x20, 148, 156);
+      let checksum = 0;
+      for (const byte of tar.subarray(0, 512)) checksum += byte;
+      tar.set(Buffer.from(checksum.toString(8).padStart(6, "0") + "\0 "), 148);
+      const entries = await readAll(tar);
+      assert.equal(entries[0]?.name, "p".repeat(length) + "/file.txt");
+    });
+  }
+
   it("returns exact file bodies", async () => {
     const tar = buildTar([{ name: "a.txt", data: "hello ghostdeps" }]);
     const reader = new TarReader(chunk(tar, 64));
