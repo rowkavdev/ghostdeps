@@ -123,6 +123,40 @@ function rebinds(text: string, name: string): boolean {
   return /^(?:global|nonlocal|del)\s/u.test(text) && mentions(text);
 }
 
+/** The implicit canonical guard names: trusted at any scope until rebound. */
+const CANONICAL_TYPE_NAMES: ReadonlySet<string> = new Set(["TYPE_CHECKING", "typing"]);
+
+/**
+ * rebinds() for a canonical guard name. A from-import's module part mentions
+ * the name without binding it (`from typing import TYPE_CHECKING` never binds
+ * "typing"), so only the imported names count as a rebinding there.
+ */
+function rebindsCanonical(text: string, name: string): boolean {
+  const from = /^from\s+[^\n]*?\s+import\b/u.exec(text);
+  if (from) {
+    const imported = text.slice(from.index + from[0].length).normalize("NFKC");
+    if (/^\s*\*/u.test(imported)) return true;
+    const id = new RegExp(
+      `(?<![\\p{XID_Continue}.])${escapeRegExp(name)}(?![\\p{XID_Continue}])`,
+      "u",
+    );
+    return id.test(imported);
+  }
+  return rebinds(text, name);
+}
+
+/**
+ * Whether a statement drops a tracked guard name. Canonical names are trusted
+ * at every scope, so only an unconditional module-level statement may drop
+ * them (#850); a conditional or nested shadow does not change what the rest
+ * of the module reads. Aliases are only trusted at indent 0 and keep the
+ * stricter any-statement scan.
+ */
+function dropsName(name: string, fullText: string, text: string, moduleLevel: boolean): boolean {
+  if (!CANONICAL_TYPE_NAMES.has(name)) return rebinds(fullText, name) || rebinds(text, name);
+  return moduleLevel && (rebindsCanonical(fullText, name) || rebindsCanonical(text, name));
+}
+
 /** Record bindings made by one statement; only module-level imports add names. */
 function updateTypeCheckingNames(
   names: TypeCheckingNames,
@@ -133,7 +167,7 @@ function updateTypeCheckingNames(
   // The full statement still carries a one-line header (`for TC in x: pass`).
   for (const set of [names.flags, names.modules]) {
     for (const name of [...set]) {
-      if (rebinds(fullText, name) || rebinds(text, name)) set.delete(name);
+      if (dropsName(name, fullText, text, moduleLevel)) set.delete(name);
     }
   }
   if (!moduleLevel) return;
@@ -191,7 +225,11 @@ function isTypeCheckingHeader(
     if (!wraps || depth !== 0) break;
     condition = condition.slice(1, -1).trim();
   }
-  if (/^(?:typing\s*\.\s*)?TYPE_CHECKING$/.test(condition)) return true;
+  // The canonical names are trusted at any scope, but only while the binding
+  // tracker still holds them (#850).
+  const bare = condition.normalize("NFKC");
+  if (bare === "TYPE_CHECKING") return names.flags.has("TYPE_CHECKING");
+  if (/^typing\s*\.\s*TYPE_CHECKING$/.test(bare)) return names.modules.has("typing");
   // Aliases are only trusted at indent 0: inside a def, lambda or class a
   // parameter or a local binding anywhere in the scope can shadow the name.
   if (!moduleScope) return false;
@@ -577,7 +615,10 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
   const code: string[] = [];
   let typeCheckingIndent: number | undefined;
   let inlineSuite: { line: number; typeOnly: boolean } | undefined;
-  const typeNames: TypeCheckingNames = { flags: new Set(), modules: new Set() };
+  const typeNames: TypeCheckingNames = {
+    flags: new Set(["TYPE_CHECKING"]),
+    modules: new Set(["typing"]),
+  };
   const aliasesAt = importlibAliases(statements);
 
   for (const [statementIndex, stmt] of statements.entries()) {
