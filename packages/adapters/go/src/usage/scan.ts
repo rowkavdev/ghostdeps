@@ -144,6 +144,15 @@ export async function findGoUsage(
   // PR mode (#101): import paths on removed lines of Go files.
   for (const change of context.pullRequestSourceChanges ?? []) {
     if (!change.path.endsWith(".go") || isIgnoredGoPath(change.path)) continue;
+    // Deleted text is not covered by the head read limit: a removed payload
+    // over the source byte cap was never lexed at head, so do not scan it
+    // here either (#860).
+    let removedBytes = 0;
+    for (const removed of change.removedLines) {
+      removedBytes += Buffer.byteLength(removed.text, "utf8");
+      if (removedBytes > MAX_GO_SOURCE_BYTES) break;
+    }
+    if (removedBytes > MAX_GO_SOURCE_BYTES) continue;
     for (const removed of change.removedLines) {
       for (const m of removed.text.matchAll(/"([^"\s\\]+)"|`([^`\s]+)`/g)) {
         const value = m[1] ?? m[2]!;
