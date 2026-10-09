@@ -144,7 +144,14 @@ export function crateGraph(
   const all = new Map<string, LockedPackage>();
   for (const dep of direct) {
     const closure = closureOf(dep);
-    transitiveClosure[dep.name] = [...new Set([...closure.values()].map((p) => p.name))]
+    // Distinct direct resolutions can share a name (foo 1 and foo 2): union
+    // their closures instead of letting the last one overwrite the rest (#859).
+    transitiveClosure[dep.name] = [
+      ...new Set([
+        ...(transitiveClosure[dep.name] ?? []),
+        ...[...closure.values()].map((p) => p.name),
+      ]),
+    ]
       .filter((n) => n !== dep.name)
       .sort(compareStrings);
     for (const [k, p] of closure) {
