@@ -54,6 +54,10 @@ interface WrapperSpec {
   bool?: readonly string[];
   /** Every positional argument is itself a command (`concurrently "a" "b"`). */
   commandArgs?: boolean;
+  /** The arguments after leading assignments are joined into one shell command (`cross-env-shell "a && b"`). */
+  shellCommand?: boolean;
+  /** The first positional argument is a script file the wrapper runs (`nodemon server.js`). */
+  scriptFile?: boolean;
 }
 
 const CONCURRENTLY: WrapperSpec = {
@@ -130,10 +134,11 @@ const WRAPPER_SPECS: Readonly<Record<string, WrapperSpec>> = Object.freeze({
     bool: ["-E", "-H", "-n", "-S", "-k", "-b", "--preserve-env"],
   },
   "cross-env": { isPackage: true },
-  "cross-env-shell": { isPackage: true },
+  "cross-env-shell": { isPackage: true, shellCommand: true },
   dotenv: { isPackage: true, value: ["-e", "-v", "-c", "-p"], bool: ["-o", "--debug"] },
   nodemon: {
     isPackage: true,
+    scriptFile: true,
     value: [
       "-w",
       "--watch",
@@ -379,6 +384,12 @@ function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): vo
     if (spec) {
       if (spec.isPackage) out.words.push(bare);
       i++;
+      if (spec.shellCommand) {
+        // cross-env-shell joins its arguments and runs them through a shell.
+        while (i < words.length && isAssignment(words[i]!)) i++;
+        if (i < words.length) analyseNested(words.slice(i).join(" "), depth, out);
+        return;
+      }
       while (i < words.length && words[i]!.startsWith("-")) {
         const raw = words[i]!;
         if (raw === "--") {
@@ -397,6 +408,13 @@ function analyseSegment(words: string[], depth: number, out: ScriptAnalysis): vo
           if (!spec.bool?.includes(flag)) out.gaps.push(`${bare}: unrecognised flag ${flag}`);
           i++;
         }
+      }
+      if (spec.scriptFile) {
+        // The next word is the file the wrapper runs, not a command: the
+        // commands it spawns are a coverage gap, like `node file.js`.
+        if (words[i] !== undefined)
+          out.gaps.push(`${bare} runs ${words[i]}; commands it spawns are not read`);
+        return;
       }
       continue;
     }
