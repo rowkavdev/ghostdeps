@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { gzipSync } from "node:zlib";
 import { describe, it } from "node:test";
 import { ExtractionError } from "./errors.js";
 import { TarReader, type TarEntryHeader } from "./tar.js";
@@ -153,6 +154,33 @@ describe("TarReader", () => {
       })(),
       "ARCHIVE_TOO_LARGE",
     );
+  });
+
+  for (const fixture of ["empty", "file", "gzip"] as const) {
+    it(`enforces the archive byte ceiling while draining ${fixture} zero padding`, async () => {
+      const archive = buildTar(fixture === "file" ? [{ name: "a.txt", data: "x" }] : []);
+      const padded = new Uint8Array(64 * 1024);
+      padded.set(archive);
+      const source = fixture === "gzip" ? gzipSync(padded) : padded;
+      const reader = new TarReader(chunk(source, 512), {
+        maxArchiveBytes: fixture === "gzip" ? 16 * 1024 : archive.byteLength,
+      });
+      await expectCode(
+        (async () => {
+          for (;;) {
+            const entry = await reader.next();
+            if (entry === null) return;
+            if (entry.type === "file") await reader.readBody(async () => {});
+          }
+        })(),
+        "ARCHIVE_TOO_LARGE",
+      );
+    });
+  }
+
+  it("accepts zero padding exactly at the archive byte ceiling", async () => {
+    const reader = new TarReader(chunk(new Uint8Array(2048), 512), { maxArchiveBytes: 2048 });
+    assert.equal(await reader.next(), null);
   });
 
   it("requires bodies to be consumed before the next header", async () => {
