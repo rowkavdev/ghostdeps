@@ -33,6 +33,26 @@ interface RemovedReference {
 
 const removedCaches = new WeakMap<AdapterContext, Promise<RemovedReference[]>>();
 
+/** Deleted text is not covered by the head read limit, so bound it here. */
+function removedTextTooLarge(lines: readonly { text: string }[]): boolean {
+  let bytes = 0;
+  for (const line of lines) {
+    bytes += Buffer.byteLength(line.text, "utf8");
+    if (bytes > MAX_FILE_READ_BYTES) return true;
+  }
+  return false;
+}
+
+/** Counts the reconstructed text, including joining newlines, before it is joined. */
+function reconstructedTextTooLarge(base: readonly string[]): boolean {
+  let bytes = Math.max(0, base.length - 1);
+  for (const line of base) {
+    bytes += Buffer.byteLength(line, "utf8");
+    if (bytes > MAX_FILE_READ_BYTES) return true;
+  }
+  return false;
+}
+
 /** Every crate reference on a removed line, across all changed .rs files, once per run. */
 function removedReferences(
   context: AdapterContext,
@@ -58,8 +78,10 @@ function removedReferences(
         } catch {
           continue;
         }
+        if (removedTextTooLarge(change.removedLines)) continue;
         const base = reconstructBase(head, change);
         if (base === undefined) continue;
+        if (reconstructedTextTooLarge(base)) continue;
         const removedLines = new Set(change.removedLines.map((l) => l.line));
         const refs = await withRustTree(base.join("\n"), collectReferences);
         for (const ref of refs ?? []) {

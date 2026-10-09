@@ -41,6 +41,49 @@ describe("rust removedInPr usages (#249)", () => {
     );
   });
 
+  it("skips removed payloads and reconstructed bases over the source byte limit (#866)", async () => {
+    // The removed text alone exceeds MAX_FILE_READ_BYTES (2 MiB).
+    const bigRemoved = [
+      { line: 1, text: "use regex::Regex;" },
+      ...Array.from({ length: 21_100 }, (_, i) => ({ line: i + 2, text: `// ${"x".repeat(97)}` })),
+    ];
+    const dropped = context({ "Cargo.toml": MANIFEST }, [
+      { path: "src/old.rs", removedLines: bigRemoved, addedLines: [] },
+    ]);
+    assert.deepEqual(await findRemovedUsages(dropped, dep("regex")), []);
+
+    // The removed text is small, but the head file passes the read cap while
+    // the reconstructed base exceeds it: fail closed, no parse. Head is
+    // 20_700 100-byte lines (about 2.09MB, under the 2MiB read cap); the
+    // import plus 200 removed comment lines push the base over it.
+    const head = `${Array.from({ length: 20_700 }, () => `// ${"y".repeat(97)}`).join("\n")}\n`;
+    const bigBase = context({ "Cargo.toml": MANIFEST, "src/big.rs": head }, [
+      {
+        path: "src/big.rs",
+        removedLines: [
+          { line: 1, text: "use regex::Regex;" },
+          ...Array.from({ length: 200 }, (_, i) => ({ line: i + 2, text: `// ${"x".repeat(97)}` })),
+        ],
+        addedLines: [],
+      },
+    ]);
+    assert.deepEqual(await findRemovedUsages(bigBase, dep("regex")), []);
+
+    // Control: a base just under the limit is still scanned.
+    const smallHead = `${Array.from({ length: 100 }, () => `// ${"y".repeat(97)}`).join("\n")}\n`;
+    const small = context({ "Cargo.toml": MANIFEST, "src/small.rs": smallHead }, [
+      {
+        path: "src/small.rs",
+        removedLines: [{ line: 1, text: "use regex::Regex;" }],
+        addedLines: [],
+      },
+    ]);
+    assert.deepEqual(
+      (await findRemovedUsages(small, dep("regex"))).map((u) => [u.file, u.line]),
+      [["src/small.rs", 1]],
+    );
+  });
+
   it("ignores removed comments and strings, and unchanged lines", async () => {
     const head = "use serde::Serialize;\nfn main() {}\n";
     const ctx = context({ "Cargo.toml": MANIFEST, "src/main.rs": head }, [
