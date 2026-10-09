@@ -437,7 +437,13 @@ function importlibAliases(
   // rescanning the whole file once per alias (quadratic on many aliases).
   const mentions = new Map<string, number[]>();
   const identifier = /[\p{XID_Start}_][\p{XID_Continue}]*/gu;
+  // A wildcard import mentions no identifier, so the index never selects it,
+  // yet it can rebind any name: collect those statements separately and check
+  // them for every alias (#853), as the pre-index rescan did.
+  const starImport = /^from\s+[^\n]*?\s+import\s+\*/u;
+  const starStatements: number[] = [];
   texts.forEach((raw, index) => {
+    if (starImport.test(raw.trim())) starStatements.push(index);
     const seenHere = new Set<string>();
     for (const form of new Set([raw, raw.normalize("NFKC")])) {
       for (const m of form.matchAll(identifier)) seenHere.add(m[0]);
@@ -450,7 +456,8 @@ function importlibAliases(
   });
   for (const [scope, names] of bound) {
     for (const name of [...names.keys()]) {
-      const dropped = (mentions.get(name) ?? []).some((index) => {
+      const candidates = mentions.get(name) ?? [];
+      const dropped = [...candidates, ...starStatements].some((index) => {
         const raw = texts[index]!;
         if (!inside(scopeOf[index]!, scope)) return false;
         const own = defs.get(index)?.filter((d) => d.name === name) ?? [];
