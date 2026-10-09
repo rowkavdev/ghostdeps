@@ -283,3 +283,56 @@ describe("classifyDependencyFile", () => {
     assert.equal(classifyDependencyFile("__proto__"), undefined);
   });
 });
+
+describe("PDM lockfile changes", () => {
+  it("classifies root and nested PDM locks without accepting vendored copies or lookalikes", () => {
+    for (const path of ["pdm.lock", "api/pdm.lock"]) {
+      assert.deepEqual(classifyDependencyFile(path), {
+        ecosystem: "python",
+        role: "lockfile",
+        packageManager: "pdm",
+      });
+    }
+    for (const path of [".venv/pdm.lock", "vendor/pdm.lock", "pdm.lock.bak"])
+      assert.equal(classifyDependencyFile(path), undefined);
+  });
+  it("counts a changed PDM lock as lock state rather than removed source evidence", async () => {
+    const diff = parseUnifiedDiff(
+      [
+        "diff --git a/api/pyproject.toml b/api/pyproject.toml",
+        "--- a/api/pyproject.toml",
+        "+++ b/api/pyproject.toml",
+        "@@ -1 +1 @@",
+        "-dependencies = []",
+        '+dependencies = ["requests"]',
+        "diff --git a/api/pdm.lock b/api/pdm.lock",
+        "--- a/api/pdm.lock",
+        "+++ b/api/pdm.lock",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+    );
+    const result = await extractDependencyChanges(diff, async (side, path) =>
+      side === "base"
+        ? []
+        : [
+            {
+              name: "requests",
+              constraint: "*",
+              kind: "runtime",
+              declaredIn: path,
+              project: { path: "api", ecosystem: "python", packageManagers: [] },
+            },
+          ],
+    );
+    assert.deepEqual(result.lockfilesChanged, [
+      { path: "api/pdm.lock", ecosystem: "python", packageManager: "pdm", status: "modified" },
+    ]);
+    assert.deepEqual(result.manifestsWithoutLockfileChange, []);
+    assert.deepEqual(result.changedSourceFiles, []);
+    assert.deepEqual(result.sourceLineChanges, []);
+    assert.equal(result.changes[0]?.name, "requests");
+  });
+});

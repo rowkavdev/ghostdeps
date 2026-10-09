@@ -40,6 +40,7 @@ const FILES: Record<string, DependencyFileMatch> = {
   "setup.cfg": { ecosystem: "python", role: "manifest" },
   "setup.py": { ecosystem: "python", role: "manifest" },
   "poetry.lock": { ecosystem: "python", role: "lockfile", packageManager: "poetry" },
+  "pdm.lock": { ecosystem: "python", role: "lockfile", packageManager: "pdm" },
   "uv.lock": { ecosystem: "python", role: "lockfile", packageManager: "uv" },
   "Pipfile.lock": { ecosystem: "python", role: "lockfile", packageManager: "pipenv" },
   // Rust
