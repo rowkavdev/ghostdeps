@@ -986,6 +986,57 @@ describe("TYPE_CHECKING aliases", () => {
     );
   });
 
+  it("drops canonical TYPE_CHECKING guards after an unconditional module-level rebind (#850)", () => {
+    // The canonical flag, rebound at module level, is no longer typing's.
+    assert.deepEqual(
+      typeOnly(
+        "from typing import TYPE_CHECKING\nTYPE_CHECKING = True\nif TYPE_CHECKING:\n    import pandas\n",
+      ),
+      { pandas: false },
+    );
+    // The canonical module, rebound at module level.
+    assert.deepEqual(
+      typeOnly("import typing\ntyping = other\nif typing.TYPE_CHECKING:\n    import pandas\n"),
+      { pandas: false },
+    );
+    // A bare module-level rebind, with no typing import at all.
+    assert.deepEqual(typeOnly("TYPE_CHECKING = True\nif TYPE_CHECKING:\n    import pandas\n"), {
+      pandas: false,
+    });
+    // An import binding the canonical module name to something else.
+    assert.deepEqual(
+      typeOnly("import other as typing\nif typing.TYPE_CHECKING:\n    import pandas\n"),
+      {
+        pandas: false,
+      },
+    );
+    // A from-import binding the canonical flag name to another module's name.
+    assert.deepEqual(
+      typeOnly("from other import TYPE_CHECKING\nif TYPE_CHECKING:\n    import pandas\n"),
+      {
+        pandas: false,
+      },
+    );
+    // Controls: the implicit canonical survives a function-local shadow, a
+    // conditional module-level assignment, and heals on a later real import.
+    assert.deepEqual(
+      typeOnly("def f():\n    TYPE_CHECKING = True\nif TYPE_CHECKING:\n    import pandas\n"),
+      { pandas: true },
+    );
+    assert.deepEqual(
+      typeOnly("if x:\n    TYPE_CHECKING = True\nif TYPE_CHECKING:\n    import pandas\n"),
+      {
+        pandas: true,
+      },
+    );
+    assert.deepEqual(
+      typeOnly(
+        "TYPE_CHECKING = True\nfrom typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import pandas\n",
+      ),
+      { pandas: true },
+    );
+  });
+
   it("does not trust an alias that was rebound, shadowed or never bound to typing", () => {
     const head = "from typing import TYPE_CHECKING as TC\n";
     for (const rebind of [
