@@ -141,6 +141,28 @@ describe("extractPythonImports", () => {
     assert.ok(elapsed < 1500, `took ${Math.round(elapsed)}ms`);
   });
 
+  it("tracks many TYPE_CHECKING aliases in linear time (#849)", () => {
+    const count = 1000;
+    const header = Array.from(
+      { length: count },
+      (_, i) => `from typing import TYPE_CHECKING as TC${i}`,
+    ).join("\n");
+    const source =
+      header +
+      "\nTC5 = other\nif TC5:\n    import yaml\nif TC0:\n    import pandas\nif TC999:\n    import numpy\n";
+    const started = performance.now();
+    const imports = extractPythonImports(source).imports;
+    const elapsed = performance.now() - started;
+    // Correctness first: a rebound alias drops its guard, the others keep it.
+    const typeOnly = Object.fromEntries(imports.map((i) => [i.module, i.typeOnly]));
+    assert.deepEqual(
+      [typeOnly["yaml"], typeOnly["pandas"], typeOnly["numpy"]],
+      [false, true, true],
+    );
+    // 1000 aliases took ~4s when every statement rechecked every alias.
+    assert.ok(elapsed < 1500, `took ${Math.round(elapsed)}ms`);
+  });
+
   it("credits aliased importlib, import_module and __import__ calls", () => {
     const dyn = (src: string) =>
       extractPythonImports(src)

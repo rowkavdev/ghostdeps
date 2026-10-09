@@ -126,6 +126,9 @@ function rebinds(text: string, name: string): boolean {
 /** The implicit canonical guard names: trusted at any scope until rebound. */
 const CANONICAL_TYPE_NAMES: ReadonlySet<string> = new Set(["TYPE_CHECKING", "typing"]);
 
+const MENTION_IDENTIFIER = /[\p{XID_Start}_][\p{XID_Continue}]*/gu;
+const STAR_IMPORT = /^from\s+[^\n]*?\s+import\s+\*/u;
+
 /**
  * rebinds() for a canonical guard name. A from-import's module part mentions
  * the name without binding it (`from typing import TYPE_CHECKING` never binds
@@ -157,6 +160,39 @@ function dropsName(name: string, fullText: string, text: string, moduleLevel: bo
   return moduleLevel && (rebindsCanonical(fullText, name) || rebindsCanonical(text, name));
 }
 
+/** Drop every tracked guard name this statement rebinds. */
+function dropReboundNames(
+  names: TypeCheckingNames,
+  fullText: string,
+  text: string,
+  moduleLevel: boolean,
+): void {
+  // Only a name the statement mentions as a whole identifier can be rebound
+  // by it - except a star import, which can rebind anything (#849). Iterate
+  // the statement's mentions and test set membership instead of walking every
+  // tracked name per statement (quadratic on many aliases). `text` is a slice
+  // of `fullText`, so its identifiers are covered; NFKC forms are indexed
+  // too, mirroring rebinds(). The full statement still carries a one-line
+  // header (`for TC in x: pass`).
+  if (STAR_IMPORT.test(fullText) || STAR_IMPORT.test(text)) {
+    for (const set of [names.flags, names.modules]) {
+      for (const name of [...set]) {
+        if (dropsName(name, fullText, text, moduleLevel)) set.delete(name);
+      }
+    }
+  } else {
+    const mentioned = new Set<string>();
+    for (const form of new Set([fullText, fullText.normalize("NFKC")])) {
+      for (const m of form.matchAll(MENTION_IDENTIFIER)) mentioned.add(m[0]);
+    }
+    for (const name of mentioned) {
+      for (const set of [names.flags, names.modules]) {
+        if (set.has(name) && dropsName(name, fullText, text, moduleLevel)) set.delete(name);
+      }
+    }
+  }
+}
+
 /** Record bindings made by one statement; only module-level imports add names. */
 function updateTypeCheckingNames(
   names: TypeCheckingNames,
@@ -164,12 +200,7 @@ function updateTypeCheckingNames(
   text: string,
   moduleLevel: boolean,
 ): void {
-  // The full statement still carries a one-line header (`for TC in x: pass`).
-  for (const set of [names.flags, names.modules]) {
-    for (const name of [...set]) {
-      if (dropsName(name, fullText, text, moduleLevel)) set.delete(name);
-    }
-  }
+  dropReboundNames(names, fullText, text, moduleLevel);
   if (!moduleLevel) return;
   // Clauses bind in source order, so the last binding of a name wins.
   const bind = (name: string, flag: boolean, module: boolean) => {
