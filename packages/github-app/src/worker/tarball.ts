@@ -53,6 +53,15 @@ export async function tarballUrl(
   return url;
 }
 
+/** Drop an unread response without delaying or replacing the download error. */
+function discardBody(body: ReadableStream<Uint8Array> | null): void {
+  try {
+    void body?.cancel().catch(() => {});
+  } catch {
+    // Cleanup is best-effort, including injected response adapters.
+  }
+}
+
 /** Streams the tarball body, failing once more than maxBytes arrive. */
 export async function* downloadTarball(
   url: URL,
@@ -64,10 +73,15 @@ export async function* downloadTarball(
     redirect: "error",
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  if (!res.ok || !res.body)
+  if (!res.ok || !res.body) {
+    discardBody(res.body);
     throw new TarballError("HTTP", `tarball download returned ${res.status}`);
+  }
   const declared = Number(res.headers.get("content-length") ?? "0");
-  if (declared > maxBytes) throw new TarballError("TOO_LARGE", `tarball exceeds ${maxBytes} bytes`);
+  if (declared > maxBytes) {
+    discardBody(res.body);
+    throw new TarballError("TOO_LARGE", `tarball exceeds ${maxBytes} bytes`);
+  }
   let total = 0;
   for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
     total += chunk.byteLength;
