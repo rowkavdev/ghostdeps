@@ -69,6 +69,8 @@ export function classifySpecifier(raw: string): Specifier | undefined {
     return { type: "git", detail: raw };
   if (raw.startsWith("npm:")) return { type: "registry", detail: `npm alias: ${raw}` };
   if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    // npm recognises hosted HTTP(S) repository URLs as git, not tarballs.
+    if (npaGit(raw)) return { type: "git", detail: raw };
     // Direct tarball URL: fetched at install time by the package manager, but
     // never by GhostDeps. Recorded as registry-shaped with the URL preserved.
     return { type: "registry", detail: `tarball URL (never fetched): ${raw}` };

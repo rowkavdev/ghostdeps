@@ -339,3 +339,31 @@ it("classifies absolute drive-letter dependency paths as file sources", () => {
     assert.equal(classifySpecifier(raw), undefined, raw);
   }
 });
+
+it("classifies npm-recognised hosted HTTP(S) git URLs before remote tarball fallback", () => {
+  for (const raw of [
+    "https://github.com/foo/bar.git",
+    "https://github.com/foo/bar",
+    "http://github.com/foo/bar.git#main",
+    "https://gitlab.com/foo/bar.git",
+    "https://bitbucket.org/foo/bar.git",
+    "https://gist.github.com/1234567890abcdef.git",
+  ]) {
+    assert.deepEqual(classifySpecifier(raw), { type: "git", detail: raw }, raw);
+  }
+  for (const raw of [
+    "https://registry.npmjs.org/foo/-/foo-1.0.0.tgz",
+    "https://unrecognised.example/foo/bar.git",
+    "http://unrecognised.example/foo.tgz",
+    "https://github.com/foo/bar/archive/refs/heads/main.tar.gz",
+  ]) {
+    assert.deepEqual(
+      classifySpecifier(raw),
+      {
+        type: "registry",
+        detail: `tarball URL (never fetched): ${raw}`,
+      },
+      raw,
+    );
+  }
+});
