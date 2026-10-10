@@ -8,13 +8,14 @@
  * - `tool` directives reference their module from go.mod (via "config").
  * - Blank and dot imports count as usage with no symbols.
  */
-import { MAX_FILE_READ_BYTES } from "@ghostdeps/core";
+import { MAX_FILE_READ_BYTES, reconstructBase } from "@ghostdeps/core";
 import type {
   AdapterContext,
   Dependency,
   ProjectRef,
   RepositoryHandle,
   Usage,
+  SourceLineChanges,
 } from "@ghostdeps/core";
 import { dirOf, isIgnoredGoPath, joinPath } from "../detect.js";
 import { readGoMod } from "../manifest.js";
@@ -38,6 +39,7 @@ export function owningModule(importPath: string, modules: Iterable<string>): str
 export const MAX_GO_SOURCE_BYTES = Math.min(1_000_000, MAX_FILE_READ_BYTES);
 
 interface ProjectScan {
+  owns: (file: string) => boolean;
   files: { path: string; parsed: GoFileImports }[];
   /** Files not lexed: over MAX_GO_SOURCE_BYTES or unreadable. */
   skipped: { path: string; reason: "too-large" | "unreadable" }[];
@@ -99,7 +101,13 @@ async function doScan(context: AdapterContext, project: ProjectRef): Promise<Pro
     }
     files.push({ path: f, parsed: extractGoImports(text) });
   }
-  return { files, skipped, modules, tools: mod?.tool ?? [] };
+  return {
+    files,
+    skipped,
+    modules,
+    tools: mod?.tool ?? [],
+    owns: (file) => nearest(file) === project.path,
+  };
 }
 
 export async function findGoUsage(
@@ -143,32 +151,56 @@ export async function findGoUsage(
 
   // PR mode (#101): import paths on removed lines of Go files.
   for (const change of context.pullRequestSourceChanges ?? []) {
-    if (!change.path.endsWith(".go") || isIgnoredGoPath(change.path)) continue;
-    // Deleted text is not covered by the head read limit: a removed payload
-    // over the source byte cap was never lexed at head, so do not scan it
-    // here either (#860).
-    let removedBytes = 0;
-    for (const removed of change.removedLines) {
-      removedBytes += Buffer.byteLength(removed.text, "utf8");
-      if (removedBytes > MAX_GO_SOURCE_BYTES) break;
-    }
-    if (removedBytes > MAX_GO_SOURCE_BYTES) continue;
-    for (const removed of change.removedLines) {
-      for (const m of removed.text.matchAll(/"([^"\s\\]+)"|`([^`\s]+)`/g)) {
-        const value = m[1] ?? m[2]!;
-        if (owningModule(value, modules) !== dependency.name) continue;
-        usages.push({
-          dependency: dependency.name,
-          file: change.path,
-          line: removed.line,
-          form: "static",
-          via: "import",
-          symbols: [],
-          removedInPr: true,
-        });
-        break;
-      }
+    if (!change.path.endsWith(".go") || isIgnoredGoPath(change.path) || !scan.owns(change.path))
+      continue;
+    context.signal?.throwIfAborted();
+    const base = await removedBase(context, change);
+    if (base === undefined) continue;
+    const removed = new Set(change.removedLines.map((line) => line.line));
+    for (const imp of extractGoImports(base).imports) {
+      if (!removed.has(imp.line) || owningModule(imp.path, modules) !== dependency.name) continue;
+      usages.push({
+        dependency: dependency.name,
+        file: change.path,
+        line: imp.line,
+        form: "static",
+        via: "import",
+        symbols: [],
+        removedInPr: true,
+      });
     }
   }
+
   return usages;
+}
+
+/** Bound both deleted input (#860) and reconstructed base before joining/lexing. */
+async function removedBase(
+  context: AdapterContext,
+  change: SourceLineChanges,
+): Promise<string | undefined> {
+  if (change.removedLines.length === 0) return undefined;
+  let removedBytes = 0;
+  for (const line of change.removedLines) {
+    removedBytes += Buffer.byteLength(line.text, "utf8");
+    if (removedBytes > MAX_GO_SOURCE_BYTES) return undefined;
+  }
+  let head: string[] = [];
+  try {
+    if (await context.repository.exists(change.path)) {
+      const text = await context.repository.readFile(change.path);
+      if (Buffer.byteLength(text, "utf8") > MAX_GO_SOURCE_BYTES) return undefined;
+      head = text.split(/\r?\n/);
+    }
+  } catch {
+    return undefined;
+  }
+  const base = reconstructBase(head, change);
+  if (base === undefined) return undefined;
+  let bytes = Math.max(0, base.length - 1);
+  for (const line of base) {
+    bytes += Buffer.byteLength(line, "utf8");
+    if (bytes > MAX_GO_SOURCE_BYTES) return undefined;
+  }
+  return base.join("\n");
 }
