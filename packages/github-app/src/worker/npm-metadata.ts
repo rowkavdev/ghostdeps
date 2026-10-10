@@ -51,9 +51,9 @@ export interface RunMetadataProvider extends PackageMetadataProvider {
 }
 
 /** Drop a body we won't read, so the connection can be reused (#313 review). */
-async function discard(body: { cancel?(): Promise<void> } | null): Promise<void> {
+function discard(body: { cancel?(): Promise<void> } | null): void {
   try {
-    await body?.cancel?.();
+    void Promise.resolve(body?.cancel?.()).catch(() => {});
   } catch {
     // Nothing to clean up if cancelling fails.
   }
@@ -386,16 +386,16 @@ export class NpmMetadataService {
         signal: AbortSignal.any([deadline, request.signal]),
       });
       if (res.status === 404) {
-        await discard(res.body);
+        discard(res.body);
         return null;
       }
       if (res.status !== 200) {
-        await discard(res.body);
+        discard(res.body);
         return "transient";
       }
       const length = Number(res.headers.get("content-length"));
       if (Number.isFinite(length) && length > this.#options.maxResponseBytes) {
-        await discard(res.body);
+        discard(res.body);
         return null;
       }
       const body = await readCapped(res.body, this.#options.maxResponseBytes);
@@ -450,16 +450,16 @@ export class NpmMetadataService {
         signal,
       });
       if (res.status === 404) {
-        await discard(res.body);
+        discard(res.body);
         return null;
       }
       if (res.status !== 200) {
-        await discard(res.body);
+        discard(res.body);
         return "transient";
       }
       const length = Number(res.headers.get("content-length"));
       if (Number.isFinite(length) && length > this.#options.maxResponseBytes) {
-        await discard(res.body);
+        discard(res.body);
         return null;
       }
       const body = await readCapped(res.body, this.#options.maxResponseBytes);
