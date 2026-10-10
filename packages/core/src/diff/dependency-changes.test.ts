@@ -336,3 +336,55 @@ describe("PDM lockfile changes", () => {
     assert.equal(result.changes[0]?.name, "requests");
   });
 });
+
+describe("adapter-supported requirements filenames", () => {
+  for (const path of [
+    "dev-requirements.in",
+    "test-requirements.txt",
+    "api/test_requirements.txt",
+    "tools/lint.requirements.IN",
+    "api/Requirements-DEV.TXT",
+  ]) {
+    it(`extracts dependency changes in ${path} as a Python manifest`, async () => {
+      const calls: string[] = [];
+      const result = await extractDependencyChanges(
+        parseUnifiedDiff(
+          `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-requests==2.31.0\n+requests==2.32.0\n`,
+        ),
+        async (side, manifest, match) => {
+          calls.push(side);
+          assert.equal(manifest, path);
+          assert.equal(match.ecosystem, "python");
+          return [
+            {
+              name: "requests",
+              constraint: side === "base" ? "==2.31.0" : "==2.32.0",
+              kind: "dev",
+              project: { path: ".", ecosystem: "python", packageManagers: [] },
+              declaredIn: path,
+            },
+          ];
+        },
+      );
+      assert.deepEqual(calls.sort(), ["base", "head"]);
+      assert.deepEqual(result.manifestsChanged, [path]);
+      assert.deepEqual(result.sourceLineChanges, []);
+      assert.deepEqual(
+        result.changes.map((change) => [change.change, change.name, change.ecosystem]),
+        [["changed", "requests", "python"]],
+      );
+    });
+  }
+  it("retains vendored exclusions and rejects look-alikes", () => {
+    for (const path of [
+      "vendor/dev-requirements.in",
+      ".venv/test_requirements.txt",
+      "myrequirements.txt",
+      "requirementsExtra.txt",
+      "dev-requirements.txt.bak",
+      "requirements.md",
+      "api/notes.txt",
+    ])
+      assert.equal(classifyDependencyFile(path), undefined, path);
+  });
+});
