@@ -4,6 +4,6 @@
   "version": "0.0.0",
   "description": "Tooling-only manifest: prettier config lives here, but the project has no JS/TS source.",
   "devDependencies": {
-    "prettier": "^3.4.0"
+    "prettier": "3.9.10"
   }
 }

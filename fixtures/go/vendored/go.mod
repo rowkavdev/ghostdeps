@@ -1,6 +1,6 @@
 module example.com/vendored
 
-go 1.22
+go 1.27.2
 
 require (
 	github.com/fatih/color v1.16.0

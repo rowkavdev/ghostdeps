@@ -5,12 +5,12 @@ description = "fixture"
 authors = ["Fixture <fixture@example.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.11"
-requests = "^2.32"
+python = "3.14.8"
+requests = "2.32.3"
 
 [tool.poetry.group.test.dependencies]
-pytest = "^8"
+pytest = "8.3.3"
 
 [build-system]
-requires = ["poetry-core>=1.9"]
+requires = ["poetry-core==2.5.0"]
 build-backend = "poetry.core.masonry.api"

@@ -2,5 +2,5 @@
 name = "fixture-polyglot-api"
 version = "0.0.0"
 dependencies = [
-  "requests>=2.31",
+  "requests==2.31.0",
 ]

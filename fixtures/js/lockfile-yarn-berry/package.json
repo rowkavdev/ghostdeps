@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "dependencies": {
-    "debug": "^4.3.0"
+    "debug": "4.3.4"
   },
   "devDependencies": {
-    "typanion": "^3.14.0"
+    "typanion": "3.14.0"
   }
 }

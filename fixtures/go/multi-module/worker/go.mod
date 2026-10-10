@@ -1,6 +1,6 @@
 module example.com/multi/worker
 
-go 1.22
+go 1.27.2
 
 require (
 	example.com/multi/api v0.0.0

@@ -1,4 +1,4 @@
 [project]
 name = "lib"
 version = "0.1.0"
-dependencies = ["attrs>=23"]
+dependencies = ["attrs==26.1.0"]
