@@ -18,6 +18,7 @@ const exactNames = new Set([
   // Python
   "pyproject.toml",
   "poetry.lock",
+  "pdm.lock",
   "uv.lock",
   "Pipfile",
   "Pipfile.lock",
