@@ -442,3 +442,39 @@ describe("scope config trigger (#354)", () => {
     );
   });
 });
+
+describe("PDM lockfile webhook triggers", () => {
+  for (const path of ["pdm.lock", "services/api/pdm.lock"]) {
+    it(`recognizes ${path} without matching look-alikes`, () => {
+      assert.equal(isDependencyFile(path), true);
+      assert.equal(isDependencyFile(`${path}.bak`), false);
+    });
+    it(`analyses a complete PR changing only ${path} with source triggers off or on`, async () => {
+      for (const sourcePrTrigger of [false, true]) {
+        const result = await decide("pull_request", pr("synchronize"), "pdm-pr", files([path]), {
+          sourcePrTrigger,
+        });
+        assert.equal(result.analyse, true);
+        if (!result.analyse) return;
+        assert.deepEqual(result.dependencyFiles, [path]);
+        assert.deepEqual(result.sourceFiles, []);
+        assert.equal(result.job.trigger.kind, "pull_request");
+        if (result.job.trigger.kind === "pull_request")
+          assert.equal(result.job.trigger.sourceOnly, undefined);
+      }
+    });
+    it(`analyses a default-branch push changing only ${path} without a files lookup`, async () => {
+      const result = await decide(
+        "push",
+        push({ commits: [{ added: [], modified: [path], removed: [] }] }),
+        "pdm-push",
+        noLookup,
+      );
+      assert.equal(result.analyse, true);
+      if (!result.analyse) return;
+      assert.deepEqual(result.dependencyFiles, [path]);
+      assert.deepEqual(result.sourceFiles, []);
+      assert.equal(result.job.trigger.kind, "push");
+    });
+  }
+});
