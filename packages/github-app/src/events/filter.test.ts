@@ -478,3 +478,48 @@ describe("PDM lockfile webhook triggers", () => {
     });
   }
 });
+
+describe("adapter-supported requirements webhook filenames", () => {
+  for (const path of [
+    "dev-requirements.in",
+    "test-requirements.txt",
+    "api/test_requirements.txt",
+    "tools/lint.requirements.IN",
+    "api/Requirements-DEV.TXT",
+  ]) {
+    it(`triggers PR and push checks for ${path}`, async () => {
+      assert.equal(isDependencyFile(path), true);
+      const result = await decide(
+        "pull_request",
+        pr("synchronize"),
+        "requirements-pr",
+        files([path]),
+        { sourcePrTrigger: true },
+      );
+      assert.equal(result.analyse, true);
+      if (result.analyse) {
+        assert.deepEqual(result.dependencyFiles, [path]);
+        if (result.job.trigger.kind === "pull_request")
+          assert.equal(result.job.trigger.sourceOnly, undefined);
+      }
+      const pushed = await decide(
+        "push",
+        push({ commits: [{ modified: [path] }] }),
+        "requirements-push",
+        noLookup,
+      );
+      assert.equal(pushed.analyse, true);
+      if (pushed.analyse) assert.deepEqual(pushed.dependencyFiles, [path]);
+    });
+  }
+  it("rejects unsupported filename look-alikes", () => {
+    for (const path of [
+      "myrequirements.txt",
+      "requirementsExtra.txt",
+      "dev-requirements.txt.bak",
+      "requirements.md",
+      "api/notes.txt",
+    ])
+      assert.equal(isDependencyFile(path), false, path);
+  });
+});

@@ -34,8 +34,8 @@ const exactNames = new Set([
 ]);
 
 /** requirements.txt, requirements-dev.txt, requirements/base.txt, dev-requirements.in ... */
-const requirementsPattern =
-  /(^|\/)(requirements[^/]*|[^/]*-requirements)\.(txt|in)$|(^|\/)requirements\/[^/]+\.(txt|in)$/;
+const requirementsPattern = /(^|\/)(?:[\w.-]*[-_.])?requirements(?:[-_.][\w.-]*)?\.(?:txt|in)$/i;
+const requirementsDirPattern = /(^|\/)requirements\/[^/]+\.(txt|in)$/;
 
 function basename(path: string): string {
   const i = path.lastIndexOf("/");
@@ -44,7 +44,11 @@ function basename(path: string): string {
 
 /** True when the path is a dependency manifest or lockfile GhostDeps understands. */
 export function isDependencyFile(path: string): boolean {
-  return exactNames.has(basename(path)) || requirementsPattern.test(path);
+  return (
+    exactNames.has(basename(path)) ||
+    requirementsPattern.test(path) ||
+    requirementsDirPattern.test(path)
+  );
 }
 
 /** The subset of changed paths that are dependency manifests or lockfiles. */

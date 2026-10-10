@@ -55,8 +55,8 @@ const FILES: Record<string, DependencyFileMatch> = {
 };
 
 /** requirements-dev.txt, requirements/base.txt and similar pip files. */
-const REQUIREMENTS =
-  /(^|\/)requirements([-_.][\w.-]*)?\.(txt|in)$|(^|\/)requirements\/[\w.-]+\.(txt|in)$/;
+const REQUIREMENTS = /(^|\/)(?:[\w.-]*[-_.])?requirements(?:[-_.][\w.-]*)?\.(?:txt|in)$/i;
+const REQUIREMENTS_DIR = /(^|\/)requirements\/[\w.-]+\.(txt|in)$/;
 
 /** Paths never treated as a project's own dependency files. */
 const VENDORED = /(^|\/)(node_modules|vendor|\.venv|venv|site-packages|target)\//;
@@ -67,6 +67,7 @@ export function classifyDependencyFile(path: string): DependencyFileMatch | unde
   const base = path.slice(path.lastIndexOf("/") + 1);
   const known = Object.hasOwn(FILES, base) ? FILES[base] : undefined;
   if (known) return known;
-  if (REQUIREMENTS.test(path)) return { ecosystem: "python", role: "manifest" };
+  if (REQUIREMENTS.test(path) || REQUIREMENTS_DIR.test(path))
+    return { ecosystem: "python", role: "manifest" };
   return undefined;
 }
