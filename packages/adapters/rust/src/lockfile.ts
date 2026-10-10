@@ -139,7 +139,10 @@ export function crateGraph(
   };
 
   const direct = edgesOf(root);
-  const transitiveClosure: Record<string, string[]> = {};
+  const transitiveClosure: Record<string, string[]> = Object.create(null) as Record<
+    string,
+    string[]
+  >;
   const nonDev = new Set<string>();
   const all = new Map<string, LockedPackage>();
   for (const dep of direct) {

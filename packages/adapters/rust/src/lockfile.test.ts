@@ -233,3 +233,30 @@ version = "1.0.0"
     assert.equal(reads.get("Cargo.lock"), 2);
   });
 });
+
+it("builds serializable closures for prototype-shaped direct crate names", () => {
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    const result = crateGraph(
+      { path: ".", ecosystem: "rust", packageManagers: [] },
+      "app",
+      {
+        packages: [
+          { name: "app", version: "1.0.0", dependencies: [`${name} 1.0.0`, `${name} 2.0.0`] },
+          { name, version: "1.0.0", dependencies: ["leaf-one"] },
+          { name, version: "2.0.0", dependencies: ["leaf-two"] },
+          { name: "leaf-one", version: "1.0.0", dependencies: [] },
+          { name: "leaf-two", version: "1.0.0", dependencies: [] },
+        ],
+      },
+      new Set(),
+      "Cargo.lock",
+      new Set([name]),
+    );
+    assert.equal(result.graph.incomplete, false);
+    assert.equal(Object.hasOwn(result.graph.transitiveClosure, name), true);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(result.graph.transitiveClosure)),
+      JSON.parse(`{"${name}":["leaf-one","leaf-two"]}`),
+    );
+  }
+});
