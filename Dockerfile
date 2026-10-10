@@ -1,13 +1,13 @@
 # Build the workspace so the runtime image contains only the app and its
 # production dependencies. The pinned pnpm version comes from package.json.
-FROM node:22-bookworm-slim AS build
+FROM node:22.23.3-bookworm-slim AS build
 WORKDIR /src
 RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm build \
     && pnpm --filter @ghostdeps/github-app deploy --prod /opt/ghostdeps
 
-FROM node:22-bookworm-slim
+FROM node:22.23.3-bookworm-slim
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 WORKDIR /app
 COPY --from=build --chown=node:node /opt/ghostdeps/ ./
