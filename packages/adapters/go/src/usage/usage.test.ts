@@ -149,7 +149,7 @@ describe("PR mode", () => {
     const context: AdapterContext = {
       repository: memoryHandle({
         "go.mod": "module m\nrequire github.com/pkg/errors v0.9.1\n",
-        "main.go": "package main\n",
+        "main.go": "package main\nimport (\n)\n",
       }),
       network: { mode: "offline" },
       pullRequestSourceChanges: [
@@ -182,16 +182,16 @@ describe("PR mode", () => {
       const context: AdapterContext = {
         repository: memoryHandle({
           "go.mod": "module m\nrequire github.com/pkg/errors v0.9.1\n",
-          "main.go": "package main\n",
         }),
         network: { mode: "offline" },
         pullRequestSourceChanges: [
           {
             path: "main.go",
             removedLines: [
-              { line: 1, text: '\t"github.com/pkg/errors"' },
+              { line: 1, text: "package main" },
+              { line: 2, text: 'import "github.com/pkg/errors"' },
               ...Array.from({ length: pad }, (_, i) => ({
-                line: i + 2,
+                line: i + 3,
                 text: `// ${"x".repeat(97)}`,
               })),
             ],
@@ -211,7 +211,7 @@ describe("PR mode", () => {
     // Control: a payload under the limit is still scanned.
     assert.deepEqual(
       (await usage(100)).map((u) => [u.file, u.line, u.removedInPr]),
-      [["main.go", 1, true]],
+      [["main.go", 2, true]],
     );
   });
 });
