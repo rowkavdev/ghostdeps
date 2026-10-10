@@ -23,12 +23,12 @@
     "@ghostdeps/javascript-typescript": "workspace:*",
     "@ghostdeps/python": "workspace:*",
     "@ghostdeps/rust": "workspace:*",
-    "probot": "^14.3.2"
+    "probot": "14.3.2"
   },
   "devDependencies": {
-    "@types/node": "^22.20.4",
-    "nock": "^14.0.17",
-    "typescript": "^5.9.3",
-    "yaml": "^2.9.1"
+    "@types/node": "22.20.4",
+    "nock": "14.0.17",
+    "typescript": "5.9.3",
+    "yaml": "2.9.1"
   }
 }

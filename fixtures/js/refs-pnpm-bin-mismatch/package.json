@@ -7,6 +7,6 @@
     "deps:update": "ncu -u"
   },
   "devDependencies": {
-    "npm-check-updates": "^17.1.0"
+    "npm-check-updates": "17.1.0"
   }
 }

@@ -4,6 +4,6 @@
   "version": "0.0.0",
   "workspaces": ["packages/*"],
   "devDependencies": {
-    "execa": "^9.0.0"
+    "execa": "9.6.1"
   }
 }

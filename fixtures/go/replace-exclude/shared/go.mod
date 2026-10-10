@@ -1,3 +1,3 @@
 module example.com/internal/shared
 
-go 1.22
+go 1.27.2

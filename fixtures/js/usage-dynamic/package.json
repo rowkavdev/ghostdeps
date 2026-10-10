@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "dependencies": {
-    "dayjs": "^1.11.0",
+    "dayjs": "1.11.23",
     "plugin-a": "^1.0.0"
   }
 }

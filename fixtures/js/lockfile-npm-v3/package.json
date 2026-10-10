@@ -6,6 +6,6 @@
     "express-lite": "^1.0.0"
   },
   "devDependencies": {
-    "tester": "^2.0.0"
+    "tester": "2.0.0"
   }
 }

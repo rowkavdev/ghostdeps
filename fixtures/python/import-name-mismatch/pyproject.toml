@@ -2,12 +2,12 @@
 name = "shopapp"
 version = "0.1.0"
 dependencies = [
-  "Pillow>=10",
-  "PyYAML>=6",
-  "scikit-learn>=1.5",
-  "requests>=2.32",
+  "Pillow==12.3.0",
+  "PyYAML==6.0.3",
+  "scikit-learn==1.9.1",
+  "requests==2.34.2",
   "weird-tool==2.1",
-  "psycopg2-binary>=2.9",
+  "psycopg2-binary==2.9.13",
 ]
 
 [build-system]

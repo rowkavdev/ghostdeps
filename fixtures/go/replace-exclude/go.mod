@@ -1,6 +1,6 @@
 module example.com/replaced
 
-go 1.22
+go 1.27.2
 
 require (
 	github.com/sirupsen/logrus v1.9.3

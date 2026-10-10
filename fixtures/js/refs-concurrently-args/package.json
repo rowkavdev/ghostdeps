@@ -6,8 +6,8 @@
     "bench": "concurrently -k -s first \"tsc -w\" \"autocannon -c 100 -d 30 localhost:3000/\""
   },
   "devDependencies": {
-    "autocannon": "^8.0.0",
-    "concurrently": "^9.1.0",
-    "typescript": "^5.7.0"
+    "autocannon": "8.0.0",
+    "concurrently": "9.2.5",
+    "typescript": "5.9.3"
   }
 }

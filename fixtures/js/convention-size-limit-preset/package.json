@@ -9,7 +9,7 @@
     { "path": "src/index.js", "limit": "1 kB" }
   ],
   "devDependencies": {
-    "@size-limit/preset-small-lib": "^11.1.0",
-    "size-limit": "^11.1.0"
+    "@size-limit/preset-small-lib": "11.2.0",
+    "size-limit": "11.2.0"
   }
 }

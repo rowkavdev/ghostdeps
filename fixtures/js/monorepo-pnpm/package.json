@@ -4,6 +4,6 @@
   "version": "0.0.0",
   "packageManager": "pnpm@12.6.0",
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "typescript": "5.9.3"
   }
 }
