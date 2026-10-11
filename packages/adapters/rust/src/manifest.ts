@@ -148,7 +148,9 @@ function expandFeatureGates(
  * Which features enable each optional dependency key. An optional
  * dependency `foo` is enabled by `dep:foo`, `foo/<feat>` (which also turns
  * `foo` on), and - unless some feature uses `dep:foo` - the implicit
- * feature `foo`. `foo?/<feat>` only forwards a feature and never enables it.
+ * feature `foo` when no explicit local feature has that name. Bare local
+ * feature references only enable what that feature contains. `foo?/<feat>`
+ * only forwards a feature and never enables it.
  */
 export function featureGates(
   document: TomlTable,
@@ -166,7 +168,7 @@ export function featureGates(
       } else if (item.includes("/")) {
         const head = item.slice(0, item.indexOf("/"));
         if (!head.endsWith("?")) key = head;
-      } else if (optionalKeys.has(item)) {
+      } else if (optionalKeys.has(item) && !Object.hasOwn(features, item)) {
         key = item;
       }
       if (key !== undefined && optionalKeys.has(key)) {
@@ -177,7 +179,7 @@ export function featureGates(
   }
   for (const key of optionalKeys) {
     if (!gates.has(key)) gates.set(key, new Set());
-    if (!explicitDep.has(key)) gates.get(key)!.add(key);
+    if (!explicitDep.has(key) && !Object.hasOwn(features, key)) gates.get(key)!.add(key);
   }
   expandFeatureGates(features, optionalKeys, gates);
   const defaults = new Set(stringArray(features.default));

@@ -240,3 +240,82 @@ cycle-b = ["cycle-a", "support"]
     ),
   );
 });
+
+describe("same-name local features and optional dependencies", () => {
+  const gates = async (
+    features: string,
+    dependencies = 'foo = { version = "1", optional = true }',
+  ) => {
+    const [result] = await parse({
+      "Cargo.toml": `[package]\nname = "a"\nversion = "0.1.0"\n[dependencies]\n${dependencies}\n[features]\n${features}\n`,
+    });
+    assert.deepEqual(result!.errors, []);
+    return result!.conditions
+      .filter((c) => c.kind === "feature-gated-dependency")
+      .map((c) => c.statement);
+  };
+
+  it("does not credit an empty same-name local feature or its parent", async () => {
+    assert.deepEqual(await gates('foo = []\nall = ["foo"]\nenable = ["dep:foo"]'), [
+      "foo is optional; enabled by feature: enable",
+    ]);
+  });
+
+  it("does not add implicit credit for an explicit empty local feature", async () => {
+    assert.deepEqual(await gates("foo = []"), ["foo is optional and no feature enables it"]);
+  });
+
+  it("credits a local feature that explicitly enables the same-name dependency", async () => {
+    assert.deepEqual(await gates('foo = ["dep:foo"]\nall = ["foo"]'), [
+      "foo is optional; enabled by features: all, foo",
+    ]);
+  });
+
+  it("credits other dependencies enabled by the same-name local feature", async () => {
+    assert.deepEqual(
+      await gates(
+        'foo = ["dep:bar"]\nall = ["foo"]\nenable = ["dep:foo"]',
+        'foo = { version = "1", optional = true }\nbar = { version = "1", optional = true }',
+      ),
+      [
+        "foo is optional; enabled by feature: enable",
+        "bar is optional; enabled by features: all, foo",
+      ],
+    );
+  });
+
+  it("keeps an implicit feature and its parents when no local feature exists", async () => {
+    assert.deepEqual(await gates('all = ["foo"]'), [
+      "foo is optional; enabled by features: all, foo",
+    ]);
+  });
+
+  it("keeps the standalone implicit fallback", async () => {
+    assert.deepEqual(await gates(""), ["foo is optional; enabled by feature: foo"]);
+  });
+
+  it("keeps dep references credited and implicit fallback suppressed", async () => {
+    assert.deepEqual(await gates('enable = ["dep:foo"]\nall = ["enable"]'), [
+      "foo is optional; enabled by features: all, enable",
+    ]);
+  });
+
+  it("keeps dependency-feature references credited despite a same-name local feature", async () => {
+    assert.deepEqual(await gates('foo = []\nenable = ["foo/serde"]\nall = ["foo"]'), [
+      "foo is optional; enabled by feature: enable",
+    ]);
+  });
+
+  it("does not let weak forwarding or a same-name cycle enable a dependency", async () => {
+    assert.deepEqual(
+      await gates('foo = ["all"]\nall = ["foo", "foo?/serde"]\nenable = ["dep:foo"]'),
+      ["foo is optional; enabled by feature: enable"],
+    );
+  });
+
+  it("keeps default priority only for real enabling features", async () => {
+    assert.deepEqual(await gates('foo = []\ndefault = ["foo"]\nenable = ["dep:foo"]'), [
+      "foo is optional; enabled by feature: enable",
+    ]);
+  });
+});
