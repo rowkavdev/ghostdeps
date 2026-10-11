@@ -419,6 +419,7 @@ async function postAnalysisComment(
               botLogin: options.comments.botLogin,
               sha: job.headSha,
               rendered: posted,
+              result,
             })
           : await deliverComment(
               issues,

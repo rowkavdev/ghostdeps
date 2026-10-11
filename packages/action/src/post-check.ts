@@ -212,7 +212,12 @@ async function createCheckRun(e: Env, headSha: string, rendered: CheckOutput): P
   });
 }
 
-async function postPrReport(e: Env, pr: PullRequestInfo, rendered: CheckOutput): Promise<void> {
+async function postPrReport(
+  e: Env,
+  pr: PullRequestInfo,
+  rendered: CheckOutput,
+  result?: AnalysisResult,
+): Promise<void> {
   if (process.env.GHOSTDEPS_PR_COMMENT !== "true") return;
   {
     try {
@@ -243,7 +248,14 @@ async function postPrReport(e: Env, pr: PullRequestInfo, rendered: CheckOutput):
               api(e, "POST", `${base}/issues/${pr.number}/comments`, { body }),
             updateComment: (id, body) => api(e, "PATCH", `${base}/issues/comments/${id}`, { body }),
           },
-          { botLogin: "github-actions[bot]", channel: "action", sha: e.sha, rendered },
+          {
+            botLogin: "github-actions[bot]",
+            channel: "action",
+            sha: e.sha,
+            rendered,
+            ...(result ? { result } : {}),
+            repositoryUrl: `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${e.owner}/${e.repo}`,
+          },
         );
         console.log(`ghostdeps: PR report ${outcome}.`);
       }
@@ -304,7 +316,7 @@ export async function main(resultPath: string): Promise<number> {
   }
 
   await createCheckRun(e, e.sha, rendered);
-  if (pr) await postPrReport(e, pr, rendered);
+  if (pr) await postPrReport(e, pr, rendered, isAnalysisResult(parsed) ? parsed : undefined);
   console.log(`ghostdeps: check run completed (${rendered.conclusion}).`);
   return 0;
 }

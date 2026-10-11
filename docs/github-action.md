@@ -121,3 +121,7 @@ For the App, set `GHOSTDEPS_PR_REPORT=true` on its deployment and grant
 repository-scoped issues-only token. `.ghostdeps.json` with `commentsOff: true`
 opts out. This reporting mode does not activate fix-preview or apply features.
 Existing installations must accept the permission update before delivery works.
+
+Reports show a compact status table, linked analysed commit, visible coverage
+notes, and expandable full evidence. Limited coverage stays distinct from a
+clean result; JS/TS notes name unresolved dynamic imports and script references.

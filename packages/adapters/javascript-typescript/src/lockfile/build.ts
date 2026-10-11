@@ -326,6 +326,42 @@ export async function buildLockfileGraph(
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
   const rel = relative(lock.dir, projectDir);
+  // An ancestor npm lockfile does not cover an independent nested package.
+  // Only establish non-membership when the ancestor declares no workspaces;
+  // malformed or ambiguous workspace metadata keeps the conservative path.
+  const npmDoc = loaded.lockfile.doc as { lockfileVersion?: unknown; packages?: unknown } | null;
+  const npmPackages = npmDoc?.packages;
+  if (
+    lock.format === "npm" &&
+    projectDir !== lock.dir &&
+    (npmDoc?.lockfileVersion === 2 || npmDoc?.lockfileVersion === 3) &&
+    npmPackages !== null &&
+    typeof npmPackages === "object" &&
+    !Array.isArray(npmPackages) &&
+    !Object.hasOwn(npmPackages, relative(lock.dir, projectDir))
+  ) {
+    try {
+      const rootManifest: unknown = JSON.parse(
+        await context.repository.readFile(join(lock.dir, "package.json")),
+      );
+      if (
+        rootManifest !== null &&
+        typeof rootManifest === "object" &&
+        !Array.isArray(rootManifest) &&
+        !Object.hasOwn(rootManifest, "workspaces")
+      ) {
+        evidence.push({
+          kind: "lockfile-not-workspace-member",
+          statement: `${lock.path} belongs to a separate npm project and does not cover ${projectDir}`,
+          file: lock.path,
+        });
+        return { graph: emptyGraph(project), evidence };
+      }
+    } catch {
+      /* Unreadable workspace metadata is not proof of non-membership. */
+    }
+  }
+
   // pnpm-lock.yaml has no per-package URL: scoped .npmrc bindings are the
   // only registry evidence (the lockfile's directory, not contradicted by
   // the member's own .npmrc).

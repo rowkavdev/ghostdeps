@@ -123,18 +123,36 @@ export function createJavaScriptTypeScriptAdapter(): EcosystemAdapter {
     async notes(context: AdapterContext, projects: ProjectRef[]): Promise<AdapterNote[]> {
       // Run-level: tsconfig bases from node_modules that were not read (#275, #276).
       const bases = await tsconfigBaseNotes(context);
-      const strings = await configStringNotes(
-        context,
-        await listDirectDependencies(context, projects),
-        async (dependency, strings) =>
-          normaliseUsageResult(await adapter.findUsage!(context, dependency)).usages.some(
-            (u) => !u.removedInPr && !(u.via === "config" && strings.has(`${u.file}:${u.line}`)),
-          ),
+      const dependencies = await listDirectDependencies(context, projects);
+      const strings = await configStringNotes(context, dependencies, async (dependency, strings) =>
+        normaliseUsageResult(await adapter.findUsage!(context, dependency)).usages.some(
+          (u) => !u.removedInPr && !(u.via === "config" && strings.has(`${u.file}:${u.line}`)),
+        ),
       );
       // Preserve existing capability notes before high-volume run disclosures:
       // core applies a shared per-run note cap, so stale workspace notes
       // must not crowd out dependency-specific usage provenance.
-      return [...bases, ...strings, ...(await lockfileNotes(context, projects))];
+      const gaps: AdapterNote[] = [];
+      const seen = new Set<string>();
+      for (const dependency of dependencies) {
+        if (seen.has(dependency.project.path)) continue;
+        seen.add(dependency.project.path);
+        const statements = [
+          ...(await usageLimitations(context, dependency.project.path)).map((e) => e.statement),
+          ...(await scriptGaps(context, dependency)),
+          ...(await unreadConfigs(context, dependency)).map((c) => `${c.file}: ${c.reason}`),
+        ];
+        const unique = [...new Set(statements)];
+        for (const statement of unique.slice(0, 5))
+          gaps.push({
+            statement: `Reference coverage in ${dependency.project.path}: ${statement}`,
+          });
+        if (unique.length > 5)
+          gaps.push({
+            statement: `Reference coverage in ${dependency.project.path}: ${unique.length - 5} additional gaps omitted`,
+          });
+      }
+      return [...bases, ...strings, ...gaps, ...(await lockfileNotes(context, projects))];
     },
   };
   return adapter;

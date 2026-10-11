@@ -1113,3 +1113,28 @@ describe("buildLockfileGraph: pnpm workspace membership gates stale importers (#
     });
   }
 });
+
+it("does not call an independent nested npm package's ancestor lockfile stale", async () => {
+  const repository = memoryHandle({
+    "package.json": JSON.stringify({ name: "parent", dependencies: { sharp: "1" } }),
+    "package-lock.json": JSON.stringify({
+      lockfileVersion: 3,
+      packages: { "": { dependencies: { sharp: "1" } }, "node_modules/sharp": { version: "1" } },
+    }),
+    "hosted/package.json": JSON.stringify({ name: "hosted", private: true }),
+  });
+  const result = await buildLockfileGraph(ctx(repository), project("hosted", ["npm"]));
+  assert.ok(result.evidence.some((e) => e.kind === "lockfile-not-workspace-member"));
+  assert.ok(!result.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"));
+  assert.deepEqual(await lockfileNotes(ctx(repository), [project("hosted", ["npm"])]), []);
+});
+
+it("still reports a missing importer for a declared npm workspace", async () => {
+  const repository = memoryHandle({
+    "package.json": JSON.stringify({ name: "parent", workspaces: ["hosted"] }),
+    "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: { "": {} } }),
+    "hosted/package.json": JSON.stringify({ name: "hosted" }),
+  });
+  const result = await buildLockfileGraph(ctx(repository), project("hosted", ["npm"]));
+  assert.ok(result.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"));
+});

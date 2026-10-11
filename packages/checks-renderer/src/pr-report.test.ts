@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { maintainPrReport, type ReportClient } from "./pr-report.js";
+import { maintainPrReport, renderPrReport, type ReportClient } from "./pr-report.js";
 import { renderCheck } from "./render.js";
 
 const rendered = renderCheck(
@@ -65,4 +65,76 @@ it("refuses writes when pagination is exhausted or ownership is ambiguous", asyn
     }));
   await assert.rejects(maintainPrReport(client, input), /ambiguous/);
   assert.equal(writes, 0);
+});
+
+it("shows honest coverage and readable structure without hiding the reason", () => {
+  const result = {
+    schemaVersion: 1 as const,
+    projects: [],
+    dependencies: [],
+    usages: [],
+    detected: [],
+    surface: [],
+    findings: [
+      {
+        kind: "info" as const,
+        rule: "unverified-no-imports",
+        dependency: "ghost-deps",
+        summary: "no imports found; reference analysis has unresolved gaps",
+        recommendation: "Review scripts",
+        confidence: "low" as const,
+        evidence: [],
+        limitations: [],
+        affectedFiles: [],
+      },
+    ],
+  };
+  const body = renderPrReport({
+    ...input,
+    result,
+    rendered: renderCheck(result, new Map()),
+    repositoryUrl: "https://github.com/rowkavdev/nowplaying",
+  });
+  assert.match(body, /## 👻 GhostDeps/);
+  assert.match(body, /Review coverage gaps/);
+  assert.match(body, /\| 0 \| Needs review \|/);
+  assert.ok(body.indexOf("unresolved gaps") < body.indexOf("<details>"));
+  assert.match(body, /\[`aaaaaaa`\]\(https:\/\/github.com\/rowkavdev\/nowplaying\/commit\//);
+  assert.doesNotMatch(body, /\*\*No significant issues found\*\*/);
+});
+
+it("keeps large reports under GitHub's comment limit and closes detail blocks", () => {
+  const finding = {
+    kind: "info" as const,
+    summary: "x".repeat(10000),
+    dependency: "x".repeat(10000),
+    recommendation: "review",
+    confidence: "low" as const,
+    evidence: [],
+    limitations: [],
+    affectedFiles: [],
+  };
+  const result = {
+    schemaVersion: 1 as const,
+    projects: [],
+    dependencies: [],
+    usages: [],
+    detected: [],
+    surface: [],
+    findings: Array.from({ length: 100 }, () => finding),
+  };
+  const body = renderPrReport({
+    ...input,
+    result,
+    rendered: {
+      conclusion: "neutral",
+      output: {
+        title: "Analysis incomplete - see notes",
+        summary: "<details>\n" + "x\n".repeat(40000),
+        annotations: [],
+      },
+    },
+  });
+  assert.ok(body.length < 65536);
+  assert.equal((body.match(/<details>/g) ?? []).length, (body.match(/<\/details>/g) ?? []).length);
 });

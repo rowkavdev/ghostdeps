@@ -1,3 +1,4 @@
+import type { AnalysisResult } from "@ghostdeps/core";
 import { maintainPrReport, type CheckOutput } from "@ghostdeps/checks-renderer";
 import type { IssuesClient } from "./state.js";
 import { commentLockKey, withCommentLock } from "./queue.js";
@@ -13,6 +14,7 @@ export async function deliverReport(
     botLogin: string;
     sha: string;
     rendered: CheckOutput;
+    result: AnalysisResult;
   },
 ): Promise<{ action: string }> {
   return withCommentLock(commentLockKey(input.repositoryId, input.pullNumber), async () => {
@@ -29,7 +31,11 @@ export async function deliverReport(
           updateComment: (comment_id, body) =>
             client.issues.updateComment({ owner, repo, comment_id, body }),
         },
-        { ...input, channel: "app" },
+        {
+          ...input,
+          channel: "app",
+          repositoryUrl: `https://github.com/${input.owner}/${input.repo}`,
+        },
       ),
     };
   });

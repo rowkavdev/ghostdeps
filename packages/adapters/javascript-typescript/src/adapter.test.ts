@@ -436,3 +436,20 @@ describe("stale lockfile notes preserve capability notes under the run cap", () 
     assert.ok(result.findings.some((f) => f.rule === "adapter-note" && /stale/.test(f.summary)));
   });
 });
+
+it("explains the actual script coverage gap instead of claiming no analysis ran", async () => {
+  const adapter = createJavaScriptTypeScriptAdapter();
+  const context: AdapterContext = {
+    repository: memoryHandle({
+      "package.json": JSON.stringify({
+        name: "test",
+        devDependencies: { "left-pad": "1" },
+        scripts: { build: "node scripts/build.js" },
+      }),
+      "scripts/build.js": "console.log('build')",
+    }),
+    network: { mode: "offline" },
+  };
+  const notes = await adapter.notes!(context, [root]);
+  assert.ok(notes.some((n) => n.statement.includes("commands it spawns are not read")));
+});
