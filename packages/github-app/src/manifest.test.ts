@@ -8,6 +8,7 @@ const DOC_LABEL_TO_KEY: Record<string, string> = {
   "Repository contents": "contents",
   "Pull requests": "pull_requests",
   Checks: "checks",
+  Issues: "issues",
   Metadata: "metadata",
 };
 
@@ -70,12 +71,13 @@ describe("app manifest", () => {
     assert.deepEqual(manifest.default_permissions, documentedPermissions(doc));
   });
 
-  it("is least privilege: nothing beyond contents/PR read and checks write", async () => {
+  it("is least privilege: read-only contents plus checks and report comments", async () => {
     const { manifest } = await load();
     assert.deepEqual(manifest.default_permissions, {
       contents: "read",
       pull_requests: "read",
       checks: "write",
+      issues: "write",
       metadata: "read",
     });
   });

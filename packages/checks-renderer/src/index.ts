@@ -19,3 +19,5 @@ export {
 export type { CheckAnnotation, CheckOutput } from "./render.js";
 export { addedLinesFromFiles, addedLinesFromPatch } from "./diff.js";
 export type { AddedLines } from "./diff.js";
+
+export { maintainPrReport, type ReportClient } from "./pr-report.js";

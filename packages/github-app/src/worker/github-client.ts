@@ -57,3 +57,30 @@ export function commentScopedClients(app: Probot): (job: AnalysisJob) => Promise
     return { issues: octokit.rest.issues as unknown as IssuesClient["issues"] };
   };
 }
+
+/** Live PR metadata uses a separate read-only token, never the comment token. */
+export function reportStateClients(
+  app: Probot,
+): (job: AnalysisJob) => Promise<{ state: string; sha: string }> {
+  return async (job) => {
+    if (job.trigger.kind !== "pull_request") throw new Error("report requires a PR job");
+    const appOctokit = await app.auth();
+    const { token } = (await appOctokit.auth({
+      type: "installation",
+      installationId: job.installationId,
+      repositoryIds: [job.repository.id],
+      permissions: { pull_requests: "read" },
+    })) as { token: string };
+    const octokit = new ProbotOctokit({
+      auth: { token },
+      log: app.log,
+      throttle: boundedThrottle(app.log),
+    });
+    const { data } = await octokit.rest.pulls.get({
+      owner: job.repository.owner,
+      repo: job.repository.name,
+      pull_number: job.trigger.number,
+    });
+    return { state: data.state, sha: data.head.sha };
+  };
+}

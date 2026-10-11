@@ -326,6 +326,45 @@ index 3333333..4444444 100644
     assert.equal(rec.updated[0]?.conclusion, "success");
   });
 
+  it("delivers a reporting-only App comment and preserves checks on permission decline", async () => {
+    for (const declined of [false, true]) {
+      const { client, rec } = fakeClient({ diff: DIFF, files });
+      const bodies: string[] = [];
+      const worker = createAnalysisWorker({
+        appId: APP_ID,
+        clientFor: async () => client,
+        workRoot: await workRoot(),
+        fetch: fetchServing(tarGz(prRepo)),
+        analyse: async () => emptyResult,
+        reportOnly: true,
+        reportStateFor: async () => ({ state: "open", sha: prJob.headSha }),
+        comments: { botLogin: "ghostdeps[bot]", log: { info: () => {}, warn: () => {} } },
+        commentClientFor: async () => {
+          if (declined) throw new Error("issues permission declined");
+          return {
+            issues: {
+              getComment: async () => ({ data: { id: 1 } }),
+              get: async () => ({ data: { state: "open" } }),
+              listComments: async () => ({ data: [] }),
+              createComment: async ({ body }) => {
+                bodies.push(body);
+                return { data: { id: 1 } };
+              },
+              updateComment: async () => ({ data: { id: 1 } }),
+            },
+          };
+        },
+      });
+      await worker(prJob);
+      assert.equal(rec.updated[0]?.conclusion, "success");
+      assert.equal(bodies.length, declined ? 0 : 1);
+      if (!declined) {
+        assert.match(bodies[0]!, /ghostdeps:report:app/);
+        assert.doesNotMatch(bodies[0]!, /\[ \]/);
+      }
+    }
+  });
+
   it("suppresses the PR comment when .ghostdeps.json turns comments off", async () => {
     const { client } = fakeClient({ diff: DIFF, files });
     const repoWithConfig: TarEntry[] = [

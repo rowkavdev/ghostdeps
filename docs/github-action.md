@@ -98,3 +98,25 @@ poster that creates one completed check run through the Checks API with the
 workflow's `GITHUB_TOKEN`. Rendering comes from `@ghostdeps/checks-renderer`,
 the same package the app uses, so conclusions and annotation text cannot drift
 between the two channels.
+
+## PR comments: Action or App
+
+Both channels support reporting-only PR comments, updated in place on subsequent
+runs, including clean results and incomplete-analysis notes. Choose one comment
+publisher per repository to avoid two reports; their markers and bot identities
+are separate so neither edits the other's comment.
+
+For the Action, opt in with `comment: "true"` and change `pull-requests: read`
+to `pull-requests: write` in the workflow permissions. The default remains off.
+Comment failures warn without losing the check or changing fail-on behaviour.
+Use the default `github.token` for comment ownership (`github-actions[bot]`).
+Serialize runs for each PR with workflow `concurrency` to prevent duplicate
+creation by simultaneous jobs. Closed PRs and superseded runs skip commenting.
+Fork PRs retain the read-only summary/notice fallback, even with commenting on;
+use the App for fork comments. Do not execute fork code with a write token.
+
+For the App, set `GHOSTDEPS_PR_REPORT=true` on its deployment and grant
+`issues: write` in the App registration and installation. It uses a separate
+repository-scoped issues-only token. `.ghostdeps.json` with `commentsOff: true`
+opts out. This reporting mode does not activate fix-preview or apply features.
+Existing installations must accept the permission update before delivery works.

@@ -4,7 +4,7 @@ import { after, before, describe, it } from "node:test";
 import nock from "nock";
 import { Probot } from "probot";
 import { isRateLimitError } from "../github/rate-limit.js";
-import { repoScopedClients, WORKER_PERMISSIONS } from "./github-client.js";
+import { reportStateClients, repoScopedClients, WORKER_PERMISSIONS } from "./github-client.js";
 
 const { privateKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -51,6 +51,28 @@ describe("repoScopedClients", () => {
     });
     assert.equal(res.status, 302);
     assert.match(res.headers.location ?? "", /^https:\/\/codeload\.github\.com\//);
+    assert.ok(nock.isDone());
+  });
+
+  it("reads live PR metadata with a separate one-repository PR-read token", async () => {
+    let body: unknown;
+    nock("https://api.github.com")
+      .post("/app/installations/55504/access_tokens", (b: unknown) => {
+        body = b;
+        return true;
+      })
+      .reply(201, { token: "pr-read", expires_at: "2099-01-01T00:00:00Z" });
+    nock("https://api.github.com", { reqheaders: { authorization: "token pr-read" } })
+      .get("/repos/octo-org/example-app/pulls/7")
+      .reply(200, { state: "open", head: { sha: "a".repeat(40) } });
+    const probot = new Probot({ appId: 123, privateKey, logLevel: "fatal" });
+    const state = await reportStateClients(probot)({
+      ...job,
+      installationId: 55504,
+      trigger: { kind: "pull_request", number: 7, action: "opened", baseSha: "b".repeat(40) },
+    });
+    assert.deepEqual(body, { repository_ids: [872002], permissions: { pull_requests: "read" } });
+    assert.deepEqual(state, { state: "open", sha: "a".repeat(40) });
     assert.ok(nock.isDone());
   });
 

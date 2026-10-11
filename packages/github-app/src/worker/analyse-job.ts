@@ -50,6 +50,7 @@ import {
   type CommenterOptions,
 } from "../comments/commenter.js";
 import type { IssuesClient } from "../comments/state.js";
+import { deliverReport } from "../comments/report.js";
 import { downloadTarball, tarballUrl, TarballError, type TarballClient } from "./tarball.js";
 
 /** Adapter modules run by default, as specifiers core's isolation tier can import. */
@@ -129,6 +130,8 @@ export interface AnalysisWorkerOptions {
    * the check run. Off unless the app opts in (GHOSTDEPS_PR_COMMENT).
    */
   readonly comments?: CommenterOptions;
+  readonly reportOnly?: boolean;
+  readonly reportStateFor?: (job: AnalysisJob) => Promise<{ state: string; sha: string }>;
   /** Minted narrowed to issues:write for the job's repository (#326 pattern). */
   readonly commentClientFor?: (job: AnalysisJob) => Promise<IssuesClient>;
   /** Swap the engine in tests. Defaults to core's isolated engine. */
@@ -415,7 +418,7 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
 
     const cacheKey = resultCacheKey(job, cacheContext);
     if (job.trigger.kind === "rerequested") {
-      const hit = cache?.get(job.repository.id, cacheKey);
+      const hit = options.reportOnly ? undefined : cache?.get(job.repository.id, cacheKey);
       if (hit) {
         try {
           await reporter.completeRendered(target, checkRunId, hit);
@@ -549,21 +552,39 @@ export function createAnalysisWorker(options: AnalysisWorkerOptions): JobWorker 
               "PR comment suppressed by .ghostdeps.json commentsOff",
             );
           } else {
+            if (options.reportOnly) {
+              if (!options.reportStateFor) throw new Error("live PR state client unavailable");
+              const live = await options.reportStateFor(job);
+              if (live.state !== "open" || live.sha !== job.headSha) {
+                options.log?.info({ job: job.key }, "PR report skipped: head moved or PR closed");
+                return;
+              }
+            }
             const issues = await options.commentClientFor(job);
-            const outcome = await deliverComment(
-              issues,
-              options.comments,
-              {
-                owner: target.owner,
-                repo: target.repo,
-                repositoryId: job.repository.id,
-                pullNumber: job.trigger.number,
-                headSha: job.headSha,
-              },
-              commentRoot,
-              defaultCommentAdapters(),
-              result,
-            );
+            const outcome = options.reportOnly
+              ? await deliverReport(issues, {
+                  owner: target.owner,
+                  repo: target.repo,
+                  repositoryId: job.repository.id,
+                  pullNumber: job.trigger.number,
+                  botLogin: options.comments.botLogin,
+                  sha: job.headSha,
+                  rendered: posted,
+                })
+              : await deliverComment(
+                  issues,
+                  options.comments,
+                  {
+                    owner: target.owner,
+                    repo: target.repo,
+                    repositoryId: job.repository.id,
+                    pullNumber: job.trigger.number,
+                    headSha: job.headSha,
+                  },
+                  commentRoot,
+                  defaultCommentAdapters(),
+                  result,
+                );
             options.log?.info({ job: job.key, comment: outcome.action }, "PR comment maintained");
           }
         } catch (error) {

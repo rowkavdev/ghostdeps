@@ -6,8 +6,11 @@
  * failure. Known losses versus the app (fork PRs, re-run semantics, no cache)
  * are documented in packages/action/README.md and docs/github-action.md.
  */
+import { resolve } from "node:path";
+import { readFixtureRoots, DEFAULT_SCAN_LIMITS } from "@ghostdeps/core";
 import { appendFile, readFile } from "node:fs/promises";
 import {
+  maintainPrReport,
   checkName,
   failedCheck,
   renderCheck,
@@ -258,6 +261,45 @@ export async function main(resultPath: string): Promise<number> {
   }
 
   await createCheckRun(e, e.sha, rendered);
+  if (pr && process.env.GHOSTDEPS_PR_COMMENT === "true") {
+    try {
+      const scope = await readFixtureRoots(
+        resolve(process.env.GITHUB_WORKSPACE ?? ".", process.env.GHOSTDEPS_SCAN_PATH ?? "."),
+        DEFAULT_SCAN_LIMITS,
+      );
+      if (scope.commentsOff) {
+        console.log("ghostdeps: PR report suppressed by .ghostdeps.json commentsOff.");
+        return 0;
+      }
+      const base = `/repos/${e.owner}/${e.repo}`;
+      // Old workflow runs must not overwrite a report for a newer PR head.
+      const live = await api<{ head: { sha: string }; state: string }>(
+        e,
+        "GET",
+        `${base}/pulls/${pr.number}`,
+      );
+      const eventHead = (e.event.pull_request as { head?: { sha?: string } }).head?.sha;
+      if (live.state !== "open" || live.head.sha !== eventHead) {
+        console.log("ghostdeps: PR moved or closed; comment skipped.");
+      } else {
+        const outcome = await maintainPrReport(
+          {
+            listComments: (page) =>
+              api(e, "GET", `${base}/issues/${pr.number}/comments?per_page=100&page=${page}`),
+            createComment: (body) =>
+              api(e, "POST", `${base}/issues/${pr.number}/comments`, { body }),
+            updateComment: (id, body) => api(e, "PATCH", `${base}/issues/comments/${id}`, { body }),
+          },
+          { botLogin: "github-actions[bot]", channel: "action", sha: e.sha, rendered },
+        );
+        console.log(`ghostdeps: PR report ${outcome}.`);
+      }
+    } catch (error) {
+      console.log(
+        `::warning::${escapeCommandData("ghostdeps: PR comment unavailable; check result stands. " + String(error))}`,
+      );
+    }
+  }
   console.log(`ghostdeps: check run completed (${rendered.conclusion}).`);
   return 0;
 }
