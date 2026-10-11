@@ -24,5 +24,6 @@ default_events:
 default_permissions:
   contents: read
   pull_requests: read
+  issues: write # Reporting-only PR comments; contents stays read-only.
   checks: write
   metadata: read

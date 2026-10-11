@@ -326,6 +326,63 @@ index 3333333..4444444 100644
     assert.equal(rec.updated[0]?.conclusion, "success");
   });
 
+  it("delivers a reporting-only App comment and preserves checks on permission decline", async () => {
+    for (const mode of ["new", "rerun", "declined", "stale"] as const) {
+      const declined = mode === "declined";
+      const { client, rec } = fakeClient({ diff: DIFF, files });
+      const bodies: string[] = [];
+      const worker = createAnalysisWorker({
+        appId: APP_ID,
+        clientFor: async () => client,
+        workRoot: await workRoot(),
+        fetch: fetchServing(tarGz(prRepo)),
+        analyse: async () => emptyResult,
+        reportOnly: true,
+        reportStateFor: async () => ({
+          state: "open",
+          sha: mode === "stale" ? "f".repeat(40) : prJob.headSha,
+        }),
+        comments: { botLogin: "ghostdeps[bot]", log: { info: () => {}, warn: () => {} } },
+        commentClientFor: async () => {
+          if (declined) throw new Error("issues permission declined");
+          return {
+            issues: {
+              getComment: async () => ({ data: { id: 1 } }),
+              get: async () => ({ data: { state: "open" } }),
+              listComments: async () => ({ data: [] }),
+              createComment: async ({ body }) => {
+                bodies.push(body);
+                return { data: { id: 1 } };
+              },
+              updateComment: async () => ({ data: { id: 1 } }),
+            },
+          };
+        },
+      });
+      await worker(
+        mode === "rerun"
+          ? {
+              ...prJob,
+              trigger: {
+                kind: "rerequested",
+                checkRunId: 123,
+                pullRequest: {
+                  number: prJob.trigger.kind === "pull_request" ? prJob.trigger.number : 0,
+                  baseSha: BASE,
+                },
+              },
+            }
+          : prJob,
+      );
+      assert.equal(rec.updated[0]?.conclusion, "success");
+      assert.equal(bodies.length, declined || mode === "stale" ? 0 : 1);
+      if (!declined && mode !== "stale") {
+        assert.match(bodies[0]!, /ghostdeps:report:app/);
+        assert.doesNotMatch(bodies[0]!, /\[ \]/);
+      }
+    }
+  });
+
   it("suppresses the PR comment when .ghostdeps.json turns comments off", async () => {
     const { client } = fakeClient({ diff: DIFF, files });
     const repoWithConfig: TarEntry[] = [

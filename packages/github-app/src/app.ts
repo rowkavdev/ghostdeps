@@ -23,7 +23,11 @@ import { InProcessJobQueue, type JobQueue, type JobWorker } from "./jobs.js";
 import { createAnalysisWorker } from "./worker/analyse-job.js";
 import { RegistryMetadataService } from "./worker/registry-metadata.js";
 import { noWaitThrottle, WEBHOOK_LOOKUP_DEADLINE_MS, withDeadline } from "./github/rate-limit.js";
-import { commentScopedClients, repoScopedClients } from "./worker/github-client.js";
+import {
+  reportStateClients,
+  commentScopedClients,
+  repoScopedClients,
+} from "./worker/github-client.js";
 import {
   handleCommentEdited,
   type EditedPayload,
@@ -78,6 +82,8 @@ export interface GhostDepsAppOptions {
    * permission bump (ADR 0006 Activation). No dispatch exists anywhere.
    */
   readonly prComment?: boolean;
+  /** Reporting-only PR comments, without fix-preview controls. */
+  readonly prReport?: boolean;
   /** Our bot login for recognising our own comment. Resolved live when omitted. */
   readonly prCommentBotLogin?: string;
 }
@@ -169,8 +175,10 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
   return async (app: Probot, { addHandler }) => {
     const appId = options.appId ?? appIdFromEnv();
     const prComment = options.prComment ?? prCommentFromEnv();
+    const prReport = options.prReport ?? process.env.GHOSTDEPS_PR_REPORT === "true";
     const prCommentBotLogin =
-      options.prCommentBotLogin ?? (prComment ? await appBotLogin(app) : "ghostdeps[bot]");
+      options.prCommentBotLogin ??
+      (prComment || prReport ? await appBotLogin(app) : "ghostdeps[bot]");
     const sourcePrTrigger = options.sourcePrTrigger ?? sourcePrTriggerFromEnv();
     const busyLimiter = options.busyLimiter ?? new BusyLimiter();
     // Capture deploy metadata once; never read env, a file, or request data in the handler.
@@ -187,8 +195,10 @@ export function createGhostDepsApp(options: GhostDepsAppOptions = {}): Applicati
             appId,
             clientFor: repoScopedClients(app),
             log: app.log,
-            ...(prComment
+            ...(prComment || prReport
               ? {
+                  reportOnly: prReport,
+                  ...(prReport ? { reportStateFor: reportStateClients(app) } : {}),
                   comments: { botLogin: prCommentBotLogin, log: app.log },
                   commentClientFor: commentScopedClients(app),
                 }

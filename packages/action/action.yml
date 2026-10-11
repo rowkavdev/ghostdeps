@@ -40,6 +40,10 @@ inputs:
       input is set.
     required: false
     default: ""
+  comment:
+    description: Maintain a reporting-only PR comment (requires pull-requests write; same-repository PRs only).
+    required: false
+    default: "false"
   check-name:
     description: Name of the check run to create.
     required: false
@@ -178,6 +182,8 @@ runs:
       shell: bash
       env:
         GHOSTDEPS_GITHUB_TOKEN: ${{ inputs.github-token }}
+        GHOSTDEPS_SCAN_PATH: ${{ inputs.path }}
+        GHOSTDEPS_PR_COMMENT: ${{ inputs.comment }}
         GHOSTDEPS_CHECK_NAME: ${{ inputs.check-name }}
         POST_CHECK: ${{ github.action_path }}/dist/post-check.js
         RESULT: ${{ runner.temp }}/ghostdeps-result.json

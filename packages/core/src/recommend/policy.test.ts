@@ -134,7 +134,7 @@ describe("default recommendation policy", () => {
     assert.deepEqual(findings, []);
   });
 
-  it("emits unverified-no-imports info when scripts and config were not checked", async () => {
+  it("emits unverified-no-imports info when reference coverage has gaps", async () => {
     const findings = await run({
       dependencies: [dep("left-pad")],
       referenceAnalysedEcosystems: new Set(),

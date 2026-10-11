@@ -336,10 +336,12 @@ const unverifiedNoImportsRule: PolicyRule = {
     if (context.referenceAnalysedEcosystems.has(d.project.ecosystem)) return undefined;
     return {
       ...base,
-      summary: `no imports of ${d.name} found; scripts and config were not checked`,
+      summary: `no imports of ${d.name} found; reference analysis has unresolved gaps`,
       recommendation: `Manual review recommended: check whether ${d.name} is used by package scripts, CLI invocations or config files.`,
       evidence: [noImportsEvidence(d)],
-      limitations: ["Script, bin and config-file references were not analysed for this ecosystem."],
+      limitations: [
+        "Import, script, bin or config references could not be fully verified for this ecosystem.",
+      ],
     };
   },
 };

@@ -296,6 +296,48 @@ function reconcileMembership(
   );
 }
 
+function missingNpmImporter(source: LoadedLockfile, rel: string): boolean {
+  const doc = source.doc as { lockfileVersion?: unknown; packages?: unknown } | null;
+  const packages = doc?.packages;
+  return (
+    (doc?.lockfileVersion === 2 || doc?.lockfileVersion === 3) &&
+    packages !== null &&
+    typeof packages === "object" &&
+    !Array.isArray(packages) &&
+    !Object.hasOwn(packages, rel)
+  );
+}
+
+async function separateNpmProject(
+  context: AdapterContext,
+  lock: { dir: string; path: string },
+  projectDir: string,
+  source: LoadedLockfile,
+): Promise<boolean> {
+  // An ancestor npm lockfile does not cover an independent nested package.
+  // Only establish non-membership when the ancestor declares no workspaces;
+  // malformed or ambiguous workspace metadata keeps the conservative path.
+  if (projectDir !== lock.dir && missingNpmImporter(source, relative(lock.dir, projectDir))) {
+    try {
+      const rootManifest: unknown = JSON.parse(
+        await context.repository.readFile(join(lock.dir, "package.json")),
+      );
+      if (
+        rootManifest !== null &&
+        typeof rootManifest === "object" &&
+        !Array.isArray(rootManifest) &&
+        !Object.hasOwn(rootManifest, "workspaces")
+      ) {
+        return true;
+      }
+    } catch {
+      /* Unreadable workspace metadata is not proof of non-membership. */
+    }
+  }
+
+  return false;
+}
+
 /** Build the lockfile graph for one project, with evidence. Never throws on bad input. */
 export async function buildLockfileGraph(
   context: AdapterContext,
@@ -326,6 +368,17 @@ export async function buildLockfileGraph(
     return { graph: emptyGraph(project), evidence, lockfile: lock.path };
   }
   const rel = relative(lock.dir, projectDir);
+  if (
+    lock.format === "npm" &&
+    (await separateNpmProject(context, lock, projectDir, loaded.lockfile))
+  ) {
+    evidence.push({
+      kind: "lockfile-not-workspace-member",
+      statement: `${lock.path} belongs to a separate npm project and does not cover ${projectDir}`,
+      file: lock.path,
+    });
+    return { graph: emptyGraph(project), evidence };
+  }
   // pnpm-lock.yaml has no per-package URL: scoped .npmrc bindings are the
   // only registry evidence (the lockfile's directory, not contradicted by
   // the member's own .npmrc).

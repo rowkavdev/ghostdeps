@@ -48,11 +48,13 @@ function setEnv(over: Record<string, string | undefined>): void {
     "GITHUB_EVENT_NAME",
     "GITHUB_API_URL",
     "GHOSTDEPS_CHECK_NAME",
+    "GHOSTDEPS_PR_COMMENT",
   ]) {
     delete process.env[k];
   }
   const base: Record<string, string> = {
     GHOSTDEPS_GITHUB_TOKEN: "ghs_test",
+    GHOSTDEPS_SCAN_PATH: dir,
     GITHUB_REPOSITORY: "acme/demo",
     GITHUB_SHA: "a".repeat(40),
     GITHUB_EVENT_NAME: "push",
@@ -256,5 +258,73 @@ describe("main", () => {
   it("throws ActionError on API failure (non-fork)", async () => {
     mockFetch(() => ({ status: 403, body: { message: "Resource not accessible by integration" } }));
     await assert.rejects(async () => main(await writeResult(cleanResult)), /check-runs -> 403/);
+  });
+});
+
+describe("opt-in PR report", () => {
+  async function setup(fork = false): Promise<string> {
+    const path = await writeEvent({
+      pull_request: { number: 7, head: { sha: "b".repeat(40), repo: { fork } } },
+    });
+    setEnv({
+      GITHUB_EVENT_NAME: "pull_request",
+      GITHUB_EVENT_PATH: path,
+      GHOSTDEPS_PR_COMMENT: "true",
+    });
+    return writeResult(cleanResult);
+  }
+  it("creates a report using the check summary", async () => {
+    const result = await setup();
+    mockFetch((c) => ({
+      status: 200,
+      body: c.url.endsWith("/pulls/7")
+        ? { state: "open", head: { sha: "b".repeat(40) } }
+        : c.method === "GET"
+          ? []
+          : { id: 1 },
+    }));
+    assert.equal(await main(result), 0);
+    const comment = calls.find((c) => c.method === "POST" && c.url.endsWith("/comments"));
+    assert.match(String(comment?.body?.body), /ghostdeps:report:action/);
+    assert.match(String(comment?.body?.body), /No significant dependency issues/);
+  });
+  it("skips stale heads, closed PRs and forks", async () => {
+    for (const state of ["stale", "closed", "fork"]) {
+      calls = [];
+      const result = await setup(state === "fork");
+      mockFetch((c) => ({
+        status: 200,
+        body: c.url.endsWith("/pulls/7")
+          ? { state: state === "closed" ? "closed" : "open", head: { sha: "c".repeat(40) } }
+          : c.method === "GET"
+            ? []
+            : { id: 1 },
+      }));
+      assert.equal(await main(result), 0);
+      assert.equal(calls.filter((c) => c.url.includes("/comments")).length, 0);
+    }
+  });
+  it("honours the repository comment opt-out", async () => {
+    const result = await setup();
+    await writeFile(
+      join(dir, ".ghostdeps.json"),
+      JSON.stringify({ schemaVersion: 1, fixtureRoots: [], commentsOff: true }),
+    );
+    mockFetch((c) => ({ status: 200, body: c.method === "GET" ? [] : { id: 1 } }));
+    assert.equal(await main(result), 0);
+    assert.equal(calls.filter((c) => c.url.includes("/comments")).length, 0);
+  });
+  it("preserves a completed check when comment permissions are declined", async () => {
+    const result = await setup();
+    mockFetch((c) => ({
+      status: c.url.includes("/comments") ? 403 : 200,
+      body: c.url.endsWith("/pulls/7")
+        ? { state: "open", head: { sha: "b".repeat(40) } }
+        : c.method === "GET"
+          ? []
+          : { id: 1 },
+    }));
+    assert.equal(await main(result), 0);
+    assert.ok(calls.some((c) => c.url.endsWith("/check-runs") && c.method === "POST"));
   });
 });
