@@ -63,7 +63,13 @@ export function reportStateClients(
   app: Probot,
 ): (job: AnalysisJob) => Promise<{ state: string; sha: string }> {
   return async (job) => {
-    if (job.trigger.kind !== "pull_request") throw new Error("report requires a PR job");
+    const pullNumber =
+      job.trigger.kind === "pull_request"
+        ? job.trigger.number
+        : job.trigger.kind === "rerequested"
+          ? job.trigger.pullRequest?.number
+          : undefined;
+    if (pullNumber === undefined) throw new Error("report requires a PR job");
     const appOctokit = await app.auth();
     const { token } = (await appOctokit.auth({
       type: "installation",
@@ -79,7 +85,7 @@ export function reportStateClients(
     const { data } = await octokit.rest.pulls.get({
       owner: job.repository.owner,
       repo: job.repository.name,
-      pull_number: job.trigger.number,
+      pull_number: pullNumber,
     });
     return { state: data.state, sha: data.head.sha };
   };

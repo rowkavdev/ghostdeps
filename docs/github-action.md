@@ -58,6 +58,7 @@ for production workflows.
 | `fixture-roots` | (empty)        | Per-run fixture-scope override (#354): bounded schema-versioned JSON with the `.ghostdeps.json` grammar; replaces the committed roots for the run, `'{"schemaVersion":1,"fixtureRoots":[]}'` clears them. Unset = the committed file governs |
 | `check-name`    | `ghostdeps`    | Name of the check run                                                                                                                                                                                                                        |
 | `node-version`  | `22`           | Node.js for the analysis (engine requires >= 22)                                                                                                                                                                                             |
+| `comment`       | `false`        | `true` maintains a reporting-only PR comment; requires PR write permission and the default `github.token`                                                                                                                                    |
 | `github-token`  | `github.token` | Token used to create the check run                                                                                                                                                                                                           |
 
 Outputs: `conclusion` (the posted check conclusion), `scan-exit` (the CLI's
