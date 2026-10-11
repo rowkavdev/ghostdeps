@@ -1436,3 +1436,127 @@ it("handles deep whole-argument parentheses without repeated slicing", () => {
   assert.deepEqual(modules(`__import__(${"(".repeat(n)}"yaml"${")".repeat(n)})`), ["yaml"]);
   assert.ok(performance.now() - started < 1000);
 });
+
+describe("NFKC dynamic-call identifiers", () => {
+  const dynamic = (source: string) =>
+    extractPythonImports(source)
+      .imports.filter((imp) => imp.form === "dynamic")
+      .map((imp) => imp.module);
+
+  for (const [name, source] of [
+    ["ASCII module alias", 'import importlib as i\ni.import_module("requests")'],
+    ["Unicode definition ASCII call", 'import importlib as 𝒾\ni.import_module("requests")'],
+    ["ASCII definition Unicode call", 'import importlib as i\n𝒾.import_module("requests")'],
+    ["Unicode module alias both", 'import importlib as 𝒾\n𝒾.import_module("requests")'],
+    ["Unicode function alias both", 'from importlib import import_module as 𝓂\n𝓂("requests")'],
+  ]) {
+    it(name!, () => assert.deepEqual(dynamic(source!), ["requests"]));
+  }
+
+  it("keeps shadowed aliases excluded", () => {
+    assert.deepEqual(dynamic('import importlib as 𝒾\ni = other\n𝒾.import_module("requests")'), []);
+  });
+
+  it("keeps module-string content verbatim", () => {
+    assert.deepEqual(dynamic('import importlib as i\ni.import_module("K")'), ["K"]);
+  });
+
+  it("matches equivalent spellings of imported function aliases", () => {
+    assert.deepEqual(dynamic('from importlib import import_module as 𝓂\nm("requests")'), [
+      "requests",
+    ]);
+    assert.deepEqual(dynamic('from importlib import import_module as m\n𝓂("requests")'), [
+      "requests",
+    ]);
+  });
+
+  it("matches normalized direct callee and attribute spellings", () => {
+    for (const source of [
+      'ｉｍｐｏｒｔｌｉｂ.import_module("requests")',
+      'importlib.ｉｍｐｏｒｔ＿ｍｏｄｕｌｅ("requests")',
+      '＿＿ｉｍｐｏｒｔ＿＿("requests")',
+      'import importlib as i\n𝒾.ｉｍｐｏｒｔ＿ｍｏｄｕｌｅ("requests")',
+    ])
+      assert.deepEqual(dynamic(source), ["requests"], source);
+  });
+
+  it("keeps rebinding through either equivalent spelling excluded", () => {
+    for (const source of [
+      'import importlib as i\n𝒾 = other\ni.import_module("requests")',
+      'from importlib import import_module as m\n𝓂 = other\nm("requests")',
+      'import importlib as 𝒾\nfrom other import *\n𝒾.import_module("requests")',
+    ])
+      assert.deepEqual(dynamic(source), [], source);
+  });
+
+  it("does not normalize runtime module strings, escapes or raw strings", () => {
+    assert.deepEqual(
+      dynamic(String.raw`import importlib as i
+𝒾.import_module("ｒｅｑｕｅｓｔｓ")
+𝒾.import_module("\u212A")
+𝒾.import_module(r"\u212A")`),
+      ["ｒｅｑｕｅｓｔｓ", "K"],
+    );
+  });
+
+  it("preserves conditional, type-only and source-line evidence", () => {
+    const imports = extractPythonImports(
+      'import importlib as i\nif TYPE_CHECKING:\n    𝒾.import_module("requests")\n',
+    ).imports;
+    assert.deepEqual(imports.at(-1), {
+      module: "requests",
+      form: "dynamic",
+      names: [],
+      line: 3,
+      endLine: 3,
+      conditional: true,
+      typeOnly: true,
+    });
+  });
+
+  it("does not normalize a class alias into visibility in its methods", () => {
+    assert.deepEqual(
+      dynamic(
+        'class C:\n    import importlib as i\n    def f(self):\n        𝒾.import_module("requests")',
+      ),
+      [],
+    );
+  });
+
+  it("keeps relative __import__ calls excluded", () => {
+    assert.deepEqual(dynamic('＿＿ｉｍｐｏｒｔ＿＿("requests", level=1)'), []);
+  });
+});
+
+for (const source of [
+  'import importlib as 𝒾\n𝒾.import_module("requests")\n',
+  'from importlib import import_module as 𝓂\n𝓂("requests")\n',
+]) {
+  it(`credits dynamic dependency usage through an NFKC alias: ${source.split("\n")[0]}`, async () => {
+    const project: ProjectRef = { path: ".", ecosystem: "python", packageManagers: [] };
+    const context: AdapterContext = {
+      repository: memoryHandle({
+        "pyproject.toml": '[project]\nname="app"\ndependencies=["requests"]\n',
+        "main.py": source,
+      }),
+      network: { mode: "offline" },
+    };
+    const usages = await findPythonUsage(context, {
+      name: "requests",
+      kind: "runtime",
+      constraint: "",
+      declaredIn: "pyproject.toml",
+      project,
+    });
+    assert.deepEqual(
+      usages.map(({ dependency, file, line, form, via }) => ({
+        dependency,
+        file,
+        line,
+        form,
+        via,
+      })),
+      [{ dependency: "requests", file: "main.py", line: 2, form: "dynamic", via: "import" }],
+    );
+  });
+}
