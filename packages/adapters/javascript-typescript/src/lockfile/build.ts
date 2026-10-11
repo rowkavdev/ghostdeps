@@ -296,6 +296,18 @@ function reconcileMembership(
   );
 }
 
+function missingNpmImporter(source: LoadedLockfile, rel: string): boolean {
+  const doc = source.doc as { lockfileVersion?: unknown; packages?: unknown } | null;
+  const packages = doc?.packages;
+  return (
+    (doc?.lockfileVersion === 2 || doc?.lockfileVersion === 3) &&
+    packages !== null &&
+    typeof packages === "object" &&
+    !Array.isArray(packages) &&
+    !Object.hasOwn(packages, rel)
+  );
+}
+
 async function separateNpmProject(
   context: AdapterContext,
   lock: { dir: string; path: string },
@@ -305,16 +317,7 @@ async function separateNpmProject(
   // An ancestor npm lockfile does not cover an independent nested package.
   // Only establish non-membership when the ancestor declares no workspaces;
   // malformed or ambiguous workspace metadata keeps the conservative path.
-  const npmDoc = source.doc as { lockfileVersion?: unknown; packages?: unknown } | null;
-  const npmPackages = npmDoc?.packages;
-  if (
-    projectDir !== lock.dir &&
-    (npmDoc?.lockfileVersion === 2 || npmDoc?.lockfileVersion === 3) &&
-    npmPackages !== null &&
-    typeof npmPackages === "object" &&
-    !Array.isArray(npmPackages) &&
-    !Object.hasOwn(npmPackages, relative(lock.dir, projectDir))
-  ) {
+  if (projectDir !== lock.dir && missingNpmImporter(source, relative(lock.dir, projectDir))) {
     try {
       const rootManifest: unknown = JSON.parse(
         await context.repository.readFile(join(lock.dir, "package.json")),
