@@ -1,4 +1,4 @@
-import { findingGroup, type AnalysisResult } from "@ghostdeps/core";
+import { findingGroup, type AnalysisResult, type Finding } from "@ghostdeps/core";
 import { incompleteTitle, md, plain, truncateSummary, type CheckOutput } from "./render.js";
 
 export interface PrReportInput {
@@ -10,15 +10,7 @@ export interface PrReportInput {
   repositoryUrl?: string;
 }
 
-/** A compact overview, visible coverage reasons, and optional full check detail. */
-const field = (value: string, limit: number) => md(plain(value, limit));
-
-export function renderPrReport(input: PrReportInput): string {
-  if (!/^[a-f0-9]{40,64}$/i.test(input.sha)) throw new Error("invalid analysed SHA");
-  const marker = `<!-- ghostdeps:report:${input.channel}:v1 -->`;
-  const findings = input.result?.findings.filter((f) => findingGroup(f) === "verdict") ?? [];
-  const notes =
-    input.result?.findings.filter((f) => ["incomplete", "note"].includes(findingGroup(f))) ?? [];
+function reportStatus(input: PrReportInput, notes: readonly Finding[]) {
   const clean = input.rendered.conclusion === "success";
   const unavailable = !input.result;
   const coverageGap =
@@ -40,6 +32,10 @@ export function renderPrReport(input: PrReportInput): string {
       : clean
         ? "No significant dependency issues were found in the analysed scope."
         : "Review the findings below alongside their confidence and evidence.";
+  return { status, description, unavailable, coverageGap };
+}
+
+function commitLabel(input: PrReportInput): string {
   const repoUrl =
     input.repositoryUrl &&
     /^https:\/\/[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repositoryUrl)
@@ -48,18 +44,11 @@ export function renderPrReport(input: PrReportInput): string {
   const commit = repoUrl
     ? `[\`${input.sha.slice(0, 7)}\`](${repoUrl}/commit/${input.sha})`
     : `\`${input.sha.slice(0, 7)}\``;
-  const lines = [
-    marker,
-    "## 👻 GhostDeps",
-    "",
-    `**${status}**`,
-    "",
-    description,
-    "",
-    "| Dependency findings | Coverage | Analysed commit |",
-    "| :--- | :--- | :--- |",
-    `| ${unavailable ? "—" : findings.length} | ${unavailable ? "Unavailable" : coverageGap ? "Needs review" : "No reported gaps"} | ${commit} |`,
-  ];
+  return commit;
+}
+
+function findingRows(findings: readonly Finding[]): string[] {
+  const lines: string[] = [];
   if (findings.length) {
     lines.push(
       "",
@@ -75,6 +64,11 @@ export function renderPrReport(input: PrReportInput): string {
     if (findings.length > 10)
       lines.push("", `_${findings.length - 10} more findings in the analysis details._`);
   }
+  return lines;
+}
+
+function coverageRows(notes: readonly Finding[]): string[] {
+  const lines: string[] = [];
   if (notes.length) {
     lines.push("", "### Coverage notes", "");
     for (const f of notes.slice(0, 8))
@@ -83,6 +77,33 @@ export function renderPrReport(input: PrReportInput): string {
       );
     if (notes.length > 8) lines.push(`- ${notes.length - 8} more notes in the analysis details.`);
   }
+  return lines;
+}
+
+/** A compact overview, visible coverage reasons, and optional full check detail. */
+const field = (value: string, limit: number) => md(plain(value, limit));
+
+export function renderPrReport(input: PrReportInput): string {
+  if (!/^[a-f0-9]{40,64}$/i.test(input.sha)) throw new Error("invalid analysed SHA");
+  const marker = `<!-- ghostdeps:report:${input.channel}:v1 -->`;
+  const findings = input.result?.findings.filter((f) => findingGroup(f) === "verdict") ?? [];
+  const notes =
+    input.result?.findings.filter((f) => ["incomplete", "note"].includes(findingGroup(f))) ?? [];
+  const { status, description, unavailable, coverageGap } = reportStatus(input, notes);
+  const commit = commitLabel(input);
+  const lines = [
+    marker,
+    "## 👻 GhostDeps",
+    "",
+    `**${status}**`,
+    "",
+    description,
+    "",
+    "| Dependency findings | Coverage | Analysed commit |",
+    "| :--- | :--- | :--- |",
+    `| ${unavailable ? "—" : findings.length} | ${unavailable ? "Unavailable" : coverageGap ? "Needs review" : "No reported gaps"} | ${commit} |`,
+  ];
+  lines.push(...findingRows(findings), ...coverageRows(notes));
   lines.push(
     "",
     "<details>",
