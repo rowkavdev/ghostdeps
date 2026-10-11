@@ -706,19 +706,22 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       continue;
     }
     code.push(text);
+    // Python normalizes identifiers to NFKC. Literal contents are already
+    // separate from this placeholder-only code view and must stay verbatim.
+    const dynamicText = text.normalize("NFKC");
     const aliases = aliasesAt(statementIndex);
     const calls: { start: number; dunder: boolean }[] = [];
-    for (const m of text.matchAll(DYNAMIC)) {
+    for (const m of dynamicText.matchAll(DYNAMIC)) {
       const callee = m[0].slice(0, m[0].indexOf("(")).trim();
       calls.push({
         start: m.index + m[0].indexOf("("),
         dunder: /__import__$/.test(callee),
       });
     }
-    for (const m of text.matchAll(aliases.modules)) {
+    for (const m of dynamicText.matchAll(aliases.modules)) {
       calls.push({ start: m.index + m[0].indexOf("("), dunder: false });
     }
-    for (const m of text.matchAll(aliases.functions)) {
+    for (const m of dynamicText.matchAll(aliases.functions)) {
       const target = aliases.targets.get(m[1]!.normalize("NFKC"));
       calls.push({
         start: m.index + m[0].indexOf("("),
@@ -726,7 +729,7 @@ export const extractPythonImports: PythonImportExtractor = (source) => {
       });
     }
     for (const call of calls) {
-      const args = callArguments(text, call.start);
+      const args = callArguments(dynamicText, call.start);
       if (!args) continue;
       const index = moduleArgumentIndex(args, stringPrefix);
       if (index === undefined || byteStrings.has(index)) continue;
