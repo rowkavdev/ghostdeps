@@ -70,7 +70,11 @@ export function parseVendorModules(text: string): { path: string; version: strin
   const out: { path: string; version: string }[] = [];
   for (const line of text.split("\n")) {
     const m = /^# (\S+) (\S+)/.exec(line.trim());
-    if (m && m[1] !== "=>") out.push({ path: m[1]!, version: m[2]! });
+    // Wildcard replacement-only footers have no old version; "=>" is
+    // the operator, not a dependency version. Keep versioned headers.
+    if (m && m[1] !== "=>" && m[2] !== "=>") {
+      out.push({ path: m[1]!, version: m[2]! });
+    }
   }
   return out;
 }
