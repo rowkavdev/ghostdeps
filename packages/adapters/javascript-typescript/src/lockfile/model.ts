@@ -15,6 +15,8 @@ export interface ResolvedPackage {
   peers?: string[];
   /** Declared peers whose package edge could not be resolved. */
   unresolvedPeers?: string[];
+  /** Required (non-optional) dependencies the lockfile never resolved to a package entry. */
+  unresolvedDependencies?: string[];
   /** GraphNode.registryOrigin (#174 step 3); set only from explicit evidence (see origin.ts). */
   registryOrigin?: string;
 }
@@ -69,10 +71,34 @@ export function setOwn<T>(record: Record<string, T>, key: string, value: T): voi
 
 class BudgetExceeded extends Error {}
 
+/**
+ * A reachable package may require a dependency the lockfile never locked.
+ * Only what direct dependencies reach counts; optional ones are exempt.
+ */
+function unresolvedReachableEvidence(
+  parsed: ParsedLockfile,
+  reachable: Iterable<string>,
+  lockfile: string | undefined,
+): Evidence | undefined {
+  const unlocked = new Set<string>();
+  for (const id of reachable) {
+    for (const name of parsed.packages.get(id)?.unresolvedDependencies ?? []) unlocked.add(name);
+  }
+  if (unlocked.size === 0) return undefined;
+  const names = [...unlocked].sort();
+  const where = lockfile === undefined ? "" : ` in ${lockfile}`;
+  return {
+    kind: "lockfile-unresolved-reachable",
+    statement: `${names.length} reachable dependenc${names.length === 1 ? "y has" : "ies have"} no package entry${where} (${names.join(", ")}); the graph is incomplete`,
+    ...(lockfile === undefined ? {} : { file: lockfile }),
+  };
+}
+
 export function assembleGraph(
   project: ProjectRef,
   parsed: ParsedLockfile,
   maxVisits = MAX_CLOSURE_VISITS,
+  lockfile?: string,
 ): { graph: DependencyGraph; evidence: Evidence[] } {
   let visits = 0;
   let incomplete = false;
@@ -140,6 +166,9 @@ export function assembleGraph(
       ],
     };
   }
+  const unresolvedEvidence = unresolvedReachableEvidence(parsed, reachableAll, lockfile);
+  if (unresolvedEvidence) incomplete = true;
+  const evidence: Evidence[] = unresolvedEvidence ? [unresolvedEvidence] : [];
   const nodes: GraphNode[] = [];
   for (const id of [...reachableAll].sort()) {
     const pkg = parsed.packages.get(id)!;
@@ -161,7 +190,7 @@ export function assembleGraph(
       unresolvedDirectPeers,
       incomplete,
     },
-    evidence: [],
+    evidence,
   };
 }
 
