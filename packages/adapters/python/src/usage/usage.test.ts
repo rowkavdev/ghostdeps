@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { describe, it } from "node:test";
 import path from "node:path";
-import { analyseDirectory, createDefaultPolicy } from "@ghostdeps/core";
+import {
+  FsRepositoryHandle,
+  analyseDirectory,
+  analyseRepository,
+  createDefaultPolicy,
+} from "@ghostdeps/core";
 import type { AdapterContext, Dependency, ProjectRef } from "@ghostdeps/core";
 import { FIXTURES_ROOT } from "../testing/fs-handle.js";
 import { createPythonAdapter } from "../adapter.js";
@@ -1560,3 +1567,25 @@ for (const source of [
     );
   });
 }
+
+describe("Python usage scan cache", () => {
+  it("does not reuse a scan across analyses of the same repository handle", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ghostdeps-py-cache-"));
+    try {
+      await writeFile(path.join(root, "requirements.txt"), "requests==2.31.0\n");
+      await writeFile(path.join(root, "app.py"), "x = 1\n");
+      const handle = await FsRepositoryHandle.open(root);
+      const analyse = () => analyseRepository(handle, { adapters: [createPythonAdapter()] });
+      assert.deepEqual((await analyse()).usages, []);
+
+      await writeFile(path.join(root, "app.py"), "import requests\n");
+      const second = await analyse();
+      assert.deepEqual(
+        second.usages.map((u) => [u.dependency, u.file]),
+        [["requests", "app.py"]],
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

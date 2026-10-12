@@ -21,13 +21,7 @@
  * removed.ts, marked removedInPr and resolved with this project's resolver.
  */
 import { hasExcludedSegment } from "@ghostdeps/core";
-import type {
-  AdapterContext,
-  Dependency,
-  ProjectRef,
-  RepositoryHandle,
-  Usage,
-} from "@ghostdeps/core";
+import type { AdapterContext, Dependency, ProjectRef, Usage } from "@ghostdeps/core";
 import { candidateRoots, nearestRoot } from "../detect.js";
 import { ImportResolver, firstPartyModules, readTopLevelMetadata } from "../import-map.js";
 import { parseManifests } from "../manifest.js";
@@ -53,15 +47,14 @@ interface ProjectScan {
   resolver: ImportResolver;
 }
 
-// Keyed on the RepositoryHandle (the JS adapter keys on AdapterContext).
-// Handles are created per analysis run, so a cached scan never outlives the
-// repository snapshot it read.
-const cache = new WeakMap<RepositoryHandle, Map<string, Promise<ProjectScan>>>();
+// Keyed on the AdapterContext (one per analysis), like the JS adapter, not the
+// RepositoryHandle: a handle can be reused for a later analysis after the
+// files change, and must not serve a scan of the older files.
+const cache = new WeakMap<AdapterContext, Map<string, Promise<ProjectScan>>>();
 
 async function scanProject(context: AdapterContext, project: ProjectRef): Promise<ProjectScan> {
-  const repo = context.repository;
-  let perRepo = cache.get(repo);
-  if (!perRepo) cache.set(repo, (perRepo = new Map()));
+  let perRepo = cache.get(context);
+  if (!perRepo) cache.set(context, (perRepo = new Map()));
   let scan = perRepo.get(project.path);
   if (!scan) {
     scan = doScan(context, project);
