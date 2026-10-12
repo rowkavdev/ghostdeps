@@ -367,7 +367,7 @@ export async function buildLockfileGraph(
   }
   const reconciled = reconcileMembership(parsed.evidence, lock.path, rel, membership);
   evidence.push(...capMismatchEvidence(reconciled, lock.path));
-  const assembled = assembleGraph(project, parsed);
+  const assembled = assembleGraph(project, parsed, undefined, lock.path);
   evidence.push(...assembled.evidence);
   const graph = assembled.graph;
   if (reconciled.some((e) => INCOMPLETE_KINDS.has(e.kind))) graph.incomplete = true;
@@ -392,6 +392,7 @@ const STRUCTURAL_NOTE_KINDS: ReadonlySet<string> = new Set([
   "lockfile-unsupported",
   "lockfile-workspace-unsupported",
   "lockfile-workspace-unverified",
+  "lockfile-unresolved-reachable",
 ]);
 
 const isNoteEvidence = (kind: string): boolean =>

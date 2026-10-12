@@ -100,9 +100,19 @@ export function parseNpmLockfile(
       const e = entry(key);
       if (!e || key === "" || e.link) continue;
       const deps: string[] = [];
+      const unresolvedDependencies: string[] = [];
+      // npm treats a name in optionalDependencies as optional even when
+      // dependencies repeats it; optional misses are legitimate (#928).
+      const optional = new Set(
+        Object.keys(isObject(e.optionalDependencies) ? e.optionalDependencies : {}),
+      );
+      const required = new Set(
+        Object.keys(isObject(e.dependencies) ? e.dependencies : {}).filter((d) => !optional.has(d)),
+      );
       for (const d of new Set(depsOf(e, false))) {
         const id = lookup(key, d);
         if (id !== undefined) deps.push(id);
+        else if (required.has(d)) unresolvedDependencies.push(d);
       }
       const peers: string[] = [];
       const unresolvedPeers: string[] = [];
@@ -121,6 +131,7 @@ export function parseNpmLockfile(
         dependencies: deps,
         peers,
         unresolvedPeers,
+        ...(unresolvedDependencies.length > 0 ? { unresolvedDependencies } : {}),
         ...(registryOrigin === undefined ? {} : { registryOrigin }),
       });
     }

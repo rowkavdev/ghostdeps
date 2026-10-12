@@ -1113,3 +1113,79 @@ describe("buildLockfileGraph: pnpm workspace membership gates stale importers (#
     });
   }
 });
+
+describe("npm lockfile: reachable dependencies with no package entry", () => {
+  const graphFor = (packages: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": JSON.stringify({ dependencies: { a: "1" } }),
+          "package-lock.json": JSON.stringify({
+            lockfileVersion: 3,
+            packages: {
+              "": { dependencies: { a: "1" } },
+              "node_modules/a": { version: "1.0.0", ...extra },
+              ...packages,
+            },
+          }),
+        }),
+      ),
+      project(),
+    );
+
+  it("marks the graph incomplete when a reachable package requires an unlocked dependency", async () => {
+    const res = await graphFor({}, { dependencies: { missing: "^1" } });
+    assert.equal(res.graph.incomplete, true);
+    const note = res.evidence.find((e) => e.kind === "lockfile-unresolved-reachable");
+    assert.match(note?.statement ?? "", /missing/);
+    assert.match(note?.statement ?? "", /package-lock\.json/);
+  });
+
+  it("keeps optional dependencies and optional peers complete when they are not locked", async () => {
+    const res = await graphFor(
+      {},
+      {
+        dependencies: { both: "1" },
+        optionalDependencies: { both: "1", fsevents: "2" },
+        peerDependencies: { react: "18", plugin: "1" },
+        peerDependenciesMeta: { react: { optional: true } },
+      },
+    );
+    assert.equal(res.graph.incomplete, false);
+    assert.ok(!res.evidence.some((e) => e.kind === "lockfile-unresolved-reachable"));
+  });
+
+  it("ignores an unlocked dependency of a package no direct dependency reaches", async () => {
+    const res = await graphFor({
+      "node_modules/orphan": { version: "1.0.0", dependencies: { ghost: "1" } },
+    });
+    assert.equal(res.graph.incomplete, false);
+  });
+
+  it("resolves a transitive dependency hoisted to the root", async () => {
+    const res = await graphFor(
+      { "node_modules/b": { version: "1.0.0" } },
+      { dependencies: { b: "1" } },
+    );
+    assert.equal(res.graph.incomplete, false);
+  });
+
+  it("surfaces the unlocked reachable dependency as a run note", async () => {
+    const notes = await lockfileNotes(
+      ctx(
+        memoryHandle({
+          "package.json": JSON.stringify({ dependencies: { a: "1" } }),
+          "package-lock.json": JSON.stringify({
+            lockfileVersion: 3,
+            packages: {
+              "": { dependencies: { a: "1" } },
+              "node_modules/a": { version: "1.0.0", dependencies: { missing: "^1" } },
+            },
+          }),
+        }),
+      ),
+      [project()],
+    );
+    assert.ok(notes.some((n) => /missing/.test(n.statement)));
+  });
+});
