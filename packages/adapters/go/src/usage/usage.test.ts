@@ -415,3 +415,15 @@ describe("Go usage scan cache", () => {
     }
   });
 });
+
+it("accepts a line break, with or without a comment, after the package keyword", () => {
+  const paths = (src: string) =>
+    extractGoImports(src).imports.map(({ path, line }) => [path, line]);
+  assert.deepEqual(paths('package\napp\nimport _ "example.test/dep"\n'), [["example.test/dep", 3]]);
+  assert.deepEqual(paths('package // note\napp\nimport _ "example.test/dep"\n'), [
+    ["example.test/dep", 3],
+  ]);
+  const tokens = lexGo('package app\nimport "package"\nimport "example.test/dep"\n');
+  const literal = tokens.findIndex((token) => token.kind === "string" && token.text === "package");
+  assert.equal(tokens[literal + 1]?.text, ";");
+});
