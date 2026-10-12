@@ -15,6 +15,81 @@ async function internal(files: Record<string, string>, fromDir: string, spec: st
   return r.isInternal(spec, config);
 }
 
+describe("TypeScript extension substitution in alias targets", () => {
+  const pairs = [
+    [".js", ".ts"],
+    [".js", ".tsx"],
+    [".js", ".d.ts"],
+    [".js", ".jsx"],
+    [".jsx", ".ts"],
+    [".jsx", ".tsx"],
+    [".jsx", ".d.ts"],
+    [".jsx", ".js"],
+    [".mjs", ".mts"],
+    [".mjs", ".d.mts"],
+    [".cjs", ".cts"],
+    [".cjs", ".d.cts"],
+  ] as const;
+  const withPaths = (paths: unknown, extra: Record<string, string> = {}) => ({
+    "tsconfig.json": JSON.stringify({ compilerOptions: { paths } }),
+    ...extra,
+  });
+
+  for (const [written, real] of pairs) {
+    it(`maps an exact paths target ${written} to ${real}`, async () => {
+      const files = withPaths({ pkg: [`src/pkg${written}`] }, { [`src/pkg${real}`]: "" });
+      assert.equal(await internal(files, ".", "pkg"), true);
+    });
+
+    it(`maps a wildcard paths target ${written} to ${real}`, async () => {
+      const files = withPaths({ "@app/*": [`src/*${written}`] }, { [`src/pkg${real}`]: "" });
+      assert.equal(await internal(files, ".", "@app/pkg"), true);
+    });
+
+    it(`maps a baseUrl specifier ${written} to ${real}`, async () => {
+      const files = {
+        "tsconfig.json": `{"compilerOptions":{"baseUrl":"src"}}`,
+        [`src/pkg${real}`]: "",
+      };
+      assert.equal(await internal(files, ".", `pkg${written}`), true);
+    });
+
+    it(`maps a catch-all paths target for a ${written} import to ${real}`, async () => {
+      const files = withPaths({ "*": ["src/*"] }, { "tsconfig.json": "", [`src/pkg${real}`]: "" });
+      files["tsconfig.json"] = JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "*": ["src/*"] } },
+      });
+      assert.equal(await internal(files, ".", `pkg${written}`), true);
+    });
+  }
+
+  it("still resolves an extensionless target and a real .js file", async () => {
+    assert.equal(
+      await internal(withPaths({ pkg: ["src/pkg"] }, { "src/pkg.ts": "" }), ".", "pkg"),
+      true,
+    );
+    assert.equal(
+      await internal(withPaths({ pkg: ["src/pkg.js"] }, { "src/pkg.js": "" }), ".", "pkg"),
+      true,
+    );
+  });
+
+  it("does not substitute across module kinds or for missing files", async () => {
+    assert.equal(
+      await internal(withPaths({ pkg: ["src/pkg.mjs"] }, { "src/pkg.ts": "" }), ".", "pkg"),
+      false,
+    );
+    assert.equal(
+      await internal(withPaths({ pkg: ["src/pkg.js"] }, { "src/pkg.mts": "" }), ".", "pkg"),
+      false,
+    );
+    assert.equal(
+      await internal(withPaths({ pkg: ["src/pkg.js"] }, { "src/other.ts": "" }), ".", "pkg"),
+      false,
+    );
+  });
+});
+
 describe("joinPath", () => {
   it("normalises and refuses to escape the root", () => {
     assert.equal(joinPath("a/b", "../c/./d"), "a/c/d");
