@@ -259,8 +259,57 @@ export interface ScriptAnalysis {
   gaps: string[];
 }
 
+/** Complex shell expansions keep the existing evidence and expose a coverage gap. */
+function hasShellExpansion(text: string): boolean {
+  return /\$[({'"]|`|[()<>]|\\\n/.test(text);
+}
+
+const WORD_BREAK = /[ \t\n;|&()<>]/;
+
+/** Copy a backslash and the character it escapes. Returns the new index and whether a word is open. */
+function copyEscape(text: string, i: number): { next: number; out: string; inWord: boolean } {
+  if (i + 1 >= text.length) return { next: i, out: "\\", inWord: false };
+  const escaped = text[i + 1]!;
+  return { next: i + 1, out: `\\${escaped}`, inWord: escaped !== "\n" };
+}
+
+/** Index of the end of the comment starting at i (the newline, or the end of the text). */
+function commentEnd(text: string, i: number): number {
+  const nl = text.indexOf("\n", i);
+  return nl === -1 ? text.length : nl;
+}
+
+/** Remove comments only from the simple, unambiguous shell lexical subset. */
+function withoutShellComments(text: string): string {
+  if (hasShellExpansion(text)) return text;
+  let out = "";
+  let quote = "";
+  let inWord = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === "\\" && quote !== "'") {
+      const esc = copyEscape(text, i);
+      out += esc.out;
+      i = esc.next;
+      if (esc.inWord) inWord = true;
+    } else if (quote) {
+      out += c;
+      if (c === quote) quote = "";
+    } else if (c === "#" && !inWord) {
+      i = commentEnd(text, i);
+      if (i < text.length) out += "\n";
+    } else {
+      if (c === "'" || c === '"') quote = c;
+      out += c;
+      inWord = quote ? true : !WORD_BREAK.test(c);
+    }
+  }
+  return out;
+}
+
 /** Split a script into command segments of words, honouring quotes. Never evaluates anything. */
 function tokenise(text: string, gaps: string[]): string[][] {
+  text = withoutShellComments(text);
   const segments: string[][] = [];
   let words: string[] = [];
   let word = "";
@@ -333,6 +382,8 @@ const isAssignment = (w: string) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w);
 const bareCommand = (w: string) => w.replace(/^(\.\/)?node_modules\/\.bin\//, "");
 
 function analyseInto(script: string, depth: number, out: ScriptAnalysis): void {
+  if (script.includes("#") && hasShellExpansion(script.slice(0, MAX_SCRIPT_LENGTH)))
+    out.gaps.push("shell expansion: comment boundaries not analysed");
   if (script.length > MAX_SCRIPT_LENGTH) out.gaps.push("script too long");
   for (const words of tokenise(script.slice(0, MAX_SCRIPT_LENGTH), out.gaps)) {
     analyseSegment(words, depth, out);
@@ -515,7 +566,7 @@ export function commandWords(script: string): string[] {
  */
 export function mentions(command: string, packageName: string): string[] {
   const out: string[] = [];
-  const text = command.slice(0, MAX_SCRIPT_LENGTH);
+  const text = withoutShellComments(command.slice(0, MAX_SCRIPT_LENGTH));
   for (const token of text.match(/[^\s"'=,;|&()<>`]+/g) ?? []) {
     if (token === packageName || token.startsWith(`${packageName}/`)) out.push(token);
   }

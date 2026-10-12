@@ -388,3 +388,139 @@ describe("shell keywords and wrappers", () => {
     assert.deepEqual(words("sudo -u root eslint ."), ["eslint"]);
   });
 });
+
+describe("shell comments in scripts", () => {
+  for (const command of [
+    "echo ok # comment; eslint",
+    "echo ok # comment && eslint",
+    "# eslint; vitest",
+    "echo ok; # eslint | vitest",
+  ]) {
+    it(`ignores commented commands: ${command}`, () => {
+      assert.deepEqual(analyseScript(command), {
+        words: command.startsWith("#") ? [] : ["echo"],
+        gaps: [],
+      });
+    });
+  }
+
+  it("ends a comment at newline and keeps later commands", () => {
+    assert.deepEqual(commandWords("echo ok # eslint; vitest\nprettier ."), ["echo", "prettier"]);
+  });
+
+  it("keeps non-boundary, quoted and escaped hashes literal", () => {
+    for (const command of [
+      "echo a#b; eslint",
+      "echo '# comment'; eslint",
+      'echo "# comment"; eslint',
+      String.raw`echo \#comment; eslint`,
+      "echo ''#word; eslint",
+      "echo a\u00a0#b; eslint",
+      "echo a\r#b; eslint",
+    ])
+      assert.deepEqual(commandWords(command), ["echo", "eslint"], command);
+  });
+
+  it("handles comments inside nested shell commands", () => {
+    assert.deepEqual(commandWords('sh -c "echo ok # comment; eslint"'), ["echo"]);
+    assert.deepEqual(commandWords('concurrently "echo ok # comment; eslint" "vitest"'), [
+      "concurrently",
+      "echo",
+      "vitest",
+    ]);
+  });
+
+  it("does not credit package mentions inside comments", () => {
+    assert.deepEqual(mentions("echo ok # eslint --import=tsx/esm", "eslint"), []);
+    assert.deepEqual(mentions("echo ok # eslint --import=tsx/esm", "tsx"), []);
+    assert.deepEqual(mentions("echo '# literal' --import=tsx/esm", "tsx"), ["tsx/esm"]);
+  });
+
+  it("does not emit script usage for a commented dependency", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        devDependencies: { eslint: "*", tsx: "*" },
+        scripts: { lint: "echo ok # comment; eslint --import=tsx/esm" },
+      }),
+    });
+    assert.deepEqual(await findScriptUsages(context, dep("eslint")), []);
+    assert.deepEqual(await findScriptUsages(context, dep("tsx")), []);
+  });
+
+  it("keeps real usage after a comment newline", async () => {
+    const context = ctx({
+      "package.json": JSON.stringify({
+        devDependencies: { eslint: "*" },
+        scripts: { lint: "echo ok # comment\neslint ." },
+      }),
+    });
+    assert.equal((await findScriptUsages(context, dep("eslint"))).length, 1);
+  });
+});
+
+describe("conservative shell expansion comment coverage", () => {
+  for (const command of [
+    "echo ${x:- # literal}; eslint --import=tsx/esm",
+    "echo ${x:- #}; eslint --import=tsx/esm",
+    "echo ${x:-$(echo }) # literal}; eslint --import=tsx/esm",
+    "echo ${x:-`echo }` # literal}; eslint --import=tsx/esm",
+    "echo ${x:-$(echo ok # )\n echo }) # literal}; eslint --import=tsx/esm",
+    "echo ${x:-<(echo }) # literal}; eslint --import=tsx/esm",
+  ]) {
+    it(`preserves existing evidence and notes a gap: ${command}`, () => {
+      assert.ok(commandWords(command).includes("eslint"));
+      assert.deepEqual(mentions(command, "tsx"), ["tsx/esm"]);
+      assert.ok(
+        analyseScript(command).gaps.includes("shell expansion: comment boundaries not analysed"),
+      );
+    });
+  }
+  for (const command of [
+    'echo "${x:-\'}" # comment; eslint --import=tsx/esm',
+    "echo $(echo ok # eslint --import=tsx/esm\n)",
+  ]) {
+    it(`keeps ambiguous mentions but exposes incompleteness: ${command}`, () => {
+      assert.deepEqual(mentions(command, "tsx"), ["tsx/esm"]);
+      assert.ok(
+        analyseScript(command).gaps.includes("shell expansion: comment boundaries not analysed"),
+      );
+    });
+  }
+});
+
+it("preserves baseline evidence for dollar-prefixed shell quotes and records a gap", () => {
+  const command = String.raw`echo $'a\' # literal'; eslint --import=tsx/esm`;
+  assert.deepEqual(mentions(command, "tsx"), ["tsx/esm"]);
+  const analysis = analyseScript(command);
+  assert.deepEqual(analysis.words, ["echo"]);
+  assert.ok(analysis.gaps.includes("unbalanced quote"));
+  assert.ok(analysis.gaps.includes("shell expansion: comment boundaries not analysed"));
+  assert.ok(
+    analyseScript('echo $"literal" # comment; eslint').gaps.includes(
+      "shell expansion: comment boundaries not analysed",
+    ),
+  );
+});
+
+it("keeps baseline evidence and records a gap for line continuations", () => {
+  const command = "echo $" + "\\\n" + "{x:- # literal}; eslint --import=tsx/esm";
+  assert.deepEqual(commandWords(command), ["echo", "eslint"]);
+  assert.deepEqual(mentions(command, "tsx"), ["tsx/esm"]);
+  assert.ok(
+    analyseScript(command).gaps.includes("shell expansion: comment boundaries not analysed"),
+  );
+});
+
+for (const command of [
+  "echo @(a|#); eslint --import=tsx/esm",
+  "cat <<EOF\nx # tsx/esm\nEOF\neslint .",
+  "((16#ff)); eslint --import=tsx/esm",
+]) {
+  it(`preserves unsupported parentheses/redirection evidence: ${command}`, () => {
+    assert.ok(commandWords(command).includes("eslint"));
+    assert.deepEqual(mentions(command, "tsx"), ["tsx/esm"]);
+    assert.ok(
+      analyseScript(command).gaps.includes("shell expansion: comment boundaries not analysed"),
+    );
+  });
+}
