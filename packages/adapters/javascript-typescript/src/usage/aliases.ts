@@ -47,6 +47,17 @@ const MAX_MEMO_PER_CONFIG = 50_000;
 const MAX_PACKAGE_BASES = 1_000;
 
 const CONFIG_NAMES = ["tsconfig.json", "jsconfig.json"] as const;
+/**
+ * TypeScript resolves an import written with a JS extension to the TS source
+ * (Bundler and Node16+), trying these replacements in order. .js and .jsx
+ * share one family; .mjs and .cjs keep their own module-kind replacements.
+ */
+const TS_SOURCE_SUBSTITUTIONS: Record<string, string[]> = {
+  ".js": [".ts", ".tsx", ".d.ts", ".js", ".jsx"],
+  ".jsx": [".ts", ".tsx", ".d.ts", ".js", ".jsx"],
+  ".mjs": [".mts", ".d.mts"],
+  ".cjs": [".cts", ".d.cts"],
+};
 const RESOLVE_EXTENSIONS = [
   "",
   ".ts",
@@ -259,6 +270,15 @@ export class AliasResolver {
     return false;
   }
 
+  /** A target written with a JS extension may name the TS source TypeScript resolves it to. */
+  private resolvesToTsSource(target: string): boolean {
+    const written = /\.[cm]?jsx?$/.exec(target)?.[0];
+    if (written === undefined) return false;
+    const stem = target.slice(0, -written.length);
+    if (stem === "") return false;
+    return (TS_SOURCE_SUBSTITUTIONS[written] ?? []).some((ext) => this.files.has(`${stem}${ext}`));
+  }
+
   private resolvesToFile(base: string, rel: string): boolean {
     const target = joinPath(base, rel);
     if (target === undefined || target.split("/").includes("node_modules")) return false;
@@ -266,6 +286,7 @@ export class AliasResolver {
       if (ext && this.files.has(`${target}${ext}`)) return true;
       if (!ext && target !== "." && this.files.has(target)) return true;
     }
+    if (this.resolvesToTsSource(target)) return true;
     if (this.dirs.has(target)) {
       for (const ext of RESOLVE_EXTENSIONS.slice(1)) {
         if (this.files.has(target === "." ? `index${ext}` : `${target}/index${ext}`)) return true;
