@@ -36,7 +36,7 @@ const NAME_PART = /^[a-zA-Z0-9-][a-zA-Z0-9._~-]*$/;
 const MAX_NAME_LENGTH = 214;
 
 export function parseSpecifier(specifier: string): ParsedSpecifier {
-  const spec = specifier.trim();
+  const spec = specifier;
   if (spec === "" || spec.length > 4096) return { kind: "invalid" };
   if (spec.startsWith(".") || spec.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(spec)) {
     return { kind: "relative" };
