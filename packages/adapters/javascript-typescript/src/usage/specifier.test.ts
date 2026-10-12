@@ -55,6 +55,13 @@ describe("parseSpecifier", () => {
       assert.notEqual(parseSpecifier(s).kind, "package", JSON.stringify(s));
     }
   });
+  it("does not trim a padded specifier into a package (#930)", () => {
+    for (const s of [" demo", "demo ", "\tdemo", "demo\t", " ./x", " node:fs", " "]) {
+      assert.equal(parseSpecifier(s).kind, "invalid", JSON.stringify(s));
+    }
+    assert.deepEqual(parseSpecifier("demo"), { kind: "package", packageName: "demo" });
+  });
+
   it("strips bundler resource queries (normalize.css?inline)", () => {
     assert.deepEqual(parseSpecifier("normalize.css?inline"), {
       kind: "package",
