@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { normaliseUsageResult } from "@ghostdeps/core";
+import { FsRepositoryHandle, analyseRepository, normaliseUsageResult } from "@ghostdeps/core";
 import type { AdapterContext, Dependency } from "@ghostdeps/core";
 import { createGoAdapter } from "../adapter.js";
 import { FIXTURES_ROOT, fixtureHandle, memoryHandle } from "../testing/fs-handle.js";
@@ -387,4 +389,29 @@ it("only suppresses newline semicolons after the import keyword, not string valu
     ),
     ["import", "example.test/dep"],
   );
+});
+
+describe("Go usage scan cache", () => {
+  it("does not reuse a scan across analyses of the same repository handle", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ghostdeps-go-cache-"));
+    try {
+      await writeFile(
+        path.join(root, "go.mod"),
+        "module example.com/app\n\ngo 1.23\n\nrequire example.com/demo v1.0.0\n",
+      );
+      await writeFile(path.join(root, "main.go"), "package app\n");
+      const handle = await FsRepositoryHandle.open(root);
+      const analyse = () => analyseRepository(handle, { adapters: [createGoAdapter()] });
+      assert.deepEqual((await analyse()).usages, []);
+
+      await writeFile(path.join(root, "main.go"), 'package app\nimport _ "example.com/demo"\n');
+      const second = await analyse();
+      assert.deepEqual(
+        second.usages.map((u) => [u.dependency, u.file]),
+        [["example.com/demo", "main.go"]],
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

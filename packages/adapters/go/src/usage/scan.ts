@@ -13,7 +13,6 @@ import type {
   AdapterContext,
   Dependency,
   ProjectRef,
-  RepositoryHandle,
   Usage,
   SourceLineChanges,
 } from "@ghostdeps/core";
@@ -47,12 +46,13 @@ interface ProjectScan {
   tools: { path: string; line: number }[];
 }
 
-const cache = new WeakMap<RepositoryHandle, Map<string, Promise<ProjectScan>>>();
+// Keyed on the AdapterContext (one per analysis), not the RepositoryHandle, so
+// reusing a handle for a later analysis never serves a scan of older files.
+const cache = new WeakMap<AdapterContext, Map<string, Promise<ProjectScan>>>();
 
 async function scanProject(context: AdapterContext, project: ProjectRef): Promise<ProjectScan> {
-  const repo = context.repository;
-  let perRepo = cache.get(repo);
-  if (!perRepo) cache.set(repo, (perRepo = new Map()));
+  let perRepo = cache.get(context);
+  if (!perRepo) cache.set(context, (perRepo = new Map()));
   let scan = perRepo.get(project.path);
   if (!scan) {
     scan = doScan(context, project);
