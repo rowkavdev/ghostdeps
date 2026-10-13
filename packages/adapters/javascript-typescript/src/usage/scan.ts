@@ -168,12 +168,21 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     }
   };
 
-  /** `createRequire(...)` / `module.createRequire(...)`, which returns a require function. */
+  /** Member name of `x.name` or `x["name"]`; undefined for any other callee. */
+  const memberName = (callee: ts.Expression): string | undefined => {
+    if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
+    if (ts.isElementAccessExpression(callee)) {
+      const key = callee.argumentExpression;
+      if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) return key.text;
+    }
+    return undefined;
+  };
+
+  /** `createRequire(...)` / `module.createRequire(...)` / `module["createRequire"](...)`, which returns a require function. */
   const isCreateRequire = (node: ts.Node): boolean =>
     ts.isCallExpression(node) &&
     ((ts.isIdentifier(node.expression) && node.expression.text === "createRequire") ||
-      (ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.name.text === "createRequire"));
+      memberName(node.expression) === "createRequire");
 
   // Names bound to a require function: `require` itself plus
   // `const r = createRequire(import.meta.url)`. Scoping is not tracked; a
@@ -198,16 +207,6 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
 
   /** String text seen in the file, checked for package references after the import pass. */
   const strings: { node: ts.Node; text: string }[] = [];
-
-  /** Member name of `x.name` or `x["name"]`; undefined for any other callee. */
-  const memberName = (callee: ts.Expression): string | undefined => {
-    if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
-    if (ts.isElementAccessExpression(callee)) {
-      const key = callee.argumentExpression;
-      if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) return key.text;
-    }
-    return undefined;
-  };
 
   const visit = (node: ts.Node): void => {
     if (
