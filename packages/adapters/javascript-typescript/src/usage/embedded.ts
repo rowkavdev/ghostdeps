@@ -59,9 +59,9 @@ const JS_TYPES = new Set([
 ]);
 
 /** Consume whole attributes so text inside quoted values cannot become a name. */
-function attr(tag: string, name: string): string | undefined {
+function attr(tag: string, name: string, nameLength = 7): string | undefined {
   const attributes = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
-  for (const match of tag.slice(7, -1).matchAll(attributes)) {
+  for (const match of tag.slice(nameLength, -1).matchAll(attributes)) {
     if (match[1]!.toLowerCase() === name) return match[2] ?? match[3] ?? match[4] ?? "";
   }
   return undefined;
@@ -245,4 +245,88 @@ export function extractScriptBlocks(file: string, text: string): ExtractedBlocks
     from = close + 8;
   }
   return { blocks, dropped };
+}
+
+/** `lang` values that name a stylesheet preprocessor. */
+const STYLE_LANGS = new Set(["scss", "sass", "less", "stylus", "styl", "sugarss", "sss"]);
+
+/** Component formats whose style blocks may name a preprocessor. */
+export function hasStyleBlocks(file: string): boolean {
+  return /\.(vue|svelte|astro)$/i.test(file);
+}
+
+/** Index just past a leading Astro frontmatter fence, or 0 when there is none. */
+function astroFrontmatterEnd(text: string): number {
+  const lead = /^\uFEFF?\s*---[^\S\n]*\n/.exec(text);
+  if (!lead) return 0;
+  const close = text.indexOf("\n---", lead[0].length - 1);
+  return close >= 0 ? close + 4 : 0;
+}
+
+/**
+ * Next scan position after a tag that is not script or style, or -1 to stop.
+ * Skips the tag whole so attribute values cannot look like markup, and skips
+ * the body of text-only elements (textarea, title, ...).
+ */
+function skipOtherTag(text: string, lower: string, open: number): number {
+  const end = /^<\/?[a-z]/.test(lower.slice(open, open + 3)) ? openingTagEnd(text, open + 1) : -1;
+  if (end < 0) return open + 1;
+  const textOnly = /^<([a-z]+)(?=[\t\n\f\r />])/.exec(lower.slice(open, end + 1))?.[1];
+  if (
+    textOnly !== undefined &&
+    HTML_TEXT_ELEMENTS.has(textOnly) &&
+    !text.startsWith("/>", end - 1)
+  ) {
+    return textElementEnd(lower, textOnly, end + 1);
+  }
+  return end + 1;
+}
+
+/** Next scan position after a script or style body starting at `bodyStart`, or -1 to stop. */
+function scriptOrStyleEnd(lower: string, name: string, bodyStart: number): number {
+  if (name === "script") {
+    const close = closingScriptStart(lower, bodyStart);
+    return close < 0 ? -1 : close + 8;
+  }
+  return textElementEnd(lower, name, bodyStart);
+}
+
+/**
+ * Preprocessor `lang` values of style tags in a component, at any depth.
+ * Which package compiles such a block depends on the framework and its
+ * toolchain, so the caller reports it as a limitation and credits nothing.
+ * Comments, attribute values, script bodies and style bodies are skipped.
+ * Nothing is rendered or evaluated.
+ */
+export function extractStyleLangs(file: string, text: string): string[] {
+  const lower = text.replace(/[A-Z]/g, (character) => character.toLowerCase());
+  const langs = new Set<string>();
+  let from = /\.astro$/i.test(file) ? astroFrontmatterEnd(text) : 0;
+  while (from >= 0 && from < text.length) {
+    const open = lower.indexOf("<", from);
+    if (open < 0) break;
+    if (lower.startsWith("<!--", open)) {
+      from = commentEnd(text, open + 4);
+      continue;
+    }
+    const opening = /^<(script|style)(?=[\t\n\f\r />])/.exec(lower.slice(open, open + 10));
+    if (!opening) {
+      from = skipOtherTag(text, lower, open);
+      continue;
+    }
+    const name = opening[1]!;
+    const end = openingTagEnd(text, open + 1);
+    if (end < 0) break;
+    const tag = text.slice(open, end + 1);
+    if (name === "style") {
+      const lang = (attr(tag, "lang", 6) ?? "").trim().toLowerCase();
+      if (STYLE_LANGS.has(lang)) langs.add(lang);
+    }
+    if (tag.endsWith("/>")) {
+      from = end + 1;
+      continue;
+    }
+    from = scriptOrStyleEnd(lower, name, end + 1);
+  }
+  return [...langs];
 }
