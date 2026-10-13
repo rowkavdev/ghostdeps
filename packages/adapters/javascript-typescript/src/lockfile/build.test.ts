@@ -2150,3 +2150,155 @@ describe("yarn berry lockfile: reachable dependencies with no lock entry", () =>
     assert.equal(missing(await graphFor(flagged)), undefined);
   });
 });
+
+// Real bun 1.4.3 text lock (lockfileVersion 2): workspaces, an npm: alias, a file: dependency,
+// an override, a workspace optional dependency that was never installed, and an auto-installed peer.
+const REAL_BUN_LOCK = String.raw`{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "root",
+      "dependencies": {
+        "fl": "file:./lfl",
+        "micromatch": "^4.0.5",
+        "num": "npm:is-number@^7.0.0",
+        "wsa": "workspace:*",
+      },
+    },
+    "pkgs/a": {
+      "name": "wsa",
+      "version": "1.0.0",
+      "dependencies": {
+        "ms": "^2.1.3",
+        "wsb": "workspace:*",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
+    "pkgs/b": {
+      "name": "wsb",
+      "version": "1.0.0",
+      "dependencies": {
+        "is-number": "^7.0.0",
+      },
+      "optionalDependencies": {
+        "nonexistent-optional-pkg-xyz": "^1.0.0",
+      },
+    },
+  },
+  "overrides": {
+    "braces": "3.0.3",
+  },
+  "packages": {
+    "braces": ["braces@3.0.3", "", { "dependencies": { "fill-range": "^7.1.1" } }, "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA=="],
+
+    "fill-range": ["fill-range@7.1.1", "", { "dependencies": { "to-regex-range": "^5.0.1" } }, "sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg=="],
+
+    "fl": ["fl@file:lfl", { "dependencies": { "is-odd": "^3.0.1" } }],
+
+    "is-number": ["is-number@7.0.0", "", {}, "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],
+
+    "is-odd": ["is-odd@3.0.1", "", { "dependencies": { "is-number": "^6.0.0" } }, "sha512-CQpnWPrDwmP1+SMHXZhtLtJv90yiyVfluGsX5iNCVkrhQtU3TQHsUWPG9wkdk9Lgd5yNpAg9jQEo90CBaXgWMA=="],
+
+    "micromatch": ["micromatch@4.0.8", "", { "dependencies": { "braces": "^3.0.3", "picomatch": "^2.3.1" } }, "sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA=="],
+
+    "ms": ["ms@2.1.3", "", {}, "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="],
+
+    "num": ["is-number@7.0.0", "", {}, "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],
+
+    "picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
+
+    "react": ["react@19.3.0", "", {}, "sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog=="],
+
+    "to-regex-range": ["to-regex-range@5.0.1", "", { "dependencies": { "is-number": "^7.0.0" } }, "sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ=="],
+
+    "wsa": ["wsa@workspace:pkgs/a"],
+
+    "wsb": ["wsb@workspace:pkgs/b"],
+
+    "is-odd/is-number": ["is-number@6.0.0", "", {}, "sha512-Wu1VHeILBK8KAWJUAiSZQX94GmOE45Rg6/538fKwiloUu21KncEkYGPqob2oSZ5mUT73vLGrHQjKw3KMPwfDzg=="],
+  }
+}
+`;
+
+describe("bun lockfile: reachable dependencies with no package entry", () => {
+  const manifest = {
+    name: "root",
+    dependencies: {
+      micromatch: "^4.0.5",
+      num: "npm:is-number@^7.0.0",
+      fl: "file:./lfl",
+    },
+  };
+  // A direct workspace: dependency is left without a package id (and so incomplete) by the
+  // existing direct-dependency path, separately from this rule, so the root drops it here.
+  const noRootWorkspace = (lock: string) => lock.replace(/^ {8}"wsa": "workspace:\*",\n/m, "");
+  const graphFor = (lock: string, man: unknown = manifest) =>
+    buildLockfileGraph(
+      ctx(memoryHandle({ "package.json": JSON.stringify(man), "bun.lock": noRootWorkspace(lock) })),
+      project(),
+    );
+  const missing = (res: Awaited<ReturnType<typeof graphFor>>) =>
+    res.evidence.find((e) => e.kind === "lockfile-unresolved-reachable");
+  const drop = (name: string) =>
+    REAL_BUN_LOCK.replace(new RegExp(`^    "${name}": \\[.*\\n\\n`, "m"), "");
+  const tuple = (meta: Record<string, unknown>) =>
+    JSON.stringify({
+      lockfileVersion: 1,
+      workspaces: { "": { name: "app", dependencies: { a: "^1" } } },
+      packages: { a: ["a@1.0.0", "", meta, "sha512-demo"] },
+    });
+  const minimal = (meta: Record<string, unknown>) =>
+    graphFor(tuple(meta), { name: "app", dependencies: { a: "^1" } });
+
+  it("stays complete on a real bun lock with workspaces, alias, file:, override and a missing workspace optional", async () => {
+    const res = await graphFor(REAL_BUN_LOCK);
+    assert.equal(res.graph.incomplete, false);
+    assert.equal(missing(res), undefined);
+  });
+
+  it("marks the graph incomplete when a reachable package's dependency has no package entry", async () => {
+    const broken = drop("fill-range");
+    assert.notEqual(broken, REAL_BUN_LOCK);
+    const res = await graphFor(broken);
+    assert.equal(res.graph.incomplete, true);
+    assert.match(missing(res)?.statement ?? "", /fill-range/);
+  });
+
+  it("flags a required dependency of a package, not an optional one or a peer", async () => {
+    const res = await minimal({ dependencies: { missing: "^1" } });
+    assert.equal(res.graph.incomplete, true);
+    assert.match(missing(res)?.statement ?? "", /missing/);
+    const optional = await minimal({ optionalDependencies: { missing: "^1" } });
+    assert.equal(optional.graph.incomplete, false);
+    assert.equal(missing(optional), undefined);
+    const both = await minimal({
+      dependencies: { missing: "^1" },
+      optionalDependencies: { missing: "^1" },
+    });
+    assert.equal(missing(both), undefined);
+    const peer = await minimal({ peerDependencies: { missing: "^1" } });
+    assert.equal(missing(peer), undefined);
+  });
+
+  it("ignores a missing dependency of a package no direct dependency reaches", async () => {
+    const lock = JSON.stringify({
+      lockfileVersion: 1,
+      workspaces: { "": { name: "app", dependencies: { a: "^1" } } },
+      packages: {
+        a: ["a@1.0.0", "", {}, "sha512-demo"],
+        orphan: ["orphan@1.0.0", "", { dependencies: { ghost: "^1" } }, "sha512-demo"],
+      },
+    });
+    const res = await graphFor(lock, { name: "app", dependencies: { a: "^1" } });
+    assert.equal(res.graph.incomplete, false);
+  });
+
+  it("resolves a dependency through a nested copy or the hoisted one and stays complete", async () => {
+    const res = await graphFor(REAL_BUN_LOCK);
+    // is-odd needs is-number ^6, held at the nested key is-odd/is-number.
+    assert.equal(missing(res), undefined);
+  });
+});
