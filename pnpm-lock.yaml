@@ -257,8 +257,8 @@ importers:
         specifier: 0.24.0
         version: 0.24.0
       web-tree-sitter:
-        specifier: 0.27.0
-        version: 0.27.0
+        specifier: 0.27.1
+        version: 0.27.1
     devDependencies:
       '@ghostdeps/core':
         specifier: workspace:*
@@ -1112,8 +1112,8 @@ packages:
     resolution: {integrity: sha512-IUoow1YUtvoBBC06dXs8bR8B9vuA3aJfmQNKMoaPG/OFsPmoQvw8xh+6Ye25Gx9DQhoEom3Pcu9MKHerm/NpUQ==}
     engines: {node: ^18.17.0 || >=20.5.0}
 
-  web-tree-sitter@0.27.0:
-    resolution: {integrity: sha512-XK08gj6RwTMQatAG7uVRP8MunqotL/XC19vHgkSPKmELgbGPBj4ECvB8haHOUnyj6ls2B8t42UTro14zxGgAHg==}
+  web-tree-sitter@0.27.1:
+    resolution: {integrity: sha512-qtx0VyUyNRHtL3ze7+v0hCKB/sLcAmY7ZAVp/ZK/bCj0yED8ptvNrr7Vd7DwDyKDWN9baqcUx4uaD2r2ql+6IA==}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -1947,7 +1947,7 @@ snapshots:
 
   validate-npm-package-name@6.0.2: {}
 
-  web-tree-sitter@0.27.0: {}
+  web-tree-sitter@0.27.1: {}
 
   which@2.0.2:
     dependencies:
