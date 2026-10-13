@@ -17,6 +17,8 @@ export interface ResolvedPackage {
   unresolvedPeers?: string[];
   /** Required (non-optional) dependencies the lockfile never resolved to a package entry. */
   unresolvedDependencies?: string[];
+  /** Like unresolvedDependencies, but a yarn workspace may have fulfilled them and that could not be verified. */
+  unverifiedDependencies?: string[];
   /** GraphNode.registryOrigin (#174 step 3); set only from explicit evidence (see origin.ts). */
   registryOrigin?: string;
 }
@@ -94,6 +96,39 @@ function unresolvedReachableEvidence(
   };
 }
 
+/** Missing entries a yarn workspace might explain: a limitation, not a stale lockfile. */
+function unverifiedWorkspaceEvidence(
+  parsed: ParsedLockfile,
+  reachable: Iterable<string>,
+  lockfile: string | undefined,
+): Evidence | undefined {
+  const unlocked = new Set<string>();
+  for (const id of reachable) {
+    for (const name of parsed.packages.get(id)?.unverifiedDependencies ?? []) unlocked.add(name);
+  }
+  if (unlocked.size === 0) return undefined;
+  const names = [...unlocked].sort();
+  const where = lockfile === undefined ? "" : ` in ${lockfile}`;
+  return {
+    kind: "lockfile-workspace-unverified",
+    statement: `${names.length} reachable dependenc${names.length === 1 ? "y has" : "ies have"} no package entry${where} (${names.join(", ")}) and yarn workspace membership or versions could not be verified; the graph is treated as incomplete`,
+    ...(lockfile === undefined ? {} : { file: lockfile }),
+  };
+}
+
+/** Evidence for reachable dependencies that have no lock entry, in report order. */
+function missingEntryEvidence(
+  parsed: ParsedLockfile,
+  reachable: Iterable<string>,
+  lockfile: string | undefined,
+): Evidence[] {
+  const found = [
+    unresolvedReachableEvidence(parsed, reachable, lockfile),
+    unverifiedWorkspaceEvidence(parsed, reachable, lockfile),
+  ];
+  return found.filter((e): e is Evidence => e !== undefined);
+}
+
 export function assembleGraph(
   project: ProjectRef,
   parsed: ParsedLockfile,
@@ -166,9 +201,8 @@ export function assembleGraph(
       ],
     };
   }
-  const unresolvedEvidence = unresolvedReachableEvidence(parsed, reachableAll, lockfile);
-  if (unresolvedEvidence) incomplete = true;
-  const evidence: Evidence[] = unresolvedEvidence ? [unresolvedEvidence] : [];
+  const evidence = missingEntryEvidence(parsed, reachableAll, lockfile);
+  if (evidence.length > 0) incomplete = true;
   const nodes: GraphNode[] = [];
   for (const id of [...reachableAll].sort()) {
     const pkg = parsed.packages.get(id)!;
