@@ -73,9 +73,12 @@ function isComponentFile(path: string): boolean {
   return COMPONENT_EXTENSIONS.some((extension) => lower.endsWith(extension));
 }
 
+/** TypeScript declaration files for each module kind. */
+const DECLARATION_SUFFIXES = [".d.ts", ".d.mts", ".d.cts"] as const;
+
 function isSourceFile(path: string): boolean {
   // Declaration-only packages carry types, not meaningful source.
-  if (path.endsWith(".d.ts")) return false;
+  if (DECLARATION_SUFFIXES.some((suffix) => path.endsWith(suffix))) return false;
   return SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension));
 }
 
