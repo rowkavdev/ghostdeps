@@ -121,6 +121,31 @@ describe("js/ts ecosystem detection (issue #24)", () => {
     assert.equal(result.projects.length, 0);
   });
 
+  it("treats .d.mts and .d.cts declarations like .d.ts, and keeps real .mts/.cts source", async () => {
+    const decl = "export interface Item { value: string }";
+    const pkg = '{"name":"types-only","dependencies":{"demo":"^1"}}';
+    const detect = (files: Record<string, string>) =>
+      detectJavaScriptTypeScript(contextFor(memoryHandle(files)));
+    for (const file of ["types/index.d.ts", "types/index.d.mts", "types/index.d.cts"]) {
+      const result = await detect({ "package.json": pkg, [file]: decl });
+      assert.equal(result.confidence, 0.3, file);
+      assert.deepEqual(result.projects, [], file);
+    }
+    for (const file of ["src/index.mts", "src/index.cts", "src/index.ts"]) {
+      const result = await detect({ "package.json": pkg, [file]: decl });
+      assert.equal(result.confidence, 0.7, file);
+      assert.equal(result.projects.length, 1, file);
+    }
+    // A declaration file beside real source does not stop detection.
+    const mixed = await detect({
+      "package.json": pkg,
+      "types/index.d.mts": decl,
+      "src/index.ts": decl,
+    });
+    assert.equal(mixed.confidence, 0.7);
+    assert.equal(mixed.projects.length, 1);
+  });
+
   it("degrades confidence on a malformed manifest instead of crashing", async () => {
     const result = await detectJavaScriptTypeScript(
       contextFor(
