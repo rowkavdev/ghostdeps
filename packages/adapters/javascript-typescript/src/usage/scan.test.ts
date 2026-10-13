@@ -285,6 +285,45 @@ describe("scanSource", () => {
     }
   });
 
+  it("sees through parentheses around recognised callees, receivers and aliases", () => {
+    const head = 'import { createRequire } from "node:module"; import module from "node:module"; ';
+    const found = (text: string) =>
+      byPkg("a.ts", `${head}${text}`)
+        .map((r) => r.packageName)
+        .filter((name) => name === "demo");
+    for (const text of [
+      '(require)("demo");',
+      '((require))("demo");',
+      '(require.resolve)("demo");',
+      '(require)["resolve"]("demo");',
+      '(import.meta).resolve("demo");',
+      '(jest).mock("demo");',
+      '(jest.mock)("demo");',
+      '(vi["doMock"])("demo");',
+      'const r = (createRequire(import.meta.url)); r("demo");',
+      'const r = ((module.createRequire)(import.meta.url)); r("demo");',
+      '(createRequire(import.meta.url))("demo");',
+      '(createRequire)(import.meta.url)("demo");',
+      '(module["createRequire"])(import.meta.url)("demo");',
+    ]) {
+      assert.deepEqual(found(text), ["demo"], text);
+    }
+    // Plain forms and dynamic imports keep working.
+    for (const text of ['require("demo");', 'import("demo");', '(import("demo"));']) {
+      assert.deepEqual(found(text), ["demo"], text);
+    }
+    // Sequences, conditionals and other computed callees stay unmatched.
+    for (const text of [
+      '(0, require)("demo");',
+      '(a ? require : b)("demo");',
+      '(require || other)("demo");',
+      '(require, other)("demo");',
+      '(a, jest).mock("demo");',
+    ]) {
+      assert.deepEqual(found(text), [], text);
+    }
+  });
+
   it("ignores inherited Object property names as mock-framework receivers", () => {
     const result = scanSource(
       "a.js",
