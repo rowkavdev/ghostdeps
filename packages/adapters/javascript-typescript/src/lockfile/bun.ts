@@ -87,13 +87,21 @@ export function parseBunLockfile(
     const { name, version } = splitIdent(value[0]);
     const meta = value.find((v, i) => i > 0 && isObject(v)) as Rec | undefined;
     const deps: string[] = [];
+    const unresolvedDependencies: string[] = [];
     if (!version.startsWith("workspace:") && meta) {
+      // Bun lists optional dependencies under optionalDependencies, apart from
+      // dependencies, and peers under peerDependencies, so only a name in
+      // dependencies must have a package entry (workspace members have one too).
+      const optional = isObject(own(meta, "optionalDependencies"))
+        ? new Set(Object.keys(own(meta, "optionalDependencies") as Rec))
+        : new Set<string>();
       for (const field of ["dependencies", "optionalDependencies", "peerDependencies"]) {
         const map = own(meta, field);
         if (!isObject(map)) continue;
         for (const d of Object.keys(map)) {
           const id = lookup(key, d);
           if (id) deps.push(id);
+          else if (field === "dependencies" && !optional.has(d)) unresolvedDependencies.push(d);
         }
       }
     }
@@ -106,7 +114,14 @@ export function parseBunLockfile(
         else unresolvedPeers.push(d);
       }
     }
-    packages.set(key, { name, version, dependencies: deps, peers, unresolvedPeers });
+    packages.set(key, {
+      name,
+      version,
+      dependencies: deps,
+      peers,
+      unresolvedPeers,
+      ...(unresolvedDependencies.length > 0 ? { unresolvedDependencies } : {}),
+    });
   }
 
   const direct: ParsedLockfile["direct"] = declared.map((d) => ({ ...d, id: undefined }));
