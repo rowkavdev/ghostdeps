@@ -168,8 +168,16 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     }
   };
 
-  /** Member name of `x.name` or `x["name"]`; undefined for any other callee. */
-  const memberName = (callee: ts.Expression): string | undefined => {
+  /** Strips grouping parentheses only; sequences, conditionals and type wrappers stay as they are. */
+  const unwrapParens = (node: ts.Node): ts.Node => {
+    let current = node;
+    while (ts.isParenthesizedExpression(current)) current = current.expression;
+    return current;
+  };
+
+  /** Member name of `x.name` or `x["name"]`, ignoring grouping parentheses; undefined for any other callee. */
+  const memberName = (node: ts.Node): string | undefined => {
+    const callee = unwrapParens(node);
     if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
     if (ts.isElementAccessExpression(callee)) {
       const key = callee.argumentExpression;
@@ -179,10 +187,15 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   };
 
   /** `createRequire(...)` / `module.createRequire(...)` / `module["createRequire"](...)`, which returns a require function. */
-  const isCreateRequire = (node: ts.Node): boolean =>
-    ts.isCallExpression(node) &&
-    ((ts.isIdentifier(node.expression) && node.expression.text === "createRequire") ||
-      memberName(node.expression) === "createRequire");
+  const isCreateRequire = (value: ts.Node): boolean => {
+    const node = unwrapParens(value);
+    if (!ts.isCallExpression(node)) return false;
+    const callee = unwrapParens(node.expression);
+    return (
+      (ts.isIdentifier(callee) && callee.text === "createRequire") ||
+      memberName(callee) === "createRequire"
+    );
+  };
 
   // Names bound to a require function: `require` itself plus
   // `const r = createRequire(import.meta.url)`. Scoping is not tracked; a
@@ -205,8 +218,10 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   if (text.includes("createRequire") || /\\[ux]/.test(text)) findRequireAliases(sf);
 
   /** A callee that behaves like `require`: a require name, or `createRequire(...)` called directly. */
-  const isRequireFunction = (callee: ts.Node): boolean =>
-    (ts.isIdentifier(callee) && requireNames.has(callee.text)) || isCreateRequire(callee);
+  const isRequireFunction = (value: ts.Node): boolean => {
+    const callee = unwrapParens(value);
+    return (ts.isIdentifier(callee) && requireNames.has(callee.text)) || isCreateRequire(callee);
+  };
 
   /** String text seen in the file, checked for package references after the import pass. */
   const strings: { node: ts.Node; text: string }[] = [];
@@ -260,7 +275,7 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
       const symbols = node.qualifier ? [node.qualifier.getText(sf).split(".")[0]!] : ["*"];
       add(node, spec, "static", symbols, { typeOnly: true });
     } else if (ts.isCallExpression(node)) {
-      const callee = node.expression;
+      const callee = unwrapParens(node.expression);
       const arg = node.arguments[0];
       if (callee.kind === ts.SyntaxKind.ImportKeyword) {
         const ref = add(
@@ -277,8 +292,9 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
       } else if (memberName(callee) !== undefined && node.arguments.length >= 1) {
         // `x.name(...)` and `x["name"](...)` name the member the same way; a computed
         // name that is not a plain string stays unmatched.
-        const target = (callee as ts.PropertyAccessExpression | ts.ElementAccessExpression)
-          .expression;
+        const target = unwrapParens(
+          (callee as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression,
+        );
         const member = memberName(callee)!;
         const spec = stringValue(arg);
         if (isRequireFunction(target) && member === "resolve") {
