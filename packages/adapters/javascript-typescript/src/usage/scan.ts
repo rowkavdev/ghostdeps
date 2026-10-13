@@ -41,6 +41,12 @@ export interface FileScanResult {
   references: ImportReference[];
   /** True when the parser reported syntax errors; results may be partial. */
   parseErrors: boolean;
+  /**
+   * String evidence the scan did not examine (string count, string length or match
+   * limits), so string-only package references may be missing. Absent when every
+   * string was examined. Reported as a usage limitation, never as an absence.
+   */
+  incompleteStrings?: string[];
 }
 
 const EXTENSION_KINDS: Record<string, ts.ScriptKind> = {
@@ -64,8 +70,10 @@ export function scriptKindFor(file: string): ts.ScriptKind | undefined {
 }
 
 /** String literals examined per file, and the longest one examined. */
-const MAX_STRINGS_PER_FILE = 20_000;
-const MAX_STRING_CHARS = 100_000;
+export const MAX_STRINGS_PER_FILE = 20_000;
+export const MAX_STRING_CHARS = 100_000;
+/** Code-specifier matches read from one string. */
+export const MAX_SPECIFIER_MATCHES_PER_STRING = 50;
 
 /**
  * A whole string that is a package subpath: "pkg/", "pkg/sub/file.js",
@@ -95,6 +103,37 @@ function stringValue(node: ts.Node | undefined): string | undefined {
     return node.text;
   }
   return undefined;
+}
+
+/** Records a string literal for the string-reference pass; false when the per-file limit was already reached. */
+function collectString(
+  strings: { node: ts.Node; text: string }[],
+  node: ts.StringLiteralLike | ts.TemplateLiteralToken,
+): boolean {
+  if (strings.length >= MAX_STRINGS_PER_FILE) return false;
+  strings.push({ node, text: node.text });
+  return true;
+}
+
+/** Names each kind of string evidence the scan left unexamined; empty when every string was examined. */
+function describeIncompleteStrings(
+  overflow: boolean,
+  longStrings: number,
+  matchCapped: number,
+): string[] {
+  const out: string[] = [];
+  if (overflow) out.push(`more than ${MAX_STRINGS_PER_FILE} string literals`);
+  if (longStrings > 0) {
+    out.push(
+      `${longStrings} string${longStrings === 1 ? "" : "s"} over ${MAX_STRING_CHARS} characters`,
+    );
+  }
+  if (matchCapped > 0) {
+    out.push(
+      `${matchCapped} string${matchCapped === 1 ? "" : "s"} with more than ${MAX_SPECIFIER_MATCHES_PER_STRING} specifier-like matches`,
+    );
+  }
+  return out;
 }
 
 export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKind): FileScanResult {
@@ -226,6 +265,7 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   /** String text seen in the file, checked for package references after the import pass. */
   const strings: { node: ts.Node; text: string }[] = [];
 
+  let stringsOverflow = false;
   const visit = (node: ts.Node): void => {
     if (
       ts.isStringLiteral(node) ||
@@ -234,7 +274,7 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
       ts.isTemplateMiddle(node) ||
       ts.isTemplateTail(node)
     ) {
-      if (strings.length < MAX_STRINGS_PER_FILE) strings.push({ node, text: node.text });
+      if (!collectString(strings, node)) stringsOverflow = true;
     }
     if (ts.isImportDeclaration(node)) {
       const spec = stringValue(node.moduleSpecifier);
@@ -366,18 +406,24 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     const ref = add(node, specifier, "unknown", []);
     ref.stringReference = true;
   };
+  let longStrings = 0;
+  let matchCapped = 0;
   for (const { node, text } of strings) {
-    if (text.length > MAX_STRING_CHARS) continue;
+    if (text.length > MAX_STRING_CHARS) {
+      longStrings++;
+      continue;
+    }
     if (SUBPATH_LITERAL.test(text)) addString(node, text);
     CODE_SPECIFIER.lastIndex = 0;
-    for (
-      let m = CODE_SPECIFIER.exec(text), n = 0;
-      m && n < 50;
-      m = CODE_SPECIFIER.exec(text), n++
-    ) {
+    let m = CODE_SPECIFIER.exec(text);
+    for (let n = 0; m && n < MAX_SPECIFIER_MATCHES_PER_STRING; n++) {
       addString(node, (m[1] ?? m[2])!);
+      m = CODE_SPECIFIER.exec(text);
     }
+    // A match left after the limit is one that was never read.
+    if (m) matchCapped++;
   }
+  const incompleteStrings = describeIncompleteStrings(stringsOverflow, longStrings, matchCapped);
 
   // Second pass: member names accessed on default/namespace/require bindings,
   // e.g. `axios.get(...)` adds "get". Shadowing is not tracked; this can only
@@ -405,5 +451,10 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   }
 
   const diagnostics = (sf as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics;
-  return { file, references, parseErrors: Array.isArray(diagnostics) && diagnostics.length > 0 };
+  return {
+    file,
+    references,
+    parseErrors: Array.isArray(diagnostics) && diagnostics.length > 0,
+    ...(incompleteStrings.length > 0 ? { incompleteStrings } : {}),
+  };
 }

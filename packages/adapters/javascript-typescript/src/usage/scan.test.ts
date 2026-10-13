@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { scanSource } from "./scan.js";
+import {
+  MAX_SPECIFIER_MATCHES_PER_STRING,
+  MAX_STRINGS_PER_FILE,
+  MAX_STRING_CHARS,
+  scanSource,
+} from "./scan.js";
 
 const byPkg = (file: string, text: string) =>
   scanSource(file, text).references.filter((r) => r.packageName && !r.stringReference);
@@ -322,6 +327,41 @@ describe("scanSource", () => {
     ]) {
       assert.deepEqual(found(text), [], text);
     }
+  });
+
+  it("records the string evidence it did not examine, and only then", () => {
+    const filler = (n: number) => '"x",'.repeat(n);
+    const list = (n: number) => `const v = [${filler(n)}"demo/runtime.js"];`;
+    // Exactly at the string limit: the last string is still examined.
+    const atLimit = scanSource("a.ts", list(MAX_STRINGS_PER_FILE - 1));
+    assert.equal(atLimit.incompleteStrings, undefined);
+    assert.deepEqual(
+      atLimit.references.filter((r) => r.stringReference).map((r) => r.packageName),
+      ["demo"],
+    );
+    // One past it: a string went unexamined, so the result says so.
+    const over = scanSource("a.ts", list(MAX_STRINGS_PER_FILE));
+    assert.equal(over.references.filter((r) => r.stringReference).length, 0);
+    assert.match(over.incompleteStrings?.join(" ") ?? "", /more than 20000 string literals/);
+    // A long string is skipped unexamined and counted; one at the limit is read.
+    const long = scanSource("a.ts", `const a = "${"x".repeat(MAX_STRING_CHARS + 1)}";`);
+    assert.match(long.incompleteStrings?.join(" ") ?? "", /1 string over 100000 characters/);
+    assert.equal(
+      scanSource("a.ts", `const a = "${"x".repeat(MAX_STRING_CHARS)}";`).incompleteStrings,
+      undefined,
+    );
+    // Exactly 50 specifier-like matches in one string is complete; a 51st is not.
+    const imports = (n: number) =>
+      "const code = `" + Array.from({ length: n }, (_, i) => `import "p${i}";`).join(" ") + "`;";
+    const fifty = scanSource("a.ts", imports(MAX_SPECIFIER_MATCHES_PER_STRING));
+    assert.equal(fifty.incompleteStrings, undefined);
+    assert.equal(fifty.references.filter((r) => r.stringReference).length, 50);
+    const fiftyOne = scanSource("a.ts", imports(MAX_SPECIFIER_MATCHES_PER_STRING + 1));
+    assert.match(
+      fiftyOne.incompleteStrings?.join(" ") ?? "",
+      /more than 50 specifier-like matches/,
+    );
+    assert.equal(fiftyOne.references.filter((r) => r.stringReference).length, 50);
   });
 
   it("ignores inherited Object property names as mock-framework receivers", () => {
