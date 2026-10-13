@@ -200,6 +200,40 @@ describe("scanSource", () => {
     assert.deepEqual([all[0]?.packageName, all[0]?.form, all[0]?.line], [undefined, "unknown", 1]);
   });
 
+  it("reads literal bracket members like the dot forms for resolve and mock calls", () => {
+    const pairs: [string, string][] = [
+      ['require.resolve("a")', 'require["resolve"]("a")'],
+      ['jest.mock("a")', 'jest["mock"]("a")'],
+      ['jest.mock("a")', 'jest[`mock`]("a")'],
+      ['vi.doMock("a")', 'vi["doMock"]("a")'],
+      ['import.meta.resolve("a")', 'import.meta["resolve"]("a")'],
+    ];
+    for (const [dot, bracket] of pairs) {
+      const expected = scanSource("a.ts", dot).references.map((r) => [
+        r.packageName,
+        r.form,
+        r.symbols,
+      ]);
+      assert.equal(expected.length, 1, dot);
+      assert.deepEqual(
+        scanSource("a.ts", bracket).references.map((r) => [r.packageName, r.form, r.symbols]),
+        expected,
+        bracket,
+      );
+    }
+    // Names that are not literal, not a supported member, or not a supported receiver stay unmatched.
+    for (const text of [
+      'jest[name]("a")',
+      'jest["nope"]("a")',
+      'obj["mock"]("a")',
+      'constructor["call"]("a")',
+      'jest[`m${x}`]("a")',
+      'require["resolve"]()',
+    ]) {
+      assert.deepEqual(byPkg("a.ts", text), [], text);
+    }
+  });
+
   it("ignores inherited Object property names as mock-framework receivers", () => {
     const result = scanSource(
       "a.js",

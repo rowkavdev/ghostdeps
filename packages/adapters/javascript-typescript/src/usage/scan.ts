@@ -199,6 +199,16 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   /** String text seen in the file, checked for package references after the import pass. */
   const strings: { node: ts.Node; text: string }[] = [];
 
+  /** Member name of `x.name` or `x["name"]`; undefined for any other callee. */
+  const memberName = (callee: ts.Expression): string | undefined => {
+    if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
+    if (ts.isElementAccessExpression(callee)) {
+      const key = callee.argumentExpression;
+      if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) return key.text;
+    }
+    return undefined;
+  };
+
   const visit = (node: ts.Node): void => {
     if (
       ts.isStringLiteral(node) ||
@@ -262,29 +272,31 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
         const spec = stringValue(arg);
         const ref = add(node, spec, spec === undefined ? "unknown" : "require", []);
         bindDeclaration(node, ref, "default");
-      } else if (ts.isPropertyAccessExpression(callee) && node.arguments.length >= 1) {
-        const target = callee.expression;
+      } else if (memberName(callee) !== undefined && node.arguments.length >= 1) {
+        // `x.name(...)` and `x["name"](...)` name the member the same way; a computed
+        // name that is not a plain string stays unmatched.
+        const target = (callee as ts.PropertyAccessExpression | ts.ElementAccessExpression)
+          .expression;
+        const member = memberName(callee)!;
         const spec = stringValue(arg);
-        if (isRequireFunction(target) && callee.name.text === "resolve") {
+        if (isRequireFunction(target) && member === "resolve") {
           add(node, spec, spec === undefined ? "unknown" : "require", ["require.resolve"]);
         } else if (
           ts.isMetaProperty(target) &&
           target.keywordToken === ts.SyntaxKind.ImportKeyword &&
           target.name.text === "meta" &&
-          callee.name.text === "resolve"
+          member === "resolve"
         ) {
           // `import.meta.resolve("x")`: ESM resolution reference.
           add(node, spec, spec === undefined ? "unknown" : "require", ["import.meta.resolve"]);
         } else if (
           ts.isIdentifier(target) &&
           Object.hasOwn(MOCK_SPECIFIER_CALLS, target.text) &&
-          MOCK_SPECIFIER_CALLS[target.text]?.has(callee.name.text)
+          MOCK_SPECIFIER_CALLS[target.text]?.has(member)
         ) {
           // `jest.mock("x")` / `vi.mock("x")` and counterparts: the first
           // argument names a dependency resolved at runtime.
-          add(node, spec, spec === undefined ? "unknown" : "require", [
-            `${target.text}.${callee.name.text}`,
-          ]);
+          add(node, spec, spec === undefined ? "unknown" : "require", [`${target.text}.${member}`]);
         }
       }
     }
