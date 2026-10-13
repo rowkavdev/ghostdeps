@@ -7,7 +7,7 @@
   },
   "devDependencies": {
     "autocannon": "^8.0.0",
-    "concurrently": "^9.1.0",
+    "concurrently": "^10.0.0",
     "typescript": "^5.7.0"
   }
 }
