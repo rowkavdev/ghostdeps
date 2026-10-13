@@ -784,6 +784,62 @@ describe("analyseRepository", () => {
   });
 });
 
+describe("detection limitations below the threshold (#957)", () => {
+  const empty: RepositoryHandle = {
+    async listFiles() {
+      return [];
+    },
+    async readFile() {
+      throw new Error("none");
+    },
+    async exists() {
+      return false;
+    },
+  };
+  const adapterWith = (files: string[]): EcosystemAdapter => ({
+    ecosystem: "js",
+    apiVersion: adapterApiVersion,
+    capabilities: new Set(),
+    async detect() {
+      return {
+        confidence: 0.3,
+        projects: [],
+        evidence: files.map((file) => ({
+          kind: "component-source-unverified",
+          statement: `could not check components under ${file}`,
+          file,
+        })),
+      };
+    },
+    async listDirectDependencies() {
+      return [];
+    },
+  });
+
+  it("records one info finding per root, without detecting the ecosystem", async () => {
+    const result = await analyseRepository(empty, {
+      adapters: [adapterWith(["package.json", "package.json", "package.json"])],
+    });
+    assert.equal(result.detected.length, 0);
+    assert.equal(result.projects.length, 0);
+    const found = result.findings.filter((f) => f.rule === "detection-incomplete");
+    assert.equal(found.length, 1);
+    assert.match(found[0]!.summary, /^1 js project root had/);
+    assert.deepEqual(found[0]!.affectedFiles, ["package.json"]);
+  });
+
+  it("counts distinct roots and bounds the named files", async () => {
+    const files = Array.from({ length: 120 }, (_, i) => `apps/a${i}/package.json`);
+    const result = await analyseRepository(empty, {
+      adapters: [adapterWith([...files, ...files])],
+    });
+    const found = result.findings.filter((f) => f.rule === "detection-incomplete");
+    assert.equal(found.length, 1);
+    assert.match(found[0]!.summary, /^120 js project roots had/);
+    assert.equal(found[0]!.affectedFiles.length, 5);
+  });
+});
+
 describe("head reads inside the engine (#113)", () => {
   const project: ProjectRef = { path: ".", ecosystem: "js", packageManagers: [] };
   const sniffer = (paths: string[], heads: (string | undefined)[]): EcosystemAdapter => ({

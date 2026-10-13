@@ -289,6 +289,8 @@ export async function runAdapter(
     return outcome;
   }
   const score = Number.isFinite(detection.confidence) ? detection.confidence : 0;
+  const incomplete = detectionIncompleteFinding(adapter, detection);
+  if (incomplete) (outcome.scanCompleteness ??= []).push(incomplete);
   if (score < threshold) return outcome;
 
   outcome.detected = {
@@ -401,4 +403,42 @@ export async function runAdapter(
     }
   }
   return outcome;
+}
+
+type Detection = Awaited<ReturnType<EcosystemAdapter["detect"]>>;
+
+/**
+ * Detection could not rule out source (a read limit, an unreadable file): keep it as an
+ * incomplete-scan note even below the threshold. It never promotes the ecosystem.
+ */
+function detectionIncompleteFinding(
+  adapter: EcosystemAdapter,
+  detection: Detection,
+): Finding | undefined {
+  const unclassified = [
+    ...new Map(
+      detection.evidence
+        .filter(
+          (item) => item.kind === "component-source-unverified" && typeof item.file === "string",
+        )
+        .map((item) => [item.file!, item] as const),
+    ).values(),
+  ];
+  if (unclassified.length === 0) return undefined;
+  const shown = unclassified.slice(0, MAX_UNSNIFFED_NOTES);
+  return {
+    kind: "info",
+    rule: "detection-incomplete",
+    summary: `${unclassified.length} ${adapter.ecosystem} project root${unclassified.length === 1 ? "" : "s"} had files detection could not check; source there was not ruled out`,
+    recommendation:
+      "Manual review recommended: this ecosystem may be present in the unchecked files.",
+    evidence: shown.slice(0, 5).map((item) => ({
+      kind: "detection-incomplete",
+      statement: String(item.statement).slice(0, 300),
+      file: item.file!,
+    })),
+    confidence: "high",
+    limitations: ["The repository scan is incomplete for these files."],
+    affectedFiles: shown.slice(0, 5).map((item) => item.file!),
+  };
 }

@@ -435,4 +435,19 @@ describe("stale lockfile notes preserve capability notes under the run cap", () 
     );
     assert.ok(result.findings.some((f) => f.rule === "adapter-note" && /stale/.test(f.summary)));
   });
+
+  it("reports unclassifiable components publicly without promoting the root", async () => {
+    const manifest = JSON.stringify({ name: "x", dependencies: { demo: "1.0.0" } });
+    const blocks = "<script> </script>".repeat(200) + '<script>import "demo";</script>';
+    const run = (files: Record<string, string>) =>
+      analyseRepository(memoryHandle(files), { adapters: [createJavaScriptTypeScriptAdapter()] });
+    const result = await run({ "package.json": manifest, "src/Many.vue": blocks });
+    assert.ok(!result.detected.some((e) => e.ecosystem === "javascript-typescript"));
+    assert.ok(result.findings.some((f) => f.rule === "detection-incomplete" && f.kind === "info"));
+    assert.deepEqual(result.dependencies, []);
+    assert.ok(!result.findings.some((f) => f.kind === "unused"));
+    const plain = await run({ "package.json": manifest, "src/App.vue": "<template/>" });
+    assert.ok(!plain.detected.some((e) => e.ecosystem === "javascript-typescript"));
+    assert.ok(!plain.findings.some((f) => f.rule === "detection-incomplete"));
+  });
 });
