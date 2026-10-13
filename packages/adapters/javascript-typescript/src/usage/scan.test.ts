@@ -234,6 +234,31 @@ describe("scanSource", () => {
     }
   });
 
+  it("reads createRequire with a literal bracket member like the dot form", () => {
+    const forms = (callee: string) => [
+      `const r = ${callee}(import.meta.url); r("demo");`,
+      `${callee}(import.meta.url)("demo");`,
+    ];
+    for (const bracket of ['module["createRequire"]', "module[`createRequire`]"]) {
+      forms(bracket).forEach((text, index) => {
+        const expected = byPkg("a.ts", forms("module.createRequire")[index]!).map((r) => [
+          r.packageName,
+          r.form,
+        ]);
+        assert.deepEqual(expected, [["demo", "require"]]);
+        assert.deepEqual(
+          byPkg("a.ts", text).map((r) => [r.packageName, r.form]),
+          expected,
+          text,
+        );
+      });
+    }
+    // Dynamic, substituted or other member names do not create a require function.
+    for (const callee of ["module[name]", "module[`create${x}`]", 'module["createRequires"]']) {
+      for (const text of forms(callee)) assert.deepEqual(byPkg("a.ts", text), [], text);
+    }
+  });
+
   it("ignores inherited Object property names as mock-framework receivers", () => {
     const result = scanSource(
       "a.js",
