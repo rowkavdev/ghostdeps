@@ -364,6 +364,61 @@ describe("scanSource", () => {
     assert.equal(fiftyOne.references.filter((r) => r.stringReference).length, 50);
   });
 
+  it("treats a renamed createRequire import from module or node:module as the factory", () => {
+    const demo = (text: string) =>
+      byPkg("a.mjs", text)
+        .map((r) => r.packageName)
+        .filter((name) => name === "demo");
+    for (const from of ["node:module", "module"]) {
+      const imp = `import { createRequire as mk } from "${from}"; `;
+      for (const body of [
+        'const r = mk(import.meta.url); r("demo");',
+        'mk(import.meta.url)("demo");',
+        'mk(import.meta.url).resolve("demo");',
+        '(mk)(import.meta.url)("demo");',
+        'const r = (mk(import.meta.url)); r("demo");',
+        'const r = mk(import.meta.url); r.resolve("demo");',
+      ]) {
+        assert.deepEqual(demo(imp + body), ["demo"], imp + body);
+      }
+    }
+    const decl = 'import { createRequire as mk } from "node:module";';
+    // The import may come after its use, and the imported name may be a decoded escape or a string.
+    assert.deepEqual(demo(`const r = mk(import.meta.url); r("demo"); ${decl}`), ["demo"]);
+    assert.deepEqual(
+      demo(
+        String.raw`import { create\u0052equire as mk } from "node:module"; const r = mk(import.meta.url); r("demo");`,
+      ),
+      ["demo"],
+    );
+    assert.deepEqual(
+      demo(
+        `import { "createRequire" as mk } from "node:module"; const r = mk(import.meta.url); r("demo");`,
+      ),
+      ["demo"],
+    );
+    // Plain and member forms are unchanged.
+    assert.deepEqual(
+      demo('import { createRequire } from "node:module"; createRequire(import.meta.url)("demo");'),
+      ["demo"],
+    );
+    assert.deepEqual(
+      demo('import m from "node:module"; const r = m.createRequire(import.meta.url); r("demo");'),
+      ["demo"],
+    );
+    // The binding alone is not a reference, and a wrong source, other name or type-only import does not count.
+    assert.deepEqual(demo(`${decl} const r = mk(import.meta.url);`), []);
+    for (const imp of [
+      'import { createRequire as mk } from "./mod";',
+      'import { createRequire as mk } from "node:fs";',
+      'import { other as mk } from "node:module";',
+      'import type { createRequire as mk } from "node:module";',
+      'import { type createRequire as mk } from "node:module";',
+    ]) {
+      assert.deepEqual(demo(`${imp} const r = mk(import.meta.url); r("demo");`), [], imp);
+    }
+  });
+
   it("ignores inherited Object property names as mock-framework receivers", () => {
     const result = scanSource(
       "a.js",

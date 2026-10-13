@@ -226,12 +226,17 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   };
 
   /** `createRequire(...)` / `module.createRequire(...)` / `module["createRequire"](...)`, which returns a require function. */
+  // Local names a `createRequire` import from node:module/module is bound to
+  // (`import { createRequire as makeRequire }`). Scoping is not tracked; a shadowed
+  // name can only add a reference, never hide one.
+  const factoryNames = new Set<string>();
   const isCreateRequire = (value: ts.Node): boolean => {
     const node = unwrapParens(value);
     if (!ts.isCallExpression(node)) return false;
     const callee = unwrapParens(node.expression);
     return (
-      (ts.isIdentifier(callee) && callee.text === "createRequire") ||
+      (ts.isIdentifier(callee) &&
+        (callee.text === "createRequire" || factoryNames.has(callee.text))) ||
       memberName(callee) === "createRequire"
     );
   };
@@ -240,6 +245,24 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   // `const r = createRequire(import.meta.url)`. Scoping is not tracked; a
   // shadowed name can only add a reference, never hide one.
   const requireNames = new Set(["require"]);
+  const findFactoryImports = (statements: ts.NodeArray<ts.Statement>): void => {
+    for (const statement of statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+      const from = statement.moduleSpecifier.text;
+      const clause = statement.importClause;
+      if ((from !== "node:module" && from !== "module") || !clause || clause.isTypeOnly) continue;
+      const named = clause.namedBindings;
+      if (!named || !ts.isNamedImports(named)) continue;
+      for (const element of named.elements) {
+        if (element.isTypeOnly) continue;
+        if ((element.propertyName ?? element.name).text === "createRequire") {
+          factoryNames.add(element.name.text);
+        }
+      }
+    }
+  };
   const findRequireAliases = (node: ts.Node): void => {
     if (
       ts.isVariableDeclaration(node) &&
@@ -254,7 +277,10 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   // Raw-text fast path. An identifier or string spelled with an escape sequence does not
   // contain the word createRequire, so a file with any backslash-u or backslash-x escape
   // also takes the walk.
-  if (text.includes("createRequire") || /\\[ux]/.test(text)) findRequireAliases(sf);
+  if (text.includes("createRequire") || /\\[ux]/.test(text)) {
+    findFactoryImports(sf.statements);
+    findRequireAliases(sf);
+  }
 
   /** A callee that behaves like `require`: a require name, or `createRequire(...)` called directly. */
   const isRequireFunction = (value: ts.Node): boolean => {
