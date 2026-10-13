@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { memoryHandle } from "../testing/fs-handle.js";
-import { AliasResolver, MAX_CONFIG_BYTES, MAX_EXTENDS_DEPTH, joinPath } from "./aliases.js";
+import {
+  AliasResolver,
+  MAX_CONFIG_BYTES,
+  MAX_EXTENDS_DEPTH,
+  MAX_WORKSPACE_MANIFESTS,
+  joinPath,
+} from "./aliases.js";
 
 const resolver = (files: Record<string, string>) =>
   new AliasResolver(memoryHandle(files), Object.keys(files));
@@ -244,6 +250,105 @@ describe("directory alias targets follow their package.json entry (#939)", () =>
       await internal(tv({ "foo/*": ["x/*"] }, { main: "entry.d.ts" }, "entry.d.ts"), ".", "pkg"),
       true,
     );
+  });
+
+  describe("a manifest that cannot be read leaves the directory unknown, not local", () => {
+    // typesVersions redirects to a missing file, so TypeScript rejects the
+    // local directory and resolves the installed package; index.ts must not win.
+    const steering = { typesVersions: { "*": { "*": ["missing/*"] } } };
+    const base = (manifest: string): Record<string, string> => ({
+      "tsconfig.json": `{"compilerOptions":{"paths":{"pkg":["zzz/pkg"]}}}`,
+      "zzz/pkg/package.json": manifest,
+      "zzz/pkg/index.ts": "",
+      "node_modules/pkg/index.d.ts": "",
+    });
+    const check = async (files: Record<string, string>, handle = memoryHandle(files)) => {
+      const r = new AliasResolver(handle, Object.keys(files));
+      const config = await r.configFor("tsconfig.json");
+      assert.ok(config);
+      return { internal: r.isInternal("pkg", config), limitations: r.limitations };
+    };
+
+    it("stays external when the manifest is read", async () => {
+      const { internal, limitations } = await check(base(JSON.stringify(steering)));
+      assert.equal(internal, false);
+      assert.deepEqual(limitations, []);
+    });
+
+    it("stays external and says so when the manifest is over the size cap", async () => {
+      const manifest = JSON.stringify({ ...steering, padding: "x".repeat(MAX_CONFIG_BYTES) });
+      const { internal, limitations } = await check(base(manifest));
+      assert.equal(internal, false);
+      assert.deepEqual(
+        limitations.map((l) => [l.kind, l.file]),
+        [["tsconfig-directory-manifest-unread", "zzz/pkg/package.json"]],
+      );
+    });
+
+    it("stays external and says so when the manifest is past the manifest cap", async () => {
+      const files = base(JSON.stringify(steering));
+      for (let i = 0; i < MAX_WORKSPACE_MANIFESTS; i++) {
+        files[`a${String(i).padStart(5, "0")}/package.json`] = "{}";
+      }
+      const { internal, limitations } = await check(files);
+      assert.equal(internal, false);
+      assert.deepEqual(
+        limitations.map((l) => l.kind),
+        ["tsconfig-directory-manifest-unread"],
+      );
+    });
+
+    it("stays external and says so when the manifest cannot be read", async () => {
+      const files = base(JSON.stringify(steering));
+      const inner = memoryHandle(files);
+      const handle = {
+        ...inner,
+        listFiles: () => inner.listFiles(),
+        readFile: async (path: string) => {
+          if (path === "zzz/pkg/package.json") throw new Error("unreadable");
+          return inner.readFile(path);
+        },
+      };
+      const { internal, limitations } = await check(files, handle);
+      assert.equal(internal, false);
+      assert.equal(limitations.length, 1);
+    });
+
+    it("reads escaped property names and non-strict JSON like TypeScript does", async () => {
+      const redirect = `{"types\\u0056ersions":{"*":{"*":["missing/*"]}}}`;
+      assert.equal((await check(base(redirect))).internal, false);
+      for (const key of ["m\\u0061in", "t\\u0079pes", "t\\u0079pings"]) {
+        // Without an index, only the escaped entry field can make it local.
+        const files = base(`{"${key}":"lib/entry.js"}`);
+        delete files["zzz/pkg/index.ts"];
+        assert.equal((await check(files)).internal, false, key);
+        files["zzz/pkg/lib/entry.ts"] = "";
+        assert.equal((await check(files)).internal, true, key);
+      }
+      // Comments and trailing commas are read by TypeScript, not by JSON.parse.
+      const lenient = `{/* note */"typesVersions":{"*":{"*":["missing/*"]}},}`;
+      assert.equal((await check(base(lenient))).internal, false);
+    });
+
+    it("treats non-strict manifests past the retention budget as unread", async () => {
+      const files = base(`{/* c */"typesVersions":{"*":{"*":["missing/*"]}},}`);
+      // Each non-strict sibling is just under the per-file cap, so the budget runs out.
+      const filler = `{/* c */"x":"${"y".repeat(MAX_CONFIG_BYTES - 64)}",}`;
+      for (let i = 0; i < 20; i++) files[`a${String(i).padStart(2, "0")}/package.json`] = filler;
+      const { internal, limitations } = await check(files);
+      assert.equal(internal, false);
+      assert.deepEqual(
+        limitations.map((l) => l.kind),
+        ["tsconfig-directory-manifest-unread"],
+      );
+    });
+
+    it("still matches a directory with no manifest, or an unrelated one, by its index", async () => {
+      const noManifest = base("{}");
+      delete noManifest["zzz/pkg/package.json"];
+      assert.deepEqual(await check(noManifest), { internal: true, limitations: [] });
+      assert.deepEqual(await check(base('{"name":"pkg"}')), { internal: true, limitations: [] });
+    });
   });
 
   it("follows the entry for wildcard, baseUrl and catch-all routes", async () => {

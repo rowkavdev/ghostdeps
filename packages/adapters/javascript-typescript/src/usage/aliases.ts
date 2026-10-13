@@ -41,6 +41,9 @@ export const MAX_PATH_ENTRIES = 1_000;
 const MAX_TARGETS_PER_ENTRY = 16;
 /** Most package.json files read to map workspace package names (#145). */
 export const MAX_WORKSPACE_MANIFESTS = 5_000;
+/** Total text kept from package.json files that do not parse as JSON, for directory alias targets. */
+const MAX_DIRECTORY_MANIFEST_BYTES = 4 * 1024 * 1024;
+
 /** Memoised isInternal answers kept per config file (#145). */
 const MAX_MEMO_PER_CONFIG = 50_000;
 /** Distinct node_modules extends bases remembered for the run note. */
@@ -184,8 +187,10 @@ export class AliasResolver {
   private readonly memo = new Map<string, Map<string, boolean>>();
   private workspace: Promise<Map<string, WorkspacePackage>> | undefined;
   /** Directory -> package.json text, for manifests that steer TypeScript's directory lookup. */
-  private directoryManifests: Promise<Map<string, string>> | undefined;
+  private directoryManifests: Promise<void> | undefined;
   private manifests = new Map<string, string>();
+  /** Directory -> package.json that could not be read (too large, unreadable or past the cap). */
+  private unreadManifests = new Map<string, string>();
   /** Memoised node_modules extends resolutions, keyed by referencing directory + entry (#276). */
   private readonly nmBases = new Map<string, Promise<string | undefined>>();
   /** Memoised node_modules package.json reads (#276). */
@@ -233,7 +238,7 @@ export class AliasResolver {
         // A directory alias target follows its own package.json, which
         // isInternal (synchronous) cannot read, so load them before it runs.
         if (config && (config.paths.length > 0 || config.baseUrl !== undefined)) {
-          this.manifests = await this.loadDirectoryManifests();
+          await this.loadDirectoryManifests();
         }
         return config;
       });
@@ -303,6 +308,17 @@ export class AliasResolver {
       // A manifest with an entry field or typesVersions steers the directory
       // lookup (main, types, typings, version redirects, no index fallback
       // after a failed redirect), so let TypeScript itself answer for it.
+      const unread = this.unreadManifests.get(target);
+      if (unread !== undefined) {
+        // Whether this manifest steers the lookup is unknown, and a local index
+        // could hide real dependency usage, so the directory is not an alias.
+        this.limit(
+          "tsconfig-directory-manifest-unread",
+          `${unread} was not read, so whether the tsconfig alias directory ${target} resolves to local files is unknown`,
+          unread,
+        );
+        return false;
+      }
       if (this.manifests.has(target)) return this.resolvesAsDirectory(target);
       for (const ext of INDEX_EXTENSIONS) {
         if (this.files.has(target === "." ? `index${ext}` : `${target}/index${ext}`)) return true;
@@ -345,34 +361,64 @@ export class AliasResolver {
     return resolved !== undefined && !resolved.resolvedFileName.split("/").includes("node_modules");
   }
 
-  /** Text of every repository package.json that sets main, types, typings or typesVersions (read once, bounded). */
-  private loadDirectoryManifests(): Promise<Map<string, string>> {
+  /**
+   * Text of every repository package.json that may set main, types, typings
+   * or typesVersions (read once, bounded). Keys are checked on the parsed
+   * document, so escaped property names count, and a manifest that does not
+   * parse is kept for TypeScript to read. One that cannot be read here (too large,
+   * unreadable, or past the cap) is remembered as unread: its directory is
+   * never matched through the index fallback, which it might forbid.
+   */
+  private loadDirectoryManifests(): Promise<void> {
     this.directoryManifests ??= (async () => {
-      const out = new Map<string, string>();
       const manifests = [...this.files]
         .filter(
           (f) =>
             (f === "package.json" || f.endsWith("/package.json")) &&
             !f.split("/").includes("node_modules"),
         )
-        .sort()
-        .slice(0, MAX_WORKSPACE_MANIFESTS);
-      for (const manifest of manifests) {
+        .sort();
+      for (const manifest of manifests.slice(MAX_WORKSPACE_MANIFESTS)) {
+        this.unreadManifests.set(dirname(manifest), manifest);
+      }
+      let kept = 0;
+      for (const manifest of manifests.slice(0, MAX_WORKSPACE_MANIFESTS)) {
         let text: string;
-        let doc: unknown;
         try {
           text = await this.repository.readFile(manifest);
-          if (Buffer.byteLength(text, "utf8") > MAX_CONFIG_BYTES) continue;
-          doc = JSON.parse(text);
         } catch {
-          continue; // an unreadable manifest only leaves the directory on index lookup
-        }
-        if (!isRecord(doc)) continue;
-        if (!["main", "types", "typings", "typesVersions"].some((k) => own(doc, k) !== undefined))
+          this.unreadManifests.set(dirname(manifest), manifest);
           continue;
-        out.set(dirname(manifest), text);
+        }
+        if (Buffer.byteLength(text, "utf8") > MAX_CONFIG_BYTES) {
+          this.unreadManifests.set(dirname(manifest), manifest);
+          continue;
+        }
+        // A manifest that parses as plain JSON is reduced to the fields that
+        // steer the lookup (none: dropped). One that does not parse is kept
+        // whole, because TypeScript's reader is more lenient than JSON.parse,
+        // within a byte budget; past it the manifest counts as unread.
+        let keep = text;
+        try {
+          const doc: unknown = JSON.parse(text);
+          if (isRecord(doc)) {
+            const steering: Record<string, unknown> = {};
+            for (const k of ["main", "types", "typings", "typesVersions"]) {
+              const value = own(doc, k);
+              if (value !== undefined) steering[k] = value;
+            }
+            if (Object.keys(steering).length === 0) continue;
+            keep = JSON.stringify(steering);
+          }
+        } catch {
+          kept += Buffer.byteLength(text, "utf8");
+          if (kept > MAX_DIRECTORY_MANIFEST_BYTES) {
+            this.unreadManifests.set(dirname(manifest), manifest);
+            continue;
+          }
+        }
+        this.manifests.set(dirname(manifest), keep);
       }
-      return out;
     })();
     return this.directoryManifests;
   }
