@@ -260,6 +260,37 @@ describe("directory alias targets follow their package.json entry (#939)", () =>
   });
 });
 
+describe("directory index files follow TypeScript's index extensions (#942)", () => {
+  const dirWith = (file: string, manifest?: string) => ({
+    "tsconfig.json": `{"compilerOptions":{"paths":{"pkg":["src/pkg"]}}}`,
+    [`src/pkg/${file}`]: "",
+    ...(manifest === undefined ? {} : { "src/pkg/package.json": manifest }),
+  });
+
+  for (const ext of [".ts", ".tsx", ".d.ts", ".js", ".jsx"]) {
+    it(`matches a directory through index${ext}`, async () => {
+      assert.equal(await internal(dirWith(`index${ext}`), ".", "pkg"), true);
+      assert.equal(await internal(dirWith(`index${ext}`, "{}"), ".", "pkg"), true);
+    });
+  }
+
+  for (const ext of [".mts", ".cts", ".mjs", ".cjs", ".json", ".d.mts", ".d.cts"]) {
+    it(`does not match a directory through index${ext}`, async () => {
+      assert.equal(await internal(dirWith(`index${ext}`), ".", "pkg"), false);
+      assert.equal(await internal(dirWith(`index${ext}`, "{}"), ".", "pkg"), false);
+    });
+  }
+
+  it("applies to a baseUrl root directory and to the root index", async () => {
+    const root = (file: string) => ({
+      "tsconfig.json": `{"compilerOptions":{"baseUrl":"src"}}`,
+      [`src/pkg/${file}`]: "",
+    });
+    assert.equal(await internal(root("index.mts"), ".", "pkg"), false);
+    assert.equal(await internal(root("index.ts"), ".", "pkg"), true);
+  });
+});
+
 describe("joinPath", () => {
   it("normalises and refuses to escape the root", () => {
     assert.equal(joinPath("a/b", "../c/./d"), "a/c/d");

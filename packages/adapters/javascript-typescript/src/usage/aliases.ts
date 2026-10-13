@@ -58,6 +58,8 @@ const TS_SOURCE_SUBSTITUTIONS: Record<string, string[]> = {
   ".mjs": [".mts", ".d.mts"],
   ".cjs": [".cts", ".d.cts"],
 };
+/** What TypeScript tries for a directory's index file: no module-kind or JSON extensions. */
+const INDEX_EXTENSIONS = [".ts", ".tsx", ".d.ts", ".js", ".jsx"];
 const RESOLVE_EXTENSIONS = [
   "",
   ".ts",
@@ -302,7 +304,7 @@ export class AliasResolver {
       // lookup (main, types, typings, version redirects, no index fallback
       // after a failed redirect), so let TypeScript itself answer for it.
       if (this.manifests.has(target)) return this.resolvesAsDirectory(target);
-      for (const ext of RESOLVE_EXTENSIONS.slice(1)) {
+      for (const ext of INDEX_EXTENSIONS) {
         if (this.files.has(target === "." ? `index${ext}` : `${target}/index${ext}`)) return true;
       }
     }
