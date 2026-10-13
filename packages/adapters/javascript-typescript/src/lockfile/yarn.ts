@@ -141,6 +141,16 @@ export function parseYarnLockfile(
     return undefined;
   };
 
+  // Berry keys are descriptors ("name@npm:^1", "name@patch:...", "name@workspace:."),
+  // so the package name is everything before the first "@" after the first character.
+  const lockedNames = new Set<string>();
+  if (berry) {
+    for (const key of byPattern.keys()) {
+      const at = key.indexOf("@", 1);
+      lockedNames.add(at > 0 ? key.slice(0, at) : key);
+    }
+  }
+
   for (const { id, entry } of byPattern.values()) {
     if (packages.has(id)) continue;
     const res = own(entry, "resolution");
@@ -150,20 +160,31 @@ export function parseYarnLockfile(
     const unverifiedDependencies: string[] = [];
     // A classic entry's dependencies must each have a lock entry; a name also
     // in optionalDependencies is optional and may legitimately be absent
-    // (#928). Berry records optional dependencies differently and is not
-    // judged here.
+    // (#928). Berry lists optional dependencies under dependencies and flags
+    // them in dependenciesMeta, so those are exempt too.
     const optional = new Set(
       isObject(own(entry, "optionalDependencies"))
         ? Object.keys(own(entry, "optionalDependencies") as Rec)
         : [],
     );
+    const meta = own(entry, "dependenciesMeta");
+    if (berry && isObject(meta)) {
+      for (const [n, m] of Object.entries(meta)) {
+        if (isObject(m) && own(m, "optional") === true) optional.add(n);
+      }
+    }
     for (const field of ["dependencies", "optionalDependencies"]) {
       const map = own(entry, field);
       if (!isObject(map)) continue;
       for (const [n, r] of Object.entries(map)) {
         const dep = lookup(n, String(r));
         if (dep) deps.push(dep);
-        else if (!berry && field === "dependencies" && !optional.has(n)) {
+        else if (berry && field === "dependencies" && !optional.has(n)) {
+          // Name level only: a range can resolve through a rewrite (resolutions, a
+          // patch: or file: descriptor with a ::locator suffix), so only a name
+          // with no lock entry at all is a miss.
+          if (!lockedNames.has(n)) unresolvedDependencies.push(n);
+        } else if (!berry && field === "dependencies" && !optional.has(n)) {
           // Yarn links a satisfying workspace package and writes no lock entry for it.
           const ws = workspaceFulfils(workspaces, n, String(r));
           if (ws === "no") unresolvedDependencies.push(n);
