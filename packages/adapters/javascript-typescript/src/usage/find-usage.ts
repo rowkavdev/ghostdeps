@@ -145,6 +145,11 @@ function scanEmbedded(file: string, text: string, limitations: Evidence[]): File
       result.references.push(ref);
     }
     if (part.parseErrors) result.parseErrors = true;
+    if (part.incompleteStrings) {
+      result.incompleteStrings = [
+        ...new Set([...(result.incompleteStrings ?? []), ...part.incompleteStrings]),
+      ];
+    }
   }
   if (dropped > 0) {
     limitations.push({
@@ -257,6 +262,13 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
     await applyAliases(aliases, file, result);
     scan.files.set(file, result);
     scan.owner.set(file, root);
+    if (result.incompleteStrings) {
+      limitations.push({
+        kind: "string-evidence-capped",
+        statement: `${file}: ${result.incompleteStrings.join("; ")} were not examined, so package references written only in strings may be missed`,
+        file,
+      });
+    }
     if (result.parseErrors) {
       limitations.push({
         kind: "parse-error",

@@ -450,4 +450,49 @@ describe("stale lockfile notes preserve capability notes under the run cap", () 
     assert.ok(!plain.detected.some((e) => e.ecosystem === "javascript-typescript"));
     assert.ok(!plain.findings.some((f) => f.rule === "detection-incomplete"));
   });
+
+  describe("string evidence limits", () => {
+    const dep = {
+      name: "demo",
+      constraint: "*",
+      kind: "runtime" as const,
+      project: { path: ".", ecosystem: "javascript-typescript", packageManagers: [] },
+      declaredIn: "package.json",
+    };
+    const report = (files: Record<string, string>) => {
+      const adapter = createJavaScriptTypeScriptAdapter();
+      return adapter.findUsage!(
+        {
+          repository: memoryHandle({ "package.json": '{"dependencies":{"demo":"*"}}', ...files }),
+          network: { mode: "offline" },
+        },
+        dep,
+      ).then(normaliseUsageResult);
+    };
+    const list = (n: number) => `const v = [${'"x",'.repeat(n)}"demo/runtime.js"];`;
+
+    it("keeps a string-only usage complete below the string limit", async () => {
+      const result = await report({ "src/a.ts": list(19_999) });
+      assert.equal(result.usages.length, 1);
+      assert.equal(result.referenceAnalysisComplete, true);
+    });
+
+    it("never reports a confident absence once strings went unexamined", async () => {
+      for (const source of [
+        list(20_000),
+        `const blob = "${"x".repeat(100_001)}";`,
+        "const code = `" + Array.from({ length: 51 }, (_, i) => `import "p${i}";`).join(" ") + "`;",
+      ]) {
+        const result = await report({ "src/a.ts": source });
+        assert.equal(result.referenceAnalysisComplete, false, source.slice(0, 40));
+      }
+    });
+
+    it("carries the gap out of a single-file component script", async () => {
+      const result = await report({
+        "src/App.vue": `<script>${list(20_000)}</script>`,
+      });
+      assert.equal(result.referenceAnalysisComplete, false);
+    });
+  });
 });
