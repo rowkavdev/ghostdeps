@@ -10,6 +10,7 @@ import { loadPnpmLockfile, missingImporterStatement, parsePnpmLockfile } from ".
 import { pnpmWorkspaceMembership } from "./pnpm-workspace.js";
 import type { Membership } from "./pnpm-workspace.js";
 import { loadYarnLockfile, parseYarnLockfile } from "./yarn.js";
+import { yarnWorkspacePackages } from "./yarn-workspace.js";
 import { loadBunLockfile, parseBunLockfile } from "./bun.js";
 import { MAX_NPMRC_BYTES, mergeBindings, scopedRegistries } from "./origin.js";
 
@@ -359,7 +360,13 @@ export async function buildLockfileGraph(
         : lock.format === "pnpm"
           ? parsePnpmLockfile(source, lock.path, rel, declared, scopes)
           : lock.format === "yarn"
-            ? parseYarnLockfile(source, lock.path, rel, declared)
+            ? parseYarnLockfile(
+                source,
+                lock.path,
+                rel,
+                declared,
+                await yarnWorkspacePackages(context, lock.dir),
+              )
             : parseBunLockfile(source, lock.path, rel, declared);
   } catch (err) {
     evidence.push(malformed(lock.path, err));

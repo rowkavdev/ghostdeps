@@ -2,6 +2,7 @@
  * yarn.lock - Yarn classic (v1 custom format) and Yarn Berry (2+, YAML with
  * `__metadata`). Parsed as data; nothing is resolved against a registry.
  */
+import { NO_WORKSPACES, workspaceFulfils, type WorkspaceInfo } from "./yarn-workspace.js";
 import { parse } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
@@ -119,6 +120,7 @@ export function parseYarnLockfile(
   lockfile: string,
   importerPath: string,
   declared: { name: string; dev: boolean; constraint: string }[],
+  workspaces: WorkspaceInfo = NO_WORKSPACES,
 ): ParsedLockfile {
   const evidence: Evidence[] = [];
   const packages = new Map<string, ResolvedPackage>();
@@ -144,12 +146,29 @@ export function parseYarnLockfile(
     const res = own(entry, "resolution");
     const resolution = typeof res === "string" ? res : id;
     const deps: string[] = [];
+    const unresolvedDependencies: string[] = [];
+    const unverifiedDependencies: string[] = [];
+    // A classic entry's dependencies must each have a lock entry; a name also
+    // in optionalDependencies is optional and may legitimately be absent
+    // (#928). Berry records optional dependencies differently and is not
+    // judged here.
+    const optional = new Set(
+      isObject(own(entry, "optionalDependencies"))
+        ? Object.keys(own(entry, "optionalDependencies") as Rec)
+        : [],
+    );
     for (const field of ["dependencies", "optionalDependencies"]) {
       const map = own(entry, field);
       if (!isObject(map)) continue;
       for (const [n, r] of Object.entries(map)) {
         const dep = lookup(n, String(r));
         if (dep) deps.push(dep);
+        else if (!berry && field === "dependencies" && !optional.has(n)) {
+          // Yarn links a satisfying workspace package and writes no lock entry for it.
+          const ws = workspaceFulfils(workspaces, n, String(r));
+          if (ws === "no") unresolvedDependencies.push(n);
+          else if (ws === "unknown") unverifiedDependencies.push(n);
+        }
       }
     }
     const name = patternName(resolution);
@@ -162,6 +181,8 @@ export function parseYarnLockfile(
       name,
       version: String(own(entry, "version") ?? "0.0.0"),
       dependencies: deps,
+      ...(unresolvedDependencies.length > 0 ? { unresolvedDependencies } : {}),
+      ...(unverifiedDependencies.length > 0 ? { unverifiedDependencies } : {}),
       ...(registryOrigin === undefined ? {} : { registryOrigin }),
     });
   }
