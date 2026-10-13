@@ -89,13 +89,29 @@ export function parsePnpmLockfile(
     const parts = splitKey(key);
     if (!parts) continue;
     const deps: string[] = [];
+    const unresolvedDependencies: string[] = [];
     if (isObject(entry)) {
+      // pnpm lists an optional dependency under optionalDependencies, so a name in
+      // dependencies must have a table entry unless it is also listed optional or is a
+      // link: or file: reference (a local directory, which has no registry entry).
+      const optional = isObject(entry.optionalDependencies)
+        ? new Set(Object.keys(entry.optionalDependencies))
+        : new Set<string>();
       for (const field of ["dependencies", "optionalDependencies"] as const) {
         const map = entry[field];
         if (!isObject(map)) continue;
         for (const [n, v] of Object.entries(map)) {
           const id = ref(n, v);
           if (id) deps.push(id);
+          else if (
+            field === "dependencies" &&
+            !optional.has(n) &&
+            typeof v === "string" &&
+            !v.startsWith("link:") &&
+            !v.startsWith("file:")
+          ) {
+            unresolvedDependencies.push(n);
+          }
         }
       }
     }
@@ -108,6 +124,7 @@ export function parsePnpmLockfile(
       name: parts.name,
       version,
       dependencies: deps,
+      ...(unresolvedDependencies.length > 0 ? { unresolvedDependencies } : {}),
       ...(registryOrigin === undefined ? {} : { registryOrigin }),
     });
   }
