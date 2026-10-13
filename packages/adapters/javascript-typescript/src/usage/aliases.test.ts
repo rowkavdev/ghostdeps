@@ -90,6 +90,176 @@ describe("TypeScript extension substitution in alias targets", () => {
   });
 });
 
+describe("directory alias targets follow their package.json entry (#939)", () => {
+  const dir = (manifest: string | undefined, ...real: string[]) => ({
+    "tsconfig.json": `{"compilerOptions":{"paths":{"pkg":["src/pkg"]}}}`,
+    ...(manifest === undefined ? {} : { "src/pkg/package.json": manifest }),
+    ...Object.fromEntries(real.map((f) => [`src/pkg/${f}`, ""])),
+  });
+
+  for (const field of ["main", "types", "typings"]) {
+    it(`follows ${field} to a TypeScript source behind a .js entry`, async () => {
+      const files = dir(`{"${field}":"lib/entry.js"}`, "lib/entry.ts");
+      assert.equal(await internal(files, ".", "pkg"), true);
+    });
+
+    it(`follows ${field} written without an extension, with ./, or to a directory index`, async () => {
+      assert.equal(
+        await internal(dir(`{"${field}":"lib/entry"}`, "lib/entry.ts"), ".", "pkg"),
+        true,
+      );
+      assert.equal(
+        await internal(dir(`{"${field}":"./lib/entry.js"}`, "lib/entry.ts"), ".", "pkg"),
+        true,
+      );
+      assert.equal(await internal(dir(`{"${field}":"lib"}`, "lib/index.ts"), ".", "pkg"), true);
+    });
+
+    it(`follows ${field} to a declaration or module-kind source`, async () => {
+      assert.equal(
+        await internal(dir(`{"${field}":"lib/entry.d.ts"}`, "lib/entry.d.ts"), ".", "pkg"),
+        true,
+      );
+      assert.equal(
+        await internal(dir(`{"${field}":"lib/entry.mjs"}`, "lib/entry.mts"), ".", "pkg"),
+        true,
+      );
+      assert.equal(
+        await internal(dir(`{"${field}":"lib/entry.cjs"}`, "lib/entry.cts"), ".", "pkg"),
+        true,
+      );
+    });
+
+    it(`ignores a non-string or empty ${field}`, async () => {
+      assert.equal(await internal(dir(`{"${field}":5}`, "lib/entry.ts"), ".", "pkg"), false);
+      assert.equal(
+        await internal(dir(`{"${field}":["lib/entry.ts"]}`, "lib/entry.ts"), ".", "pkg"),
+        false,
+      );
+      assert.equal(await internal(dir(`{"${field}":""}`, "index.ts"), ".", "pkg"), true);
+    });
+  }
+
+  it("follows the first of typings, types and main only, then falls back to index", async () => {
+    const entry = (fields: object, ...real: string[]) => dir(JSON.stringify(fields), ...real);
+    // typings wins over types; a missing typings target is not retried with types or main.
+    assert.equal(
+      await internal(entry({ typings: "a.d.ts", types: "lib/e.d.ts" }, "lib/e.d.ts"), ".", "pkg"),
+      false,
+    );
+    assert.equal(
+      await internal(entry({ types: "a.d.ts", main: "lib/e.js" }, "lib/e.ts"), ".", "pkg"),
+      false,
+    );
+    assert.equal(
+      await internal(entry({ typings: "lib/e.d.ts", types: "a.d.ts" }, "lib/e.d.ts"), ".", "pkg"),
+      true,
+    );
+    assert.equal(
+      await internal(entry({ types: "a.d.ts", main: "b.js" }, "index.ts"), ".", "pkg"),
+      true,
+    );
+  });
+
+  it("keeps index lookup when package.json is missing, invalid, empty or has no entry", async () => {
+    assert.equal(await internal(dir(undefined, "index.ts"), ".", "pkg"), true);
+    assert.equal(await internal(dir("{not json", "index.ts"), ".", "pkg"), true);
+    assert.equal(await internal(dir("{}", "index.ts"), ".", "pkg"), true);
+    assert.equal(await internal(dir("{}", "lib/entry.ts"), ".", "pkg"), false);
+    assert.equal(await internal(dir("{not json", "lib/entry.ts"), ".", "pkg"), false);
+  });
+
+  it("does not follow an entry that is missing, or that points into node_modules", async () => {
+    assert.equal(await internal(dir(`{"main":"lib/entry.js"}`), ".", "pkg"), false);
+    assert.equal(
+      await internal(
+        {
+          ...dir(`{"main":"../../node_modules/x/index.js"}`),
+          "node_modules/x/index.js": "",
+        },
+        ".",
+        "pkg",
+      ),
+      false,
+    );
+  });
+
+  it("does not follow a manifest inside a directory reached through an entry", async () => {
+    for (const field of ["main", "types", "typings"]) {
+      const files: Record<string, string> = dir(`{"${field}":"lib"}`, "lib/entry.ts");
+      files["src/pkg/lib/package.json"] = `{"${field}":"entry.js"}`;
+      assert.equal(await internal(files, ".", "pkg"), false);
+      // The entry directory may still use its index.
+      assert.equal(await internal({ ...files, "src/pkg/lib/index.ts": "" }, ".", "pkg"), true);
+    }
+  });
+
+  it("limits an extensionless entry to TypeScript's package entry extensions", async () => {
+    for (const ext of [".mts", ".cts", ".mjs", ".cjs", ".json"]) {
+      assert.equal(
+        await internal(dir(`{"main":"lib/entry"}`, `lib/entry${ext}`), ".", "pkg"),
+        false,
+      );
+    }
+    for (const ext of [".ts", ".tsx", ".d.ts", ".js", ".jsx"]) {
+      assert.equal(
+        await internal(dir(`{"main":"lib/entry"}`, `lib/entry${ext}`), ".", "pkg"),
+        true,
+      );
+    }
+    assert.equal(await internal(dir(`{"main":"lib"}`, "lib/index.mts"), ".", "pkg"), false);
+  });
+
+  it("honours a matching typesVersions redirect, with no fallback after it fails (#939)", async () => {
+    const tv = (map: object, entry: object, ...real: string[]) =>
+      dir(JSON.stringify({ typesVersions: { "*": map }, ...entry }), ...real);
+    // The redirect applies to the entry, and a failed redirect does not fall back to the entry or index.
+    assert.equal(
+      await internal(tv({ "*": ["other/*"] }, { main: "lib" }, "lib/index.ts"), ".", "pkg"),
+      false,
+    );
+    assert.equal(
+      await internal(
+        tv({ "*": ["other/*"] }, { main: "lib" }, "lib/index.ts", "other/lib/index.ts"),
+        ".",
+        "pkg",
+      ),
+      true,
+    );
+    // A redirect can point at a file the entry alone would miss.
+    assert.equal(
+      await internal(
+        tv({ "*": ["types/*"] }, { main: "entry.d.ts" }, "types/entry.d.ts"),
+        ".",
+        "pkg",
+      ),
+      true,
+    );
+    assert.equal(
+      await internal(tv({ "*": ["types/*"] }, { main: "entry.d.ts" }, "entry.d.ts"), ".", "pkg"),
+      false,
+    );
+    // A map with no matching pattern leaves the entry alone.
+    assert.equal(
+      await internal(tv({ "foo/*": ["x/*"] }, { main: "entry.d.ts" }, "entry.d.ts"), ".", "pkg"),
+      true,
+    );
+  });
+
+  it("follows the entry for wildcard, baseUrl and catch-all routes", async () => {
+    const real = { "src/pkg/package.json": `{"main":"lib/entry.js"}`, "src/pkg/lib/entry.ts": "" };
+    const wild = { "tsconfig.json": `{"compilerOptions":{"paths":{"@a/*":["src/*"]}}}`, ...real };
+    assert.equal(await internal(wild, ".", "@a/pkg"), true);
+    const base = { "tsconfig.json": `{"compilerOptions":{"baseUrl":"src"}}`, ...real };
+    assert.equal(await internal(base, ".", "pkg"), true);
+    const all = {
+      "tsconfig.json": `{"compilerOptions":{"baseUrl":".","paths":{"*":["src/*"]}}}`,
+      ...real,
+    };
+    assert.equal(await internal(all, ".", "pkg"), true);
+  });
+});
+
 describe("joinPath", () => {
   it("normalises and refuses to escape the root", () => {
     assert.equal(joinPath("a/b", "../c/./d"), "a/c/d");

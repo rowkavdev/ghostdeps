@@ -181,6 +181,9 @@ export class AliasResolver {
   private readonly effective = new Map<string, Promise<AliasConfig | undefined>>();
   private readonly memo = new Map<string, Map<string, boolean>>();
   private workspace: Promise<Map<string, WorkspacePackage>> | undefined;
+  /** Directory -> package.json text, for manifests that steer TypeScript's directory lookup. */
+  private directoryManifests: Promise<Map<string, string>> | undefined;
+  private manifests = new Map<string, string>();
   /** Memoised node_modules extends resolutions, keyed by referencing directory + entry (#276). */
   private readonly nmBases = new Map<string, Promise<string | undefined>>();
   /** Memoised node_modules package.json reads (#276). */
@@ -224,7 +227,14 @@ export class AliasResolver {
   configFor(configFile: string): Promise<AliasConfig | undefined> {
     let pending = this.effective.get(configFile);
     if (!pending) {
-      pending = this.resolveEffective(configFile);
+      pending = this.resolveEffective(configFile).then(async (config) => {
+        // A directory alias target follows its own package.json, which
+        // isInternal (synchronous) cannot read, so load them before it runs.
+        if (config && (config.paths.length > 0 || config.baseUrl !== undefined)) {
+          this.manifests = await this.loadDirectoryManifests();
+        }
+        return config;
+      });
       this.effective.set(configFile, pending);
     }
     return pending;
@@ -288,11 +298,81 @@ export class AliasResolver {
     }
     if (this.resolvesToTsSource(target)) return true;
     if (this.dirs.has(target)) {
+      // A manifest with an entry field or typesVersions steers the directory
+      // lookup (main, types, typings, version redirects, no index fallback
+      // after a failed redirect), so let TypeScript itself answer for it.
+      if (this.manifests.has(target)) return this.resolvesAsDirectory(target);
       for (const ext of RESOLVE_EXTENSIONS.slice(1)) {
         if (this.files.has(target === "." ? `index${ext}` : `${target}/index${ext}`)) return true;
       }
     }
     return false;
+  }
+
+  /** TypeScript's own answer for importing a repository directory, over the listed files and loaded manifests. */
+  private resolvesAsDirectory(dir: string): boolean {
+    const virtualRoot = "/__ghostdeps__";
+    const relative = (p: string) =>
+      p.startsWith(`${virtualRoot}/`) ? p.slice(virtualRoot.length + 1) : undefined;
+    const host: ts.ModuleResolutionHost = {
+      fileExists: (p) => {
+        const rel = relative(p);
+        return rel !== undefined && this.files.has(rel);
+      },
+      directoryExists: (p) => {
+        const rel = relative(p) ?? (p === virtualRoot ? "." : undefined);
+        return rel !== undefined && this.dirs.has(rel);
+      },
+      readFile: (p) => {
+        const rel = relative(p);
+        return rel === undefined || !rel.endsWith("package.json")
+          ? undefined
+          : this.manifests.get(
+              rel === "package.json" ? "." : rel.slice(0, -"/package.json".length),
+            );
+      },
+      realpath: (p) => p,
+      getCurrentDirectory: () => virtualRoot,
+    };
+    const resolved = ts.resolveModuleName(
+      dir === "." ? "." : `./${dir}`,
+      `${virtualRoot}/__from__.ts`,
+      { moduleResolution: ts.ModuleResolutionKind.Bundler },
+      host,
+    ).resolvedModule;
+    return resolved !== undefined && !resolved.resolvedFileName.split("/").includes("node_modules");
+  }
+
+  /** Text of every repository package.json that sets main, types, typings or typesVersions (read once, bounded). */
+  private loadDirectoryManifests(): Promise<Map<string, string>> {
+    this.directoryManifests ??= (async () => {
+      const out = new Map<string, string>();
+      const manifests = [...this.files]
+        .filter(
+          (f) =>
+            (f === "package.json" || f.endsWith("/package.json")) &&
+            !f.split("/").includes("node_modules"),
+        )
+        .sort()
+        .slice(0, MAX_WORKSPACE_MANIFESTS);
+      for (const manifest of manifests) {
+        let text: string;
+        let doc: unknown;
+        try {
+          text = await this.repository.readFile(manifest);
+          if (Buffer.byteLength(text, "utf8") > MAX_CONFIG_BYTES) continue;
+          doc = JSON.parse(text);
+        } catch {
+          continue; // an unreadable manifest only leaves the directory on index lookup
+        }
+        if (!isRecord(doc)) continue;
+        if (!["main", "types", "typings", "typesVersions"].some((k) => own(doc, k) !== undefined))
+          continue;
+        out.set(dirname(manifest), text);
+      }
+      return out;
+    })();
+    return this.directoryManifests;
   }
 
   private async resolveEffective(configFile: string): Promise<AliasConfig | undefined> {
