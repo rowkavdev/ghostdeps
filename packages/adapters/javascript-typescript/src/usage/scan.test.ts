@@ -259,6 +259,32 @@ describe("scanSource", () => {
     }
   });
 
+  it("finds createRequire aliases written with escape sequences", () => {
+    const head = 'import * as mod from "node:module"; ';
+    const demo = (text: string) =>
+      byPkg("a.ts", text)
+        .map((r) => r.packageName)
+        .filter((name) => name === "demo");
+    const cases = [
+      String.raw`import { create\u0052equire } from "node:module"; const r = create\u0052equire(import.meta.url); r("demo");`,
+      String.raw`import { create\u{52}equire } from "node:module"; const r = create\u{52}equire(import.meta.url); r("demo");`,
+      String.raw`${head}const r = mod["create\u0052equire"](import.meta.url); r("demo");`,
+      String.raw`${head}const r = mod["create\x52equire"](import.meta.url); r("demo");`,
+      `${head}const r = mod[\`create\\x52equire\`](import.meta.url); r("demo");`,
+      // Direct call and plain controls.
+      String.raw`${head}mod["create\u0052equire"](import.meta.url)("demo");`,
+      `${head}const r = mod.createRequire(import.meta.url); r("demo");`,
+    ];
+    for (const text of cases) assert.deepEqual(demo(text), ["demo"], text);
+    // An escape that does not spell createRequire is not a require function.
+    for (const text of [
+      String.raw`${head}const r = mod["create\u0052equires"](import.meta.url); r("demo");`,
+      String.raw`${head}const r = mod["other\x52"](import.meta.url); r("demo");`,
+    ]) {
+      assert.deepEqual(demo(text), [], text);
+    }
+  });
+
   it("ignores inherited Object property names as mock-framework receivers", () => {
     const result = scanSource(
       "a.js",

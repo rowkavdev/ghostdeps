@@ -199,7 +199,10 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     }
     ts.forEachChild(node, findRequireAliases);
   };
-  if (text.includes("createRequire")) findRequireAliases(sf);
+  // Raw-text fast path. An identifier or string spelled with an escape sequence does not
+  // contain the word createRequire, so a file with any backslash-u or backslash-x escape
+  // also takes the walk.
+  if (text.includes("createRequire") || /\\[ux]/.test(text)) findRequireAliases(sf);
 
   /** A callee that behaves like `require`: a require name, or `createRequire(...)` called directly. */
   const isRequireFunction = (callee: ts.Node): boolean =>
