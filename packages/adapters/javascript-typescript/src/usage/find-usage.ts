@@ -18,7 +18,12 @@ import type {
   Usage,
 } from "@ghostdeps/core";
 import { AliasResolver } from "./aliases.js";
-import { extractScriptBlocks, isEmbeddedScriptFile } from "./embedded.js";
+import {
+  extractScriptBlocks,
+  extractStyleLangs,
+  hasStyleBlocks,
+  isEmbeddedScriptFile,
+} from "./embedded.js";
 import { scanSource, scriptKindFor } from "./scan.js";
 import type { FileScanResult } from "./scan.js";
 
@@ -257,6 +262,19 @@ async function doScan(repository: RepositoryHandle): Promise<RepositoryScan> {
         file,
       });
       continue;
+    }
+    if (embedded && hasStyleBlocks(file)) {
+      // Which package compiles a component style block depends on the
+      // framework and its toolchain, so nothing is credited: the file is
+      // reported instead, and the result is never confirmed absence.
+      const langs = extractStyleLangs(file, text);
+      if (langs.length > 0) {
+        limitations.push({
+          kind: "style-preprocessor-unresolved",
+          statement: `${file} has a style block with lang ${langs.map((l) => `"${l}"`).join(", ")}; the package that compiles it depends on the framework toolchain and was not credited`,
+          file,
+        });
+      }
     }
     const result = embedded ? scanEmbedded(file, text, limitations) : scanSource(file, text);
     await applyAliases(aliases, file, result);

@@ -9,6 +9,7 @@ import {
   MAX_SOURCE_BYTES,
   MAX_OUTSIDE_PROJECT_RECORDS,
   MAX_UNRESOLVED_PER_FILE,
+  findPreprocessorUsages,
   findRemovedUsages,
   findUsage,
   usageLimitations,
@@ -671,5 +672,91 @@ describe("findRemovedUsages (#168, PR mode)", () => {
     ]);
     const u = await findRemovedUsages(context, dep("child_process"));
     assert.deepEqual(u, []);
+  });
+});
+
+describe("SFC style preprocessors", () => {
+  const pkg = JSON.stringify({ devDependencies: { sass: "1", less: "1", stylus: "1" } });
+  const kinds = async (files: Record<string, string>, at = ".") =>
+    (await usageLimitations(ctx({ "package.json": pkg, ...files }), at)).map(
+      (e) => `${e.kind}:${e.file}`,
+    );
+  const credited = async (files: Record<string, string>, name = "sass") =>
+    (await findPreprocessorUsages(ctx({ "package.json": pkg, ...files }), dep(name))).length;
+
+  it("reports a style lang as unresolved and credits no package", async () => {
+    for (const file of ["A.vue", "A.svelte", "A.astro"]) {
+      for (const lang of ["scss", "sass", "less", "stylus", "SCSS"]) {
+        const files = { [file]: `<template><p/></template>\n<style lang="${lang}">a{b:c}</style>` };
+        assert.deepEqual(
+          await kinds(files),
+          [`style-preprocessor-unresolved:${file}`],
+          file + lang,
+        );
+        for (const name of ["sass", "sass-embedded", "node-sass", "less", "stylus"]) {
+          assert.equal(await credited(files, name), 0, `${file} ${lang} ${name}`);
+        }
+      }
+    }
+  });
+
+  it("reports nested and malformed-markup style tags the same way", async () => {
+    const nested = '<template><div><style lang="scss">a{b:c}</style></div></template>';
+    const unclosed = '<template><p>x<div></template><style lang="scss"></style>';
+    assert.deepEqual(await kinds({ "N.vue": nested }), ["style-preprocessor-unresolved:N.vue"]);
+    assert.deepEqual(await kinds({ "U.svelte": unclosed }), [
+      "style-preprocessor-unresolved:U.svelte",
+    ]);
+  });
+
+  it("ignores text that is not a style tag with a preprocessor lang", async () => {
+    const none: Record<string, string> = {
+      "comment.vue": '<!-- <style lang="scss"></style> -->\n<template/>',
+      "attr.vue": "<template><div title='<style lang=\"scss\">'/></template>",
+      "str.vue": "<script>const s = '<style lang=\"scss\"></style>';</script>",
+      "str.svelte": '<script>const s = `<style lang="scss"></style>`;</script>',
+      "plain.vue": "<style>a{b:c}</style>",
+      "postcss.vue": '<style lang="postcss">a{b:c}</style>',
+      "page.html": '<style lang="scss">a{b:c}</style>',
+      "inbody.vue": '<style>/* <style lang="scss"> */</style>',
+      "textarea.vue": '<template><textarea><style lang="scss"></style></textarea></template>',
+      "title.svelte": '<title><style lang="scss"></style></title>',
+      "xmp.astro": '<xmp><style lang="scss"></style></xmp>',
+      "iframe.vue": '<iframe><style lang="scss"></style></iframe>',
+      "noembed.svelte": '<noembed><style lang="scss"></style></noembed>',
+      "noframes.vue": '<noframes><style lang="scss"></style></noframes>',
+      "type.svelte": '<style type="text/scss">a{b:c}</style>',
+    };
+    for (const [file, text] of Object.entries(none)) {
+      assert.deepEqual(await kinds({ [file]: text }), [], file);
+    }
+  });
+
+  it("scopes the limitation to the owning project", async () => {
+    const files = {
+      "package.json": "{}",
+      "packages/a/package.json": JSON.stringify({ dependencies: { sass: "1" } }),
+      "packages/a/A.vue": '<style lang="scss"></style>',
+      "packages/b/package.json": JSON.stringify({ dependencies: { sass: "1" } }),
+    };
+    assert.deepEqual(await usageLimitations(ctx(files), "packages/a"), [
+      {
+        kind: "style-preprocessor-unresolved",
+        statement: (await usageLimitations(ctx(files), "packages/a"))[0]!.statement,
+        file: "packages/a/A.vue",
+      },
+    ]);
+    assert.deepEqual(await usageLimitations(ctx(files), "packages/b"), []);
+  });
+
+  it("keeps standalone stylesheet credit unchanged", async () => {
+    const found = await findPreprocessorUsages(
+      ctx({ "package.json": pkg, "s.scss": "a{b:c}" }),
+      dep("sass"),
+    );
+    assert.deepEqual(
+      found.map((u) => [u.file, u.via, u.symbols]),
+      [["s.scss", "convention", [".scss stylesheets"]]],
+    );
   });
 });
