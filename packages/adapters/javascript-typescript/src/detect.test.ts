@@ -3,7 +3,12 @@ import { describe, it } from "node:test";
 import { runAdapterContractTests } from "@ghostdeps/core";
 import type { AdapterContext, RepositoryHandle } from "@ghostdeps/core";
 import { createJavaScriptTypeScriptAdapter } from "./adapter.js";
-import { DETECTION_CONFIDENCE_THRESHOLD, detectJavaScriptTypeScript } from "./detect.js";
+import {
+  DETECTION_CONFIDENCE_THRESHOLD,
+  MAX_DETECT_COMPONENT_READS_PER_ROOT,
+  detectJavaScriptTypeScript,
+} from "./detect.js";
+import { MAX_SCRIPT_BLOCKS_PER_FILE } from "./usage/embedded.js";
 import { fixtureHandle, memoryHandle } from "./testing/fs-handle.js";
 
 function contextFor(repository: RepositoryHandle): AdapterContext {
@@ -155,3 +160,175 @@ runAdapterContractTests(
   createJavaScriptTypeScriptAdapter(),
   contextFor(fixtureHandle("js", "basic-unused")),
 );
+
+describe("detection counts components with an embedded script as source", () => {
+  const pkg = '{"dependencies":{"demo":"^1"}}';
+  const detect = (files: Record<string, string>) =>
+    detectJavaScriptTypeScript(contextFor(memoryHandle({ "package.json": pkg, ...files })));
+  const SCRIPT = '<script>import "demo";</script>';
+
+  for (const [file, body] of [
+    ["src/App.vue", `<template><div/></template>\n${SCRIPT}`],
+    ["src/App.svelte", `${SCRIPT}\n<p>hi</p>`],
+    ["src/Page.astro", `---\nimport "demo";\n---\n<p>hi</p>`],
+    ["src/Page2.astro", `<p>hi</p>\n${SCRIPT}`],
+    ["src/App.vue", '<script setup lang="ts">const x: number = 1;</script>'],
+  ] as const) {
+    it(`detects a root whose only source is ${file}`, async () => {
+      const result = await detect({ [file]: body });
+      assert.deepEqual(
+        result.projects.map((project) => project.path),
+        ["."],
+      );
+      assert.equal(result.confidence, 0.7);
+      assert.match(
+        result.evidence.find((e) => e.kind === "source-files")?.statement ?? "",
+        /1 JS\/TS source file\(s\).*1 component/,
+      );
+    });
+  }
+
+  it("does not promote components, pages and scripts that carry no meaningful script", async () => {
+    for (const files of [
+      { "src/App.vue": "<template><div/></template>" },
+      { "src/App.vue": "<script></script>\n<template/>" },
+      { "src/App.vue": "<script>   \n  </script>" },
+      { "src/App.svelte": "<script/>\n<p>hi</p>" },
+      { "src/Page.astro": "<p>hi</p>" },
+      { "src/Page.astro": "---\n---\n<p>hi</p>" },
+      { "src/App.vue": '<script type="text/template"><div></div></script>' },
+      { "src/index.html": SCRIPT },
+      { "src/index.htm": SCRIPT },
+      { "src/types.d.ts": "export {};" },
+    ]) {
+      const result = await detect(files);
+      assert.equal(result.confidence, 0.3, JSON.stringify(files));
+      assert.deepEqual(result.projects, []);
+    }
+  });
+
+  it("keeps nearest-root ownership and the workspace-root rule for member components", async () => {
+    const result = await detectJavaScriptTypeScript(
+      contextFor(
+        memoryHandle({
+          "package.json": '{"workspaces":["apps/*"]}',
+          "apps/web/package.json": pkg,
+          "apps/web/src/App.vue": SCRIPT,
+          "apps/docs/package.json": pkg,
+          "apps/docs/src/Page.astro": "<p>no script</p>",
+        }),
+      ),
+    );
+    assert.deepEqual(result.projects.map((project) => project.path).sort(), [".", "apps/web"]);
+  });
+
+  it("ignores components under excluded directories", async () => {
+    const result = await detect({ "node_modules/x/App.vue": SCRIPT, "dist/App.svelte": SCRIPT });
+    assert.equal(result.confidence, 0.3);
+  });
+
+  it("keeps a root whose components cannot be classified instead of reporting no source", async () => {
+    const unverified = (result: Awaited<ReturnType<typeof detect>>) =>
+      result.evidence.some((e) => e.kind === "component-source-unverified");
+    // Over the per-root read budget with no script seen so far.
+    const many: Record<string, string> = {};
+    for (let i = 0; i < MAX_DETECT_COMPONENT_READS_PER_ROOT; i++) {
+      many[`src/a${String(i).padStart(5, "0")}.vue`] = "<template/>";
+    }
+    many["src/zz.vue"] = SCRIPT;
+    const capped = await detect(many);
+    assert.equal(capped.confidence, 0.3);
+    assert.ok(unverified(capped));
+    // A component over the size ceiling.
+    const big = `<script>import "demo"; // ${"x".repeat(1_000_001)}</script>`;
+    const oversize = await detect({ "src/Big.vue": big });
+    assert.equal(oversize.confidence, 0.3);
+    assert.ok(unverified(oversize));
+    // More script blocks than the extractor keeps: 200 empty ones, then a real import.
+    const blocks = `${"<script> </script>".repeat(MAX_SCRIPT_BLOCKS_PER_FILE)}${SCRIPT}`;
+    const dropped = await detect({ "src/Many.vue": blocks });
+    assert.equal(dropped.confidence, 0.3);
+    assert.ok(unverified(dropped));
+    // A readable, fully classified script-less component is still not promoted.
+    assert.equal((await detect({ "src/App.vue": "<template/>" })).confidence, 0.3);
+  });
+
+  it("does not let one root's components starve another root", async () => {
+    const files: Record<string, string> = {
+      "apps/a/package.json": pkg,
+      "apps/z/package.json": pkg,
+      "apps/z/src/App.vue": SCRIPT,
+    };
+    for (let i = 0; i < MAX_DETECT_COMPONENT_READS_PER_ROOT; i++) {
+      files[`apps/a/src/c${String(i).padStart(5, "0")}.vue`] = "<template/>";
+    }
+    const result = await detectJavaScriptTypeScript(contextFor(memoryHandle(files)));
+    assert.ok(result.projects.some((project) => project.path === "apps/z"));
+    // Reversed: the many-component root sorts last, the scripted one first.
+    const reversed: Record<string, string> = {
+      "apps/a/package.json": pkg,
+      "apps/a/src/App.vue": SCRIPT,
+      "apps/z/package.json": pkg,
+    };
+    for (let i = 0; i < MAX_DETECT_COMPONENT_READS_PER_ROOT + 5; i++) {
+      reversed[`apps/z/src/c${String(i).padStart(5, "0")}.vue`] = "<template/>";
+    }
+    const back = await detectJavaScriptTypeScript(contextFor(memoryHandle(reversed)));
+    assert.ok(back.projects.some((project) => project.path === "apps/a"));
+  });
+
+  it("states a limitation for every root left unread by the run-wide ceiling", async () => {
+    const files: Record<string, string> = {};
+    for (let r = 0; r < 20; r++) {
+      const root = `apps/r${String(r).padStart(2, "0")}`;
+      files[`${root}/package.json`] = pkg;
+      for (let i = 0; i < 600; i++)
+        files[`${root}/src/c${String(i).padStart(4, "0")}.vue`] = "<template/>";
+    }
+    const result = await detectJavaScriptTypeScript(contextFor(memoryHandle(files)));
+    const limited = result.evidence
+      .filter((e) => e.kind === "component-source-unverified")
+      .map((e) => `${e.file} ${e.statement}`);
+    // Fair scheduling: every root got reads, and every root left with unread components is flagged.
+    assert.equal(limited.length, 20);
+  });
+
+  it("flags truncated script blocks even when a kept block counts", async () => {
+    const text = `${SCRIPT}${"<script> </script>".repeat(MAX_SCRIPT_BLOCKS_PER_FILE)}`;
+    const result = await detect({ "package.json": pkg, "src/Big.vue": text });
+    assert.equal(result.confidence, 0.7);
+    assert.ok(result.evidence.some((e) => e.kind === "component-source-unverified"));
+  });
+
+  it("does not claim there is no source for a root it could not fully check", async () => {
+    const big = `<script>import "demo"; // ${"x".repeat(1_000_001)}</script>`;
+    const result = await detect({ "package.json": pkg, "src/Big.vue": big });
+    assert.equal(result.confidence, 0.3);
+    const absence = result.evidence.find((e) => e.kind === "no-js-ts-source");
+    assert.ok(absence && !/has no meaningful/.test(absence.statement));
+    assert.match(absence.statement, /not ruled out/);
+    const clean = await detect({ "package.json": pkg, "src/App.vue": "<template/>" });
+    assert.match(
+      clean.evidence.find((e) => e.kind === "no-js-ts-source")!.statement,
+      /has no meaningful/,
+    );
+  });
+
+  it("keeps the uncertainty when another component already counted", async () => {
+    const files: Record<string, string> = {
+      "package.json": pkg,
+      "src/A.vue": SCRIPT,
+      "src/Many.vue": `${"<script> </script>".repeat(MAX_SCRIPT_BLOCKS_PER_FILE)}${SCRIPT}`,
+    };
+    const result = await detect(files);
+    assert.ok(result.confidence >= 0.5);
+    assert.ok(result.evidence.some((e) => e.kind === "component-source-unverified"));
+  });
+
+  it("stops reading components once a root already has the full source bonus", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 6; i++) files[`src/c${i}.vue`] = SCRIPT;
+    const result = await detect(files);
+    assert.equal(result.confidence, 0.8);
+  });
+});

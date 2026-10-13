@@ -7,6 +7,7 @@
  * (security-model rule 3).
  */
 import {
+  MAX_FILE_READ_BYTES,
   hasExcludedSegment,
   type AdapterContext,
   type DetectionResult,
@@ -15,6 +16,7 @@ import {
 } from "@ghostdeps/core";
 import { detectPackageManagers, type PackageManagerDetection } from "./package-managers.js";
 import { displayRoot, joinPath } from "./paths.js";
+import { extractScriptBlocks } from "./usage/embedded.js";
 
 export const JS_ECOSYSTEM = "javascript-typescript";
 
@@ -42,6 +44,33 @@ const SOURCE_EXTENSIONS = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts",
  */
 function isExcluded(path: string): boolean {
   return hasExcludedSegment(path);
+}
+
+/**
+ * Components scanned for embedded script, like find-usage. Only a component with a
+ * non-empty script block (or Astro frontmatter) counts as source; HTML pages and
+ * components with no script stay out, so a content-only package is not promoted.
+ * A component that cannot be classified (read limit, size ceiling, unreadable, or more
+ * script blocks than the extractor keeps) is never reported as "no source": the root is not
+ * promoted, and detection returns a limitation that core records as a run note.
+ */
+const COMPONENT_EXTENSIONS = [".vue", ".svelte", ".astro"] as const;
+
+/** Detection evidence kind for components that could not be classified. Core maps it to an incomplete-scan note. */
+export const COMPONENT_UNVERIFIED_EVIDENCE = "component-source-unverified";
+
+/** Most component files read for one project root. */
+export const MAX_DETECT_COMPONENT_READS_PER_ROOT = 1_000;
+
+/** Most component files read by one detection run across all roots. */
+export const MAX_DETECT_COMPONENT_READS = 10_000;
+
+/** Size ceiling for a component read during detection, same as the usage scan. */
+const MAX_COMPONENT_BYTES = Math.min(1_000_000, MAX_FILE_READ_BYTES);
+
+function isComponentFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  return COMPONENT_EXTENSIONS.some((extension) => lower.endsWith(extension));
 }
 
 function isSourceFile(path: string): boolean {
@@ -101,6 +130,62 @@ export async function detectJavaScriptTypeScript(
     if (root !== undefined) sourceCountByRoot.set(root, (sourceCountByRoot.get(root) ?? 0) + 1);
   }
 
+  // Components with a real script block count as source. A root with five sources already
+  // has the full source bonus, so its remaining components are not read. Each root has its
+  // own read budget so one root's components cannot use up another's.
+  const componentCountByRoot = new Map<string, number>();
+  const unverifiedRoots = new Set<string>();
+  const componentsByRoot = new Map<string, string[]>();
+  for (const file of files.filter(isComponentFile).sort()) {
+    const root = nearestRoot(file, rootSet);
+    if (root === undefined) continue;
+    const list = componentsByRoot.get(root);
+    if (list === undefined) componentsByRoot.set(root, [file]);
+    else list.push(file);
+  }
+  // Round-robin, one component per root per pass, so no root's components use up the
+  // run-wide budget before another root is looked at. Fairness is bounded, not absolute:
+  // roots still unread when the run ceiling is hit are flagged as unverified.
+  let active = [...componentsByRoot.keys()].sort();
+  let componentReads = 0;
+  for (let index = 0; active.length > 0; index++) {
+    const next: string[] = [];
+    for (const root of active) {
+      const components = componentsByRoot.get(root)!;
+      const have = (sourceCountByRoot.get(root) ?? 0) + (componentCountByRoot.get(root) ?? 0);
+      if (index >= components.length || have >= 5) continue;
+      if (
+        index >= MAX_DETECT_COMPONENT_READS_PER_ROOT ||
+        componentReads >= MAX_DETECT_COMPONENT_READS
+      ) {
+        unverifiedRoots.add(root);
+        continue;
+      }
+      componentReads++;
+      next.push(root);
+      const file = components[index]!;
+      try {
+        const text = await repository.readFile(file);
+        if (Buffer.byteLength(text, "utf8") > MAX_COMPONENT_BYTES) {
+          unverifiedRoots.add(root);
+          continue;
+        }
+        const { blocks, dropped } = extractScriptBlocks(file, text);
+        if (blocks.some((block) => block.code.trim() !== "")) {
+          componentCountByRoot.set(root, (componentCountByRoot.get(root) ?? 0) + 1);
+        }
+        // Blocks past the extractor's limit were not seen, whatever the kept ones held.
+        if (dropped > 0) unverifiedRoots.add(root);
+      } catch {
+        unverifiedRoots.add(root);
+      }
+    }
+    active = next;
+  }
+  for (const [root, count] of componentCountByRoot) {
+    sourceCountByRoot.set(root, (sourceCountByRoot.get(root) ?? 0) + count);
+  }
+
   const evidence: Evidence[] = [];
   const projects: ProjectRef[] = [];
   const pmByRoot = new Map<string, PackageManagerDetection>();
@@ -155,7 +240,9 @@ export async function detectJavaScriptTypeScript(
         confidence = 0.3;
         evidence.push({
           kind: "no-js-ts-source",
-          statement: `${manifestPath} has no meaningful JS/TS source under ${displayRoot(root)}`,
+          statement: unverifiedRoots.has(root)
+            ? `${manifestPath}: no JS/TS source was found under ${displayRoot(root)} in the files that could be checked; source there is not ruled out`
+            : `${manifestPath} has no meaningful JS/TS source under ${displayRoot(root)}`,
           file: manifestPath,
         });
       }
@@ -163,7 +250,11 @@ export async function detectJavaScriptTypeScript(
       confidence = 0.7;
       evidence.push({
         kind: "source-files",
-        statement: `${sourceCount} JS/TS source file(s) under ${displayRoot(root)}`,
+        statement: `${sourceCount} JS/TS source file(s) under ${displayRoot(root)}${
+          componentCountByRoot.has(root)
+            ? ` (${componentCountByRoot.get(root)} component(s) with an embedded script)`
+            : ""
+        }`,
       });
       const lockfile = LOCKFILES.find((name) => fileSet.has(joinPath(root, name)));
       if (lockfile !== undefined) {
@@ -244,5 +335,16 @@ export async function detectJavaScriptTypeScript(
     }
   }
 
+  // A root whose components could not all be classified is unknown, never "no source".
+  // Kept as evidence whatever the confidence, so core can record it as an incomplete scan;
+  // the root is not promoted.
+  for (const root of [...unverifiedRoots].sort()) {
+    const manifestPath = root === "." ? "package.json" : `${root}/package.json`;
+    evidence.push({
+      kind: COMPONENT_UNVERIFIED_EVIDENCE,
+      statement: `some .vue/.svelte/.astro components under ${displayRoot(root)} could not be checked for an embedded script (read limit, size limit, unreadable or too many script blocks)`,
+      file: manifestPath,
+    });
+  }
   return { confidence: best, projects, evidence };
 }
