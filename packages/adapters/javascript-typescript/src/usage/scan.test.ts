@@ -321,6 +321,122 @@ describe("scanSource", () => {
     assert.deepEqual(shape(`jest.doMock(...names);`), shape(`jest.mock(...names);`));
   });
 
+  it("reads triple-slash reference-types directives and the jsxImportSource pragma", () => {
+    const refs = byPkg(
+      "a.ts",
+      [
+        `/// <reference types="node" />`,
+        `/// <reference types="demo" />`,
+        `export const x = 1;`,
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      refs.map((r) => [r.packageName, r.form, r.line, r.typeOnly, r.symbols]),
+      [
+        ["node", "static", 1, true, ["reference types"]],
+        ["demo", "static", 2, true, ["reference types"]],
+      ],
+    );
+    const jsx = byPkg("c.tsx", `/** @jsxImportSource theme-ui */\nexport const el = <div/>;\n`);
+    assert.deepEqual(
+      jsx.map((r) => [r.packageName, r.form, r.line, r.typeOnly, r.symbols]),
+      [["theme-ui", "static", 1, false, ["jsxImportSource"]]],
+    );
+    // `reference path` names an internal file and `reference lib` a builtin
+    // lib; neither is a package reference.
+    assert.deepEqual(
+      byPkg(
+        "b.ts",
+        `/// <reference path="./local.d.ts" />\n/// <reference lib="es2020" />\nexport {};`,
+      ),
+      [],
+    );
+  });
+
+  it("credits reference types only from leading directives of standalone files", () => {
+    const names = (file: string, text: string) =>
+      scanSource(file, text)
+        .references.filter((r) => r.packageName !== undefined)
+        .map((r) => [r.packageName, r.line]);
+    const d = `/// <reference types="demo" />`;
+    // Positive: after leading comments, in .ts/.tsx/.d.ts/.js, subpaths and scopes.
+    assert.deepEqual(names("a.ts", `// note\n/* block */\n${d}\nexport {};`), [["demo", 3]]);
+    assert.deepEqual(names("a.d.ts", `${d}\ndeclare global {}`), [["demo", 1]]);
+    assert.deepEqual(names("a.js", `${d}\nexport {};`), [["demo", 1]]);
+    assert.deepEqual(names("a.ts", `/// <reference types="vitest/globals" />`), [["vitest", 1]]);
+    assert.deepEqual(names("a.ts", `/// <reference types="@scope/pkg" />`), [["@scope/pkg", 1]]);
+    assert.deepEqual(names("a.ts", `/// <reference types='demo' resolution-mode="import" />`), [
+      ["demo", 1],
+    ]);
+    // Decoys: not leading, in a comment or string, other directive kinds.
+    for (const text of [
+      `export const x = 1;\n${d}`,
+      `// ${d}\nexport {};`,
+      `/* ${d} */\nexport {};`,
+      `const s = '${d}';`,
+      "const s = `\n" + d + "\n`;",
+      `/// <reference path="./demo.d.ts" />\nexport {};`,
+      `/// <reference lib="es2020" />\nexport {};`,
+      `/// <reference no-default-lib="true" />\nexport {};`,
+      `/// <reference types="" />\nexport {};`,
+      `/// <reference types="./local" />\nexport {};`,
+      `/// <amd-module name="demo" />\nexport {};`,
+    ]) {
+      assert.deepEqual(names("a.ts", text), [], text);
+    }
+    // A component script block is not a standalone TypeScript file.
+    for (const file of ["a.vue", "a.svelte", "a.astro"]) {
+      assert.deepEqual(names(file, `${d}\nexport {};`), [], file);
+    }
+  });
+
+  it("credits a leading jsxImportSource pragma, with or without JSX", () => {
+    const names = (file: string, text: string) =>
+      scanSource(file, text)
+        .references.filter((r) => r.packageName !== undefined)
+        .map((r) => [r.packageName, r.line, r.symbols]);
+    const el = "export const el = <div />;";
+    const p = (name: string) => `/** @jsxImportSource ${name} */`;
+    const got = [["demo", 1, ["jsxImportSource"]]];
+    assert.deepEqual(names("a.tsx", `${p("demo")}\n${el}`), got);
+    assert.deepEqual(names("a.jsx", `${p("demo")}\n${el}`), got);
+    assert.deepEqual(names("a.tsx", `${p("demo")}\nexport const f = <></>;`), got);
+    assert.deepEqual(names("a.tsx", `${p("demo")}\nexport const f = <a>b</a>;`), got);
+    assert.deepEqual(names("a.tsx", `${p("@scope/ui")}\n${el}`), [
+      ["@scope/ui", 1, ["jsxImportSource"]],
+    ]);
+    // Last pragma wins, as in the compiler; the earlier one is not credited.
+    assert.deepEqual(names("a.tsx", `${p("first")}\n${p("demo")}\n${el}`), [
+      ["demo", 2, ["jsxImportSource"]],
+    ]);
+    // An explicit automatic runtime pragma leaves the source in place.
+    assert.deepEqual(names("a.tsx", `/** @jsxRuntime automatic */\n${p("demo")}\n${el}`), [
+      ["demo", 2, ["jsxImportSource"]],
+    ]);
+    const nothing = [
+      // classic runtime turns it off, whichever comes first
+      `/** @jsxRuntime classic */\n${p("demo")}\n${el}`,
+      `${p("demo")}\n/** @jsxRuntime classic */\n${el}`,
+      // not a leading comment, or not a block comment
+      `${el}\n${p("demo")}`,
+      `const a = 1;\n${p("demo")}\n${el}`,
+      `// @jsxImportSource demo\n${el}`,
+      `const s = '${p("demo")}';\n${el}`,
+      `${p("")}\n${el}`,
+    ];
+    for (const text of nothing) assert.deepEqual(names("a.tsx", text), [], text);
+    // The compiler loads the runtime module for a module without JSX too.
+    for (const file of ["a.ts", "a.tsx", "a.js", "a.jsx", "a.mjs"]) {
+      assert.deepEqual(names(file, `${p("demo")}\nexport const x = 1;`), got, file);
+    }
+    // Compiler options are not visible here, so a script file is credited too.
+    assert.deepEqual(names("a.ts", `${p("demo")}\nconst x = 1;`), got);
+    assert.deepEqual(names("a.d.ts", `${p("demo")}\ndeclare const x: number;`), []);
+    for (const file of ["a.vue", "a.svelte"]) {
+      assert.deepEqual(names(file, `${p("demo")}\n${el}`), [], file);
+    }
+  });
+
   it("reads createRequire with a literal bracket member like the dot form", () => {
     const forms = (callee: string) => [
       `const r = ${callee}(import.meta.url); r("demo");`,

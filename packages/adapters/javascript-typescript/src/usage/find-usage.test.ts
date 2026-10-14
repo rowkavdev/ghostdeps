@@ -760,3 +760,42 @@ describe("SFC style preprocessors", () => {
     );
   });
 });
+
+describe("TypeScript directives through findUsage", () => {
+  const pkg = JSON.stringify({ devDependencies: { demo: "1", "@types/demo": "1" } });
+  const found = async (files: Record<string, string>, name: string) =>
+    (await findUsage(ctx({ "package.json": pkg, ...files }), dep(name))).map((u) => [
+      u.file,
+      u.line,
+      u.symbols,
+      u.typeOnly ?? false,
+    ]);
+
+  it("credits reference types to the package and its @types package", async () => {
+    const files = { "a.ts": '// note\n/// <reference types="demo" />\nexport {};\n' };
+    assert.deepEqual(await found(files, "demo"), [["a.ts", 2, ["reference types"], true]]);
+    assert.deepEqual(await found(files, "@types/demo"), [["a.ts", 2, ["reference types"], true]]);
+  });
+
+  it("credits a jsxImportSource pragma in a module, with or without JSX", async () => {
+    const files = { "a.tsx": "/** @jsxImportSource demo */\nexport const el = <div />;\n" };
+    assert.deepEqual(await found(files, "demo"), [["a.tsx", 1, ["jsxImportSource"], false]]);
+    const bare = { "b.ts": "/** @jsxImportSource demo */\nexport const x = 1;\n" };
+    assert.deepEqual(await found(bare, "demo"), [["b.ts", 1, ["jsxImportSource"], false]]);
+  });
+
+  it("credits nothing for directives the compiler does not act on", async () => {
+    const files = {
+      "late.ts": 'export {};\n/// <reference types="demo" />\n',
+      "comment.ts": '// /// <reference types="demo" />\nexport {};\n',
+      "classic.tsx":
+        "/** @jsxRuntime classic */\n/** @jsxImportSource demo */\nexport const e = <p />;\n",
+      "replaced.tsx":
+        "/** @jsxImportSource demo */\n/** @jsxImportSource other */\nexport const e = <p />;\n",
+      "c.vue":
+        '<script lang="ts">\n/// <reference types="demo" />\nexport default {};\n</script>\n',
+    };
+    assert.deepEqual(await found(files, "demo"), []);
+    assert.deepEqual(await found(files, "@types/demo"), []);
+  });
+});
