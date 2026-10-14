@@ -28,4 +28,4 @@ All of these run in CI on Node 22 and 24; nothing merges on red.
 
 ## Dependency updates
 
-Renovate keeps dependencies current (see `renovate.json`). Release/versioning strategy: pre-1.0 the packages stay private; public npm publishing and Changesets arrive with the first usable CLI milestone (M1).
+Renovate keeps dependencies current (see `renovate.json`). It skips `fixtures/` (the test inputs are intentionally pinned, vulnerable or malformed, as in `.github/dependabot.yml`). `ignorePaths` is not merged with the `config:recommended` list, so `renovate.json` repeats the preset paths from `:ignoreModulesAndTests` and adds `fixtures/**`; keep them together. Release/versioning strategy: pre-1.0 the packages stay private; public npm publishing and Changesets arrive with the first usable CLI milestone (M1).
