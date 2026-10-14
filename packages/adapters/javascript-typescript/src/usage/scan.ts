@@ -6,6 +6,7 @@
  * repository is ever evaluated (ADR 0004).
  */
 import ts from "typescript";
+import { isEmbeddedScriptFile } from "./embedded.js";
 import { parseSpecifier } from "./specifier.js";
 import type { Usage } from "@ghostdeps/core";
 
@@ -156,6 +157,63 @@ function describeIncompleteStrings(
   return out;
 }
 
+function addTypeScriptDirectives(
+  file: string,
+  sf: ts.SourceFile,
+  addAt: (
+    pos: number,
+    end: number,
+    specifier: string | undefined,
+    form: Usage["form"],
+    symbols: string[],
+    opts?: { typeOnly?: boolean; reExport?: boolean },
+  ) => ImportReference,
+): void {
+  // TypeScript's own pragma parse decides what counts: only a leading
+  // comment qualifies, never text deeper in the file. A script block of a
+  // component file is not a standalone TypeScript file, so nothing here
+  // applies to it.
+  if (!isEmbeddedScriptFile(file)) {
+    // `/// <reference types="x" />` declares a compile-time dependency on the
+    // named types package, resolved like the tsconfig `types` reference in
+    // references/config.ts: crediting x also credits @types/x downstream.
+    // Erased at runtime, so type-only.
+    for (const directive of sf.typeReferenceDirectives) {
+      addAt(directive.pos, directive.end, directive.fileName, "static", ["reference types"], {
+        typeOnly: true,
+      });
+    }
+
+    // `/** @jsxImportSource x */` makes the compiler load `x/jsx-runtime`
+    // into the program for the file, whether or not the file has JSX: the
+    // import is added for JavaScript files and external modules (and for
+    // every file under isolatedModules or moduleDetection force). It is
+    // explicit syntactic evidence of a compile-time dependency, not a claim
+    // about the emitted runtime. As in TypeScript's getJSXImplicitImportBase,
+    // the last pragma wins and `@jsxRuntime classic` turns it off; declaration
+    // files never load it. The scan cannot see the compiler options, so a
+    // script file that TypeScript would not load it for is credited too,
+    // which errs toward keeping the package.
+    type Pragma = { arguments?: Record<string, unknown>; range?: { pos: number; end: number } };
+    const pragmas = (sf as unknown as { pragmas?: ReadonlyMap<string, Pragma | Pragma[]> }).pragmas;
+    const last = (name: string): Pragma | undefined => {
+      const value = pragmas?.get(name);
+      return Array.isArray(value) ? value[value.length - 1] : value;
+    };
+    const factory = last("jsximportsource")?.arguments?.["factory"];
+    const range = last("jsximportsource")?.range;
+    if (
+      !sf.isDeclarationFile &&
+      last("jsxruntime")?.arguments?.["factory"] !== "classic" &&
+      typeof factory === "string" &&
+      factory !== "" &&
+      range
+    ) {
+      addAt(range.pos, range.end, factory, "static", ["jsxImportSource"]);
+    }
+  }
+}
+
 export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKind): FileScanResult {
   const kind = scriptKind ?? scriptKindFor(file) ?? ts.ScriptKind.TS;
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
@@ -163,10 +221,12 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   /** Local binding name -> references it was bound from (for member-access symbols). */
   const bindings = new Map<string, ImportReference[]>();
 
-  const lineOf = (node: ts.Node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+  const lineAt = (pos: number) => sf.getLineAndCharacterOfPosition(pos).line + 1;
+  const lineOf = (node: ts.Node) => lineAt(node.getStart(sf));
 
-  const add = (
-    node: ts.Node,
+  const addAt = (
+    pos: number,
+    end: number,
     specifier: string | undefined,
     form: Usage["form"],
     symbols: string[],
@@ -174,8 +234,8 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
   ): ImportReference => {
     const ref: ImportReference = {
       form,
-      line: lineOf(node),
-      endLine: sf.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+      line: lineAt(pos),
+      endLine: lineAt(end),
       symbols,
       typeOnly: opts.typeOnly ?? false,
       reExport: opts.reExport ?? false,
@@ -188,6 +248,14 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     references.push(ref);
     return ref;
   };
+
+  const add = (
+    node: ts.Node,
+    specifier: string | undefined,
+    form: Usage["form"],
+    symbols: string[],
+    opts: { typeOnly?: boolean; reExport?: boolean } = {},
+  ): ImportReference => addAt(node.getStart(sf), node.getEnd(), specifier, form, symbols, opts);
 
   const bind = (name: string, ref: ImportReference) => {
     const list = bindings.get(name) ?? [];
@@ -445,6 +513,8 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
     ts.forEachChild(node, visitDoc);
   };
   visit(sf);
+
+  addTypeScriptDirectives(file, sf, addAt);
 
   // String references (#172, vite plugin-legacy): packages a module names in
   // string text, typically code it generates or resolves for a bundle. They
