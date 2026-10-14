@@ -85,13 +85,33 @@ const SUBPATH_LITERAL =
 
 /**
  * Test-framework module factories whose first argument names a dependency:
- * jest.mock/unmock/requireActual/createMockFromModule and
+ * jest.mock/doMock/unmock/dontMock/deepUnmock/requireActual/requireMock/
+ * createMockFromModule/genMockFromModule/setMock and
  * vi.mock/doMock/unmock/doUnmock. Scoping is not tracked; a user object named
  * `jest` or `vi` can only add a usage reference, never remove one.
  */
 const MOCK_SPECIFIER_CALLS: Record<string, ReadonlySet<string>> = {
-  jest: new Set(["mock", "unmock", "requireActual", "createMockFromModule"]),
+  jest: new Set([
+    "mock",
+    "doMock",
+    "unmock",
+    "dontMock",
+    "deepUnmock",
+    "requireActual",
+    "requireMock",
+    "createMockFromModule",
+    "genMockFromModule",
+    "setMock",
+  ]),
   vi: new Set(["mock", "doMock", "unmock", "doUnmock"]),
+};
+/**
+ * Async Vitest imports whose first argument names a dependency:
+ * vi.importActual and vi.importMock resolve the module at runtime like a
+ * dynamic import, so they are recorded with the dynamic form.
+ */
+const MOCK_DYNAMIC_CALLS: Record<string, ReadonlySet<string>> = {
+  vi: new Set(["importActual", "importMock"]),
 };
 
 /** `import "x"`, `from "x"` and `require("x")` inside string or template text. */
@@ -381,6 +401,14 @@ export function scanSource(file: string, text: string, scriptKind?: ts.ScriptKin
           // `jest.mock("x")` / `vi.mock("x")` and counterparts: the first
           // argument names a dependency resolved at runtime.
           add(node, spec, spec === undefined ? "unknown" : "require", [`${target.text}.${member}`]);
+        } else if (
+          ts.isIdentifier(target) &&
+          Object.hasOwn(MOCK_DYNAMIC_CALLS, target.text) &&
+          MOCK_DYNAMIC_CALLS[target.text]?.has(member)
+        ) {
+          // `await vi.importActual("x")` / `await vi.importMock("x")`: an
+          // asynchronous import of the named module.
+          add(node, spec, spec === undefined ? "unknown" : "dynamic", [`${target.text}.${member}`]);
         }
       }
     }

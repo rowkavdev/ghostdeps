@@ -239,6 +239,88 @@ describe("scanSource", () => {
     }
   });
 
+  it("covers the remaining jest module factories and async vi imports", () => {
+    const refs = byPkg(
+      "a.test.ts",
+      [
+        `jest.doMock("axios");`,
+        `jest.dontMock("lodash");`,
+        `jest.deepUnmock("underscore");`,
+        `const mock = jest.requireMock("node-fetch");`,
+        `jest.genMockFromModule("semver");`,
+        `jest.setMock("debug", {});`,
+        `const actual = await vi.importActual("chalk");`,
+        `const mocked = await vi.importMock("ora");`,
+      ].join("\n"),
+    );
+    assert.deepEqual(
+      refs.map((r) => [r.packageName, r.form, r.line, r.symbols]),
+      [
+        ["axios", "require", 1, ["jest.doMock"]],
+        ["lodash", "require", 2, ["jest.dontMock"]],
+        ["underscore", "require", 3, ["jest.deepUnmock"]],
+        ["node-fetch", "require", 4, ["jest.requireMock"]],
+        ["semver", "require", 5, ["jest.genMockFromModule"]],
+        ["debug", "require", 6, ["jest.setMock"]],
+        ["chalk", "dynamic", 7, ["vi.importActual"]],
+        ["ora", "dynamic", 8, ["vi.importMock"]],
+      ],
+    );
+    // Bracket members read like the dot forms.
+    for (const [dot, bracket] of [
+      ['jest.doMock("a")', 'jest["doMock"]("a")'],
+      ['jest.requireMock("a")', 'jest["requireMock"]("a")'],
+      ['vi.importActual("a")', 'vi["importActual"]("a")'],
+    ] as [string, string][]) {
+      const expected = scanSource("a.test.ts", dot).references.map((r) => [
+        r.packageName,
+        r.form,
+        r.symbols,
+      ]);
+      assert.equal(expected.length, 1, dot);
+      assert.deepEqual(
+        scanSource("a.test.ts", bracket).references.map((r) => [r.packageName, r.form, r.symbols]),
+        expected,
+        bracket,
+      );
+    }
+    // Non-literal specifiers still register as unknown-form references.
+    const all = scanSource("a.test.ts", `const dyn = which(); jest.doMock(dyn);`).references;
+    assert.equal(all.length, 1);
+    assert.deepEqual([all[0]?.packageName, all[0]?.form, all[0]?.line], [undefined, "unknown", 1]);
+  });
+
+  it("does not read module names from decoys of the new factory calls", () => {
+    const none = [
+      `jest.doMock();`,
+      `jest.doUnmock("a");`,
+      `jest.dontMock();`,
+      `vi.dontMock("a");`,
+      `jest.setMock();`,
+      `vi.importActual();`,
+      `jest.importActual("a");`,
+      `jest.importMock("a");`,
+      `vi.requireMock("a");`,
+      `vi.setMock("a", {});`,
+      `vi.genMockFromModule("a");`,
+      `other.doMock("a");`,
+      `other.importActual("a");`,
+      `doMock("a");`,
+      `importActual("a");`,
+      `jest.doMock;`,
+      `vi.importActual;`,
+      `jest[name]("a");`,
+      `vi.constructor.importActual("a");`,
+    ];
+    for (const source of none) {
+      assert.deepEqual(scanSource("a.test.ts", source).references, [], source);
+    }
+    // A spread first argument reads like the existing jest.mock contract.
+    const shape = (source: string) =>
+      scanSource("a.test.ts", source).references.map((r) => [r.packageName, r.form]);
+    assert.deepEqual(shape(`jest.doMock(...names);`), shape(`jest.mock(...names);`));
+  });
+
   it("reads createRequire with a literal bracket member like the dot form", () => {
     const forms = (callee: string) => [
       `const r = ${callee}(import.meta.url); r("demo");`,
