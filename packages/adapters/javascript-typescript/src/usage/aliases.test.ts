@@ -1012,3 +1012,58 @@ describe("AliasResolver node_modules exports forms (#553 review)", () => {
     assert.deepEqual([...r.packageBases], ["pkg1000"]);
   });
 });
+
+describe("paths entry selection follows TypeScript precedence (#852)", () => {
+  const files = (paths: unknown, extra: Record<string, string>) => ({
+    "tsconfig.json": JSON.stringify({ compilerOptions: { paths } }),
+    ...extra,
+  });
+
+  it("an exact entry with a missing target does not fall through to a wildcard", async () => {
+    const f = files({ pkg: ["missing.ts"], "*": ["src/*"] }, { "src/pkg.ts": "" });
+    assert.equal(await internal(f, ".", "pkg"), false);
+  });
+
+  it("a longer-prefix wildcard with a missing target does not fall through to a shorter one", async () => {
+    const f = files({ "foo/*": ["lib/*"], "*": ["src/*"] }, { "src/foo/x.ts": "" });
+    assert.equal(await internal(f, ".", "foo/x"), false);
+  });
+
+  it("tries fallback targets within the selected entry only", async () => {
+    const f = files({ pkg: ["missing.ts", "src/pkg.ts"] }, { "src/pkg.ts": "" });
+    assert.equal(await internal(f, ".", "pkg"), true);
+  });
+
+  it("an exact entry wins over a wildcard declared earlier", async () => {
+    const f = files({ "*": ["src/*"], pkg: ["missing.ts"] }, { "src/pkg.ts": "" });
+    assert.equal(await internal(f, ".", "pkg"), false);
+  });
+
+  it("keeps declaration order for equal-prefix ties", async () => {
+    const first = files({ "a*": ["miss1"], "a*/b": ["src/hit.ts"] }, { "src/hit.ts": "" });
+    assert.equal(await internal(first, ".", "ax/b"), false);
+    const reversed = files({ "a*/b": ["src/hit.ts"], "a*": ["miss1"] }, { "src/hit.ts": "" });
+    assert.equal(await internal(reversed, ".", "ax/b"), true);
+  });
+
+  it("falls back to baseUrl only when no paths key matched", async () => {
+    const f = {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { other: ["missing.ts"] } },
+      }),
+      "pkg.ts": "",
+    };
+    assert.equal(await internal(f, ".", "pkg"), true);
+  });
+
+  it("does not fall back to baseUrl once a matched entry resolves nothing", async () => {
+    const f = {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { pkg: ["missing.ts"], "*": ["src/*"] } },
+      }),
+      "pkg.ts": "",
+      "src/pkg.ts": "",
+    };
+    assert.equal(await internal(f, ".", "pkg"), false);
+  });
+});
