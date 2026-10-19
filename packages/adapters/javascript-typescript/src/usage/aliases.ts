@@ -260,29 +260,50 @@ export class AliasResolver {
 
   private computeInternal(specifier: string, config: AliasConfig): boolean {
     if (config.pathsBase !== undefined) {
+      // TypeScript selects one paths entry before trying any target (#852):
+      // an exact key wins over every wildcard; otherwise the matching
+      // wildcard with the longest literal prefix, keeping declaration order
+      // on ties. Only that entry's targets are tried, in order. When none
+      // resolve, the paths step is final - the installed TypeScript 5.9.3
+      // resolver does not fall back to baseUrl or a lower-priority entry
+      // once a key matched, so a missing selected target must not hide real
+      // package usage here either.
+      let selected: { readonly targets: readonly string[]; readonly captured: string } | undefined;
+      let selectedPrefix = -1;
       for (const entry of config.paths) {
         const star = entry.key.indexOf("*");
-        let captured: string | undefined;
         if (star < 0) {
-          if (specifier === entry.key) captured = "";
-        } else {
-          const prefix = entry.key.slice(0, star);
-          const suffix = entry.key.slice(star + 1);
-          if (
-            specifier.length >= prefix.length + suffix.length &&
-            specifier.startsWith(prefix) &&
-            specifier.endsWith(suffix)
-          ) {
-            captured = specifier.slice(prefix.length, specifier.length - suffix.length);
+          if (specifier === entry.key) {
+            selected = { targets: entry.targets, captured: "" };
+            break;
           }
+          continue;
         }
-        if (captured === undefined) continue;
-        for (const target of entry.targets) {
-          const rel = target.includes("*") ? target.replace("*", captured) : target;
-          if (this.resolvesToFile(config.pathsBase, rel)) return true;
+        const prefix = entry.key.slice(0, star);
+        const suffix = entry.key.slice(star + 1);
+        if (
+          specifier.length >= prefix.length + suffix.length &&
+          specifier.startsWith(prefix) &&
+          specifier.endsWith(suffix) &&
+          prefix.length > selectedPrefix
+        ) {
+          selected = {
+            targets: entry.targets,
+            captured: specifier.slice(prefix.length, specifier.length - suffix.length),
+          };
+          selectedPrefix = prefix.length;
         }
       }
+      if (selected !== undefined) {
+        for (const target of selected.targets) {
+          const rel = target.includes("*") ? target.replace("*", selected.captured) : target;
+          if (this.resolvesToFile(config.pathsBase, rel)) return true;
+        }
+        // A matched entry whose targets all miss ends resolution (#852).
+        return false;
+      }
     }
+    // baseUrl applies only when no paths key matched the specifier.
     if (config.baseUrl !== undefined && this.resolvesToFile(config.baseUrl, specifier)) return true;
     return false;
   }
