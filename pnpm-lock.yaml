@@ -170,22 +170,22 @@ importers:
   .:
     devDependencies:
       '@eslint/js':
-        specifier: ^10.0.1
+        specifier: 10.0.1
         version: 10.0.1(eslint@10.11.0)
       '@types/node':
-        specifier: ^22.10.0
+        specifier: 22.20.4
         version: 22.20.4
       eslint:
-        specifier: ^10.11.0
+        specifier: 10.11.0
         version: 10.11.0
       prettier:
-        specifier: ^3.4.0
+        specifier: 3.9.9
         version: 3.9.9
       typescript:
-        specifier: ^5.7.0
+        specifier: 5.9.3
         version: 5.9.3
       typescript-eslint:
-        specifier: ^8.18.0
+        specifier: 8.70.1
         version: 8.70.1(eslint@10.11.0)(typescript@5.9.3)
 
   packages/action:
@@ -198,10 +198,10 @@ importers:
         version: link:../core
     devDependencies:
       '@types/node':
-        specifier: ^22.20.4
+        specifier: 22.20.4
         version: 22.20.4
       typescript:
-        specifier: ^5.7.0
+        specifier: 5.9.3
         version: 5.9.3
 
   packages/adapters/go:
@@ -210,29 +210,29 @@ importers:
         specifier: workspace:*
         version: link:../../core
       '@types/node':
-        specifier: ^22.10.0
+        specifier: 22.20.4
         version: 22.20.4
 
   packages/adapters/javascript-typescript:
     dependencies:
       npm-package-arg:
-        specifier: ^12.0.2
+        specifier: 12.0.2
         version: 12.0.2
       typescript:
-        specifier: ^5.7.0
+        specifier: 5.9.3
         version: 5.9.3
       yaml:
-        specifier: ^2.9.1
+        specifier: 2.9.1
         version: 2.9.1
     devDependencies:
       '@ghostdeps/core':
         specifier: workspace:*
         version: link:../../core
       '@types/node':
-        specifier: ^22.10.0
+        specifier: 22.20.4
         version: 22.20.4
       '@types/npm-package-arg':
-        specifier: ^6.1.4
+        specifier: 6.1.4
         version: 6.1.4
 
   packages/adapters/python:
@@ -245,7 +245,7 @@ importers:
         specifier: workspace:*
         version: link:../../core
       '@types/node':
-        specifier: ^22.10.0
+        specifier: 22.20.4
         version: 22.20.4
 
   packages/adapters/rust:
@@ -264,7 +264,7 @@ importers:
         specifier: workspace:*
         version: link:../../core
       '@types/node':
-        specifier: ^22.10.0
+        specifier: 22.20.4
         version: 22.20.4
 
   packages/checks-renderer:
@@ -274,10 +274,10 @@ importers:
         version: link:../core
     devDependencies:
       '@types/node':
-        specifier: ^22.20.4
+        specifier: 22.20.4
         version: 22.20.4
       typescript:
-        specifier: ^5.7.0
+        specifier: 5.9.3
         version: 5.9.3
 
   packages/cli:
@@ -299,13 +299,13 @@ importers:
         version: link:../adapters/rust
     devDependencies:
       typescript:
-        specifier: ^5.7.0
+        specifier: 5.9.3
         version: 5.9.3
 
   packages/core:
     devDependencies:
       typescript:
-        specifier: ^5.7.0
+        specifier: 5.9.3
         version: 5.9.3
 
   packages/github-app:
@@ -329,20 +329,20 @@ importers:
         specifier: workspace:*
         version: link:../adapters/rust
       probot:
-        specifier: ^14.3.2
+        specifier: 14.3.2
         version: 14.3.2
     devDependencies:
       '@types/node':
-        specifier: ^22.20.4
+        specifier: 22.20.4
         version: 22.20.4
       nock:
-        specifier: ^14.0.17
+        specifier: 14.0.17
         version: 14.0.17
       typescript:
-        specifier: ^5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       yaml:
-        specifier: ^2.9.1
+        specifier: 2.9.1
         version: 2.9.1
 
 packages:
