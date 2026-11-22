@@ -55,6 +55,14 @@ recommendation policy lives in core.
 
 New adapters: read [contributing-adapters.md](contributing-adapters.md).
 
+## Changed npm and Bun dependency constraints
+
+npm v2/v3 lockfiles and Bun text lockfiles record the direct dependency
+constraints for each project. When a recorded constraint differs from the
+current manifest, GhostDeps reports the mismatch and treats the impact of
+that dependency as unknown. The graph still includes the lockfile edges
+for declarations that match.
+
 ## Bun workspace dependencies
 
 For a workspace dependency in `bun.lock`, GhostDeps takes the member's

@@ -210,7 +210,7 @@ describe("buildLockfileGraph", () => {
       lockfileVersion: 3,
       packages: {
         "": { workspaces: ["packages/*"] },
-        "packages/app": { name: "app", dependencies: { lib: "*", chalk: "^5" } },
+        "packages/app": { name: "app", dependencies: { lib: "*", chalk: "^4" } },
         "packages/lib": { name: "lib", version: "1.0.0", dependencies: { ms: "^2" } },
         "node_modules/app": { link: true, resolved: "packages/app" },
         "node_modules/lib": { link: true, resolved: "packages/lib" },
@@ -232,6 +232,20 @@ describe("buildLockfileGraph", () => {
     assert.deepEqual(res.lockfile, "package-lock.json");
     assert.deepEqual(res.graph.transitiveClosure, { lib: ["ms"], chalk: ["ms"] });
     assert.equal(res.graph.nodes.find((n) => n.name === "chalk")?.version, "4.1.2");
+
+    const stale = await buildLockfileGraph(
+      ctx(
+        memoryHandle({
+          "package.json": "{}",
+          "package-lock.json": JSON.stringify(lock),
+          "packages/app/package.json": JSON.stringify({ dependencies: { lib: "*", chalk: "^5" } }),
+        }),
+      ),
+      project("packages/app"),
+    );
+    assert.equal(stale.graph.incomplete, true);
+    assert.deepEqual(stale.graph.transitiveClosure, { lib: ["ms"] });
+    assert.match(stale.evidence[0]?.statement ?? "", /chalk.*constraint.*stale/);
   });
 
   it("npm lockfileVersion 1 nested trees", async () => {
@@ -446,6 +460,63 @@ describe("buildLockfileGraph", () => {
     assert.equal(res.graph.transitiveClosure.p0?.length, N - 1);
     assert.ok(elapsed < 5000, `took ${Math.round(elapsed)} ms`);
   });
+});
+
+describe("recorded direct dependency constraints (#990)", () => {
+  const dependencies = { "is-odd": "^3.0.0", ms: "2.1.3" };
+  const npmPackages = {
+    "": { dependencies },
+    "node_modules/is-odd": { version: "3.0.1", dependencies: { "is-number": "^6.0.0" } },
+    "node_modules/is-number": { version: "6.0.0" },
+    "node_modules/ms": { version: "2.1.3" },
+  };
+  const bunLock = {
+    lockfileVersion: 2,
+    workspaces: { "": { dependencies } },
+    overrides: { "is-odd": "0.1.2" },
+    packages: {
+      "is-odd": ["is-odd@0.1.2", "", { dependencies: { "is-number": "^3.0.0" } }],
+      "is-number": ["is-number@3.0.0", "", {}],
+      ms: ["ms@2.1.3", "", {}],
+    },
+  };
+
+  for (const [name, lock] of [
+    ["package-lock.json", { lockfileVersion: 3, packages: npmPackages }],
+    ["npm-shrinkwrap.json", { lockfileVersion: 2, packages: npmPackages }],
+    ["bun.lock", bunLock],
+  ] as const) {
+    it(`${name}: preserves a current range and drops a stale direct edge`, async () => {
+      const graphFor = (constraint: string) =>
+        buildLockfileGraph(
+          ctx(
+            memoryHandle({
+              "package.json": JSON.stringify({
+                dependencies: { ...dependencies, "is-odd": constraint },
+              }),
+              [name]: JSON.stringify(lock),
+            }),
+          ),
+          project(),
+        );
+      const current = await graphFor("^3.0.0");
+      assert.equal(current.graph.incomplete, false);
+      assert.deepEqual(current.graph.transitiveClosure, { "is-odd": ["is-number"], ms: [] });
+
+      const stale = await graphFor("0.1.2");
+      assert.equal(stale.graph.incomplete, true);
+      assert.deepEqual(stale.graph.transitiveClosure, { ms: [] });
+      assert.deepEqual(
+        stale.graph.nodes.map((n) => n.name),
+        ["ms"],
+      );
+      assert.deepEqual(
+        stale.evidence.map((e) => e.kind),
+        ["lockfile-manifest-mismatch"],
+      );
+      assert.match(stale.evidence[0]?.statement ?? "", /is-odd.*constraint.*stale/);
+    });
+  }
 });
 
 describe("lockfile hardening (#91)", () => {

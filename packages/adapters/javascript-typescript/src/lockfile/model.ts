@@ -31,6 +31,12 @@ export interface ParsedLockfile {
   evidence: Evidence[];
 }
 
+export interface DirectDeclaration {
+  name: string;
+  dev: boolean;
+  constraint?: string;
+}
+
 /**
  * A lockfile parsed once per analysis run and shared by every importer
  * (workspace project) that uses it. Deep-frozen by the loader cache, so
@@ -59,6 +65,37 @@ export const MAX_CLOSURE_VISITS = 5_000_000;
 /** Own-property read on untrusted parsed data; never falls through to Object.prototype. */
 export function own(record: Record<string, unknown>, key: string): unknown {
   return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+/** Raw npm and Bun importer declarations, in the same precedence as package.json. */
+export function recordedDirectConstraints(importer: Record<string, unknown>): Map<string, unknown> {
+  const constraints = new Map<string, unknown>();
+  for (const field of ["devDependencies", "dependencies", "optionalDependencies"]) {
+    const entries = own(importer, field);
+    if (typeof entries !== "object" || entries === null || Array.isArray(entries)) continue;
+    for (const [name, constraint] of Object.entries(entries)) constraints.set(name, constraint);
+  }
+  return constraints;
+}
+
+/** Report proven changes without quoting specifiers, which may contain private URLs. */
+export function directConstraintMismatch(
+  declaration: DirectDeclaration,
+  locked: unknown,
+  lockfile: string,
+): Evidence | undefined {
+  if (
+    typeof locked !== "string" ||
+    declaration.constraint === undefined ||
+    locked.trim() === declaration.constraint.trim()
+  ) {
+    return undefined;
+  }
+  return {
+    kind: "lockfile-manifest-mismatch",
+    statement: `${declaration.name} has a different constraint in the manifest than in ${lockfile}; the lockfile is stale`,
+    file: lockfile,
+  };
 }
 
 /** Define an own enumerable property, safe for keys like "__proto__". */

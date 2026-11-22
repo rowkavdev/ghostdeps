@@ -4,9 +4,14 @@
  * registry. Edges follow Node's node_modules lookup over the recorded tree.
  */
 import type { Evidence } from "@ghostdeps/core";
-import { own } from "./model.js";
+import { directConstraintMismatch, own, recordedDirectConstraints } from "./model.js";
 import { tarballOrigin } from "./origin.js";
-import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
+import type {
+  DirectDeclaration,
+  LoadedLockfile,
+  ParsedLockfile,
+  ResolvedPackage,
+} from "./model.js";
 
 interface NpmEntry {
   version?: string;
@@ -58,7 +63,7 @@ export function parseNpmLockfile(
   source: string | LoadedLockfile,
   lockfile: string,
   projectDir: string,
-  declared: { name: string; dev: boolean }[],
+  declared: DirectDeclaration[],
 ): ParsedLockfile {
   const evidence: Evidence[] = [];
   const { doc } = typeof source === "string" ? loadNpmLockfile(source) : source;
@@ -135,31 +140,29 @@ export function parseNpmLockfile(
         ...(registryOrigin === undefined ? {} : { registryOrigin }),
       });
     }
-    const direct = declared.map((d) => ({
-      name: d.name,
-      dev: d.dev,
-      id: lookup(projectDir, d.name),
-    }));
-    const root = entry(projectDir);
-    if (root) mismatches(root, declared, lockfile, evidence);
+    const root = own(entries, projectDir);
+    const listed = isObject(root) ? recordedDirectConstraints(root) : new Map();
+    if (isObject(root)) mismatches(listed, declared, lockfile, evidence);
     else
       evidence.push({
         kind: "lockfile-manifest-mismatch",
         statement: `${lockfile} has no importer entry for ${projectDir || "."}; the lockfile is stale`,
         file: lockfile,
       });
-    // Listed as a direct dependency but never resolved to a package entry:
-    // the lockfile is incomplete for it, same as the v1 path reports.
-    const listed = root ? rootListed(root) : new Set<string>();
-    for (const d of direct) {
-      if (!d.id && listed.has(d.name)) {
+    const direct = declared.map((d) => {
+      const mismatch = directConstraintMismatch(d, listed.get(d.name), lockfile);
+      const id = mismatch ? undefined : lookup(projectDir, d.name);
+      if (mismatch) evidence.push(mismatch);
+      // A listed dependency with no resolved package entry is incomplete too.
+      else if (!id && listed.has(d.name)) {
         evidence.push({
           kind: "lockfile-manifest-mismatch",
           statement: `${d.name} is a direct dependency in ${lockfile} but has no resolved package entry`,
           file: lockfile,
         });
       }
-    }
+      return { name: d.name, dev: d.dev, id };
+    });
     return { packages, direct, evidence };
   }
 
@@ -226,22 +229,12 @@ export function parseNpmLockfile(
   return { packages, direct: declared.map((d) => ({ ...d, id: undefined })), evidence };
 }
 
-/** Direct dependency names recorded on a v2/v3 root or workspace entry. */
-function rootListed(root: NpmEntry): Set<string> {
-  return new Set([
-    ...Object.keys(isObject(root.dependencies) ? root.dependencies : {}),
-    ...Object.keys(isObject(root.devDependencies) ? root.devDependencies : {}),
-    ...Object.keys(isObject(root.optionalDependencies) ? root.optionalDependencies : {}),
-  ]);
-}
-
 function mismatches(
-  root: NpmEntry,
-  declared: { name: string; dev: boolean }[],
+  locked: ReadonlyMap<string, unknown>,
+  declared: DirectDeclaration[],
   lockfile: string,
   evidence: Evidence[],
 ): void {
-  const locked = rootListed(root);
   const want = new Set(declared.map((d) => d.name));
   for (const n of want) {
     if (!locked.has(n)) {
@@ -252,7 +245,7 @@ function mismatches(
       });
     }
   }
-  for (const n of locked) {
+  for (const n of locked.keys()) {
     if (!want.has(n)) {
       evidence.push({
         kind: "lockfile-manifest-mismatch",
