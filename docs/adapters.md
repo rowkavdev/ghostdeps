@@ -55,6 +55,14 @@ recommendation policy lives in core.
 
 New adapters: read [contributing-adapters.md](contributing-adapters.md).
 
+## pnpm local dependencies
+
+For pnpm lockfile versions 6 and 9, GhostDeps follows local `file:` packages
+through their recorded package entries and workspace `link:` dependencies
+through their recorded importers. Workspace dev dependencies do not contribute
+to the importing package's transitive impact. A direct reference with no
+matching record still leaves the graph incomplete.
+
 ## Bun workspace dependencies
 
 For a workspace dependency in `bun.lock`, GhostDeps takes the member's

@@ -3,6 +3,7 @@
  * `yaml` package (alias expansion capped, no custom tags); nothing is
  * resolved against a registry.
  */
+import { posix } from "node:path";
 import { parseAllDocuments } from "yaml";
 import type { Evidence } from "@ghostdeps/core";
 import { own } from "./model.js";
@@ -75,47 +76,74 @@ export function parsePnpmLockfile(
   const prefix = major === 9 ? "" : "/";
   if (!isObject(table)) throw new Error("lockfile package table is not a mapping");
 
+  // Importers: workspace lockfiles have `importers`; v6 single-project lockfiles keep deps at the root.
+  const importers = isObject(doc.importers) ? doc.importers : { ".": doc };
+  const linked = new Map<string, { name: string; path: string; member: Rec }>();
+
   /** Resolve a dependency reference (name + version field) to a table key. */
-  const ref = (name: string, raw: unknown): string | undefined => {
-    if (typeof raw !== "string" || raw.startsWith("link:") || raw.startsWith("file:"))
-      return undefined;
+  function ref(name: string, raw: unknown, from?: string): string | undefined {
+    if (typeof raw !== "string") return undefined;
+    if (raw.startsWith("link:")) {
+      return from === undefined ? undefined : workspaceRef(name, from, raw.slice(5));
+    }
+    if (raw.startsWith("file:")) {
+      const key = major === 6 ? raw : `${name}@${raw}`;
+      return Object.hasOwn(table, key) ? key : undefined;
+    }
     // Aliases: "string-width@4.2.3" (v9) or "/string-width@4.2.3" (v6).
     const alias = !/^\d/.test(raw) ? splitKey(raw) : undefined;
     const key = alias ? `${prefix}${alias.name}@${alias.version}` : `${prefix}${name}@${raw}`;
     return Object.hasOwn(table, key) ? key : undefined;
-  };
+  }
 
-  for (const [key, entry] of Object.entries(table)) {
-    const parts = splitKey(key);
-    if (!parts) continue;
-    const deps: string[] = [];
+  function edges(entry: Rec, from?: string) {
+    const dependencies: string[] = [];
     const unresolvedDependencies: string[] = [];
-    if (isObject(entry)) {
-      // pnpm lists an optional dependency under optionalDependencies, so a name in
-      // dependencies must have a table entry unless it is also listed optional or is a
-      // link: or file: reference (a local directory, which has no registry entry).
-      const optional = isObject(entry.optionalDependencies)
-        ? new Set(Object.keys(entry.optionalDependencies))
-        : new Set<string>();
-      for (const field of ["dependencies", "optionalDependencies"] as const) {
-        const map = entry[field];
-        if (!isObject(map)) continue;
-        for (const [n, v] of Object.entries(map)) {
-          const id = ref(n, v);
-          if (id) deps.push(id);
-          else if (
-            field === "dependencies" &&
-            !optional.has(n) &&
-            typeof v === "string" &&
-            !v.startsWith("link:") &&
-            !v.startsWith("file:")
-          ) {
-            unresolvedDependencies.push(n);
-          }
+    const optional = isObject(entry.optionalDependencies)
+      ? new Set(Object.keys(entry.optionalDependencies))
+      : new Set<string>();
+    for (const field of ["dependencies", "optionalDependencies"] as const) {
+      const map = entry[field];
+      if (!isObject(map)) continue;
+      for (const [name, value] of Object.entries(map)) {
+        const raw = from !== undefined && isObject(value) ? value.version : value;
+        const id = ref(name, raw, from);
+        if (id) dependencies.push(id);
+        else if (
+          field === "dependencies" &&
+          !optional.has(name) &&
+          typeof raw === "string" &&
+          (from !== undefined || (!raw.startsWith("link:") && !raw.startsWith("file:")))
+        ) {
+          unresolvedDependencies.push(name);
         }
       }
     }
-    const version = baseVersion(parts.version);
+    return { dependencies, unresolvedDependencies };
+  }
+
+  function workspaceRef(name: string, from: string, target: string): string | undefined {
+    if (!target || posix.isAbsolute(target)) return undefined;
+    const path = posix.join(from, target);
+    if (path === ".." || path.startsWith("../")) return undefined;
+    const member = own(importers, path);
+    if (!isObject(member)) return undefined;
+
+    const id = JSON.stringify(["link", path, name]);
+    if (!linked.has(id)) linked.set(id, { name, path, member });
+    return id;
+  }
+
+  for (const [key, entry] of Object.entries(table)) {
+    const parts =
+      major === 6 && key.startsWith("file:") && isObject(entry) && typeof entry.name === "string"
+        ? { name: entry.name, version: key }
+        : splitKey(key);
+    if (!parts) continue;
+    const { dependencies, unresolvedDependencies } = isObject(entry)
+      ? edges(entry)
+      : { dependencies: [], unresolvedDependencies: [] };
+    const version = parts.version.startsWith("file:") ? parts.version : baseVersion(parts.version);
     // v9 keeps resolutions in `packages` keyed without the peer suffix; v6 on the entry itself.
     const meta =
       major === 9 && isObject(doc.packages) ? own(doc.packages, `${parts.name}@${version}`) : entry;
@@ -123,14 +151,12 @@ export function parsePnpmLockfile(
     packages.set(key, {
       name: parts.name,
       version,
-      dependencies: deps,
+      dependencies,
       ...(unresolvedDependencies.length > 0 ? { unresolvedDependencies } : {}),
       ...(registryOrigin === undefined ? {} : { registryOrigin }),
     });
   }
 
-  // Importers: workspace lockfiles have `importers`; v6 single-project lockfiles keep deps at the root.
-  const importers = isObject(doc.importers) ? doc.importers : { ".": doc };
   const importer = own(importers, importerPath);
   if (!isObject(importer)) {
     evidence.push({
@@ -155,7 +181,17 @@ export function parsePnpmLockfile(
       });
       continue;
     }
-    d.id = ref(d.name, locked.get(d.name));
+    d.id = ref(d.name, locked.get(d.name), importerPath);
+  }
+  // Resolving one importer may enqueue another. The map deduplicates cycles.
+  for (const [id, { name, path, member }] of linked) {
+    const { dependencies, unresolvedDependencies } = edges(member, path);
+    packages.set(id, {
+      name,
+      version: `link:${path}`,
+      dependencies,
+      ...(unresolvedDependencies.length > 0 ? { unresolvedDependencies } : {}),
+    });
   }
   const want = new Set(declared.map((d) => d.name));
   for (const n of locked.keys()) {

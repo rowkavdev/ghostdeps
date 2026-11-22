@@ -2717,21 +2717,17 @@ describe("pnpm lockfile: reachable dependencies with no package entry", () => {
     ["v9", REAL_PNPM_V9_LOCK, "fill-range@7.1.1"],
     ["v6", REAL_PNPM_V6_LOCK, "/fill-range@7.1.1"],
   ] as const) {
-    it(`${label}: a real lock with a workspace link, file:, alias and override has no missing-entry evidence`, async () => {
-      assert.equal(missing(await graphFor(lock)), undefined);
-    });
-
-    it(`${label}: the same lock is complete once the direct link:/file: roots are set aside`, async () => {
-      // A direct link:/file: root gets no package id (separate from this rule), so the
-      // complete-graph check leaves those two roots out.
-      const trimmed = lock.replace(/^ {6}(?:fl|wsa):\n {8}specifier: .*\n {8}version: .*\n/gm, "");
-      assert.notEqual(trimmed, lock);
-      const deps = Object.fromEntries(
-        Object.entries(manifest.dependencies).filter(([n]) => n !== "fl" && n !== "wsa"),
-      );
-      const res = await graphFor(trimmed, { name: "root", dependencies: deps });
+    it(`${label}: a real lock follows workspace and file dependencies through their runtime edges`, async () => {
+      const res = await graphFor(lock);
       assert.equal(missing(res), undefined);
       assert.equal(res.graph.incomplete, false);
+      assert.deepEqual(res.graph.transitiveClosure.wsa, ["ms"]);
+      assert.deepEqual(res.graph.transitiveClosure.fl, ["is-number", "is-odd"]);
+    });
+
+    it(`${label}: an absent linked workspace does not become a complete graph`, async () => {
+      const broken = lock.replace("version: link:pkgs/a", "version: link:pkgs/missing");
+      assert.equal((await graphFor(broken)).graph.incomplete, true);
     });
 
     it(`${label}: removing a reachable package entry marks the graph incomplete by name`, async () => {
@@ -2742,6 +2738,26 @@ describe("pnpm lockfile: reachable dependencies with no package entry", () => {
       assert.match(missing(res)?.statement ?? "", /fill-range/);
     });
   }
+
+  it("follows relative workspace links without including dev dependencies or looping", async () => {
+    const lock = `lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      first: {specifier: 'workspace:*', version: 'link:packages/first'}
+  packages/first:
+    dependencies:
+      second: {specifier: 'workspace:*', version: 'link:../second'}
+    devDependencies:
+      missing-dev: {specifier: '^1', version: '1.0.0'}
+  packages/second:
+    dependencies:
+      first: {specifier: 'workspace:*', version: 'link:../first'}
+`;
+    const result = await graphFor(lock, { dependencies: { first: "workspace:*" } });
+    assert.equal(result.graph.incomplete, false);
+    assert.deepEqual(result.graph.transitiveClosure.first, ["second"]);
+  });
 
   for (const version of [6, 9] as const) {
     it(`v${version}: a required dependency with no entry flags; optional, both-listed, link: and file: do not`, async () => {
