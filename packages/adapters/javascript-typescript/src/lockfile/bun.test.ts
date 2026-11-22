@@ -59,4 +59,40 @@ describe("parseBunLockfile", () => {
     );
     assert.ok(parsed.evidence.some((e) => e.kind === "lockfile-manifest-mismatch"));
   });
+
+  it("reads workspace runtime edges using Bun's nested copies and skips dev dependencies", () => {
+    const text = JSON.stringify({
+      workspaces: {
+        "": { dependencies: { "@s/a": "workspace:*" } },
+        "pkgs/a": {
+          name: "@s/a",
+          version: "1.2.3",
+          dependencies: { b: "2" },
+          devDependencies: { dev: "1" },
+        },
+      },
+      packages: {
+        "@s/a": ["@s/a@workspace:pkgs/a"],
+        "@s/a/b": ["b@2.0.0", "", {}],
+        b: ["b@1.0.0", "", {}],
+        dev: ["dev@1.0.0", "", {}],
+      },
+    });
+    const parsed = parseBunLockfile(text, "bun.lock", ".", declared);
+    assert.equal(parsed.direct[0]?.id, "@s/a");
+    assert.equal(parsed.packages.get("@s/a")?.version, "1.2.3");
+    assert.deepEqual(parsed.packages.get("@s/a")?.dependencies, ["@s/a/b"]);
+  });
+
+  it("keeps a workspace locator unresolved when its member record cannot be verified", () => {
+    const text = JSON.stringify({
+      workspaces: {
+        "": { dependencies: { "@s/a": "workspace:*" } },
+        "pkgs/a": { name: "another-package" },
+      },
+      packages: { "@s/a": ["@s/a@workspace:pkgs/a"] },
+    });
+    const parsed = parseBunLockfile(text, "bun.lock", ".", declared);
+    assert.equal(parsed.direct[0]?.id, undefined);
+  });
 });

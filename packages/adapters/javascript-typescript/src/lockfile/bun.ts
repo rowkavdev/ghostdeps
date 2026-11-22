@@ -1,5 +1,5 @@
 /**
- * bun.lock (text lockfile, lockfileVersion 0/1). JSON with trailing commas;
+ * bun.lock (text lockfile). JSON with trailing commas;
  * parsed as data after a string-aware trailing-comma strip. The binary
  * bun.lockb format is not parsed (reported as unsupported by the builder).
  */
@@ -69,7 +69,14 @@ export function parseBunLockfile(
   const { doc } = typeof source === "string" ? loadBunLockfile(source) : source;
   if (!isObject(doc)) throw new Error("lockfile root is not an object");
   const table = isObject(doc.packages) ? doc.packages : {};
+  const workspaces = isObject(doc.workspaces) ? doc.workspaces : {};
   const packages = new Map<string, ResolvedPackage>();
+
+  const workspaceRecord = (name: string, version: string): Rec | undefined => {
+    const path = version.slice("workspace:".length);
+    const record = path ? own(workspaces, path) : undefined;
+    return isObject(record) && own(record, "name") === name ? record : undefined;
+  };
 
   /** Resolve dependency `dep` as seen from package key `from` (nested keys first, then hoisted). */
   const lookup = (from: string, dep: string): string | undefined => {
@@ -77,7 +84,11 @@ export function parseBunLockfile(
     for (let n = path.length; n >= 0; n--) {
       const key = [...path.slice(0, n), dep].join("/");
       const value = own(table, key);
-      if (Array.isArray(value) && typeof value[0] === "string") return key;
+      if (Array.isArray(value) && typeof value[0] === "string") {
+        const { name, version } = splitIdent(value[0]);
+        if (version.startsWith("workspace:") && !workspaceRecord(name, version)) return undefined;
+        return key;
+      }
     }
     return undefined;
   };
@@ -85,10 +96,16 @@ export function parseBunLockfile(
   for (const [key, value] of Object.entries(table)) {
     if (!Array.isArray(value) || typeof value[0] !== "string") continue;
     const { name, version } = splitIdent(value[0]);
-    const meta = value.find((v, i) => i > 0 && isObject(v)) as Rec | undefined;
+    // A workspace tuple only contains its locator. Its runtime edges are stored
+    // in the matching workspace record alongside development-only declarations.
+    const isWorkspace = version.startsWith("workspace:");
+    const workspace = isWorkspace ? workspaceRecord(name, version) : undefined;
+    if (isWorkspace && !workspace) continue;
+    const meta = workspace ?? value.find((item, i): item is Rec => i > 0 && isObject(item));
+    const workspaceVersion = workspace && own(workspace, "version");
     const deps: string[] = [];
     const unresolvedDependencies: string[] = [];
-    if (!version.startsWith("workspace:") && meta) {
+    if (meta) {
       // Bun lists optional dependencies under optionalDependencies, apart from
       // dependencies, and peers under peerDependencies, so only a name in
       // dependencies must have a package entry (workspace members have one too).
@@ -116,7 +133,7 @@ export function parseBunLockfile(
     }
     packages.set(key, {
       name,
-      version,
+      version: typeof workspaceVersion === "string" ? workspaceVersion : version,
       dependencies: deps,
       peers,
       unresolvedPeers,
@@ -125,7 +142,6 @@ export function parseBunLockfile(
   }
 
   const direct: ParsedLockfile["direct"] = declared.map((d) => ({ ...d, id: undefined }));
-  const workspaces = isObject(doc.workspaces) ? doc.workspaces : {};
   const ws = own(workspaces, importerPath === "." ? "" : importerPath);
   if (!isObject(ws)) {
     evidence.push({
@@ -152,9 +168,7 @@ export function parseBunLockfile(
       });
       continue;
     }
-    const nested = wsName && importerPath !== "." ? lookup(wsName, d.name) : undefined;
-    d.id = nested ?? lookup("", d.name);
-    if (d.id && packages.get(d.id)?.version.startsWith("workspace:")) d.id = undefined;
+    d.id = lookup(wsName && importerPath !== "." ? wsName : "", d.name);
   }
   const want = new Set(declared.map((d) => d.name));
   for (const n of locked) {

@@ -55,6 +55,14 @@ recommendation policy lives in core.
 
 New adapters: read [contributing-adapters.md](contributing-adapters.md).
 
+## Bun workspace dependencies
+
+For a workspace dependency in `bun.lock`, GhostDeps takes the member's
+runtime edges from the workspace record named by the package tuple. The
+member's development dependencies do not contribute to the importing
+project's transitive impact. A missing workspace record or missing required
+edge leaves the graph incomplete.
+
 ## Poetry extras membership
 
 When an optional Poetry dependency appears in several `tool.poetry.extras`

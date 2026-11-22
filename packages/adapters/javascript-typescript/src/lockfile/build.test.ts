@@ -2230,14 +2230,12 @@ describe("bun lockfile: reachable dependencies with no package entry", () => {
       micromatch: "^4.0.5",
       num: "npm:is-number@^7.0.0",
       fl: "file:./lfl",
+      wsa: "workspace:*",
     },
   };
-  // A direct workspace: dependency is left without a package id (and so incomplete) by the
-  // existing direct-dependency path, separately from this rule, so the root drops it here.
-  const noRootWorkspace = (lock: string) => lock.replace(/^ {8}"wsa": "workspace:\*",\n/m, "");
   const graphFor = (lock: string, man: unknown = manifest) =>
     buildLockfileGraph(
-      ctx(memoryHandle({ "package.json": JSON.stringify(man), "bun.lock": noRootWorkspace(lock) })),
+      ctx(memoryHandle({ "package.json": JSON.stringify(man), "bun.lock": lock })),
       project(),
     );
   const missing = (res: Awaited<ReturnType<typeof graphFor>>) =>
@@ -2257,6 +2255,15 @@ describe("bun lockfile: reachable dependencies with no package entry", () => {
     const res = await graphFor(REAL_BUN_LOCK);
     assert.equal(res.graph.incomplete, false);
     assert.equal(missing(res), undefined);
+    assert.deepEqual(res.graph.transitiveClosure.wsa, ["is-number", "ms", "react", "wsb"]);
+    assert.deepEqual(res.graph.directPeers?.wsa, ["react"]);
+    assert.equal(res.graph.nodes.find((n) => n.name === "wsa")?.version, "1.0.0");
+  });
+
+  it("marks the graph incomplete when a reachable workspace member has a missing required dependency", async () => {
+    const res = await graphFor(drop("ms"));
+    assert.equal(res.graph.incomplete, true);
+    assert.match(missing(res)?.statement ?? "", /\bms\b/);
   });
 
   it("marks the graph incomplete when a reachable package's dependency has no package entry", async () => {
