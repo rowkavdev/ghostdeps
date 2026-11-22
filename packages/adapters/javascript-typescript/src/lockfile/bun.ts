@@ -4,8 +4,13 @@
  * bun.lockb format is not parsed (reported as unsupported by the builder).
  */
 import type { Evidence } from "@ghostdeps/core";
-import { own } from "./model.js";
-import type { LoadedLockfile, ParsedLockfile, ResolvedPackage } from "./model.js";
+import { directConstraintMismatch, own, recordedDirectConstraints } from "./model.js";
+import type {
+  DirectDeclaration,
+  LoadedLockfile,
+  ParsedLockfile,
+  ResolvedPackage,
+} from "./model.js";
 
 type Rec = Record<string, unknown>;
 const isObject = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -63,7 +68,7 @@ export function parseBunLockfile(
   source: string | LoadedLockfile,
   lockfile: string,
   importerPath: string,
-  declared: { name: string; dev: boolean }[],
+  declared: DirectDeclaration[],
 ): ParsedLockfile {
   const evidence: Evidence[] = [];
   const { doc } = typeof source === "string" ? loadBunLockfile(source) : source;
@@ -141,7 +146,7 @@ export function parseBunLockfile(
     });
   }
 
-  const direct: ParsedLockfile["direct"] = declared.map((d) => ({ ...d, id: undefined }));
+  const direct = declared.map((d) => ({ ...d, id: undefined as string | undefined }));
   const ws = own(workspaces, importerPath === "." ? "" : importerPath);
   if (!isObject(ws)) {
     evidence.push({
@@ -151,11 +156,7 @@ export function parseBunLockfile(
     });
     return { packages, direct, evidence };
   }
-  const locked = new Set<string>();
-  for (const field of ["dependencies", "devDependencies", "optionalDependencies"]) {
-    const map = own(ws, field);
-    if (isObject(map)) for (const n of Object.keys(map)) locked.add(n);
-  }
+  const locked = recordedDirectConstraints(ws);
   // Workspace members may have nested copies under "<workspace name>/<dep>".
   const wsNameRaw = own(ws, "name");
   const wsName = typeof wsNameRaw === "string" ? wsNameRaw : undefined;
@@ -168,10 +169,15 @@ export function parseBunLockfile(
       });
       continue;
     }
+    const mismatch = directConstraintMismatch(d, locked.get(d.name), lockfile);
+    if (mismatch) {
+      evidence.push(mismatch);
+      continue;
+    }
     d.id = lookup(wsName && importerPath !== "." ? wsName : "", d.name);
   }
   const want = new Set(declared.map((d) => d.name));
-  for (const n of locked) {
+  for (const n of locked.keys()) {
     if (!want.has(n)) {
       evidence.push({
         kind: "lockfile-manifest-mismatch",
