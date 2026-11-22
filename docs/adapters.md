@@ -63,6 +63,12 @@ member's development dependencies do not contribute to the importing
 project's transitive impact. A missing workspace record or missing required
 edge leaves the graph incomplete.
 
+## Yarn Berry lockfile descriptors
+
+The Yarn Berry graph reader preserves commas and spaces in workspace paths.
+In grouped keys, a comma and space mark the start of the next descriptor
+when followed by a package name and `@`.
+
 ## Poetry extras membership
 
 When an optional Poetry dependency appears in several `tool.poetry.extras`

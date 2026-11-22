@@ -101,7 +101,13 @@ export function loadYarnLockfile(text: string): LoadedLockfile {
     if (!isObject(doc)) throw new Error("lockfile root is not a mapping");
     for (const [key, entry] of Object.entries(doc)) {
       if (key === "__metadata" || !isObject(entry)) continue;
-      const patterns = key.split(",").map((p) => p.trim());
+      // Yarn serializes grouped descriptors with comma-space. Paths can contain
+      // the same text, so only split when the next part starts with an ident@.
+      // A key identical to its resolution is already a single descriptor.
+      const patterns =
+        key === own(entry, "resolution")
+          ? [key]
+          : key.split(/, (?=(?:@[^/@,\s]+\/)?[^/@,\s]+@)/).map((p) => p.trim());
       for (const p of patterns) byPattern.set(p, { id: patterns[0]!, entry });
     }
   } else {
