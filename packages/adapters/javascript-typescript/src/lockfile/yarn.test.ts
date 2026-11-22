@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { assembleGraph } from "./model.js";
 import { parseYarnLockfile, readClassicLockfile } from "./yarn.js";
 
 describe("yarn classic reader", () => {
@@ -41,4 +42,40 @@ it("does not split commas inside quoted Yarn classic patterns", () => {
   assert.equal(parsed.direct[0]?.id, `demo@${range}`);
   assert.equal(parsed.evidence.length, 0);
   assert.equal([...parsed.packages.values()][0]?.name, "demo");
+});
+
+it("keeps commas in Berry workspace descriptors and still reads grouped descriptors", () => {
+  // The workspace path case comes from Yarn 4.9.2's generated lockfile.
+  const text = `__metadata:
+  version: 8
+"root@workspace:.":
+  resolution: "root@workspace:."
+  dependencies:
+    thing: "workspace:packages/local,here"
+    spaced: "workspace:packages/local, here"
+    alias: "npm:@s/demo@^1"
+"thing@workspace:packages/local,here":
+  version: 0.0.0-use.local
+  resolution: "thing@workspace:packages/local,here"
+"spaced@workspace:*, spaced@workspace:packages/local, here":
+  version: 0.0.0-use.local
+  resolution: "spaced@workspace:packages/local, here"
+"@s/demo@npm:1.0.0, alias@npm:@s/demo@^1":
+  version: 1.0.0
+  resolution: "@s/demo@npm:1.0.0"
+`;
+  const parsed = parseYarnLockfile(text, "yarn.lock", ".", [
+    { name: "thing", dev: false, constraint: "workspace:packages/local,here" },
+    { name: "spaced", dev: false, constraint: "workspace:packages/local, here" },
+    { name: "alias", dev: false, constraint: "npm:@s/demo@^1" },
+  ]);
+  const { graph } = assembleGraph(
+    { path: ".", ecosystem: "javascript-typescript", packageManagers: [] },
+    parsed,
+  );
+  assert.equal(graph.incomplete, false);
+  assert.deepEqual(
+    graph.nodes.map((node) => node.name),
+    ["@s/demo", "spaced", "thing"],
+  );
 });
